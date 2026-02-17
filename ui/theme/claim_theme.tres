@@ -1,11 +1,64 @@
-[gd_resource type="Theme" format=3]
+[gd_resource type="Theme" load_steps=5 format=3]
+
+[sub_resource type="StyleBoxFlat" id="panel_style"]
+bg_color = Color(0.08, 0.08, 0.14, 0.85)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.2, 0.2, 0.35, 0.5)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+content_margin_left = 10.0
+content_margin_top = 8.0
+content_margin_right = 10.0
+content_margin_bottom = 8.0
+
+[sub_resource type="StyleBoxFlat" id="tab_panel_style"]
+bg_color = Color(0.05, 0.05, 0.1, 0.9)
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 4.0
+
+[sub_resource type="StyleBoxFlat" id="topbar_style"]
+bg_color = Color(0.04, 0.04, 0.1, 0.92)
+border_width_bottom = 1
+border_color = Color(0.15, 0.2, 0.4, 0.6)
+content_margin_left = 12.0
+content_margin_top = 8.0
+content_margin_right = 12.0
+content_margin_bottom = 8.0
+
+[sub_resource type="StyleBoxFlat" id="button_style"]
+bg_color = Color(0.12, 0.14, 0.25, 0.9)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.25, 0.3, 0.5, 0.6)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+content_margin_left = 12.0
+content_margin_top = 4.0
+content_margin_right = 12.0
+content_margin_bottom = 4.0
 
 [resource]
 default_base_scale = 1.0
 default_font_size = 20
 
+PanelContainer/styles/panel = SubResource("panel_style")
+
+TabContainer/styles/panel = SubResource("tab_panel_style")
+
 Button/constants/h_separation = 8
 Button/font_sizes/font_size = 18
+Button/styles/normal = SubResource("button_style")
 
 TabBar/font_sizes/font_size = 18
 TabBar/constants/h_separation = 12

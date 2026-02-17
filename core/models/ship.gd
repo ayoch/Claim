@@ -14,16 +14,17 @@ const FUEL_COST_PER_UNIT: float = 5.0  # $ per unit of fuel
 @export var equipment: Array[Equipment] = []
 
 var current_mission: Mission = null
+var current_trade_mission: TradeMission = null
 var last_crew: Array[Worker] = []  # Remember last crew used
 
 var is_docked: bool:
 	get:
-		return current_mission == null
+		return current_mission == null and current_trade_mission == null
 
 func get_mining_multiplier() -> float:
 	var mult := 1.0
 	for e in equipment:
-		mult *= e.mining_bonus
+		mult *= e.get_effective_bonus()
 	return mult
 
 func get_cargo_total() -> float:

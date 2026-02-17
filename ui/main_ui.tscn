@@ -1,7 +1,8 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://ui/main_ui.gd" id="1"]
 [ext_resource type="Theme" path="res://ui/theme/claim_theme.tres" id="7"]
+[ext_resource type="Script" path="res://ui/starfield_bg.gd" id="8"]
 [ext_resource type="PackedScene" path="res://ui/tabs/dashboard_tab.tscn" id="2"]
 [ext_resource type="PackedScene" path="res://ui/tabs/fleet_tab.tscn" id="3"]
 [ext_resource type="PackedScene" path="res://ui/tabs/workers_tab.tscn" id="4"]
@@ -17,6 +18,16 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1")
 theme = ExtResource("7")
+
+[node name="Starfield" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("8")
 
 [node name="VBox" type="VBoxContainer" parent="."]
 layout_mode = 1

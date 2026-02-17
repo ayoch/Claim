@@ -16,6 +16,12 @@ static func transit_time(d_au: float, accel_g: float) -> float:
 	var real_seconds: float = 2.0 * sqrt(d_meters / a)
 	return real_seconds / TIME_COMPRESSION
 
-## Get the distance from Earth to an asteroid
+## Get the 2D distance from Earth to an asteroid using orbital positions
 static func distance_to(asteroid: AsteroidData) -> float:
-	return absf(asteroid.orbit_au - CelestialData.EARTH_ORBIT_AU)
+	var earth_pos := CelestialData.get_earth_position_au()
+	var asteroid_pos := asteroid.get_position_au()
+	return earth_pos.distance_to(asteroid_pos)
+
+## Get 2D distance between two positions in AU
+static func distance_between_au(from_pos: Vector2, to_pos: Vector2) -> float:
+	return from_pos.distance_to(to_pos)

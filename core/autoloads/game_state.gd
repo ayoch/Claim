@@ -15,10 +15,24 @@ var settings: Dictionary = {
 	"auto_refuel": true,
 }
 
+# Phase 2: Market
+var market: MarketState = null
+
+# Phase 2: Contracts
+var available_contracts: Array[Contract] = []
+var active_contracts: Array[Contract] = []
+const MAX_AVAILABLE_CONTRACTS: int = 5
+
+# Phase 2: Colonies & Trade
+var colonies: Array[Colony] = []
+var trade_missions: Array[TradeMission] = []
+
 func _ready() -> void:
 	_init_resources()
 	_init_starter_ship()
 	asteroids = CelestialData.get_asteroids()
+	market = MarketState.new()
+	colonies = ColonyData.get_colonies()
 
 func _init_resources() -> void:
 	for ore in ResourceTypes.OreType.values():
@@ -83,6 +97,17 @@ func install_equipment(ship: Ship, equip: Equipment) -> void:
 	ship.equipment.append(equip)
 	EventBus.equipment_installed.emit(ship, equip)
 
+func repair_equipment(ship: Ship, equip: Equipment) -> bool:
+	var cost := equip.repair_cost()
+	if cost <= 0:
+		return false
+	if money < cost:
+		return false
+	money -= cost
+	equip.durability = equip.max_durability
+	EventBus.equipment_repaired.emit(ship, equip)
+	return true
+
 func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker]) -> Mission:
 	var mission := Mission.new()
 	mission.ship = ship
@@ -122,6 +147,72 @@ func complete_mission(mission: Mission) -> void:
 	EventBus.mission_completed.emit(mission)
 	missions.erase(mission)
 
+# --- Contract methods ---
+
+func accept_contract(contract: Contract) -> void:
+	if contract.status != Contract.Status.AVAILABLE:
+		return
+	contract.status = Contract.Status.ACCEPTED
+	available_contracts.erase(contract)
+	active_contracts.append(contract)
+	EventBus.contract_accepted.emit(contract)
+
+func fulfill_contract(contract: Contract) -> bool:
+	if contract.status != Contract.Status.ACCEPTED:
+		return false
+	var current_amount: float = resources.get(contract.ore_type, 0.0)
+	if current_amount < contract.quantity:
+		return false
+	remove_resource(contract.ore_type, contract.quantity)
+	money += contract.reward
+	contract.status = Contract.Status.COMPLETED
+	active_contracts.erase(contract)
+	EventBus.contract_completed.emit(contract)
+	return true
+
+# --- Trade mission methods ---
+
+func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Array[Worker], cargo_to_load: Dictionary) -> TradeMission:
+	var tm := TradeMission.new()
+	tm.ship = ship
+	tm.colony = colony_target
+	tm.workers = assigned_workers
+	tm.status = TradeMission.Status.TRANSIT_TO_COLONY
+
+	# Load cargo from stockpile onto ship
+	tm.cargo = {}
+	for ore_type in cargo_to_load:
+		var amount: float = cargo_to_load[ore_type]
+		if amount > 0 and remove_resource(ore_type, amount):
+			tm.cargo[ore_type] = amount
+
+	# Calculate distance and transit
+	var earth_pos := CelestialData.get_earth_position_au()
+	var colony_pos := colony_target.get_position_au()
+	var dist := earth_pos.distance_to(colony_pos)
+	tm.transit_time = Brachistochrone.transit_time(dist, ship.thrust_g)
+	tm.elapsed_ticks = 0.0
+
+	var total_fuel := ship.calc_fuel_for_distance(dist)
+	var total_transit_ticks := tm.transit_time * 2.0
+	tm.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
+
+	ship.current_trade_mission = tm
+	ship.current_cargo = tm.cargo.duplicate()
+	for w in assigned_workers:
+		w.assigned_mission = null  # Trade missions don't lock workers via assigned_mission for simplicity
+
+	trade_missions.append(tm)
+	EventBus.trade_mission_started.emit(tm)
+	return tm
+
+func complete_trade_mission(tm: TradeMission) -> void:
+	tm.ship.current_cargo.clear()
+	tm.ship.current_trade_mission = null
+	tm.status = TradeMission.Status.COMPLETED
+	EventBus.trade_mission_completed.emit(tm)
+	trade_missions.erase(tm)
+
 # Save/Load
 func save_game() -> void:
 	var save_data := {
@@ -129,9 +220,13 @@ func save_game() -> void:
 		"resources": {},
 		"workers": [],
 		"ships": [],
+		"market_prices": {},
 	}
 	for ore_type in resources:
 		save_data["resources"][str(ore_type)] = resources[ore_type]
+	if market:
+		for ore_type in market.current_prices:
+			save_data["market_prices"][str(ore_type)] = market.current_prices[ore_type]
 	for w in workers:
 		save_data["workers"].append({
 			"name": w.worker_name,
@@ -151,6 +246,9 @@ func save_game() -> void:
 				"type": e.type,
 				"mining_bonus": e.mining_bonus,
 				"cost": e.cost,
+				"durability": e.durability,
+				"max_durability": e.max_durability,
+				"wear_per_tick": e.wear_per_tick,
 			})
 		save_data["ships"].append(ship_data)
 
@@ -173,6 +271,12 @@ func load_game() -> bool:
 	for key in res_data:
 		resources[int(key)] = float(res_data[key])
 
+	# Restore market prices
+	if market:
+		var price_data: Dictionary = data.get("market_prices", {})
+		for key in price_data:
+			market.current_prices[int(key)] = float(price_data[key])
+
 	workers.clear()
 	for wd in data.get("workers", []):
 		var w := Worker.new()
@@ -188,7 +292,11 @@ func load_game() -> bool:
 		s.thrust_g = float(sd.get("thrust_g", 0.3))
 		s.cargo_capacity = float(sd.get("cargo_capacity", 100.0))
 		for ed in sd.get("equipment", []):
-			s.equipment.append(Equipment.from_catalog(ed))
+			var e := Equipment.from_catalog(ed)
+			e.durability = float(ed.get("durability", 100.0))
+			e.max_durability = float(ed.get("max_durability", 100.0))
+			e.fabrication_ticks = 0.0  # Already fabricated if saved
+			s.equipment.append(e)
 		ships.append(s)
 
 	return true

@@ -45,10 +45,44 @@ theme_override_constants/separation = 12
 
 [node name="BuyTitle" type="Label" parent="ScrollContainer/VBox/BuySection"]
 layout_mode = 2
-text = "BUY EQUIPMENT"
+text = "EQUIPMENT"
 theme_override_font_sizes/font_size = 20
 
 [node name="EquipList" type="VBoxContainer" parent="ScrollContainer/VBox/BuySection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Separator2" type="HSeparator" parent="ScrollContainer/VBox"]
+layout_mode = 2
+
+[node name="ContractsSection" type="VBoxContainer" parent="ScrollContainer/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ContractsTitle" type="Label" parent="ScrollContainer/VBox/ContractsSection"]
+layout_mode = 2
+text = "CONTRACTS"
+theme_override_font_sizes/font_size = 20
+
+[node name="ContractsList" type="VBoxContainer" parent="ScrollContainer/VBox/ContractsSection"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Separator3" type="HSeparator" parent="ScrollContainer/VBox"]
+layout_mode = 2
+
+[node name="ColonySection" type="VBoxContainer" parent="ScrollContainer/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="ColonyTitle" type="Label" parent="ScrollContainer/VBox/ColonySection"]
+layout_mode = 2
+text = "COLONY TRADE"
+theme_override_font_sizes/font_size = 20
+
+[node name="ColonyList" type="VBoxContainer" parent="ScrollContainer/VBox/ColonySection"]
 unique_name_in_owner = true
 layout_mode = 2
 theme_override_constants/separation = 8

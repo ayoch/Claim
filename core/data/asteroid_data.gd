@@ -23,9 +23,25 @@ const BODY_TYPE_NAMES: Dictionary = {
 @export var orbit_au: float = 0.0
 @export var body_type: BodyType = BodyType.ASTEROID
 @export var ore_yields: Dictionary = {} # OreType -> tons per tick per worker
+@export var orbital_angle: float = 0.0  # radians, current position on orbit
 
 func get_type_name() -> String:
 	return BODY_TYPE_NAMES.get(body_type, "Unknown")
+
+## Kepler's third law: orbital period in game ticks
+func get_orbital_period() -> float:
+	return pow(orbit_au, 1.5) * 600.0
+
+## Advance orbital position by dt ticks
+func advance_orbit(dt: float) -> void:
+	var period := get_orbital_period()
+	if period > 0:
+		orbital_angle += (TAU / period) * dt
+		orbital_angle = fmod(orbital_angle, TAU)
+
+## Get current 2D position in AU
+func get_position_au() -> Vector2:
+	return Vector2(cos(orbital_angle), sin(orbital_angle)) * orbit_au
 
 ## Estimate profit for a mission to this body.
 ## Returns { revenue, wage_cost, profit, transit_time, mining_time, total_time, cargo_breakdown }
@@ -65,7 +81,7 @@ static func estimate_mission(
 			cargo_breakdown[ore_type] *= scale
 		total_mined = ship.cargo_capacity
 
-	# Calculate revenue
+	# Calculate revenue using dynamic prices
 	var revenue := 0.0
 	for ore_type in cargo_breakdown:
 		revenue += cargo_breakdown[ore_type] * MarketData.get_ore_price(ore_type)

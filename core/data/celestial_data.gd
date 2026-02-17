@@ -4,6 +4,60 @@ extends RefCounted
 const EARTH_ORBIT_AU: float = 1.0
 const AU_TO_METERS: float = 1.496e11
 
+# Planet data: [name, orbit_au, color_r, color_g, color_b, radius_px]
+const PLANETS: Array[Dictionary] = [
+	{"name": "Mercury", "orbit_au": 0.39, "color": Color(0.7, 0.7, 0.6), "radius": 3.0},
+	{"name": "Venus",   "orbit_au": 0.72, "color": Color(0.9, 0.8, 0.5), "radius": 4.0},
+	{"name": "Earth",   "orbit_au": 1.00, "color": Color(0.2, 0.5, 1.0), "radius": 5.0},
+	{"name": "Mars",    "orbit_au": 1.52, "color": Color(0.9, 0.4, 0.2), "radius": 4.0},
+	{"name": "Jupiter", "orbit_au": 5.20, "color": Color(0.8, 0.7, 0.5), "radius": 8.0},
+	{"name": "Saturn",  "orbit_au": 9.54, "color": Color(0.9, 0.8, 0.6), "radius": 7.0},
+	{"name": "Uranus",  "orbit_au": 19.19, "color": Color(0.5, 0.8, 0.9), "radius": 5.5},
+	{"name": "Neptune", "orbit_au": 30.07, "color": Color(0.3, 0.4, 0.9), "radius": 5.5},
+]
+
+# Orbital angles for all planets (indexed same as PLANETS)
+static var planet_angles: Array[float] = []
+
+# Earth orbital state (shorthand, kept in sync with planet_angles[2])
+static var earth_angle: float = 0.0
+
+static func _static_init() -> void:
+	# Initialize random starting angles for all planets
+	planet_angles.clear()
+	for i in range(PLANETS.size()):
+		planet_angles.append(randf() * TAU)
+	earth_angle = planet_angles[2]
+
+static func get_earth_position_au() -> Vector2:
+	_ensure_init()
+	return Vector2(cos(earth_angle), sin(earth_angle)) * EARTH_ORBIT_AU
+
+static func _ensure_init() -> void:
+	if planet_angles.size() != PLANETS.size():
+		_static_init()
+
+static func get_planet_position_au(index: int) -> Vector2:
+	_ensure_init()
+	if index < 0 or index >= PLANETS.size():
+		return Vector2.ZERO
+	var orbit_au: float = PLANETS[index]["orbit_au"]
+	return Vector2(cos(planet_angles[index]), sin(planet_angles[index])) * orbit_au
+
+static func advance_planets(dt: float) -> void:
+	_ensure_init()
+	for i in range(PLANETS.size()):
+		var orbit_au: float = PLANETS[i]["orbit_au"]
+		var period := pow(orbit_au, 1.5) * 600.0
+		if period > 0:
+			planet_angles[i] += (TAU / period) * dt
+			planet_angles[i] = fmod(planet_angles[i], TAU)
+	earth_angle = planet_angles[2]
+
+# Legacy compatibility
+static func advance_earth(dt: float) -> void:
+	advance_planets(dt)
+
 static func _make(
 	p_name: String,
 	p_au: float,
@@ -15,6 +69,7 @@ static func _make(
 	a.orbit_au = p_au
 	a.body_type = p_type
 	a.ore_yields = p_yields
+	a.orbital_angle = randf() * TAU  # Random initial position
 	return a
 
 static func get_asteroids() -> Array[AsteroidData]:

@@ -20,6 +20,11 @@ func _ready() -> void:
 	EventBus.mission_completed.connect(func(_m: Mission) -> void: _mark_dirty())
 	EventBus.mission_phase_changed.connect(func(_m: Mission) -> void: _mark_dirty())
 	EventBus.equipment_installed.connect(func(_s: Ship, _e: Equipment) -> void: _mark_dirty())
+	EventBus.equipment_broken.connect(func(_s: Ship, _e: Equipment) -> void: _mark_dirty())
+	EventBus.equipment_repaired.connect(func(_s: Ship, _e: Equipment) -> void: _mark_dirty())
+	EventBus.trade_mission_started.connect(func(_tm: TradeMission) -> void: _mark_dirty())
+	EventBus.trade_mission_completed.connect(func(_tm: TradeMission) -> void: _mark_dirty())
+	EventBus.trade_mission_phase_changed.connect(func(_tm: TradeMission) -> void: _mark_dirty())
 	EventBus.tick.connect(_on_tick)
 	_rebuild_ships()
 
@@ -35,12 +40,18 @@ func _on_tick(_dt: float) -> void:
 	# Just update progress bars, status labels, and fuel in place
 	for ship: Ship in _progress_bars:
 		var bar: ProgressBar = _progress_bars[ship]
-		if ship.current_mission and is_instance_valid(bar):
-			bar.value = ship.current_mission.get_progress() * 100.0
+		if is_instance_valid(bar):
+			if ship.current_mission:
+				bar.value = ship.current_mission.get_progress() * 100.0
+			elif ship.current_trade_mission:
+				bar.value = ship.current_trade_mission.get_progress() * 100.0
 	for ship: Ship in _status_labels:
 		var label: Label = _status_labels[ship]
-		if ship.current_mission and is_instance_valid(label):
-			label.text = ship.current_mission.get_status_text()
+		if is_instance_valid(label):
+			if ship.current_mission:
+				label.text = ship.current_mission.get_status_text()
+			elif ship.current_trade_mission:
+				label.text = ship.current_trade_mission.get_status_text()
 	for ship: Ship in _detail_labels:
 		var label: Label = _detail_labels[ship]
 		if is_instance_valid(label):
@@ -77,8 +88,12 @@ func _rebuild_ships() -> void:
 			header.add_child(dispatch_btn)
 		else:
 			var status := Label.new()
-			status.text = ship.current_mission.get_status_text()
-			status.add_theme_color_override("font_color", Color(0.8, 0.7, 0.2))
+			if ship.current_mission:
+				status.text = ship.current_mission.get_status_text()
+				status.add_theme_color_override("font_color", Color(0.8, 0.7, 0.2))
+			elif ship.current_trade_mission:
+				status.text = ship.current_trade_mission.get_status_text()
+				status.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 			header.add_child(status)
 			_status_labels[ship] = status
 
@@ -89,19 +104,41 @@ func _rebuild_ships() -> void:
 		vbox.add_child(details)
 		_detail_labels[ship] = details
 
-		# Show installed equipment names
+		# Show installed equipment with durability
 		if not ship.equipment.is_empty():
-			var equip_names: Array[String] = []
 			for e in ship.equipment:
-				equip_names.append(e.equipment_name)
-			var equip_label := Label.new()
-			equip_label.text = "Equipped: %s" % ", ".join(equip_names)
-			equip_label.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
-			vbox.add_child(equip_label)
+				var equip_row := HBoxContainer.new()
+				equip_row.add_theme_constant_override("separation", 6)
 
-		if not ship.is_docked and ship.current_mission:
+				var equip_label := Label.new()
+				var dur_str := "%d%%" % int(e.durability)
+				var broken_str := ""
+				if e.durability <= 0:
+					broken_str = " (BROKEN)"
+					equip_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+				elif e.durability < 30:
+					equip_label.add_theme_color_override("font_color", Color(0.9, 0.6, 0.3))
+				else:
+					equip_label.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
+
+				equip_label.text = "%s (%.2fx) %s%s" % [e.equipment_name, e.mining_bonus, dur_str, broken_str]
+				equip_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				equip_row.add_child(equip_label)
+
+				var dur_bar := ProgressBar.new()
+				dur_bar.custom_minimum_size = Vector2(60, 0)
+				dur_bar.value = e.durability
+				dur_bar.max_value = e.max_durability
+				equip_row.add_child(dur_bar)
+
+				vbox.add_child(equip_row)
+
+		if not ship.is_docked:
 			var progress := ProgressBar.new()
-			progress.value = ship.current_mission.get_progress() * 100.0
+			if ship.current_mission:
+				progress.value = ship.current_mission.get_progress() * 100.0
+			elif ship.current_trade_mission:
+				progress.value = ship.current_trade_mission.get_progress() * 100.0
 			vbox.add_child(progress)
 			_progress_bars[ship] = progress
 
@@ -190,7 +227,7 @@ func _show_asteroid_selection() -> void:
 
 		btn.text = "%s (%s)\n%.2f AU | %s | Est: %s%s" % [
 			asteroid.asteroid_name, asteroid.get_type_name(),
-			asteroid.orbit_au, _format_time(transit),
+			dist, _format_time(transit),
 			"+" if est["profit"] > 0 else "", profit_str,
 		]
 		btn.pressed.connect(_select_asteroid.bind(asteroid))
@@ -223,7 +260,7 @@ func _get_sorted_asteroids(est_workers: Array[Worker]) -> Array[AsteroidData]:
 			)
 		"distance":
 			filtered.sort_custom(func(a: AsteroidData, b: AsteroidData) -> bool:
-				return a.orbit_au < b.orbit_au
+				return Brachistochrone.distance_to(a) < Brachistochrone.distance_to(b)
 			)
 		"name":
 			filtered.sort_custom(func(a: AsteroidData, b: AsteroidData) -> bool:
@@ -386,7 +423,7 @@ func _update_estimate_display() -> void:
 	var breakdown: Dictionary = est["cargo_breakdown"]
 	for ore_type in breakdown:
 		var tons: float = breakdown[ore_type]
-		var price: int = MarketData.get_ore_price(ore_type)
+		var price: float = MarketData.get_ore_price(ore_type)
 		lines.append("  %s: %.1ft = $%s" % [
 			ResourceTypes.get_ore_name(ore_type), tons, _format_number(int(tons * price))
 		])
