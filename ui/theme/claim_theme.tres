@@ -1,0 +1,15 @@
+[gd_resource type="Theme" format=3]
+
+[resource]
+default_base_scale = 1.0
+default_font_size = 20
+
+Button/constants/h_separation = 8
+Button/font_sizes/font_size = 18
+
+TabBar/font_sizes/font_size = 18
+TabBar/constants/h_separation = 12
+
+CheckBox/font_sizes/font_size = 18
+
+Label/font_sizes/font_size = 20

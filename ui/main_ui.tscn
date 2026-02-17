@@ -1,0 +1,91 @@
+[gd_scene load_steps=7 format=3]
+
+[ext_resource type="Script" path="res://ui/main_ui.gd" id="1"]
+[ext_resource type="Theme" path="res://ui/theme/claim_theme.tres" id="7"]
+[ext_resource type="PackedScene" path="res://ui/tabs/dashboard_tab.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://ui/tabs/fleet_tab.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://ui/tabs/workers_tab.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://ui/tabs/market_tab.tscn" id="5"]
+[ext_resource type="PackedScene" path="res://ui/tabs/solar_map_tab.tscn" id="6"]
+
+[node name="MainUI" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+theme = ExtResource("7")
+
+[node name="VBox" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="TopBar" type="PanelContainer" parent="VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 56)
+
+[node name="HBox" type="HBoxContainer" parent="VBox/TopBar"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="GameTitle" type="Label" parent="VBox/TopBar/HBox"]
+layout_mode = 2
+text = "CLAIM"
+theme_override_font_sizes/font_size = 22
+
+[node name="Spacer" type="Control" parent="VBox/TopBar/HBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="MoneyDisplay" type="Label" parent="VBox/TopBar/HBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "$10,000"
+theme_override_font_sizes/font_size = 22
+
+[node name="Spacer2" type="Control" parent="VBox/TopBar/HBox"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SettingsBtn" type="Button" parent="VBox/TopBar/HBox"]
+layout_mode = 2
+text = "Settings"
+
+[node name="SaveBtn" type="Button" parent="VBox/TopBar/HBox"]
+layout_mode = 2
+text = "Save"
+
+[node name="ExitBtn" type="Button" parent="VBox/TopBar/HBox"]
+layout_mode = 2
+text = "Exit"
+
+[node name="TabContainer" type="TabContainer" parent="VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+tabs_position = 1
+
+[node name="HQ" parent="VBox/TabContainer" instance=ExtResource("2")]
+layout_mode = 2
+
+[node name="Fleet" parent="VBox/TabContainer" instance=ExtResource("3")]
+layout_mode = 2
+
+[node name="Crew" parent="VBox/TabContainer" instance=ExtResource("4")]
+layout_mode = 2
+
+[node name="Market" parent="VBox/TabContainer" instance=ExtResource("5")]
+layout_mode = 2
+
+[node name="Map" parent="VBox/TabContainer" instance=ExtResource("6")]
+layout_mode = 2
+
+[connection signal="pressed" from="VBox/TopBar/HBox/SettingsBtn" to="." method="_on_settings_pressed"]
+[connection signal="pressed" from="VBox/TopBar/HBox/SaveBtn" to="." method="_on_save_pressed"]
+[connection signal="pressed" from="VBox/TopBar/HBox/ExitBtn" to="." method="_on_exit_pressed"]
