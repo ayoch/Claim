@@ -12,6 +12,7 @@ var _filter_type: int = -1  # -1 = all, otherwise AsteroidData.BodyType value
 var _needs_full_rebuild: bool = true
 var _progress_bars: Dictionary = {}  # Ship -> ProgressBar
 var _status_labels: Dictionary = {}  # Ship -> Label
+var _detail_labels: Dictionary = {}  # Ship -> Label
 
 func _ready() -> void:
 	dispatch_popup.visible = false
@@ -31,7 +32,7 @@ func _on_tick(_dt: float) -> void:
 		if not dispatch_popup.visible:
 			_rebuild_ships()
 		return
-	# Just update progress bars and status labels in place
+	# Just update progress bars, status labels, and fuel in place
 	for ship: Ship in _progress_bars:
 		var bar: ProgressBar = _progress_bars[ship]
 		if ship.current_mission and is_instance_valid(bar):
@@ -40,10 +41,15 @@ func _on_tick(_dt: float) -> void:
 		var label: Label = _status_labels[ship]
 		if ship.current_mission and is_instance_valid(label):
 			label.text = ship.current_mission.get_status_text()
+	for ship: Ship in _detail_labels:
+		var label: Label = _detail_labels[ship]
+		if is_instance_valid(label):
+			label.text = _build_details_text(ship)
 
 func _rebuild_ships() -> void:
 	_progress_bars.clear()
 	_status_labels.clear()
+	_detail_labels.clear()
 	for child in ships_list.get_children():
 		child.queue_free()
 
@@ -69,13 +75,6 @@ func _rebuild_ships() -> void:
 			dispatch_btn.custom_minimum_size = Vector2(0, 44)
 			dispatch_btn.pressed.connect(_start_dispatch.bind(ship))
 			header.add_child(dispatch_btn)
-
-			if not GameState.equipment_inventory.is_empty():
-				var install_btn := Button.new()
-				install_btn.text = "Install Equip"
-				install_btn.custom_minimum_size = Vector2(0, 44)
-				install_btn.pressed.connect(_show_install.bind(ship))
-				header.add_child(install_btn)
 		else:
 			var status := Label.new()
 			status.text = ship.current_mission.get_status_text()
@@ -86,13 +85,19 @@ func _rebuild_ships() -> void:
 		vbox.add_child(header)
 
 		var details := Label.new()
-		var fuel_text := ""
-		if GameState.settings.get("auto_refuel", true):
-			fuel_text = "  |  Fuel: %.0f/%.0f" % [ship.fuel, ship.fuel_capacity]
-		details.text = "Thrust: %.1fg  |  Cargo: %.0ft  |  Equip: %d%s" % [
-			ship.thrust_g, ship.cargo_capacity, ship.equipment.size(), fuel_text
-		]
+		details.text = _build_details_text(ship)
 		vbox.add_child(details)
+		_detail_labels[ship] = details
+
+		# Show installed equipment names
+		if not ship.equipment.is_empty():
+			var equip_names: Array[String] = []
+			for e in ship.equipment:
+				equip_names.append(e.equipment_name)
+			var equip_label := Label.new()
+			equip_label.text = "Equipped: %s" % ", ".join(equip_names)
+			equip_label.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
+			vbox.add_child(equip_label)
 
 		if not ship.is_docked and ship.current_mission:
 			var progress := ProgressBar.new()
@@ -257,20 +262,28 @@ func _show_worker_selection() -> void:
 	var sep := HSeparator.new()
 	dispatch_content.add_child(sep)
 
+	var crew_label := Label.new()
+	crew_label.text = "Minimum crew: %d" % _selected_ship.min_crew
+	crew_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	dispatch_content.add_child(crew_label)
+
 	var available := GameState.get_available_workers()
-	if available.is_empty():
+	if available.size() < _selected_ship.min_crew:
 		var label := Label.new()
-		label.text = "No available workers! Hire some first."
+		label.text = "Not enough workers! Need %d, have %d available. Hire more first." % [
+			_selected_ship.min_crew, available.size()
+		]
 		label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		dispatch_content.add_child(label)
 	else:
-		# Auto-select: if only 1 worker, select them; otherwise pre-select last crew
+		# Auto-select: pre-select last crew, or first min_crew workers
 		var should_preselect := func(worker: Worker) -> bool:
-			if available.size() == 1:
-				return true
-			if _selected_ship and _selected_ship.last_crew.size() > 0:
+			if _selected_ship.last_crew.size() > 0:
 				return worker in _selected_ship.last_crew
-			return false
+			# No history: select the first min_crew workers
+			var idx := available.find(worker)
+			return idx >= 0 and idx < _selected_ship.min_crew
 
 		for worker in available:
 			var preselect: bool = should_preselect.call(worker)
@@ -345,8 +358,11 @@ func _update_estimate_display() -> void:
 	if not est_label:
 		return
 
-	if _selected_workers.is_empty():
-		est_label.text = "Select workers to see estimate"
+	if _selected_workers.size() < _selected_ship.min_crew:
+		est_label.text = "Need at least %d crew (%d selected)" % [
+			_selected_ship.min_crew, _selected_workers.size()
+		]
+		est_label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
 		return
 
 	var est := AsteroidData.estimate_mission(
@@ -397,7 +413,7 @@ func _update_estimate_display() -> void:
 		est_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 
 func _confirm_dispatch() -> void:
-	if _selected_workers.is_empty():
+	if _selected_workers.size() < _selected_ship.min_crew:
 		return
 	# Check fuel
 	if GameState.settings.get("auto_refuel", true):
@@ -415,33 +431,11 @@ func _confirm_dispatch() -> void:
 	dispatch_popup.visible = false
 	_mark_dirty()
 
-func _show_install(ship: Ship) -> void:
-	_clear_dispatch_content()
-
-	var title := Label.new()
-	title.text = "Install Equipment on " + ship.ship_name
-	title.add_theme_font_size_override("font_size", 20)
-	dispatch_content.add_child(title)
-
-	for equip in GameState.equipment_inventory:
-		var btn := Button.new()
-		btn.text = "%s  |  %.2fx mining" % [equip.equipment_name, equip.mining_bonus]
-		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		btn.custom_minimum_size = Vector2(0, 44)
-		btn.pressed.connect(func() -> void:
-			GameState.install_equipment(ship, equip)
-			dispatch_popup.visible = false
-			_mark_dirty()
-		)
-		dispatch_content.add_child(btn)
-
-	var cancel := Button.new()
-	cancel.text = "Cancel"
-	cancel.custom_minimum_size = Vector2(0, 44)
-	cancel.pressed.connect(func() -> void: dispatch_popup.visible = false)
-	dispatch_content.add_child(cancel)
-
-	dispatch_popup.visible = true
+func _build_details_text(ship: Ship) -> String:
+	return "Thrust: %.1fg  |  Cargo: %.0ft  |  Fuel: %.0f/%.0f  |  Equip: %d/%d (%.2fx)" % [
+		ship.thrust_g, ship.cargo_capacity, ship.fuel, ship.fuel_capacity,
+		ship.equipment.size(), ship.max_equipment_slots, ship.get_mining_multiplier()
+	]
 
 func _clear_dispatch_content() -> void:
 	for child in dispatch_content.get_children():

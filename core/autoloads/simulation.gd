@@ -38,6 +38,7 @@ func _process_missions(dt: float) -> void:
 
 		match mission.status:
 			Mission.Status.TRANSIT_OUT:
+				_burn_fuel(mission, dt)
 				if mission.elapsed_ticks >= mission.transit_time:
 					mission.status = Mission.Status.MINING
 					mission.elapsed_ticks = 0.0
@@ -51,8 +52,13 @@ func _process_missions(dt: float) -> void:
 					EventBus.mission_phase_changed.emit(mission)
 
 			Mission.Status.TRANSIT_BACK:
+				_burn_fuel(mission, dt)
 				if mission.elapsed_ticks >= mission.transit_time:
 					GameState.complete_mission(mission)
+
+func _burn_fuel(mission: Mission, dt: float) -> void:
+	var ship := mission.ship
+	ship.fuel = maxf(ship.fuel - mission.fuel_per_tick * dt, 0.0)
 
 func _mine_tick(mission: Mission, _dt: float) -> void:
 	var ship := mission.ship

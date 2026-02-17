@@ -31,6 +31,7 @@ func _init_starter_ship() -> void:
 	starter.cargo_capacity = 100.0
 	starter.fuel_capacity = 200.0
 	starter.fuel = 200.0
+	starter.min_crew = 3
 	ships.append(starter)
 
 func add_resource(ore_type: ResourceTypes.OreType, amount: float) -> void:
@@ -92,6 +93,11 @@ func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[W
 	var dist := Brachistochrone.distance_to(asteroid)
 	mission.transit_time = Brachistochrone.transit_time(dist, ship.thrust_g)
 	mission.elapsed_ticks = 0.0
+
+	# Calculate fuel burn rate: total fuel for round trip / total transit ticks
+	var total_fuel := ship.calc_fuel_for_distance(dist)
+	var total_transit_ticks := mission.transit_time * 2.0
+	mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
 
 	ship.current_mission = mission
 	ship.current_cargo.clear()

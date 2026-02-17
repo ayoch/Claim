@@ -15,6 +15,7 @@ enum Status {
 @export var transit_time: float = 0.0     # ticks for one-way transit
 @export var elapsed_ticks: float = 0.0    # ticks elapsed in current phase
 @export var mining_duration: float = 30.0 # ticks to mine before returning
+@export var fuel_per_tick: float = 0.0    # fuel consumed per tick during transit
 
 func get_progress() -> float:
 	match status:

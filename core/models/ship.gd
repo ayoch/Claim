@@ -8,6 +8,8 @@ const FUEL_COST_PER_UNIT: float = 5.0  # $ per unit of fuel
 @export var cargo_capacity: float = 100.0 # tons
 @export var fuel_capacity: float = 200.0  # fuel units
 @export var fuel: float = 200.0           # current fuel
+@export var min_crew: int = 3             # minimum crew to dispatch
+@export var max_equipment_slots: int = 2  # equipment slot limit
 @export var current_cargo: Dictionary = {} # OreType -> tons
 @export var equipment: Array[Equipment] = []
 
