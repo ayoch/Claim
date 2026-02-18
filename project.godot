@@ -11,15 +11,16 @@ config_version=5
 [application]
 
 config/name="Claim"
+run/main_scene="res://ui/main_ui.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
-run/main_scene="res://ui/main_ui.tscn"
 
 [autoload]
 
 EventBus="*res://core/autoloads/event_bus.gd"
 GameState="*res://core/autoloads/game_state.gd"
 Simulation="*res://core/autoloads/simulation.gd"
+TimeScale="*res://core/autoloads/time_scale.gd"
 
 [display]
 

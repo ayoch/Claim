@@ -1,7 +1,7 @@
 extends Node2D
 
 const AU_PIXELS: float = 200.0
-const MOVE_SMOOTHING: float = 8.0  # lerp speed for smooth movement
+const MOVE_SMOOTHING: float = 12.0  # base lerp speed for smooth movement
 
 var mission: Mission = null
 var trade_mission: TradeMission = null
@@ -43,7 +43,10 @@ func _process(delta: float) -> void:
 	visible = true
 	_update_target()
 	# Smooth interpolation toward the target each frame
-	position = position.lerp(_target_pos, minf(MOVE_SMOOTHING * delta, 1.0))
+	# Use square root scaling so high speeds don't cause instant snapping
+	var speed_scale := sqrt(TimeScale.speed_multiplier)
+	var adjusted_lerp_speed := MOVE_SMOOTHING * speed_scale
+	position = position.lerp(_target_pos, minf(adjusted_lerp_speed * delta, 1.0))
 	queue_redraw()
 
 func _update_target() -> void:

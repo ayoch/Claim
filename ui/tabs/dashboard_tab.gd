@@ -75,13 +75,20 @@ func _process(delta: float) -> void:
 			continue
 
 		var target_progress: float = 0.0
+		var use_instant_update := false
+
 		if mission_or_trade is Mission:
 			target_progress = mission_or_trade.get_progress() * 100.0
+			# Instant update during mining so it matches ore accumulation
+			use_instant_update = (mission_or_trade.status == Mission.Status.MINING)
 		elif mission_or_trade is TradeMission:
 			target_progress = mission_or_trade.get_progress() * 100.0
 
-		# Smooth lerp toward target
-		progress_bar.value = lerp(progress_bar.value, target_progress, PROGRESS_LERP_SPEED * delta)
+		# Instant update during mining, smooth lerp otherwise
+		if use_instant_update:
+			progress_bar.value = target_progress
+		else:
+			progress_bar.value = lerp(progress_bar.value, target_progress, PROGRESS_LERP_SPEED * delta)
 
 func _refresh_all() -> void:
 	_on_money_changed(GameState.money)

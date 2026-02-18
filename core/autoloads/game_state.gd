@@ -15,6 +15,7 @@ var fabrication_queue: Array[Equipment] = []  # Equipment being fabricated
 var asteroids: Array[AsteroidData] = []
 var settings: Dictionary = {
 	"auto_refuel": true,
+	"show_unreachable_destinations": false,
 }
 
 # Phase 2: Market

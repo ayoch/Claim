@@ -697,12 +697,4 @@ func _find_catalog_entry(equipment_name: String) -> Dictionary:
 	return {}
 
 func _format_time(ticks: float) -> String:
-	var total_seconds := int(ticks)
-	var hours := total_seconds / 3600
-	var minutes := (total_seconds % 3600) / 60
-	var seconds := total_seconds % 60
-	if hours > 0:
-		return "%dh %dm" % [hours, minutes]
-	elif minutes > 0:
-		return "%dm %ds" % [minutes, seconds]
-	return "%ds" % seconds
+	return TimeScale.format_time(ticks)

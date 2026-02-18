@@ -1,6 +1,7 @@
 extends Node
 
-var game_speed: float = 5.0  # Fast fixed speed for testing
+# Note: game_speed is now controlled by TimeScale autoload (1/2 keys)
+# Default is 1.0, but speeds up to 5x for development
 
 var _tick_accumulator: float = 0.0
 const TICK_INTERVAL: float = 1.0  # 1 second per tick at 1x speed
@@ -27,6 +28,7 @@ const MINING_VARIANCE_MAX: float = 1.3
 const SURVEY_CHANCE: float = 0.15
 
 func _process(delta: float) -> void:
+	var game_speed := TimeScale.speed_multiplier
 	if game_speed <= 0.0:
 		return
 

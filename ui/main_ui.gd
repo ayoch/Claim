@@ -48,6 +48,15 @@ func _show_settings() -> void:
 	)
 	vbox.add_child(refuel_check)
 
+	var unreachable_check := CheckBox.new()
+	unreachable_check.text = "Show unreachable destinations"
+	unreachable_check.custom_minimum_size = Vector2(0, 44)
+	unreachable_check.button_pressed = GameState.settings.get("show_unreachable_destinations", false)
+	unreachable_check.toggled.connect(func(on: bool) -> void:
+		GameState.settings["show_unreachable_destinations"] = on
+	)
+	vbox.add_child(unreachable_check)
+
 	var close_btn := Button.new()
 	close_btn.text = "Close"
 	close_btn.custom_minimum_size = Vector2(0, 44)

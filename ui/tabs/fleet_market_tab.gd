@@ -21,6 +21,10 @@ var _cargo_labels: Dictionary = {}  # Ship -> Label for cargo display
 const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catch up
 var _dispatch_refresh_timer: float = 0.0
 const DISPATCH_REFRESH_INTERVAL: float = 2.0  # Refresh dispatch popup every 2 seconds
+var _on_selection_screen: bool = false  # Track if we're on the initial destination selection screen
+var _on_estimate_screen: bool = false  # Track if we're on the worker selection / estimate screen
+var _saved_colonies_scroll: float = 0.0  # Preserve scroll position across refreshes
+var _saved_mining_scroll: float = 0.0  # Preserve scroll position across refreshes
 
 func _ready() -> void:
 	dispatch_popup.visible = false
@@ -53,11 +57,23 @@ func _process(delta: float) -> void:
 		var bar: ProgressBar = _progress_bars[ship]
 		if is_instance_valid(bar):
 			var target_progress := 0.0
-			if ship.current_mission:
+			var use_instant_update := false
+
+			if ship in GameState.refuel_missions:
+				var refuel_data: Dictionary = GameState.refuel_missions[ship]
+				var refuel_progress: float = float(refuel_data["elapsed_ticks"]) / float(refuel_data["transit_time"])
+				target_progress = refuel_progress * 100.0
+			elif ship.current_mission:
 				target_progress = ship.current_mission.get_progress() * 100.0
+				# Instant update during mining so it matches ore accumulation
+				use_instant_update = (ship.current_mission.status == Mission.Status.MINING)
 			elif ship.current_trade_mission:
 				target_progress = ship.current_trade_mission.get_progress() * 100.0
-			bar.value = lerp(bar.value, target_progress, PROGRESS_LERP_SPEED * delta)
+
+			if use_instant_update:
+				bar.value = target_progress
+			else:
+				bar.value = lerp(bar.value, target_progress, PROGRESS_LERP_SPEED * delta)
 
 func _on_tick(dt: float) -> void:
 	# Refresh dispatch popup periodically to update orbital positions and fuel estimates
@@ -65,9 +81,11 @@ func _on_tick(dt: float) -> void:
 		_dispatch_refresh_timer += dt
 		if _dispatch_refresh_timer >= DISPATCH_REFRESH_INTERVAL:
 			_dispatch_refresh_timer = 0.0
-			# Refresh destination list to show updated distances/fuel
-			_show_asteroid_selection()
-			return
+			# Only refresh estimate screen, not selection screen (causes layout shifts)
+			if _on_estimate_screen:
+				# Refresh estimate display to show updated calculations
+				_update_estimate_display()
+				return
 
 	if _needs_full_rebuild:
 		_needs_full_rebuild = false
@@ -190,7 +208,13 @@ func _rebuild_ships() -> void:
 			_status_labels[ship] = status
 		else:
 			var status := Label.new()
-			if ship.current_mission:
+			# Check for refuel mission first
+			if ship in GameState.refuel_missions:
+				var refuel_data: Dictionary = GameState.refuel_missions[ship]
+				var progress: float = float(refuel_data["elapsed_ticks"]) / float(refuel_data["transit_time"])
+				status.text = "Refueling: %d%%" % int(progress * 100)
+				status.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
+			elif ship.current_mission:
 				status.text = ship.current_mission.get_status_text()
 				status.add_theme_color_override("font_color", Color(0.8, 0.7, 0.2))
 			elif ship.current_trade_mission:
@@ -369,7 +393,11 @@ func _rebuild_ships() -> void:
 		# === PROGRESS BAR ===
 		if not ship.is_docked and not ship.is_idle_remote and not ship.is_derelict:
 			var progress := ProgressBar.new()
-			if ship.current_mission:
+			if ship in GameState.refuel_missions:
+				var refuel_data: Dictionary = GameState.refuel_missions[ship]
+				var refuel_progress: float = float(refuel_data["elapsed_ticks"]) / float(refuel_data["transit_time"])
+				progress.value = refuel_progress * 100.0
+			elif ship.current_mission:
 				progress.value = ship.current_mission.get_progress() * 100.0
 			elif ship.current_trade_mission:
 				progress.value = ship.current_trade_mission.get_progress() * 100.0
@@ -408,6 +436,17 @@ func _start_dispatch(ship: Ship) -> void:
 	_show_asteroid_selection()
 
 func _show_asteroid_selection() -> void:
+	_on_selection_screen = true  # We're on the main selection screen
+	_on_estimate_screen = false  # Not on estimate screen
+
+	# Save scroll positions before clearing (if they exist)
+	for child in dispatch_content.get_children():
+		if child is ScrollContainer:
+			if child.name == "ColoniesScroll":
+				_saved_colonies_scroll = child.scroll_vertical
+			elif child.name == "MiningScroll":
+				_saved_mining_scroll = child.scroll_vertical
+
 	_clear_dispatch_content()
 
 	var title := Label.new()
@@ -425,22 +464,24 @@ func _show_asteroid_selection() -> void:
 	origin_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 	dispatch_content.add_child(origin_label)
 
-	# Scrollable list
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size = Vector2(0, 400)
-
-	var list_vbox := VBoxContainer.new()
-	list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list_vbox.add_theme_constant_override("separation", 6)
-
 	# If ship has cargo, show colonies first
 	if cargo_total > 0:
+		# Fixed header for market destinations
 		var colonies_header := Label.new()
 		colonies_header.text = "MARKET DESTINATIONS (Best Profit First)"
 		colonies_header.add_theme_font_size_override("font_size", 18)
 		colonies_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
-		list_vbox.add_child(colonies_header)
+		dispatch_content.add_child(colonies_header)
+
+		# Scrollable list for colonies
+		var colonies_scroll := ScrollContainer.new()
+		colonies_scroll.name = "ColoniesScroll"
+		colonies_scroll.size_flags_vertical = Control.SIZE_FILL
+		colonies_scroll.custom_minimum_size = Vector2(0, 250)
+
+		var colonies_vbox := VBoxContainer.new()
+		colonies_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		colonies_vbox.add_theme_constant_override("separation", 6)
 
 		# Sort colonies by profit (revenue - fuel cost)
 		var sorted_colonies := GameState.colonies.duplicate()
@@ -481,7 +522,9 @@ func _show_asteroid_selection() -> void:
 				cargo_breakdown += "%s: $%s" % [ResourceTypes.get_ore_name(ore_type), _format_number(int(amount * price))]
 
 			var fuel_status := ""
-			var has_insufficient_fuel := fuel_needed > _selected_ship.fuel
+			# If ship is at a colony, assume it can refuel before departing
+			var available_fuel := _selected_ship.get_effective_fuel_capacity() if _selected_ship.is_idle_remote else _selected_ship.fuel
+			var has_insufficient_fuel := fuel_needed > available_fuel
 			var has_cargo := cargo_mass > 0
 
 			# Calculate fuel route if needed
@@ -490,9 +533,14 @@ func _show_asteroid_selection() -> void:
 			if has_insufficient_fuel:
 				fuel_route = _calculate_fuel_route(colony)
 				if fuel_route.is_empty():
-					# Completely unreachable - skip this destination
-					continue
-				fuel_status = " [NEEDS REFUEL]"
+					# Completely unreachable
+					is_unreachable = true
+					# Skip if setting is disabled
+					if not GameState.settings.get("show_unreachable_destinations", false):
+						continue
+					fuel_status = " [UNREACHABLE - insufficient fuel capacity]"
+				else:
+					fuel_status = " [NEEDS REFUEL]"
 			elif fuel_needed > _selected_ship.fuel * 0.9:
 				fuel_status = " [CRITICAL FUEL - %.0f needed]" % fuel_needed
 
@@ -505,22 +553,49 @@ func _show_asteroid_selection() -> void:
 			btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			btn.focus_mode = Control.FOCUS_NONE
+			btn.flat = true
+			# Disable all focus/hover visual effects
+			var empty_style := StyleBoxEmpty.new()
+			btn.add_theme_stylebox_override("focus", empty_style)
 			btn.text = "%s (MARKET)\n%.2f AU | %s | Revenue: $%s%s\n%s" % [
 				colony.colony_name, dist, _format_time(transit),
 				_format_number(revenue), fuel_status, cargo_breakdown
 			]
+			btn.disabled = is_unreachable  # Disable if unreachable
 			btn.pressed.connect(func() -> void:
 				_confirm_colony_dispatch(colony)
 			)
 			colony_row.add_child(btn)
 
-			# Show fuel stop route if needed
+			# Show fuel stop route as clickable buttons
 			if not fuel_route.is_empty():
 				var route_label := Label.new()
-				route_label.text = "  Route: " + " → ".join(fuel_route) + " → " + colony.colony_name
+				route_label.text = "  Fuel stops needed:"
 				route_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
-				route_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 				colony_row.add_child(route_label)
+
+				var stops_hbox := HBoxContainer.new()
+				stops_hbox.add_theme_constant_override("separation", 8)
+				for stop_name in fuel_route:
+					# Find the colony by name
+					var stop_colony: Colony = null
+					for c in GameState.colonies:
+						if c.colony_name == stop_name:
+							stop_colony = c
+							break
+
+					if stop_colony:
+						var stop_btn := Button.new()
+						stop_btn.text = stop_name
+						stop_btn.custom_minimum_size = Vector2(0, 36)
+						stop_btn.focus_mode = Control.FOCUS_NONE
+						stop_btn.pressed.connect(func() -> void:
+							_confirm_colony_dispatch(stop_colony)
+						)
+						stops_hbox.add_child(stop_btn)
+
+				colony_row.add_child(stops_hbox)
 
 			# ALWAYS show action buttons if ship has cargo
 			if has_cargo:
@@ -537,6 +612,8 @@ func _show_asteroid_selection() -> void:
 				smart_btn.text = "Dump to Fit"
 				smart_btn.custom_minimum_size = Vector2(0, 36)
 				smart_btn.tooltip_text = "Jettison minimum cargo needed to make this trip"
+				smart_btn.focus_mode = Control.FOCUS_NONE
+				smart_btn.flat = true
 				smart_btn.pressed.connect(func() -> void:
 					var jettisoned := GameState.jettison_cargo_for_trip(_selected_ship, dist, 0.0)  # Empty on return
 					_show_asteroid_selection()  # Refresh the list
@@ -549,6 +626,8 @@ func _show_asteroid_selection() -> void:
 				dump_all_btn.text = "Dump All (%.0ft)" % cargo_mass
 				dump_all_btn.custom_minimum_size = Vector2(0, 36)
 				dump_all_btn.tooltip_text = "Jettison all cargo (lost forever)"
+				dump_all_btn.focus_mode = Control.FOCUS_NONE
+				dump_all_btn.flat = true
 				dump_all_btn.pressed.connect(func() -> void:
 					GameState.jettison_all_cargo(_selected_ship)
 					_show_asteroid_selection()  # Refresh the list
@@ -557,19 +636,27 @@ func _show_asteroid_selection() -> void:
 
 				colony_row.add_child(jettison_row)
 
-			list_vbox.add_child(colony_row)
+			colonies_vbox.add_child(colony_row)
+
+		colonies_scroll.add_child(colonies_vbox)
+		dispatch_content.add_child(colonies_scroll)
+
+		# Restore scroll position after UI has been laid out
+		if _saved_colonies_scroll > 0:
+			var saved_pos := _saved_colonies_scroll
+			colonies_scroll.call_deferred("set", "scroll_vertical", int(saved_pos))
 
 		var sep := HSeparator.new()
-		list_vbox.add_child(sep)
+		dispatch_content.add_child(sep)
 
-	# Mining destinations header
+	# Fixed header for mining destinations
 	var mining_header := Label.new()
 	mining_header.text = "MINING DESTINATIONS"
 	mining_header.add_theme_font_size_override("font_size", 18)
 	mining_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
-	list_vbox.add_child(mining_header)
+	dispatch_content.add_child(mining_header)
 
-	# Filter/sort controls
+	# Fixed filter/sort controls
 	var controls := HBoxContainer.new()
 	controls.add_theme_constant_override("separation", 8)
 
@@ -578,6 +665,7 @@ func _show_asteroid_selection() -> void:
 	sort_btn.add_item("Nearest")
 	sort_btn.add_item("Name A-Z")
 	sort_btn.custom_minimum_size = Vector2(0, 44)
+	sort_btn.focus_mode = Control.FOCUS_NONE
 	sort_btn.item_selected.connect(func(idx: int) -> void:
 		_sort_by = ["profit", "distance", "name"][idx]
 		_show_asteroid_selection()
@@ -593,6 +681,7 @@ func _show_asteroid_selection() -> void:
 	for bt in AsteroidData.BodyType.values():
 		filter_btn.add_item(AsteroidData.BODY_TYPE_NAMES[bt])
 	filter_btn.custom_minimum_size = Vector2(0, 44)
+	filter_btn.focus_mode = Control.FOCUS_NONE
 	filter_btn.selected = 0 if _filter_type == -1 else _filter_type + 1
 	filter_btn.item_selected.connect(func(idx: int) -> void:
 		_filter_type = idx - 1  # -1 = all
@@ -607,6 +696,7 @@ func _show_asteroid_selection() -> void:
 	market_toggle.text = "Sell at Dest. Markets" if _sell_at_destination_markets else "Return w/ Ore"
 	market_toggle.custom_minimum_size = Vector2(180, 44)
 	market_toggle.tooltip_text = "Toggle: Return with ore vs sell at markets near destination"
+	market_toggle.focus_mode = Control.FOCUS_NONE
 	market_toggle.toggled.connect(func(pressed: bool) -> void:
 		_sell_at_destination_markets = pressed
 		market_toggle.text = "Sell at Dest. Markets" if pressed else "Return w/ Ore"
@@ -614,7 +704,17 @@ func _show_asteroid_selection() -> void:
 	)
 	controls.add_child(market_toggle)
 
-	list_vbox.add_child(controls)
+	dispatch_content.add_child(controls)
+
+	# Scrollable list for mining destinations
+	var mining_scroll := ScrollContainer.new()
+	mining_scroll.name = "MiningScroll"
+	mining_scroll.size_flags_vertical = Control.SIZE_FILL
+	mining_scroll.custom_minimum_size = Vector2(0, 400)
+
+	var mining_vbox := VBoxContainer.new()
+	mining_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mining_vbox.add_theme_constant_override("separation", 6)
 
 	# Build a dummy worker list for estimation (use available workers)
 	var est_workers := GameState.get_available_workers()
@@ -631,8 +731,10 @@ func _show_asteroid_selection() -> void:
 		var asteroid_pos: Vector2 = asteroid.get_position_au()
 		var dist_outbound := _selected_ship.position_au.distance_to(asteroid_pos)
 
-		# Get base estimate for mining
-		var est := AsteroidData.estimate_mission(asteroid, _selected_ship, est_workers)
+		# Get base estimate for mining (using Brachistochrone as default)
+		var est := AsteroidData.estimate_mission(
+			asteroid, _selected_ship, est_workers, 30.0, Vector2(-999, -999), Mission.TransitMode.BRACHISTOCHRONE
+		)
 
 		# Calculate based on market strategy
 		var return_pos: Vector2
@@ -674,36 +776,68 @@ func _show_asteroid_selection() -> void:
 			revenue = est["revenue"]
 			strategy_label = " (round trip)"
 
-		# Calculate transit times
-		var transit_out := Brachistochrone.transit_time(dist_outbound, _selected_ship.thrust_g)
-		var transit_ret := Brachistochrone.transit_time(dist_return, _selected_ship.thrust_g)
-		var total_transit := transit_out + transit_ret
-
-		# Fuel calculation
+		# Use profit from estimate if returning to ship position (simple case)
+		# Otherwise recalculate for alternate destinations
+		var adjusted_profit: float
+		var total_time: float
+		var total_fuel_needed: float
 		var current_cargo := _selected_ship.get_cargo_total()
-		var fuel_outbound := _selected_ship.calc_fuel_for_distance(dist_outbound, current_cargo)
-		var fuel_return := _selected_ship.calc_fuel_for_distance(dist_return, est["cargo_total"])
-		var total_fuel_needed := fuel_outbound + fuel_return
-		var custom_fuel_cost := total_fuel_needed * Ship.FUEL_COST_PER_UNIT
+		var total_transit: float
 
-		# Wages for total mission time
-		var total_time: float = total_transit + est["mining_time"]
-		var payroll_cycles: float = total_time / 60.0
-		var wage_per_tick := 0.0
-		for w in est_workers:
-			wage_per_tick += w.wage
-		var custom_wage_cost := wage_per_tick * payroll_cycles
+		if absf(dist_outbound - dist_return) < 0.01 and not _sell_at_destination_markets:
+			# Simple round trip - use estimate directly
+			adjusted_profit = est["profit"]
+			total_time = est["total_time"]
+			total_fuel_needed = est.get("fuel_needed", 0.0)
+			# Calculate transit for display
+			var transit_one_way := Brachistochrone.transit_time(dist_outbound, _selected_ship.thrust_g)
+			total_transit = transit_one_way * 2.0
+		else:
+			# Custom destination - recalculate
+			var transit_out := Brachistochrone.transit_time(dist_outbound, _selected_ship.thrust_g)
+			var transit_ret := Brachistochrone.transit_time(dist_return, _selected_ship.thrust_g)
+			total_transit = transit_out + transit_ret
 
-		# Final profit
-		var adjusted_profit := revenue - custom_wage_cost - custom_fuel_cost
+			# Fuel calculation
+			var fuel_outbound := _selected_ship.calc_fuel_for_distance(dist_outbound, current_cargo)
+			var fuel_return := _selected_ship.calc_fuel_for_distance(dist_return, est["cargo_total"])
+			total_fuel_needed = fuel_outbound + fuel_return
+			var custom_fuel_cost := total_fuel_needed * Ship.FUEL_COST_PER_UNIT
+
+			# Wages for total mission time
+			total_time = total_transit + est["mining_time"]
+			var payroll_cycles: float = total_time / 60.0
+			var wage_per_tick := 0.0
+			for w in est_workers:
+				wage_per_tick += w.wage
+			var custom_wage_cost := wage_per_tick * payroll_cycles
+
+			# Final profit
+			adjusted_profit = revenue - custom_wage_cost - custom_fuel_cost
 
 		var fuel_warning := ""
-		var has_insufficient_fuel := total_fuel_needed > _selected_ship.fuel
+		# If ship is at a colony, assume it can refuel before departing
+		var available_fuel := _selected_ship.get_effective_fuel_capacity() if _selected_ship.is_idle_remote else _selected_ship.fuel
+		var has_insufficient_fuel := total_fuel_needed > available_fuel
 		var has_cargo := current_cargo > 0
 
+		# Calculate fuel route if needed (for mining destinations)
+		var fuel_route: Array[String] = []
+		var is_unreachable := false
 		if has_insufficient_fuel:
-			fuel_warning = " [INSUFFICIENT FUEL - WILL STRAND!]"
-		elif total_fuel_needed > _selected_ship.fuel * 0.9:
+			# Calculate fuel route to asteroid position
+			var asteroid_pos := asteroid.get_position_au()
+			fuel_route = _calculate_fuel_route_to_position(asteroid_pos, current_cargo)
+			if fuel_route.is_empty():
+				# Completely unreachable
+				is_unreachable = true
+				# Skip if setting is disabled
+				if not GameState.settings.get("show_unreachable_destinations", false):
+					continue
+				fuel_warning = " [UNREACHABLE - insufficient fuel capacity]"
+			else:
+				fuel_warning = " [NEEDS REFUEL]"
+		elif total_fuel_needed > available_fuel * 0.9:
 			fuel_warning = " [CRITICAL FUEL - %.0f needed]" % total_fuel_needed
 
 		var profit_str := "$%s" % _format_number(int(adjusted_profit))
@@ -713,10 +847,14 @@ func _show_asteroid_selection() -> void:
 		dest_row.add_theme_constant_override("separation", 4)
 
 		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(0, 64)
+		btn.custom_minimum_size = Vector2(0, 80)  # Taller to prevent wrapping issues
 		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.flat = true
+		# Disable all focus/hover visual effects
+		var empty_style := StyleBoxEmpty.new()
+		btn.add_theme_stylebox_override("focus", empty_style)
 
 		# Show distance and strategy
 		var dist_text := ""
@@ -730,16 +868,40 @@ func _show_asteroid_selection() -> void:
 			dist_text, _format_time(total_transit),
 			"+" if adjusted_profit > 0 else "", profit_str, fuel_warning,
 		]
+		btn.disabled = is_unreachable  # Disable if unreachable
 		btn.pressed.connect(func() -> void:
 			_confirm_asteroid_dispatch(asteroid)
 		)
 		dest_row.add_child(btn)
 
-		# Add "Get Fuel" button if destination is unreachable
-		if has_insufficient_fuel:
-			var fuel_btn := _create_get_fuel_button()
-			if fuel_btn:
-				dest_row.add_child(fuel_btn)
+		# Show fuel stop route as clickable buttons
+		if not fuel_route.is_empty():
+			var route_label := Label.new()
+			route_label.text = "  Fuel stops needed:"
+			route_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
+			dest_row.add_child(route_label)
+
+			var stops_hbox := HBoxContainer.new()
+			stops_hbox.add_theme_constant_override("separation", 8)
+			for stop_name in fuel_route:
+				# Find the colony by name
+				var stop_colony: Colony = null
+				for c in GameState.colonies:
+					if c.colony_name == stop_name:
+						stop_colony = c
+						break
+
+				if stop_colony:
+					var stop_btn := Button.new()
+					stop_btn.text = stop_name
+					stop_btn.custom_minimum_size = Vector2(0, 36)
+					stop_btn.focus_mode = Control.FOCUS_NONE
+					stop_btn.pressed.connect(func() -> void:
+						_confirm_colony_dispatch(stop_colony)
+					)
+					stops_hbox.add_child(stop_btn)
+
+			dest_row.add_child(stops_hbox)
 
 		# ALWAYS show action buttons if ship has cargo
 		if has_cargo:
@@ -756,6 +918,8 @@ func _show_asteroid_selection() -> void:
 			smart_btn.text = "Dump to Fit"
 			smart_btn.custom_minimum_size = Vector2(0, 36)
 			smart_btn.tooltip_text = "Jettison minimum cargo needed to make this trip"
+			smart_btn.focus_mode = Control.FOCUS_NONE
+			smart_btn.flat = true
 			var capture_dist_out := dist_outbound
 			var capture_dist_ret := dist_return
 			smart_btn.pressed.connect(func() -> void:
@@ -778,6 +942,8 @@ func _show_asteroid_selection() -> void:
 			dump_all_btn.text = "Dump All (%.0ft)" % current_cargo
 			dump_all_btn.custom_minimum_size = Vector2(0, 36)
 			dump_all_btn.tooltip_text = "Jettison all cargo (lost forever)"
+			dump_all_btn.focus_mode = Control.FOCUS_NONE
+			dump_all_btn.flat = true
 			dump_all_btn.pressed.connect(func() -> void:
 				GameState.jettison_all_cargo(_selected_ship)
 				_show_asteroid_selection()  # Refresh the list
@@ -786,10 +952,15 @@ func _show_asteroid_selection() -> void:
 
 			dest_row.add_child(jettison_row)
 
-		list_vbox.add_child(dest_row)
+		mining_vbox.add_child(dest_row)
 
-	scroll.add_child(list_vbox)
-	dispatch_content.add_child(scroll)
+	mining_scroll.add_child(mining_vbox)
+	dispatch_content.add_child(mining_scroll)
+
+	# Restore scroll position after UI has been laid out
+	if _saved_mining_scroll > 0:
+		var saved_pos := _saved_mining_scroll
+		mining_scroll.call_deferred("set", "scroll_vertical", int(saved_pos))
 
 	var cancel := Button.new()
 	cancel.text = "Cancel"
@@ -830,8 +1001,10 @@ func _calculate_adjusted_profit(asteroid: AsteroidData, est_workers: Array[Worke
 	var asteroid_pos: Vector2 = asteroid.get_position_au()
 	var dist_outbound := _selected_ship.position_au.distance_to(asteroid_pos)
 
-	# Get base estimate for mining
-	var est := AsteroidData.estimate_mission(asteroid, _selected_ship, est_workers)
+	# Get base estimate for mining (using Brachistochrone as default)
+	var est := AsteroidData.estimate_mission(
+		asteroid, _selected_ship, est_workers, 30.0, Vector2(-999, -999), Mission.TransitMode.BRACHISTOCHRONE
+	)
 
 	# Calculate based on market strategy
 	var dist_return: float
@@ -866,7 +1039,12 @@ func _calculate_adjusted_profit(asteroid: AsteroidData, est_workers: Array[Worke
 		dist_return = dist_outbound
 		revenue = est["revenue"]
 
-	# Calculate transit times
+	# Use profit from estimate if returning to ship position (simple case)
+	if absf(dist_outbound - dist_return) < 0.01 and not _sell_at_destination_markets:
+		# Simple round trip - use estimate directly
+		return est["profit"]
+
+	# Custom destination - recalculate
 	var transit_out := Brachistochrone.transit_time(dist_outbound, _selected_ship.thrust_g)
 	var transit_ret := Brachistochrone.transit_time(dist_return, _selected_ship.thrust_g)
 	var total_transit := transit_out + transit_ret
@@ -925,6 +1103,8 @@ func _select_colony_trade(colony: Colony) -> void:
 	_mark_dirty()
 
 func _show_worker_selection() -> void:
+	_on_selection_screen = false  # Left the main selection screen
+	_on_estimate_screen = true  # Now on the estimate screen
 	_clear_dispatch_content()
 
 	var title := Label.new()
@@ -1060,7 +1240,7 @@ func _show_worker_selection() -> void:
 	var confirm := Button.new()
 	confirm.text = "Confirm Dispatch"
 	confirm.custom_minimum_size = Vector2(0, 44)
-	confirm.pressed.connect(_confirm_dispatch)
+	confirm.pressed.connect(_execute_dispatch)
 	btn_row.add_child(confirm)
 
 	var cancel := Button.new()
@@ -1309,12 +1489,7 @@ func _clear_dispatch_content() -> void:
 		child.queue_free()
 
 func _format_time(ticks: float) -> String:
-	var total_seconds := int(ticks)
-	var minutes := total_seconds / 60
-	var seconds := total_seconds % 60
-	if minutes > 0:
-		return "%dm %ds" % [minutes, seconds]
-	return "%ds" % seconds
+	return TimeScale.format_time(ticks)
 
 func _format_number(n: int) -> String:
 	var s := str(abs(n))
@@ -1352,6 +1527,8 @@ func _calculate_colony_profit(colony: Colony) -> int:
 	return revenue - fuel_cost
 
 func _confirm_colony_dispatch(colony: Colony) -> void:
+	_on_selection_screen = false  # Left the main selection screen
+	_on_estimate_screen = false  # Not on estimate screen
 	# Show confirmation dialog before dispatching
 	var colony_pos: Vector2 = colony.get_position_au()
 	var dist := _selected_ship.position_au.distance_to(colony_pos)
@@ -1374,6 +1551,8 @@ func _confirm_colony_dispatch(colony: Colony) -> void:
 	)
 
 func _confirm_asteroid_dispatch(asteroid: AsteroidData) -> void:
+	_on_selection_screen = false  # Left the main selection screen
+	_on_estimate_screen = false  # Not on estimate screen
 	# Show confirmation dialog before dispatching to asteroid
 	_selected_asteroid = asteroid
 	_show_worker_selection()
@@ -1427,10 +1606,12 @@ func _calculate_fuel_route(destination: Colony) -> Array[String]:
 				continue  # Can't reach this colony
 
 			# Check if destination is reachable from this colony (with full fuel)
+			# Use current positions with safety margin to account for orbital motion
 			var dist_colony_to_dest := colony_pos.distance_to(dest_pos)
 			var fuel_colony_to_dest := _selected_ship.calc_fuel_for_distance(dist_colony_to_dest, cargo_mass)
-			if fuel_colony_to_dest > max_fuel:
-				continue  # Can't reach destination from this colony even with full tank
+			# Add 20% safety margin for orbital motion during transit
+			if fuel_colony_to_dest > max_fuel * 0.8:
+				continue  # Can't reach destination from this colony with safety margin
 
 			# Score: prefer colonies closer to destination
 			var score := -dist_colony_to_dest
@@ -1447,13 +1628,85 @@ func _calculate_fuel_route(destination: Colony) -> Array[String]:
 		pos = best_colony.get_position_au()
 		fuel = max_fuel  # Refuel at colony
 
-		# Check if we can now reach destination
+		# Check if we can now reach destination (with safety margin)
 		var dist_to_dest := pos.distance_to(dest_pos)
 		var fuel_to_dest := _selected_ship.calc_fuel_for_distance(dist_to_dest, cargo_mass)
-		if fuel_to_dest <= fuel:
+		# Use 80% of fuel capacity as threshold to provide safety margin
+		if fuel_to_dest <= fuel * 0.8:
 			return route  # Success!
 
 	return []  # Couldn't find route within MAX_HOPS
+
+func _calculate_fuel_route_to_position(dest_pos: Vector2, cargo_mass: float) -> Array[String]:
+	# Calculate route with fuel stops to reach a specific position (for asteroids)
+	# Similar to _calculate_fuel_route but works with a Vector2 position instead of Colony
+	const PROXIMITY_THRESHOLD := 0.1
+	const MAX_HOPS := 3
+
+	var current_pos := _selected_ship.position_au
+	var current_fuel := _selected_ship.fuel
+	var max_fuel := _selected_ship.get_effective_fuel_capacity()
+
+	# Check if we can reach directly
+	var direct_dist := current_pos.distance_to(dest_pos)
+	var direct_fuel := _selected_ship.calc_fuel_for_distance(direct_dist, cargo_mass)
+	if direct_fuel <= current_fuel:
+		return []  # No fuel stops needed
+
+	# Find route with fuel stops
+	var route: Array[String] = []
+	var visited: Array[Colony] = []
+	var pos := current_pos
+	var fuel := current_fuel
+
+	for hop in range(MAX_HOPS):
+		var best_colony: Colony = null
+		var best_score := -999999.0
+
+		for colony in GameState.colonies:
+			if colony in visited:
+				continue
+
+			var colony_pos: Vector2 = colony.get_position_au()
+
+			# Skip if it's current location
+			var dist_from_ship := _selected_ship.position_au.distance_to(colony_pos)
+			if dist_from_ship < PROXIMITY_THRESHOLD:
+				continue
+
+			# Check if reachable from current position
+			var dist_to_colony := pos.distance_to(colony_pos)
+			var fuel_to_colony := _selected_ship.calc_fuel_for_distance(dist_to_colony, cargo_mass)
+			if fuel_to_colony > fuel:
+				continue
+
+			# Check if destination position is reachable from this colony
+			var dist_colony_to_dest := colony_pos.distance_to(dest_pos)
+			var fuel_colony_to_dest := _selected_ship.calc_fuel_for_distance(dist_colony_to_dest, cargo_mass)
+			if fuel_colony_to_dest > max_fuel * 0.8:
+				continue
+
+			# Prefer colonies closer to destination
+			var score := -dist_colony_to_dest
+			if score > best_score:
+				best_score = score
+				best_colony = colony
+
+		if not best_colony:
+			return []
+
+		route.append(best_colony.colony_name)
+		visited.append(best_colony)
+		pos = best_colony.get_position_au()
+		fuel = max_fuel
+
+		# Check if we can now reach destination
+		var dist_to_dest := pos.distance_to(dest_pos)
+		var fuel_to_dest := _selected_ship.calc_fuel_for_distance(dist_to_dest, cargo_mass)
+		if fuel_to_dest <= fuel * 0.8:
+			return route
+
+	return []
 
 func _show_confirmation_dialog(message: String, on_confirm: Callable) -> void:
 	# Clear dispatch content and show confirmation
