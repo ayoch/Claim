@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://ui/main_ui.gd" id="1"]
 [ext_resource type="Theme" path="res://ui/theme/claim_theme.tres" id="7"]
@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://ui/tabs/dashboard_tab.tscn" id="2"]
 [ext_resource type="PackedScene" path="res://ui/tabs/fleet_market_tab.tscn" id="3"]
 [ext_resource type="PackedScene" path="res://ui/tabs/workers_tab.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://ui/tabs/ship_outfitting_tab.tscn" id="5"]
 [ext_resource type="PackedScene" path="res://ui/tabs/solar_map_tab.tscn" id="6"]
 [ext_resource type="Shader" path="res://ui/shaders/crt_static.gdshader" id="9"]
 
@@ -105,10 +106,13 @@ tabs_position = 1
 [node name="HQ" parent="VBox/TabContainer" instance=ExtResource("2")]
 layout_mode = 2
 
-[node name="Fleet & Ops" parent="VBox/TabContainer" instance=ExtResource("3")]
+[node name="Fleet" parent="VBox/TabContainer" instance=ExtResource("3")]
 layout_mode = 2
 
 [node name="Crew" parent="VBox/TabContainer" instance=ExtResource("4")]
+layout_mode = 2
+
+[node name="Ships" parent="VBox/TabContainer" instance=ExtResource("5")]
 layout_mode = 2
 
 [node name="Map" parent="VBox/TabContainer" instance=ExtResource("6")]

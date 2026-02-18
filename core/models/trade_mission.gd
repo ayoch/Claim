@@ -21,12 +21,32 @@ enum TransitMode {
 @export var return_position_au: Vector2 = Vector2.ZERO    # where ship returns to
 @export var transit_mode: TransitMode = TransitMode.BRACHISTOCHRONE  # orbit type
 
+# Gravity assist / multi-leg journey support
+@export var outbound_waypoints: Array[Vector2] = []
+@export var outbound_waypoint_planet_ids: Array[int] = []
+@export var outbound_leg_times: Array[float] = []
+@export var outbound_waypoint_index: int = 0
+@export var return_waypoints: Array[Vector2] = []
+@export var return_waypoint_planet_ids: Array[int] = []
+@export var return_leg_times: Array[float] = []
+@export var return_waypoint_index: int = 0
+
 const SELL_DURATION: float = 5.0  # ticks spent at colony selling
 
 func get_progress() -> float:
 	match status:
-		Status.TRANSIT_TO_COLONY, Status.TRANSIT_BACK:
-			return elapsed_ticks / transit_time if transit_time > 0 else 1.0
+		Status.TRANSIT_TO_COLONY:
+			if outbound_leg_times.size() > outbound_waypoint_index:
+				var leg_time: float = outbound_leg_times[outbound_waypoint_index]
+				return elapsed_ticks / leg_time if leg_time > 0 else 1.0
+			else:
+				return elapsed_ticks / transit_time if transit_time > 0 else 1.0
+		Status.TRANSIT_BACK:
+			if return_leg_times.size() > return_waypoint_index:
+				var leg_time: float = return_leg_times[return_waypoint_index]
+				return elapsed_ticks / leg_time if leg_time > 0 else 1.0
+			else:
+				return elapsed_ticks / transit_time if transit_time > 0 else 1.0
 		Status.SELLING:
 			return elapsed_ticks / SELL_DURATION if SELL_DURATION > 0 else 1.0
 		Status.IDLE_AT_COLONY:
@@ -37,16 +57,54 @@ func get_progress() -> float:
 
 func get_status_text() -> String:
 	var mode_suffix := " (Hohmann)" if transit_mode == TransitMode.HOHMANN else ""
+	var slingshot_suffix := ""
+
+	if status == Status.TRANSIT_TO_COLONY and outbound_waypoint_planet_ids.size() > 0:
+		slingshot_suffix = " [Slingshot]"
+	elif status == Status.TRANSIT_BACK and return_waypoint_planet_ids.size() > 0:
+		slingshot_suffix = " [Slingshot]"
 
 	match status:
 		Status.TRANSIT_TO_COLONY:
-			return "Trading: en route to %s%s" % [colony.colony_name, mode_suffix]
+			return "Trading: en route to %s%s%s" % [colony.colony_name, mode_suffix, slingshot_suffix]
 		Status.SELLING:
 			return "Selling at %s" % colony.colony_name
 		Status.IDLE_AT_COLONY:
 			return "Idle at %s" % colony.colony_name
 		Status.TRANSIT_BACK:
-			return "Returning from %s%s" % [colony.colony_name, mode_suffix]
+			return "Returning from %s%s%s" % [colony.colony_name, mode_suffix, slingshot_suffix]
 		Status.COMPLETED:
 			return "Trade complete at %s" % colony.colony_name
 	return "Unknown"
+
+func get_current_leg_start_pos() -> Vector2:
+	match status:
+		Status.TRANSIT_TO_COLONY:
+			if outbound_waypoint_index == 0:
+				return origin_position_au
+			elif outbound_waypoint_index > 0 and outbound_waypoint_index <= outbound_waypoints.size():
+				return outbound_waypoints[outbound_waypoint_index - 1]
+			return origin_position_au
+		Status.TRANSIT_BACK:
+			if return_waypoint_index == 0:
+				return colony.get_position_au() if colony else origin_position_au
+			elif return_waypoint_index > 0 and return_waypoint_index <= return_waypoints.size():
+				return return_waypoints[return_waypoint_index - 1]
+			return colony.get_position_au() if colony else origin_position_au
+		_:
+			return origin_position_au
+
+func get_current_leg_end_pos() -> Vector2:
+	match status:
+		Status.TRANSIT_TO_COLONY:
+			if outbound_waypoint_index < outbound_waypoints.size():
+				return outbound_waypoints[outbound_waypoint_index]
+			else:
+				return colony.get_position_au() if colony else origin_position_au
+		Status.TRANSIT_BACK:
+			if return_waypoint_index < return_waypoints.size():
+				return return_waypoints[return_waypoint_index]
+			else:
+				return return_position_au
+		_:
+			return origin_position_au

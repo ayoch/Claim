@@ -16,7 +16,11 @@ var asteroids: Array[AsteroidData] = []
 var settings: Dictionary = {
 	"auto_refuel": true,
 	"show_unreachable_destinations": false,
+	"auto_sell_at_markets": false,
 }
+
+# Company policies
+var thrust_policy: int = CompanyPolicy.ThrustPolicy.BALANCED  # Default to balanced
 
 # Phase 2: Market
 var market: MarketState = null
@@ -53,15 +57,7 @@ func _init_resources() -> void:
 		resources[ore] = 0.0
 
 func _init_starter_ship() -> void:
-	var starter := Ship.new()
-	starter.ship_name = "Prospector I"
-	starter.thrust_g = 0.3
-	starter.cargo_capacity = 100.0
-	starter.fuel_capacity = 300.0  # Increased for early game viability
-	starter.fuel = 300.0
-	starter.min_crew = 3
-	starter.position_au = CelestialData.get_earth_position_au()
-	starter.base_mass = starter.cargo_capacity * 2.0  # 200t for baseline ship
+	var starter := ShipData.create_ship(ShipData.ShipClass.PROSPECTOR)  # Random evocative name
 	ships.append(starter)
 
 func _init_starter_crew() -> void:
@@ -217,7 +213,7 @@ func repair_engine(ship: Ship) -> bool:
 	ship.engine_condition = 100.0
 	return true
 
-func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE) -> Mission:
+func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
 	var mission := Mission.new()
 	mission.ship = ship
 	mission.asteroid = asteroid
@@ -229,27 +225,42 @@ func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[W
 
 	var dist := ship.position_au.distance_to(asteroid.get_position_au())
 
-	# Calculate transit time based on mode
-	if transit_mode == Mission.TransitMode.HOHMANN:
-		mission.transit_time = Brachistochrone.hohmann_time(dist)
+	# Setup slingshot waypoints if using gravity assist
+	if slingshot_route:
+		mission.outbound_waypoints = [slingshot_route.waypoint_pos]
+		mission.outbound_waypoint_planet_ids = [slingshot_route.planet_index]
+		mission.outbound_leg_times = [slingshot_route.leg1_time, slingshot_route.leg2_time]
+		mission.outbound_waypoint_index = 0
+		mission.transit_time = slingshot_route.leg1_time  # First leg
+		dist = slingshot_route.leg1_distance
 	else:
-		mission.transit_time = Brachistochrone.transit_time(dist, ship.thrust_g)
+		# Direct route
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			mission.transit_time = Brachistochrone.hohmann_time(dist)
+		else:
+			mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 
 	mission.elapsed_ticks = 0.0
 
-	# Calculate fuel burn rate: account for different cargo mass outbound vs return
-	var current_cargo_mass := ship.get_cargo_total()
-	# Conservative estimate: assume full capacity on return
-	var fuel_outbound := ship.calc_fuel_for_distance(dist, current_cargo_mass)
-	var fuel_return := ship.calc_fuel_for_distance(dist, ship.cargo_capacity)
-	var total_fuel := fuel_outbound + fuel_return
+	# Calculate fuel burn rate
+	if slingshot_route:
+		# Use pre-calculated fuel cost from slingshot route
+		var total_fuel: float = slingshot_route.fuel_cost
+		var total_transit_ticks: float = slingshot_route.transit_time * 2.0  # Outbound + return
+		mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
+	else:
+		# Standard fuel calculation
+		var current_cargo_mass := ship.get_cargo_total()
+		var fuel_outbound := ship.calc_fuel_for_distance(dist, current_cargo_mass)
+		var fuel_return := ship.calc_fuel_for_distance(dist, ship.cargo_capacity)
+		var total_fuel := fuel_outbound + fuel_return
 
-	# Apply Hohmann fuel savings
-	if transit_mode == Mission.TransitMode.HOHMANN:
-		total_fuel *= Brachistochrone.hohmann_fuel_multiplier()
+		# Apply Hohmann fuel savings
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			total_fuel *= Brachistochrone.hohmann_fuel_multiplier()
 
-	var total_transit_ticks := mission.transit_time * 2.0
-	mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
+		var total_transit_ticks := mission.transit_time * 2.0
+		mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
 
 	ship.current_mission = mission
 	ship.current_cargo.clear()
@@ -287,7 +298,7 @@ func order_return_to_earth(ship: Ship) -> void:
 	if ship.current_mission:
 		# Reuse existing mission for return
 		ship.current_mission.return_position_au = earth_pos
-		ship.current_mission.transit_time = Brachistochrone.transit_time(dist, ship.thrust_g)
+		ship.current_mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 		ship.current_mission.elapsed_ticks = 0.0
 		var cargo_mass := ship.get_cargo_total()
 		var total_fuel := ship.calc_fuel_for_distance(dist, cargo_mass)
@@ -296,7 +307,7 @@ func order_return_to_earth(ship: Ship) -> void:
 		EventBus.mission_phase_changed.emit(ship.current_mission)
 	elif ship.current_trade_mission:
 		ship.current_trade_mission.return_position_au = earth_pos
-		ship.current_trade_mission.transit_time = Brachistochrone.transit_time(dist, ship.thrust_g)
+		ship.current_trade_mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 		ship.current_trade_mission.elapsed_ticks = 0.0
 		var cargo_mass := ship.get_cargo_total()
 		var total_fuel := ship.calc_fuel_for_distance(dist, cargo_mass)
@@ -310,7 +321,7 @@ func order_return_to_earth(ship: Ship) -> void:
 		mission.status = Mission.Status.TRANSIT_BACK
 		mission.origin_position_au = ship.position_au
 		mission.return_position_au = earth_pos
-		mission.transit_time = Brachistochrone.transit_time(dist, ship.thrust_g)
+		mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 		mission.elapsed_ticks = 0.0
 		var cargo_mass := ship.get_cargo_total()
 		var total_fuel := ship.calc_fuel_for_distance(dist, cargo_mass)
@@ -319,7 +330,7 @@ func order_return_to_earth(ship: Ship) -> void:
 		missions.append(mission)
 		EventBus.mission_started.emit(mission)
 
-func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE) -> Mission:
+func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
 	# End idle state and start new mission from current position
 	if ship.current_mission:
 		# Clean up the idle mission
@@ -334,7 +345,7 @@ func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_workers: Ar
 	for w in ship.last_crew:
 		w.assigned_mission = null
 
-	return start_mission(ship, asteroid, assigned_workers, transit_mode)
+	return start_mission(ship, asteroid, assigned_workers, transit_mode, slingshot_route)
 
 func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned_workers: Array[Worker], cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
 	# End idle state and start new trade mission from current position
@@ -523,7 +534,7 @@ func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Ar
 	if transit_mode == TradeMission.TransitMode.HOHMANN:
 		tm.transit_time = Brachistochrone.hohmann_time(dist)
 	else:
-		tm.transit_time = Brachistochrone.transit_time(dist, ship.thrust_g)
+		tm.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 
 	tm.elapsed_ticks = 0.0
 
@@ -561,6 +572,7 @@ func complete_trade_mission(tm: TradeMission) -> void:
 func save_game() -> void:
 	var save_data := {
 		"money": money,
+		"thrust_policy": thrust_policy,
 		"resources": {},
 		"workers": [],
 		"ships": [],
@@ -580,7 +592,9 @@ func save_game() -> void:
 	for s in ships:
 		var ship_data := {
 			"name": s.ship_name,
-			"thrust_g": s.thrust_g,
+			"max_thrust_g": s.max_thrust_g,
+			"thrust_setting": s.thrust_setting,
+			"ship_class": s.ship_class,
 			"cargo_capacity": s.cargo_capacity,
 			"position_au_x": s.position_au.x,
 			"position_au_y": s.position_au.y,
@@ -621,6 +635,7 @@ func load_game() -> bool:
 	var data: Dictionary = json.data
 
 	money = int(data.get("money", 10000))
+	thrust_policy = int(data.get("thrust_policy", CompanyPolicy.ThrustPolicy.BALANCED))
 
 	_init_resources()
 	var res_data: Dictionary = data.get("resources", {})
@@ -645,7 +660,15 @@ func load_game() -> bool:
 	for sd in data.get("ships", []):
 		var s := Ship.new()
 		s.ship_name = sd.get("name", "Ship")
-		s.thrust_g = float(sd.get("thrust_g", 0.3))
+		# Backward compatibility: old saves have thrust_g, new saves have max_thrust_g
+		if sd.has("max_thrust_g"):
+			s.max_thrust_g = float(sd.get("max_thrust_g", 0.3))
+			s.thrust_setting = float(sd.get("thrust_setting", 1.0))
+		else:
+			# Old save: convert thrust_g to max_thrust_g at 100%
+			s.max_thrust_g = float(sd.get("thrust_g", 0.3))
+			s.thrust_setting = 1.0
+		s.ship_class = int(sd.get("ship_class", -1))
 		s.cargo_capacity = float(sd.get("cargo_capacity", 100.0))
 		s.fuel_capacity = float(sd.get("fuel_capacity", 200.0))
 		s.fuel = float(sd.get("fuel", 200.0))

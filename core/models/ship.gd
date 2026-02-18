@@ -5,7 +5,9 @@ const FUEL_COST_PER_UNIT: float = 5.0  # $ per unit of fuel
 const EARTH_PROXIMITY_AU: float = 0.05  # within this distance counts as "at Earth"
 
 @export var ship_name: String = ""
-@export var thrust_g: float = 0.3       # acceleration in g
+@export var ship_class: int = -1        # ShipData.ShipClass enum value
+@export var max_thrust_g: float = 0.3   # maximum acceleration in g
+@export var thrust_setting: float = 1.0 # 0.0 to 1.0, percentage of max_thrust to use
 @export var cargo_capacity: float = 100.0 # tons
 @export var fuel_capacity: float = 200.0  # fuel units
 @export var fuel: float = 200.0           # current fuel
@@ -15,6 +17,8 @@ const EARTH_PROXIMITY_AU: float = 0.05  # within this distance counts as "at Ear
 @export var equipment: Array[Equipment] = []
 @export var upgrades: Array[ShipUpgrade] = []  # Installed ship upgrades
 @export var position_au: Vector2 = Vector2.ZERO  # persistent solar system position
+@export var velocity_au_per_tick: Vector2 = Vector2.ZERO  # current velocity vector
+@export var speed_au_per_tick: float = 0.0  # current speed magnitude
 @export var engine_condition: float = 100.0       # degrades during transit
 @export var is_derelict: bool = false
 @export var derelict_reason: String = ""  # "out_of_fuel" or "breakdown"
@@ -88,10 +92,11 @@ func get_base_mass() -> float:
 	return raw_mass * mass_multiplier
 
 func get_effective_thrust() -> float:
-	var effective := thrust_g
+	var max_thrust := max_thrust_g
 	for upgrade in upgrades:
-		effective += upgrade.thrust_bonus
-	return effective
+		max_thrust += upgrade.thrust_bonus
+	# Apply thrust setting (0.0 to 1.0)
+	return max_thrust * thrust_setting
 
 func get_effective_fuel_capacity() -> float:
 	var effective := fuel_capacity
@@ -133,3 +138,8 @@ func get_breakdown_chance_per_tick() -> float:
 
 func get_engine_repair_cost() -> int:
 	return int((100.0 - engine_condition) * 10.0)
+
+func get_class_name() -> String:
+	if ship_class >= 0 and ship_class < ShipData.ShipClass.size():
+		return ShipData.CLASS_NAMES.get(ship_class, "Unknown")
+	return "Legacy"  # For old saves without ship_class

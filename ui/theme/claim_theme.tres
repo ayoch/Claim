@@ -63,8 +63,8 @@ Button/constants/h_separation = 8
 Button/font_sizes/font_size = 18
 Button/styles/normal = SubResource("button_style")
 
-TabBar/font_sizes/font_size = 18
-TabBar/constants/h_separation = 12
+TabBar/font_sizes/font_size = 14
+TabBar/constants/h_separation = 6
 
 CheckBox/font_sizes/font_size = 18
 

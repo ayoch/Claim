@@ -62,7 +62,7 @@ static func estimate_mission(
 	var dist := ship_pos.distance_to(asteroid.get_position_au())
 
 	# Calculate both transit options
-	var brach_transit := Brachistochrone.transit_time(dist, ship.thrust_g)
+	var brach_transit := Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 	var hohmann_transit := Brachistochrone.hohmann_time(dist)
 
 	# Determine which mode to use (default to brachistochrone)
@@ -125,7 +125,9 @@ static func estimate_mission(
 	if use_hohmann:
 		fuel_needed *= Brachistochrone.hohmann_fuel_multiplier()
 
-	var fuel_cost := fuel_needed * Ship.FUEL_COST_PER_UNIT
+	# Use dynamic fuel pricing based on ship location
+	var fuel_price_per_unit := FuelPricing.get_fuel_price_at_location(ship.position_au)
+	var fuel_cost := fuel_needed * fuel_price_per_unit
 
 	# Calculate alternate mode estimate (for UI comparison)
 	var alt_use_hohmann := not use_hohmann
@@ -136,7 +138,7 @@ static func estimate_mission(
 		alt_fuel *= Brachistochrone.hohmann_fuel_multiplier()
 	var alt_payroll_cycles := alt_total_time / 60.0
 	var alt_wage_cost := wage_per_tick * alt_payroll_cycles
-	var alt_fuel_cost := alt_fuel * Ship.FUEL_COST_PER_UNIT
+	var alt_fuel_cost := alt_fuel * fuel_price_per_unit  # Use same dynamic pricing
 	var alt_profit := revenue - alt_wage_cost - alt_fuel_cost
 
 	# Check if Hohmann is actually viable (has enough fuel)

@@ -77,18 +77,23 @@ func _process_missions(dt: float) -> void:
 			Mission.Status.TRANSIT_OUT:
 				_burn_fuel(mission, dt)
 				if mission.elapsed_ticks >= mission.transit_time:
-					# Check if ship is already full before mining
-					if mission.ship.get_cargo_total() >= mission.ship.cargo_capacity:
-						# Ship is full, skip mining phase
-						mission.status = Mission.Status.IDLE_AT_DESTINATION
-						mission.ship.position_au = mission.asteroid.get_position_au()
-						for w in mission.workers:
-							w.assigned_mission = null
-						EventBus.ship_idle_at_destination.emit(mission.ship, mission)
+					# Check if using slingshot with more waypoints
+					if mission.outbound_waypoint_index < mission.outbound_waypoints.size():
+						# Reached waypoint - transition to next leg
+						_process_waypoint_transition(mission, true)  # true = outbound
 					else:
-						mission.status = Mission.Status.MINING
-						mission.elapsed_ticks = 0.0
-					EventBus.mission_phase_changed.emit(mission)
+						# Reached final destination
+						if mission.ship.get_cargo_total() >= mission.ship.cargo_capacity:
+							# Ship is full, skip mining phase
+							mission.status = Mission.Status.IDLE_AT_DESTINATION
+							mission.ship.position_au = mission.asteroid.get_position_au()
+							for w in mission.workers:
+								w.assigned_mission = null
+							EventBus.ship_idle_at_destination.emit(mission.ship, mission)
+						else:
+							mission.status = Mission.Status.MINING
+							mission.elapsed_ticks = 0.0
+						EventBus.mission_phase_changed.emit(mission)
 
 			Mission.Status.MINING:
 				_mine_tick(mission, dt)
@@ -112,9 +117,47 @@ func _process_missions(dt: float) -> void:
 			Mission.Status.TRANSIT_BACK:
 				_burn_fuel(mission, dt)
 				if mission.elapsed_ticks >= mission.transit_time:
-					# Set ship position to return destination
-					mission.ship.position_au = mission.return_position_au
-					GameState.complete_mission(mission)
+					# Check if using slingshot with more waypoints
+					if mission.return_waypoint_index < mission.return_waypoints.size():
+						# Reached waypoint - transition to next leg
+						_process_waypoint_transition(mission, false)  # false = return
+					else:
+						# Reached final destination
+						mission.ship.position_au = mission.return_position_au
+						GameState.complete_mission(mission)
+
+func _process_waypoint_transition(mission: Mission, is_outbound: bool) -> void:
+	# Handle transition to next leg of slingshot journey
+	if is_outbound:
+		# Update ship position to waypoint
+		mission.ship.position_au = mission.outbound_waypoints[mission.outbound_waypoint_index]
+
+		# Increment to next leg
+		mission.outbound_waypoint_index += 1
+		mission.elapsed_ticks = 0.0
+
+		# Set transit time for next leg
+		if mission.outbound_waypoint_index < mission.outbound_leg_times.size():
+			mission.transit_time = mission.outbound_leg_times[mission.outbound_waypoint_index]
+		else:
+			# Last leg to destination - use brachistochrone
+			var dist := mission.ship.position_au.distance_to(mission.asteroid.get_position_au())
+			mission.transit_time = Brachistochrone.transit_time(dist, mission.ship.get_effective_thrust())
+	else:
+		# Return journey
+		mission.ship.position_au = mission.return_waypoints[mission.return_waypoint_index]
+
+		mission.return_waypoint_index += 1
+		mission.elapsed_ticks = 0.0
+
+		if mission.return_waypoint_index < mission.return_leg_times.size():
+			mission.transit_time = mission.return_leg_times[mission.return_waypoint_index]
+		else:
+			# Last leg to destination
+			var dist := mission.ship.position_au.distance_to(mission.return_position_au)
+			mission.transit_time = Brachistochrone.transit_time(dist, mission.ship.get_effective_thrust())
+
+	EventBus.mission_phase_changed.emit(mission)
 
 func _burn_fuel(mission: Mission, dt: float) -> void:
 	var ship := mission.ship
@@ -189,19 +232,32 @@ func _process_trade_missions(dt: float) -> void:
 				if tm.ship.fuel <= 0 and not tm.ship.is_derelict:
 					_trigger_fuel_depletion(tm.ship)
 				if tm.elapsed_ticks >= tm.transit_time:
-					tm.status = TradeMission.Status.SELLING
-					tm.elapsed_ticks = 0.0
-					# Auto-sell cargo at colony prices
-					var revenue := 0
-					for ore_type in tm.cargo:
-						var amount: float = tm.cargo[ore_type]
-						var price: float = tm.colony.get_ore_price(ore_type, GameState.market)
-						revenue += int(amount * price)
-					tm.revenue = revenue
-					GameState.money += revenue
-					# Clear cargo after selling to prevent double-payment exploits
-					tm.cargo.clear()
-					EventBus.trade_mission_phase_changed.emit(tm)
+					# Check if auto-sell is enabled
+					if GameState.settings.get("auto_sell_at_markets", false):
+						tm.status = TradeMission.Status.SELLING
+						tm.elapsed_ticks = 0.0
+						# Auto-sell cargo at colony prices
+						var revenue := 0
+						for ore_type in tm.cargo:
+							var amount: float = tm.cargo[ore_type]
+							var price: float = tm.colony.get_ore_price(ore_type, GameState.market)
+							revenue += int(amount * price)
+						tm.revenue = revenue
+						GameState.money += revenue
+						# Clear cargo after selling
+						tm.cargo.clear()
+						tm.ship.current_cargo.clear()
+						EventBus.trade_mission_phase_changed.emit(tm)
+					else:
+						# Manual selling: go directly to idle at colony
+						tm.status = TradeMission.Status.IDLE_AT_COLONY
+						tm.elapsed_ticks = 0.0
+						# Set ship position to colony location
+						tm.ship.position_au = tm.colony.get_position_au()
+						# Auto-refuel at colony
+						_auto_refuel_at_colony(tm.ship)
+						EventBus.trade_mission_phase_changed.emit(tm)
+						EventBus.ship_idle_at_colony.emit(tm.ship, tm)
 
 			TradeMission.Status.SELLING:
 				if tm.elapsed_ticks >= TradeMission.SELL_DURATION:
@@ -230,47 +286,104 @@ func _process_trade_missions(dt: float) -> void:
 					GameState.complete_trade_mission(tm)
 
 func _update_ship_positions(dt: float) -> void:
-	# Interpolate ship positions during transit based on mission progress
+	# Update ship positions and velocities during transit based on mission progress
 	for mission: Mission in GameState.missions:
 		var ship := mission.ship
 		if ship.is_derelict:
+			ship.velocity_au_per_tick = Vector2.ZERO
+			ship.speed_au_per_tick = 0.0
 			continue
 		match mission.status:
-			Mission.Status.TRANSIT_OUT:
+			Mission.Status.TRANSIT_OUT, Mission.Status.TRANSIT_BACK:
 				var progress := mission.get_progress()
-				ship.position_au = mission.origin_position_au.lerp(
-					mission.asteroid.get_position_au(), progress
-				)
-			Mission.Status.MINING:
+				var start_pos := mission.get_current_leg_start_pos()
+				var end_pos := mission.get_current_leg_end_pos()
+				_update_ship_transit_physics(ship, start_pos, end_pos, progress, mission.transit_mode, mission.transit_time)
+			Mission.Status.MINING, Mission.Status.IDLE_AT_DESTINATION:
 				ship.position_au = mission.asteroid.get_position_au()
-			Mission.Status.IDLE_AT_DESTINATION:
-				ship.position_au = mission.asteroid.get_position_au()
-			Mission.Status.TRANSIT_BACK:
-				var progress := mission.get_progress()
-				var start_pos: Vector2
-				if mission.asteroid:
-					start_pos = mission.asteroid.get_position_au()
-				else:
-					start_pos = mission.origin_position_au
-				ship.position_au = start_pos.lerp(mission.return_position_au, progress)
+				ship.velocity_au_per_tick = Vector2.ZERO
+				ship.speed_au_per_tick = 0.0
 
 	for tm: TradeMission in GameState.trade_missions:
 		var ship := tm.ship
 		if ship.is_derelict:
+			ship.velocity_au_per_tick = Vector2.ZERO
+			ship.speed_au_per_tick = 0.0
 			continue
 		match tm.status:
-			TradeMission.Status.TRANSIT_TO_COLONY:
+			TradeMission.Status.TRANSIT_TO_COLONY, TradeMission.Status.TRANSIT_BACK:
 				var progress := tm.get_progress()
-				ship.position_au = tm.origin_position_au.lerp(
-					tm.colony.get_position_au(), progress
-				)
+				var start_pos := tm.get_current_leg_start_pos()
+				var end_pos := tm.get_current_leg_end_pos()
+				_update_ship_transit_physics(ship, start_pos, end_pos, progress, tm.transit_mode, tm.transit_time)
 			TradeMission.Status.SELLING, TradeMission.Status.IDLE_AT_COLONY:
 				ship.position_au = tm.colony.get_position_au()
-			TradeMission.Status.TRANSIT_BACK:
-				var progress := tm.get_progress()
-				ship.position_au = tm.colony.get_position_au().lerp(
-					tm.return_position_au, progress
-				)
+				ship.velocity_au_per_tick = Vector2.ZERO
+				ship.speed_au_per_tick = 0.0
+
+func _update_ship_transit_physics(ship: Ship, start_pos: Vector2, end_pos: Vector2, time_fraction: float, transit_mode: int, total_time: float) -> void:
+	# Update ship position and velocity based on transit physics
+	var direction := (end_pos - start_pos).normalized()
+	var total_distance := start_pos.distance_to(end_pos)
+
+	if transit_mode == Mission.TransitMode.HOHMANN:
+		# Hohmann transfer: linear motion (simplified orbital mechanics)
+		ship.position_au = start_pos.lerp(end_pos, time_fraction)
+		# Constant velocity for Hohmann
+		if total_time > 0:
+			ship.velocity_au_per_tick = direction * (total_distance / total_time)
+			ship.speed_au_per_tick = total_distance / total_time
+		else:
+			ship.velocity_au_per_tick = Vector2.ZERO
+			ship.speed_au_per_tick = 0.0
+	else:
+		# Brachistochrone: constant thrust acceleration/deceleration
+		var distance_fraction := _brachistochrone_distance_fraction(time_fraction)
+		var velocity_fraction := _brachistochrone_velocity_fraction(time_fraction)
+
+		# Update position using S-curve
+		ship.position_au = start_pos.lerp(end_pos, distance_fraction)
+
+		# Calculate velocity: v = (distance / time) * velocity_fraction
+		# Peak velocity occurs at midpoint, is 2x the average velocity
+		if total_time > 0:
+			var avg_velocity := total_distance / total_time
+			var current_speed := avg_velocity * velocity_fraction
+			ship.velocity_au_per_tick = direction * current_speed
+			ship.speed_au_per_tick = current_speed
+		else:
+			ship.velocity_au_per_tick = Vector2.ZERO
+			ship.speed_au_per_tick = 0.0
+
+func _brachistochrone_distance_fraction(time_fraction: float) -> float:
+	# Convert time progress to distance progress for constant-acceleration trajectory
+	# Physics: x(t) = (1/2)*a*t² during acceleration, symmetric during deceleration
+	# Results in S-curve: slow start (accelerating), fast middle, slow end (decelerating)
+	if time_fraction <= 0.5:
+		# Acceleration phase: quadratic growth
+		# At t=0.25: distance = 2*(0.25)² = 0.125 (12.5%)
+		return 2.0 * time_fraction * time_fraction
+	else:
+		# Deceleration phase: mirror of acceleration
+		# At t=0.75: distance = 1 - 2*(0.25)² = 0.875 (87.5%)
+		var t_from_end := 1.0 - time_fraction
+		return 1.0 - 2.0 * t_from_end * t_from_end
+
+func _brachistochrone_velocity_fraction(time_fraction: float) -> float:
+	# Velocity as fraction of peak velocity for constant-acceleration trajectory
+	# Physics: v(t) = a*t during acceleration, v(t) = a*(T-t) during deceleration
+	# Peak velocity at midpoint is 2x the average velocity
+	# Returns multiplier in range [0, 2] where 2 = peak velocity at midpoint
+	if time_fraction <= 0.5:
+		# Acceleration phase: linear ramp from 0 to 2
+		# At t=0: velocity = 0
+		# At t=0.5: velocity = 2 (peak)
+		return 4.0 * time_fraction
+	else:
+		# Deceleration phase: linear ramp from 2 to 0
+		# At t=0.5: velocity = 2 (peak)
+		# At t=1.0: velocity = 0
+		return 4.0 * (1.0 - time_fraction)
 
 func _check_breakdowns(dt: float) -> void:
 	for mission: Mission in GameState.missions:
@@ -504,7 +617,8 @@ func _auto_refuel_at_colony(ship: Ship) -> void:
 		return  # Already full
 
 	var fuel_needed := ship.get_effective_fuel_capacity() - ship.fuel
-	var fuel_cost := int(fuel_needed * Ship.FUEL_COST_PER_UNIT)
+	# Use colony's local fuel price (no shipping cost)
+	var fuel_cost := int(fuel_needed * FuelPricing.COLONY_BASE_COST)
 
 	# Only refuel if player can afford it
 	if GameState.money >= fuel_cost:

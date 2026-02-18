@@ -36,6 +36,7 @@ func _refresh_all() -> void:
 			upgrade_row.add_theme_constant_override("separation", 8)
 			var upgrade_info := Label.new()
 			upgrade_info.text = "%s - %s" % [upgrade.upgrade_name, upgrade.description]
+			upgrade_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			upgrade_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			upgrade_row.add_child(upgrade_info)
 
@@ -97,7 +98,7 @@ func _refresh_all() -> void:
 		stats_grid.add_theme_constant_override("h_separation", 16)
 		stats_grid.add_theme_constant_override("v_separation", 4)
 
-		_add_stat_row(stats_grid, "Thrust:", "%.2fg" % ship.thrust_g, ship.get_effective_thrust())
+		_add_stat_row(stats_grid, "Thrust:", "%.2fg max" % ship.max_thrust_g, ship.get_effective_thrust())
 		_add_stat_row(stats_grid, "Fuel Capacity:", "%.0f" % ship.fuel_capacity, ship.get_effective_fuel_capacity())
 		_add_stat_row(stats_grid, "Cargo Capacity:", "%.0ft" % ship.cargo_capacity, ship.get_effective_cargo_capacity())
 		_add_stat_row(stats_grid, "Base Mass:", "%.0ft" % (ship.base_mass if ship.base_mass > 0 else ship.cargo_capacity * 2.0), ship.get_base_mass())
@@ -123,6 +124,7 @@ func _refresh_all() -> void:
 			for upgrade in ship.upgrades:
 				var upgrade_label := Label.new()
 				upgrade_label.text = "• %s - %s" % [upgrade.upgrade_name, upgrade.description]
+				upgrade_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 				upgrade_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 				ship_vbox.add_child(upgrade_label)
 
@@ -146,6 +148,7 @@ func _refresh_all() -> void:
 		info.text = "%s - %s ($%s)" % [
 			entry["name"], entry["description"], _format_number(entry["cost"])
 		]
+		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		buy_row.add_child(info)
 

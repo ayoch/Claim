@@ -26,6 +26,15 @@ var _colony_markers: Array[Node2D] = []
 # Planet labels (Node2D wrappers with Label children)
 var _planet_labels: Array[Node2D] = []
 
+# Trajectory preview
+var _preview_active: bool = false
+var _preview_ship_pos: Vector2 = Vector2.ZERO
+var _preview_dest_pos: Vector2 = Vector2.ZERO
+var _preview_waypoint_pos: Vector2 = Vector2.ZERO
+var _preview_has_waypoint: bool = false
+var _preview_blink_time: float = 0.0
+const PREVIEW_BLINK_PERIOD: float = 1.0  # seconds for full blink cycle
+
 var asteroid_marker_scene: PackedScene = preload("res://solar_map/asteroid_marker.tscn")
 var ship_marker_scene: PackedScene = preload("res://solar_map/ship_marker.tscn")
 
@@ -49,6 +58,8 @@ func _ready() -> void:
 	EventBus.ship_derelict.connect(func(_s: Ship) -> void: _refresh_ships())
 	EventBus.rescue_mission_completed.connect(func(_s: Ship) -> void: _refresh_ships())
 	EventBus.tick.connect(_on_tick)
+	EventBus.mission_preview_started.connect(_on_preview_started)
+	EventBus.mission_preview_cancelled.connect(_on_preview_cancelled)
 
 func _refresh_ships() -> void:
 	_refresh_ship_markers()
@@ -84,6 +95,44 @@ func _draw() -> void:
 		var p3 := Vector2(cos(next_angle), sin(next_angle)) * outer_r
 		var p4 := Vector2(cos(angle), sin(angle)) * outer_r
 		draw_colored_polygon(PackedVector2Array([p1, p2, p3, p4]), Color(0.5, 0.4, 0.3, 0.08))
+
+	# Draw trajectory preview if active
+	if _preview_active:
+		# Calculate blink alpha (oscillates between 0.3 and 1.0)
+		var blink_alpha := 0.65 + 0.35 * sin(_preview_blink_time * TAU / PREVIEW_BLINK_PERIOD)
+
+		# Draw trajectory line(s)
+		var line_color := Color(0.3, 0.9, 1.0, 0.6)
+		if _preview_has_waypoint:
+			# Multi-leg slingshot trajectory
+			draw_line(_preview_ship_pos, _preview_waypoint_pos, line_color, 2.0)
+			draw_line(_preview_waypoint_pos, _preview_dest_pos, line_color, 2.0)
+
+			# Draw slingshot waypoint indicator (cyan pulsing circle)
+			var waypoint_color := Color(0.3, 0.9, 0.9, blink_alpha)
+			draw_circle(_preview_waypoint_pos, 14, waypoint_color)
+			draw_circle(_preview_waypoint_pos, 10, Color(0.0, 0.0, 0.0, blink_alpha * 0.5))
+			# Add velocity boost arrow
+			var boost_arrow_end := _preview_waypoint_pos + Vector2(20, -20)
+			draw_line(_preview_waypoint_pos, boost_arrow_end, Color(0.3, 1.0, 0.9, blink_alpha), 2.0)
+			# Arrowhead
+			var arrow_back1 := boost_arrow_end + Vector2(-8, 4)
+			var arrow_back2 := boost_arrow_end + Vector2(-4, 8)
+			draw_line(boost_arrow_end, arrow_back1, Color(0.3, 1.0, 0.9, blink_alpha), 2.0)
+			draw_line(boost_arrow_end, arrow_back2, Color(0.3, 1.0, 0.9, blink_alpha), 2.0)
+		else:
+			# Direct trajectory
+			draw_line(_preview_ship_pos, _preview_dest_pos, line_color, 2.0)
+
+		# Draw blinking indicator at ship position
+		var ship_indicator_color := Color(0.3, 1.0, 0.3, blink_alpha)
+		draw_circle(_preview_ship_pos, 12, ship_indicator_color)
+		draw_circle(_preview_ship_pos, 8, Color(0.0, 0.0, 0.0, blink_alpha * 0.5))
+
+		# Draw blinking indicator at destination
+		var dest_indicator_color := Color(1.0, 0.9, 0.3, blink_alpha)
+		draw_circle(_preview_dest_pos, 12, dest_indicator_color)
+		draw_circle(_preview_dest_pos, 8, Color(0.0, 0.0, 0.0, blink_alpha * 0.5))
 
 func _draw_circle_outline(center: Vector2, radius: float, color: Color, width: float) -> void:
 	var points := 64
@@ -206,6 +255,12 @@ func _process(delta: float) -> void:
 			var target: Vector2 = marker.get_meta("target_pos")
 			marker.position = marker.position.lerp(target, t)
 
+	# Update preview blink animation
+	if _preview_active:
+		_preview_blink_time += delta
+		if _preview_blink_time >= PREVIEW_BLINK_PERIOD:
+			_preview_blink_time -= PREVIEW_BLINK_PERIOD
+
 	queue_redraw()
 
 func _on_tick(_dt: float) -> void:
@@ -299,3 +354,22 @@ func _center_on_ship(ship: Ship) -> void:
 	# Optionally zoom in a bit
 	_zoom_level = 1.5
 	camera.zoom = Vector2(_zoom_level, _zoom_level)
+
+func _on_preview_started(ship: Ship, destination_pos: Vector2, slingshot_route) -> void:
+	_preview_active = true
+	_preview_ship_pos = ship.position_au * AU_PIXELS
+	_preview_dest_pos = destination_pos * AU_PIXELS
+	_preview_blink_time = 0.0
+
+	# Setup slingshot waypoint if using gravity assist
+	if slingshot_route:
+		_preview_has_waypoint = true
+		_preview_waypoint_pos = slingshot_route.waypoint_pos * AU_PIXELS
+	else:
+		_preview_has_waypoint = false
+
+	queue_redraw()
+
+func _on_preview_cancelled() -> void:
+	_preview_active = false
+	queue_redraw()

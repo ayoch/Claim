@@ -13,10 +13,13 @@ var _selected_transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE
 var _sell_at_destination_markets: bool = false  # Toggle: return with ore vs sell at nearby markets
 var _sort_by: String = "profit"
 var _filter_type: int = -1
+var _available_slingshot_routes: Array = []  # Array of GravityAssist.SlingshotRoute
+var _selected_slingshot_route = null  # GravityAssist.SlingshotRoute or null
 var _needs_full_rebuild: bool = true
 var _progress_bars: Dictionary = {}
 var _status_labels: Dictionary = {}
 var _detail_labels: Dictionary = {}
+var _location_labels: Dictionary = {}
 var _cargo_labels: Dictionary = {}  # Ship -> Label for cargo display
 const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catch up
 var _dispatch_refresh_timer: float = 0.0
@@ -27,6 +30,7 @@ var _saved_colonies_scroll: float = 0.0  # Preserve scroll position across refre
 var _saved_mining_scroll: float = 0.0  # Preserve scroll position across refreshes
 
 func _ready() -> void:
+	_cancel_preview()
 	dispatch_popup.visible = false
 	EventBus.mission_started.connect(func(_m: Mission) -> void: _mark_dirty())
 	EventBus.mission_completed.connect(func(_m: Mission) -> void: _mark_dirty())
@@ -114,12 +118,18 @@ func _on_tick(dt: float) -> void:
 				if amount > 0.01:
 					cargo_lines.append("  %s: %.1ft" % [ResourceTypes.get_ore_name(ore_type), amount])
 			label.text = "\n".join(cargo_lines)
+	# Update location displays to show ship positions during transit
+	for ship: Ship in _location_labels:
+		var label: Label = _location_labels[ship]
+		if is_instance_valid(label):
+			label.text = _get_location_text(ship)
 
 func _rebuild_ships() -> void:
 	_progress_bars.clear()
 	_status_labels.clear()
 	_detail_labels.clear()
 	_cargo_labels.clear()
+	_location_labels.clear()
 	for child in ships_list.get_children():
 		child.queue_free()
 
@@ -133,7 +143,7 @@ func _rebuild_ships() -> void:
 		# === SHIP HEADER ===
 		var header := HBoxContainer.new()
 		var name_label := Label.new()
-		name_label.text = ship.ship_name
+		name_label.text = "%s (%s)" % [ship.ship_name, ship.get_class_name()]
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		header.add_child(name_label)
 
@@ -232,6 +242,7 @@ func _rebuild_ships() -> void:
 		loc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		loc_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		vbox.add_child(loc_label)
+		_location_labels[ship] = loc_label
 
 		var details := Label.new()
 		details.text = _build_details_text(ship)
@@ -427,6 +438,9 @@ func _get_location_text(ship: Ship) -> String:
 				return "Location: Deep space (%.2f, %.2f AU)" % [ship.position_au.x, ship.position_au.y]
 	return "Location: Deep space (%.2f, %.2f AU)" % [ship.position_au.x, ship.position_au.y]
 
+func _cancel_preview() -> void:
+	EventBus.mission_preview_cancelled.emit()
+
 func _start_dispatch(ship: Ship) -> void:
 	_selected_ship = ship
 	_selected_asteroid = null
@@ -502,7 +516,7 @@ func _show_asteroid_selection() -> void:
 		for colony in filtered_colonies:
 			var colony_pos: Vector2 = colony.get_position_au()
 			var dist := _selected_ship.position_au.distance_to(colony_pos)
-			var transit := Brachistochrone.transit_time(dist, _selected_ship.thrust_g)
+			var transit := Brachistochrone.transit_time(dist, _selected_ship.get_effective_thrust())
 
 			# Calculate WORST-CASE round-trip fuel (loaded outbound, empty return)
 			var cargo_mass := _selected_ship.get_cargo_total()
@@ -541,8 +555,8 @@ func _show_asteroid_selection() -> void:
 					fuel_status = " [UNREACHABLE - insufficient fuel capacity]"
 				else:
 					fuel_status = " [NEEDS REFUEL]"
-			elif fuel_needed > _selected_ship.fuel * 0.9:
-				fuel_status = " [CRITICAL FUEL - %.0f needed]" % fuel_needed
+			elif fuel_needed > available_fuel * 0.9:
+				fuel_status = " [CRITICAL - %.0f/%.0f fuel]" % [available_fuel, fuel_needed]
 
 			# Create row container for destination + jettison buttons
 			var colony_row := VBoxContainer.new()
@@ -790,12 +804,12 @@ func _show_asteroid_selection() -> void:
 			total_time = est["total_time"]
 			total_fuel_needed = est.get("fuel_needed", 0.0)
 			# Calculate transit for display
-			var transit_one_way := Brachistochrone.transit_time(dist_outbound, _selected_ship.thrust_g)
+			var transit_one_way := Brachistochrone.transit_time(dist_outbound, _selected_ship.get_effective_thrust())
 			total_transit = transit_one_way * 2.0
 		else:
 			# Custom destination - recalculate
-			var transit_out := Brachistochrone.transit_time(dist_outbound, _selected_ship.thrust_g)
-			var transit_ret := Brachistochrone.transit_time(dist_return, _selected_ship.thrust_g)
+			var transit_out := Brachistochrone.transit_time(dist_outbound, _selected_ship.get_effective_thrust())
+			var transit_ret := Brachistochrone.transit_time(dist_return, _selected_ship.get_effective_thrust())
 			total_transit = transit_out + transit_ret
 
 			# Fuel calculation
@@ -825,8 +839,7 @@ func _show_asteroid_selection() -> void:
 		var fuel_route: Array[String] = []
 		var is_unreachable := false
 		if has_insufficient_fuel:
-			# Calculate fuel route to asteroid position
-			var asteroid_pos := asteroid.get_position_au()
+			# Calculate fuel route to asteroid position (reuse asteroid_pos from line 731)
 			fuel_route = _calculate_fuel_route_to_position(asteroid_pos, current_cargo)
 			if fuel_route.is_empty():
 				# Completely unreachable
@@ -838,7 +851,7 @@ func _show_asteroid_selection() -> void:
 			else:
 				fuel_warning = " [NEEDS REFUEL]"
 		elif total_fuel_needed > available_fuel * 0.9:
-			fuel_warning = " [CRITICAL FUEL - %.0f needed]" % total_fuel_needed
+			fuel_warning = " [CRITICAL - %.0f/%.0f fuel]" % [available_fuel, total_fuel_needed]
 
 		var profit_str := "$%s" % _format_number(int(adjusted_profit))
 
@@ -965,7 +978,10 @@ func _show_asteroid_selection() -> void:
 	var cancel := Button.new()
 	cancel.text = "Cancel"
 	cancel.custom_minimum_size = Vector2(0, 44)
-	cancel.pressed.connect(func() -> void: dispatch_popup.visible = false)
+	cancel.pressed.connect(func() -> void:
+		_cancel_preview()
+		dispatch_popup.visible = false
+	)
 	dispatch_content.add_child(cancel)
 
 	dispatch_popup.visible = true
@@ -1045,8 +1061,8 @@ func _calculate_adjusted_profit(asteroid: AsteroidData, est_workers: Array[Worke
 		return est["profit"]
 
 	# Custom destination - recalculate
-	var transit_out := Brachistochrone.transit_time(dist_outbound, _selected_ship.thrust_g)
-	var transit_ret := Brachistochrone.transit_time(dist_return, _selected_ship.thrust_g)
+	var transit_out := Brachistochrone.transit_time(dist_outbound, _selected_ship.get_effective_thrust())
+	var transit_ret := Brachistochrone.transit_time(dist_return, _selected_ship.get_effective_thrust())
 	var total_transit := transit_out + transit_ret
 
 	# Fuel calculation
@@ -1099,6 +1115,7 @@ func _select_colony_trade(colony: Colony) -> void:
 		GameState.dispatch_idle_ship_trade(_selected_ship, colony, assigned, cargo)
 	else:
 		GameState.start_trade_mission(_selected_ship, colony, assigned, cargo)
+	_cancel_preview()
 	dispatch_popup.visible = false
 	_mark_dirty()
 
@@ -1106,6 +1123,33 @@ func _show_worker_selection() -> void:
 	_on_selection_screen = false  # Left the main selection screen
 	_on_estimate_screen = true  # Now on the estimate screen
 	_clear_dispatch_content()
+
+	# AI-calculate optimal thrust based on company policy
+	var expected_cargo := _selected_ship.cargo_capacity  # Assume we'll fill the hold
+	var ai_thrust := CompanyPolicy.calculate_thrust_setting(
+		GameState.thrust_policy,
+		_selected_ship,
+		_selected_asteroid.get_position_au(),
+		expected_cargo
+	)
+	_selected_ship.thrust_setting = ai_thrust
+
+	# Find beneficial slingshot routes
+	_available_slingshot_routes = GravityAssist.find_beneficial_slingshots(
+		_selected_ship.position_au,
+		_selected_asteroid.get_position_au(),
+		_selected_ship,
+		expected_cargo
+	)
+
+	# AI-select preferred route based on company policy
+	_selected_slingshot_route = CompanyPolicy.calculate_preferred_route(
+		GameState.thrust_policy,
+		_available_slingshot_routes
+	)
+
+	# Show trajectory preview on map (with slingshot route if selected)
+	EventBus.mission_preview_started.emit(_selected_ship, _selected_asteroid.get_position_au(), _selected_slingshot_route)
 
 	var title := Label.new()
 	title.text = "Assign Workers"
@@ -1220,6 +1264,119 @@ func _show_worker_selection() -> void:
 
 	est_vbox.add_child(mode_hbox)
 
+	# Route selection (slingshot vs direct) - only show if beneficial routes exist
+	if not _available_slingshot_routes.is_empty():
+		var route_label := Label.new()
+		route_label.text = "Route Options:"
+		route_label.add_theme_font_size_override("font_size", 12)
+		route_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		est_vbox.add_child(route_label)
+
+		# AI route info
+		var ai_route_info := Label.new()
+		if _selected_slingshot_route:
+			ai_route_info.text = "AI: %s (%s)" % [_selected_slingshot_route.route_name, CompanyPolicy.THRUST_POLICY_NAMES[GameState.thrust_policy]]
+		else:
+			ai_route_info.text = "AI: Direct Route (%s)" % CompanyPolicy.THRUST_POLICY_NAMES[GameState.thrust_policy]
+		ai_route_info.add_theme_color_override("font_color", Color(0.5, 0.9, 0.5))
+		ai_route_info.add_theme_font_size_override("font_size", 11)
+		est_vbox.add_child(ai_route_info)
+
+		# Direct route button (always available)
+		var direct_btn := Button.new()
+		direct_btn.name = "DirectRouteButton"
+		direct_btn.text = "Direct Route (Baseline)"
+		direct_btn.custom_minimum_size = Vector2(0, 32)
+		direct_btn.toggle_mode = true
+		direct_btn.button_pressed = (_selected_slingshot_route == null)  # AI selection
+		direct_btn.pressed.connect(func() -> void:
+			_selected_slingshot_route = null
+			_update_route_button_states()
+			_update_estimate_display()
+			EventBus.mission_preview_started.emit(_selected_ship, _selected_asteroid.get_position_au(), null)
+		)
+		est_vbox.add_child(direct_btn)
+
+		# Slingshot route buttons
+		for route in _available_slingshot_routes:
+			var slingshot_btn := Button.new()
+			slingshot_btn.name = "SlingshotButton_%d" % route.planet_index
+			var savings_text: String = "Saves %.0f%% fuel" % route.fuel_savings_percent
+			var time_text := ""
+			if route.time_penalty > 0:
+				var hours: float = route.time_penalty / Brachistochrone.TIME_COMPRESSION * 24.0
+				time_text = " (+%.1fh)" % hours
+			slingshot_btn.text = "%s - %s%s" % [route.route_name, savings_text, time_text]
+			slingshot_btn.custom_minimum_size = Vector2(0, 32)
+			slingshot_btn.toggle_mode = true
+			slingshot_btn.button_pressed = (_selected_slingshot_route == route)  # AI selection
+			slingshot_btn.pressed.connect(func() -> void:
+				_selected_slingshot_route = route
+				_update_route_button_states()
+				_update_estimate_display()
+				EventBus.mission_preview_started.emit(_selected_ship, _selected_asteroid.get_position_au(), route)
+			)
+			slingshot_btn.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
+			est_vbox.add_child(slingshot_btn)
+
+	# Manual thrust control (hidden by default, AI-controlled)
+	var thrust_control_row := HBoxContainer.new()
+	thrust_control_row.name = "ThrustControlRow"
+	thrust_control_row.add_theme_constant_override("separation", 8)
+
+	var manual_thrust_btn := Button.new()
+	manual_thrust_btn.name = "ManualThrustButton"
+	manual_thrust_btn.text = "Manual Thrust Control"
+	manual_thrust_btn.custom_minimum_size = Vector2(0, 32)
+	manual_thrust_btn.toggle_mode = true
+	manual_thrust_btn.pressed.connect(func() -> void:
+		var slider_row = est_vbox.find_child("ThrustSliderRow", false, false)
+		if slider_row:
+			slider_row.visible = manual_thrust_btn.button_pressed
+	)
+	thrust_control_row.add_child(manual_thrust_btn)
+
+	var ai_label := Label.new()
+	ai_label.name = "AIThrustLabel"
+	ai_label.text = "AI: %.0f%% (%s)" % [_selected_ship.thrust_setting * 100.0, CompanyPolicy.THRUST_POLICY_NAMES[GameState.thrust_policy]]
+	ai_label.add_theme_color_override("font_color", Color(0.5, 0.9, 0.5))
+	thrust_control_row.add_child(ai_label)
+
+	est_vbox.add_child(thrust_control_row)
+
+	# Thrust slider (hidden by default)
+	var thrust_slider_row := HBoxContainer.new()
+	thrust_slider_row.name = "ThrustSliderRow"
+	thrust_slider_row.visible = false
+	thrust_slider_row.add_theme_constant_override("separation", 8)
+
+	var thrust_label := Label.new()
+	thrust_label.text = "Thrust:"
+	thrust_label.custom_minimum_size = Vector2(60, 0)
+	thrust_slider_row.add_child(thrust_label)
+
+	var thrust_slider := HSlider.new()
+	thrust_slider.name = "ThrustSlider"
+	thrust_slider.min_value = 0.1
+	thrust_slider.max_value = 1.0
+	thrust_slider.step = 0.05
+	thrust_slider.value = _selected_ship.thrust_setting
+	thrust_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	thrust_slider.custom_minimum_size = Vector2(200, 0)
+	thrust_slider.value_changed.connect(func(value: float) -> void:
+		_selected_ship.thrust_setting = value
+		_update_estimate_display()
+	)
+	thrust_slider_row.add_child(thrust_slider)
+
+	var thrust_pct_label := Label.new()
+	thrust_pct_label.name = "ThrustPctLabel"
+	thrust_pct_label.text = "%.0f%%" % (_selected_ship.thrust_setting * 100.0)
+	thrust_pct_label.custom_minimum_size = Vector2(50, 0)
+	thrust_slider_row.add_child(thrust_pct_label)
+
+	est_vbox.add_child(thrust_slider_row)
+
 	var est_details := Label.new()
 	est_details.name = "EstimateDetails"
 	est_details.text = "Select workers to see estimate"
@@ -1234,7 +1391,10 @@ func _show_worker_selection() -> void:
 	var back_btn := Button.new()
 	back_btn.text = "Back"
 	back_btn.custom_minimum_size = Vector2(0, 44)
-	back_btn.pressed.connect(_show_asteroid_selection)
+	back_btn.pressed.connect(func() -> void:
+		_cancel_preview()
+		_show_asteroid_selection()
+	)
 	btn_row.add_child(back_btn)
 
 	var confirm := Button.new()
@@ -1246,10 +1406,30 @@ func _show_worker_selection() -> void:
 	var cancel := Button.new()
 	cancel.text = "Cancel"
 	cancel.custom_minimum_size = Vector2(0, 44)
-	cancel.pressed.connect(func() -> void: dispatch_popup.visible = false)
+	cancel.pressed.connect(func() -> void:
+		_cancel_preview()
+		dispatch_popup.visible = false
+	)
 	btn_row.add_child(cancel)
 
 	dispatch_content.add_child(btn_row)
+
+func _update_route_button_states() -> void:
+	# Toggle route buttons to reflect selection
+	var est_panel := dispatch_content.find_child("EstimatePanel", true, false)
+	if not est_panel:
+		return
+
+	# Update direct route button
+	var direct_btn: Button = est_panel.find_child("DirectRouteButton", true, false)
+	if direct_btn:
+		direct_btn.button_pressed = (_selected_slingshot_route == null)
+
+	# Update slingshot buttons
+	for route in _available_slingshot_routes:
+		var slingshot_btn: Button = est_panel.find_child("SlingshotButton_%d" % route.planet_index, true, false)
+		if slingshot_btn:
+			slingshot_btn.button_pressed = (_selected_slingshot_route == route)
 
 func _update_estimate_display() -> void:
 	var est_panel := dispatch_content.find_child("EstimatePanel", true, false)
@@ -1271,6 +1451,41 @@ func _update_estimate_display() -> void:
 		_selected_asteroid, _selected_ship, _selected_workers, 30.0, Vector2(-999, -999), _selected_transit_mode
 	)
 
+	# Override estimates if using slingshot route
+	if _selected_slingshot_route:
+		est["fuel_needed"] = _selected_slingshot_route.fuel_cost
+		est["fuel_cost"] = int(_selected_slingshot_route.fuel_cost * Ship.FUEL_COST_PER_UNIT)
+		est["transit_time"] = _selected_slingshot_route.transit_time
+		# Profit = revenue - fuel cost
+		est["profit"] = est["revenue"] - est["fuel_cost"]
+
+	# If selling at destination markets, recalculate profit with colony prices
+	var adjusted_profit: float = est["profit"]
+	var nearest_colony: Colony = null
+	var colony_revenue: float = est["revenue"]
+
+	if _sell_at_destination_markets:
+		# Find nearest colony to asteroid
+		var asteroid_pos := _selected_asteroid.get_position_au()
+		var nearest_dist := 999999.0
+		for colony in GameState.colonies:
+			var d := asteroid_pos.distance_to(colony.get_position_au())
+			if d < nearest_dist:
+				nearest_dist = d
+				nearest_colony = colony
+
+		if nearest_colony:
+			# Recalculate revenue at colony prices
+			colony_revenue = 0.0
+			var cargo_breakdown: Dictionary = est["cargo_breakdown"]
+			for ore_type in cargo_breakdown:
+				var tons: float = cargo_breakdown[ore_type]
+				var colony_price := nearest_colony.get_ore_price(ore_type, GameState.market)
+				colony_revenue += tons * colony_price
+
+			# Recalculate profit with colony revenue
+			adjusted_profit = colony_revenue - est["wage_cost"] - est["fuel_cost"]
+
 	# Update transit mode button states
 	var mode_hbox := est_panel.find_child("TransitModeButtons", true, false)
 	if mode_hbox:
@@ -1290,6 +1505,15 @@ func _update_estimate_display() -> void:
 				est = AsteroidData.estimate_mission(
 					_selected_asteroid, _selected_ship, _selected_workers, 30.0, Vector2(-999, -999), _selected_transit_mode
 				)
+
+	# Update thrust labels
+	var thrust_pct_label: Label = est_panel.find_child("ThrustPctLabel", true, false)
+	if thrust_pct_label:
+		thrust_pct_label.text = "%.0f%%" % (_selected_ship.thrust_setting * 100.0)
+
+	var ai_thrust_label: Label = est_panel.find_child("AIThrustLabel", true, false)
+	if ai_thrust_label:
+		ai_thrust_label.text = "AI: %.0f%% (%s)" % [_selected_ship.thrust_setting * 100.0, CompanyPolicy.THRUST_POLICY_NAMES[GameState.thrust_policy]]
 
 	var mode_name := "HOHMANN (Fuel-Efficient)" if _selected_transit_mode == Mission.TransitMode.HOHMANN else "BRACHISTOCHRONE (Fast)"
 
@@ -1317,28 +1541,42 @@ func _update_estimate_display() -> void:
 	var breakdown: Dictionary = est["cargo_breakdown"]
 	for ore_type in breakdown:
 		var tons: float = breakdown[ore_type]
-		var price: float = MarketData.get_ore_price(ore_type)
+		var price: float
+		if _sell_at_destination_markets and nearest_colony:
+			price = nearest_colony.get_ore_price(ore_type, GameState.market)
+		else:
+			price = MarketData.get_ore_price(ore_type)
 		lines.append("  %s: %.1ft = $%s" % [
 			ResourceTypes.get_ore_name(ore_type), tons, _format_number(int(tons * price))
 		])
 
 	lines.append("")
-	lines.append("Revenue: $%s" % _format_number(int(est["revenue"])))
+	if _sell_at_destination_markets and nearest_colony:
+		lines.append("Revenue (at %s): $%s" % [nearest_colony.colony_name, _format_number(int(colony_revenue))])
+	else:
+		lines.append("Revenue (at Earth): $%s" % _format_number(int(est["revenue"])))
 	lines.append("Wages: -$%s" % _format_number(int(est["wage_cost"])))
 	if GameState.settings.get("auto_refuel", true):
-		lines.append("Fuel: -$%s" % _format_number(int(est.get("fuel_cost", 0.0))))
+		# Show fuel cost with source info
+		var fuel_info := FuelPricing.get_fuel_price_info(_selected_ship.position_au)
+		var fuel_cost_display := "Fuel: -$%s" % _format_number(int(est.get("fuel_cost", 0.0)))
+		if fuel_info["source"] != "Earth Depot":
+			fuel_cost_display += " (from %s)" % fuel_info["source"]
+		else:
+			fuel_cost_display += " (from Earth)"
+		lines.append(fuel_cost_display)
 
-	var profit_text := "$%s" % _format_number(int(abs(est["profit"])))
-	if est["profit"] >= 0:
+	var profit_text := "$%s" % _format_number(int(abs(adjusted_profit)))
+	if adjusted_profit >= 0:
 		lines.append("Profit: +%s" % profit_text)
 	else:
 		lines.append("LOSS: -%s" % profit_text)
 
 	est_label.text = "\n".join(lines)
 
-	if est["profit"] < 0:
+	if adjusted_profit < 0:
 		est_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
-	elif est["profit"] < 500:
+	elif adjusted_profit < 500:
 		est_label.add_theme_color_override("font_color", Color(0.9, 0.8, 0.3))
 	else:
 		est_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
@@ -1441,9 +1679,10 @@ func _execute_dispatch() -> void:
 	_selected_ship.last_crew = _selected_workers.duplicate()
 
 	if _selected_ship.is_idle_remote:
-		GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode)
+		GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode, _selected_slingshot_route)
 	else:
-		GameState.start_mission(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode)
+		GameState.start_mission(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode, _selected_slingshot_route)
+	_cancel_preview()
 	dispatch_popup.visible = false
 	_mark_dirty()
 
@@ -1451,8 +1690,8 @@ func _build_details_text(ship: Ship) -> String:
 	var engine_str := ""
 	if ship.engine_condition < 100.0:
 		engine_str = "  |  Eng: %d%%" % int(ship.engine_condition)
-	return "Thrust: %.1fg  |  Cargo: %.0f/%.0ft  |  Fuel: %.0f/%.0f  |  Equip: %d/%d (%.2fx)%s" % [
-		ship.thrust_g, ship.get_cargo_total(), ship.get_effective_cargo_capacity(),
+	return "Thrust: %.1fg (%.0f%%)  |  Cargo: %.0f/%.0ft  |  Fuel: %.0f/%.0f  |  Equip: %d/%d (%.2fx)%s" % [
+		ship.get_effective_thrust(), ship.thrust_setting * 100.0, ship.get_cargo_total(), ship.get_effective_cargo_capacity(),
 		ship.fuel, ship.get_effective_fuel_capacity(),
 		ship.equipment.size(), ship.max_equipment_slots, ship.get_mining_multiplier(),
 		engine_str,
@@ -1532,7 +1771,7 @@ func _confirm_colony_dispatch(colony: Colony) -> void:
 	# Show confirmation dialog before dispatching
 	var colony_pos: Vector2 = colony.get_position_au()
 	var dist := _selected_ship.position_au.distance_to(colony_pos)
-	var transit := Brachistochrone.transit_time(dist, _selected_ship.thrust_g)
+	var transit := Brachistochrone.transit_time(dist, _selected_ship.get_effective_thrust())
 
 	# Calculate revenue
 	var revenue := 0

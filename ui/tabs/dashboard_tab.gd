@@ -66,6 +66,59 @@ func _ready() -> void:
 	EventBus.trade_mission_phase_changed.connect(func(_tm: TradeMission) -> void: _refresh_missions())
 
 	_refresh_all()
+	_setup_policies_ui()
+
+func _setup_policies_ui() -> void:
+	# Find the main VBox in the dashboard
+	var scroll := get_node("ScrollContainer")
+	var vbox := scroll.get_node("VBox")
+
+	# Add policies card
+	var policies_card := PanelContainer.new()
+	var policies_vbox := VBoxContainer.new()
+	policies_vbox.add_theme_constant_override("separation", 8)
+
+	var title := Label.new()
+	title.text = "COMPANY POLICIES"
+	title.add_theme_font_size_override("font_size", 14)
+	policies_vbox.add_child(title)
+
+	# Thrust policy selector
+	var thrust_row := HBoxContainer.new()
+	thrust_row.add_theme_constant_override("separation", 8)
+
+	var thrust_label := Label.new()
+	thrust_label.text = "Thrust Strategy:"
+	thrust_label.custom_minimum_size = Vector2(120, 0)
+	thrust_row.add_child(thrust_label)
+
+	var thrust_option := OptionButton.new()
+	thrust_option.custom_minimum_size = Vector2(0, 36)
+	for policy in CompanyPolicy.ThrustPolicy.values():
+		thrust_option.add_item(CompanyPolicy.THRUST_POLICY_NAMES[policy])
+	thrust_option.selected = GameState.thrust_policy
+	thrust_option.item_selected.connect(func(idx: int) -> void:
+		GameState.thrust_policy = idx
+	)
+	thrust_row.add_child(thrust_option)
+
+	policies_vbox.add_child(thrust_row)
+
+	# Policy description
+	var desc_label := Label.new()
+	desc_label.text = CompanyPolicy.THRUST_POLICY_DESCRIPTIONS[GameState.thrust_policy]
+	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	desc_label.custom_minimum_size = Vector2(0, 40)
+	policies_vbox.add_child(desc_label)
+
+	# Update description when policy changes
+	thrust_option.item_selected.connect(func(idx: int) -> void:
+		desc_label.text = CompanyPolicy.THRUST_POLICY_DESCRIPTIONS[idx]
+	)
+
+	policies_card.add_child(policies_vbox)
+	vbox.add_child(policies_card)
 
 func _process(delta: float) -> void:
 	# Smooth progress bar updates with LERP

@@ -14,6 +14,7 @@ var _progress_bars: Dictionary = {}  # Ship -> ProgressBar
 var _status_labels: Dictionary = {}  # Ship -> Label
 var _detail_labels: Dictionary = {}  # Ship -> Label
 var _cargo_labels: Dictionary = {}  # Ship -> Label for cargo display
+var _location_labels: Dictionary = {}  # Ship -> Label for location display
 const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catch up
 var _dispatch_refresh_timer: float = 0.0
 const DISPATCH_REFRESH_INTERVAL: float = 2.0  # Refresh dispatch popup every 2 seconds
@@ -23,6 +24,7 @@ var _saved_colonies_scroll: float = 0.0  # Preserve scroll position across refre
 var _saved_mining_scroll: float = 0.0  # Preserve scroll position across refreshes
 
 func _ready() -> void:
+	_cancel_preview()
 	dispatch_popup.visible = false
 	EventBus.mission_started.connect(func(_m: Mission) -> void: _mark_dirty())
 	EventBus.mission_completed.connect(func(_m: Mission) -> void: _mark_dirty())
@@ -96,12 +98,18 @@ func _on_tick(dt: float) -> void:
 				if amount > 0.01:
 					cargo_lines.append("  %s: %.1ft" % [ResourceTypes.get_ore_name(ore_type), amount])
 			label.text = "\n".join(cargo_lines)
+	# Update location displays to show ship positions during transit
+	for ship: Ship in _location_labels:
+		var label: Label = _location_labels[ship]
+		if is_instance_valid(label):
+			label.text = _get_location_text(ship)
 
 func _rebuild_ships() -> void:
 	_progress_bars.clear()
 	_status_labels.clear()
 	_detail_labels.clear()
 	_cargo_labels.clear()
+	_location_labels.clear()
 	for child in ships_list.get_children():
 		child.queue_free()
 
@@ -114,7 +122,7 @@ func _rebuild_ships() -> void:
 
 		var header := HBoxContainer.new()
 		var name_label := Label.new()
-		name_label.text = ship.ship_name
+		name_label.text = "%s (%s)" % [ship.ship_name, ship.get_class_name()]
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		header.add_child(name_label)
 
@@ -213,6 +221,7 @@ func _rebuild_ships() -> void:
 		loc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		loc_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		vbox.add_child(loc_label)
+		_location_labels[ship] = loc_label
 
 		var details := Label.new()
 		details.text = _build_details_text(ship)
@@ -357,6 +366,9 @@ func _get_location_text(ship: Ship) -> String:
 				return "Location: Deep space (%.2f, %.2f AU)" % [ship.position_au.x, ship.position_au.y]
 	return "Location: Deep space (%.2f, %.2f AU)" % [ship.position_au.x, ship.position_au.y]
 
+func _cancel_preview() -> void:
+	EventBus.mission_preview_cancelled.emit()
+
 func _start_dispatch(ship: Ship) -> void:
 	_selected_ship = ship
 	_selected_asteroid = null
@@ -424,7 +436,7 @@ func _show_asteroid_selection() -> void:
 		for colony in filtered_colonies:
 			var colony_pos := colony.get_position_au()
 			var dist := _selected_ship.position_au.distance_to(colony_pos)
-			var transit := Brachistochrone.transit_time(dist, _selected_ship.thrust_g)
+			var transit := Brachistochrone.transit_time(dist, _selected_ship.get_effective_thrust())
 			var cargo_mass := _selected_ship.get_cargo_total()
 			var fuel_needed := _selected_ship.calc_fuel_for_distance(dist, cargo_mass)
 
@@ -473,7 +485,7 @@ func _show_asteroid_selection() -> void:
 				fuel_status = " [UNREACHABLE - insufficient fuel capacity]"
 			elif has_insufficient_fuel:
 				fuel_status = " [NEEDS REFUEL]"
-			elif fuel_needed > _selected_ship.fuel * 0.8:
+			elif fuel_needed > available_fuel * 0.8:
 				fuel_status = " [LOW FUEL]"
 
 			btn.text = "%s (MARKET)\n%.2f AU | %s | Revenue: $%s%s\n%s" % [
@@ -587,7 +599,7 @@ func _show_asteroid_selection() -> void:
 
 	for asteroid in asteroids:
 		var dist := _selected_ship.position_au.distance_to(asteroid.get_position_au())
-		var transit := Brachistochrone.transit_time(dist, _selected_ship.thrust_g)
+		var transit := Brachistochrone.transit_time(dist, _selected_ship.get_effective_thrust())
 		var est := AsteroidData.estimate_mission(asteroid, _selected_ship, est_workers)
 
 		# Fuel warning and route calculation
@@ -598,9 +610,8 @@ func _show_asteroid_selection() -> void:
 		var is_unreachable := false
 
 		if fuel_one_way > available_fuel:
-			var asteroid_pos := asteroid.get_position_au()
 			var current_cargo := _selected_ship.get_cargo_total()
-			fuel_route = _calculate_fuel_route_to_position(asteroid_pos, current_cargo)
+			fuel_route = _calculate_fuel_route_to_position(asteroid.get_position_au(), current_cargo)
 			if fuel_route.is_empty():
 				is_unreachable = true
 				fuel_warning = " [UNREACHABLE]"
@@ -674,7 +685,10 @@ func _show_asteroid_selection() -> void:
 	var cancel := Button.new()
 	cancel.text = "Cancel"
 	cancel.custom_minimum_size = Vector2(0, 44)
-	cancel.pressed.connect(func() -> void: dispatch_popup.visible = false)
+	cancel.pressed.connect(func() -> void:
+		_cancel_preview()
+		dispatch_popup.visible = false
+	)
 	dispatch_content.add_child(cancel)
 
 	dispatch_popup.visible = true
@@ -737,6 +751,7 @@ func _select_colony_trade(colony: Colony) -> void:
 		GameState.dispatch_idle_ship_trade(_selected_ship, colony, assigned, cargo)
 	else:
 		GameState.start_trade_mission(_selected_ship, colony, assigned, cargo)
+	_cancel_preview()
 	dispatch_popup.visible = false
 	_mark_dirty()
 
@@ -744,6 +759,19 @@ func _show_worker_selection() -> void:
 	_on_selection_screen = false  # Left the main selection screen
 	_on_estimate_screen = true  # Now on the estimate screen
 	_clear_dispatch_content()
+
+	# AI-calculate optimal thrust based on company policy
+	var expected_cargo := _selected_ship.cargo_capacity
+	var ai_thrust := CompanyPolicy.calculate_thrust_setting(
+		GameState.thrust_policy,
+		_selected_ship,
+		_selected_asteroid.get_position_au(),
+		expected_cargo
+	)
+	_selected_ship.thrust_setting = ai_thrust
+
+	# Show trajectory preview on map
+	EventBus.mission_preview_started.emit(_selected_ship, _selected_asteroid.get_position_au())
 
 	var title := Label.new()
 	title.text = "Assign Workers"
@@ -827,6 +855,64 @@ func _show_worker_selection() -> void:
 	est_title.add_theme_font_size_override("font_size", 14)
 	est_vbox.add_child(est_title)
 
+	# Manual thrust control (hidden by default, AI-controlled)
+	var thrust_control_row := HBoxContainer.new()
+	thrust_control_row.name = "ThrustControlRow"
+	thrust_control_row.add_theme_constant_override("separation", 8)
+
+	var manual_thrust_btn := Button.new()
+	manual_thrust_btn.name = "ManualThrustButton"
+	manual_thrust_btn.text = "Manual Thrust Control"
+	manual_thrust_btn.custom_minimum_size = Vector2(0, 32)
+	manual_thrust_btn.toggle_mode = true
+	manual_thrust_btn.pressed.connect(func() -> void:
+		var slider_row = est_vbox.find_child("ThrustSliderRow", false, false)
+		if slider_row:
+			slider_row.visible = manual_thrust_btn.button_pressed
+	)
+	thrust_control_row.add_child(manual_thrust_btn)
+
+	var ai_label := Label.new()
+	ai_label.name = "AIThrustLabel"
+	ai_label.text = "AI: %.0f%% (%s)" % [_selected_ship.thrust_setting * 100.0, CompanyPolicy.THRUST_POLICY_NAMES[GameState.thrust_policy]]
+	ai_label.add_theme_color_override("font_color", Color(0.5, 0.9, 0.5))
+	thrust_control_row.add_child(ai_label)
+
+	est_vbox.add_child(thrust_control_row)
+
+	# Thrust slider (hidden by default)
+	var thrust_slider_row := HBoxContainer.new()
+	thrust_slider_row.name = "ThrustSliderRow"
+	thrust_slider_row.visible = false
+	thrust_slider_row.add_theme_constant_override("separation", 8)
+
+	var thrust_label := Label.new()
+	thrust_label.text = "Thrust:"
+	thrust_label.custom_minimum_size = Vector2(60, 0)
+	thrust_slider_row.add_child(thrust_label)
+
+	var thrust_slider := HSlider.new()
+	thrust_slider.name = "ThrustSlider"
+	thrust_slider.min_value = 0.1
+	thrust_slider.max_value = 1.0
+	thrust_slider.step = 0.05
+	thrust_slider.value = _selected_ship.thrust_setting
+	thrust_slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	thrust_slider.custom_minimum_size = Vector2(200, 0)
+	thrust_slider.value_changed.connect(func(value: float) -> void:
+		_selected_ship.thrust_setting = value
+		_update_estimate_display()
+	)
+	thrust_slider_row.add_child(thrust_slider)
+
+	var thrust_pct_label := Label.new()
+	thrust_pct_label.name = "ThrustPctLabel"
+	thrust_pct_label.text = "%.0f%%" % (_selected_ship.thrust_setting * 100.0)
+	thrust_pct_label.custom_minimum_size = Vector2(50, 0)
+	thrust_slider_row.add_child(thrust_pct_label)
+
+	est_vbox.add_child(thrust_slider_row)
+
 	var est_details := Label.new()
 	est_details.name = "EstimateDetails"
 	est_details.text = "Select workers to see estimate"
@@ -841,7 +927,10 @@ func _show_worker_selection() -> void:
 	var back_btn := Button.new()
 	back_btn.text = "Back"
 	back_btn.custom_minimum_size = Vector2(0, 44)
-	back_btn.pressed.connect(_show_asteroid_selection)
+	back_btn.pressed.connect(func() -> void:
+		_cancel_preview()
+		_show_asteroid_selection()
+	)
 	btn_row.add_child(back_btn)
 
 	var confirm := Button.new()
@@ -853,7 +942,10 @@ func _show_worker_selection() -> void:
 	var cancel := Button.new()
 	cancel.text = "Cancel"
 	cancel.custom_minimum_size = Vector2(0, 44)
-	cancel.pressed.connect(func() -> void: dispatch_popup.visible = false)
+	cancel.pressed.connect(func() -> void:
+		_cancel_preview()
+		dispatch_popup.visible = false
+	)
 	btn_row.add_child(cancel)
 
 	dispatch_content.add_child(btn_row)
@@ -876,6 +968,15 @@ func _update_estimate_display() -> void:
 	var est := AsteroidData.estimate_mission(
 		_selected_asteroid, _selected_ship, _selected_workers
 	)
+
+	# Update thrust labels
+	var thrust_pct_label: Label = est_panel.find_child("ThrustPctLabel", true, false)
+	if thrust_pct_label:
+		thrust_pct_label.text = "%.0f%%" % (_selected_ship.thrust_setting * 100.0)
+
+	var ai_thrust_label: Label = est_panel.find_child("AIThrustLabel", true, false)
+	if ai_thrust_label:
+		ai_thrust_label.text = "AI: %.0f%% (%s)" % [_selected_ship.thrust_setting * 100.0, CompanyPolicy.THRUST_POLICY_NAMES[GameState.thrust_policy]]
 
 	var lines: Array[String] = []
 	lines.append("Transit: %s each way" % _format_time(est["transit_time"]))
@@ -946,6 +1047,7 @@ func _confirm_dispatch() -> void:
 		GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_workers)
 	else:
 		GameState.start_mission(_selected_ship, _selected_asteroid, _selected_workers)
+	_cancel_preview()
 	dispatch_popup.visible = false
 	_mark_dirty()
 
@@ -953,8 +1055,8 @@ func _build_details_text(ship: Ship) -> String:
 	var engine_str := ""
 	if ship.engine_condition < 100.0:
 		engine_str = "  |  Eng: %d%%" % int(ship.engine_condition)
-	return "Thrust: %.1fg  |  Cargo: %.0f/%.0ft  |  Fuel: %.0f/%.0f  |  Equip: %d/%d (%.2fx)%s" % [
-		ship.thrust_g, ship.get_cargo_total(), ship.get_effective_cargo_capacity(),
+	return "Thrust: %.1fg (%.0f%%)  |  Cargo: %.0f/%.0ft  |  Fuel: %.0f/%.0f  |  Equip: %d/%d (%.2fx)%s" % [
+		ship.get_effective_thrust(), ship.thrust_setting * 100.0, ship.get_cargo_total(), ship.get_effective_cargo_capacity(),
 		ship.fuel, ship.get_effective_fuel_capacity(),
 		ship.equipment.size(), ship.max_equipment_slots, ship.get_mining_multiplier(),
 		engine_str,

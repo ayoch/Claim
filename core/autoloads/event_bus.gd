@@ -26,6 +26,8 @@ signal cargo_jettisoned(ship: Ship, tons_jettisoned: float)
 signal mission_started(mission: Mission)
 signal mission_phase_changed(mission: Mission)
 signal mission_completed(mission: Mission)
+signal mission_preview_started(ship: Ship, destination_pos: Vector2, slingshot_route)  # Show planned route (slingshot_route is GravityAssist.SlingshotRoute or null)
+signal mission_preview_cancelled()  # Hide planned route
 
 # Trade missions
 signal trade_mission_started(trade_mission: TradeMission)
