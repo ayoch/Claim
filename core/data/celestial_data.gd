@@ -4,6 +4,35 @@ extends RefCounted
 const EARTH_ORBIT_AU: float = 1.0
 const AU_TO_METERS: float = 1.496e11
 
+# Physical radii in AU for collision detection (actual radius, generous for gameplay)
+# Sun: 0.00465 AU (real), planets use ~2x real radius as destruction zone (atmosphere/tidal)
+const SUN_RADIUS_AU: float = 0.00465
+const PLANET_RADII_AU: Array[float] = [
+	0.0000326,   # Mercury (2440 km)
+	0.0000808,   # Venus (6052 km)
+	0.0000851,   # Earth (6371 km)
+	0.0000453,   # Mars (3390 km)
+	0.000955,    # Jupiter (71492 km)
+	0.000805,    # Saturn (60268 km)
+	0.000340,    # Uranus (25559 km)
+	0.000330,    # Neptune (24764 km)
+]
+
+# Gravitational parameter GM in AU³/s² for n-body drift physics
+# GM_sun = 1.327e20 m³/s², AU_TO_METERS³ = 3.348e33 → GM_sun = 3.964e-14 AU³/s²
+const GM_SUN: float = 3.964e-14
+# Planet GM values (AU³/s²) — GM_sun divided by mass ratio
+const GM_PLANETS: Array[float] = [
+	3.964e-14 / 6023600.0,   # Mercury
+	3.964e-14 / 408523.7,    # Venus
+	3.964e-14 / 332946.0,    # Earth
+	3.964e-14 / 3098708.0,   # Mars
+	3.964e-14 / 1047.35,     # Jupiter
+	3.964e-14 / 3497.9,      # Saturn
+	3.964e-14 / 22902.94,    # Uranus
+	3.964e-14 / 19412.24,    # Neptune
+]
+
 # Planet data: [name, orbit_au, color_r, color_g, color_b, radius_px]
 const PLANETS: Array[Dictionary] = [
 	{"name": "Mercury", "orbit_au": 0.39, "color": Color(0.7, 0.7, 0.6), "radius": 5.0},
@@ -41,6 +70,50 @@ static func advance_planets(_dt: float) -> void:
 	# Positions are computed from GameState.total_ticks in EphemerisData
 	# No explicit advancing needed — just ensure init
 	_ensure_init()
+
+## Compute gravitational acceleration at a position from Sun + all planets
+## Returns acceleration in AU/s² (add to velocity each tick)
+static func gravitational_acceleration(pos_au: Vector2) -> Vector2:
+	_ensure_init()
+	var accel := Vector2.ZERO
+
+	# Sun at origin
+	var r_sun := -pos_au  # Vector from pos to Sun (origin)
+	var dist_sq := r_sun.length_squared()
+	if dist_sq > 1e-12:  # Avoid singularity
+		var dist := sqrt(dist_sq)
+		accel += r_sun * (GM_SUN / (dist_sq * dist))
+
+	# Planets
+	for i in range(PLANETS.size()):
+		var planet_pos := get_planet_position_au(i)
+		var r := planet_pos - pos_au  # Vector from pos to planet
+		dist_sq = r.length_squared()
+		if dist_sq > 1e-12:
+			var dist := sqrt(dist_sq)
+			accel += r * (GM_PLANETS[i] / (dist_sq * dist))
+
+	return accel
+
+## Check if a ship has crashed into the Sun or a planet
+## prev_pos: position last tick, cur_pos: position this tick
+## Collision = was outside radius last tick, now inside (entered the body)
+## Returns {"hit": true, "body": "Sun"/"Jupiter"/etc} or {"hit": false}
+static func check_collision(prev_pos: Vector2, cur_pos: Vector2) -> Dictionary:
+	# Sun
+	if cur_pos.length() < SUN_RADIUS_AU and prev_pos.length() >= SUN_RADIUS_AU:
+		return {"hit": true, "body": "the Sun"}
+
+	# Planets
+	_ensure_init()
+	for i in range(PLANETS.size()):
+		var planet_pos := get_planet_position_au(i)
+		var cur_dist := cur_pos.distance_to(planet_pos)
+		var prev_dist := prev_pos.distance_to(planet_pos)
+		if cur_dist < PLANET_RADII_AU[i] and prev_dist >= PLANET_RADII_AU[i]:
+			return {"hit": true, "body": PLANETS[i]["name"]}
+
+	return {"hit": false, "body": ""}
 
 # Legacy compatibility
 static func advance_earth(_dt: float) -> void:

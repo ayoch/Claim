@@ -38,6 +38,7 @@ func _ready() -> void:
 	# Auto-slow to 1x on critical events
 	EventBus.ship_breakdown.connect(func(_s: Ship, _r: String) -> void: TimeScale.slow_for_critical_event())
 	EventBus.stranger_rescue_offered.connect(func(_s: Ship, _n: String) -> void: TimeScale.slow_for_critical_event())
+	EventBus.ship_destroyed.connect(func(_s: Ship, _b: String) -> void: TimeScale.slow_for_critical_event())
 
 func _process(delta: float) -> void:
 	var game_speed := TimeScale.speed_multiplier
@@ -308,6 +309,11 @@ func _process_trade_missions(dt: float) -> void:
 					GameState.complete_trade_mission(tm)
 
 func _update_ship_positions(dt: float) -> void:
+	# Save previous positions for collision detection (enter-radius check)
+	var prev_positions: Dictionary = {}  # Ship -> Vector2
+	for ship in GameState.ships:
+		prev_positions[ship] = ship.position_au
+
 	# Update ship positions and velocities during transit based on mission progress
 	for mission: Mission in GameState.missions:
 		var ship := mission.ship
@@ -318,7 +324,7 @@ func _update_ship_positions(dt: float) -> void:
 				var progress := mission.get_progress()
 				var start_pos := mission.get_current_leg_start_pos()
 				var end_pos := mission.get_current_leg_end_pos()
-				_update_ship_transit_physics(ship, start_pos, end_pos, progress, mission.transit_mode, mission.transit_time)
+				_update_ship_transit_physics(ship, start_pos, end_pos, progress, mission.transit_mode, mission.transit_time, dt)
 			Mission.Status.MINING, Mission.Status.IDLE_AT_DESTINATION:
 				ship.position_au = mission.asteroid.get_position_au()
 				ship.velocity_au_per_tick = Vector2.ZERO
@@ -333,26 +339,62 @@ func _update_ship_positions(dt: float) -> void:
 				var progress := tm.get_progress()
 				var start_pos := tm.get_current_leg_start_pos()
 				var end_pos := tm.get_current_leg_end_pos()
-				_update_ship_transit_physics(ship, start_pos, end_pos, progress, tm.transit_mode, tm.transit_time)
+				_update_ship_transit_physics(ship, start_pos, end_pos, progress, tm.transit_mode, tm.transit_time, dt)
 			TradeMission.Status.SELLING, TradeMission.Status.IDLE_AT_COLONY:
 				ship.position_au = tm.colony.get_position_au()
 				ship.velocity_au_per_tick = Vector2.ZERO
 				ship.speed_au_per_tick = 0.0
 
-	# Derelict drift: maintain velocity, update position
+	# Drift with n-body gravity: Sun + planets influence drifting ships
 	for ship in GameState.ships:
-		if ship.is_derelict and ship.speed_au_per_tick > 0.0:
+		if ship.speed_au_per_tick > 0.0 and ship.current_mission == null and ship.current_trade_mission == null:
+			# Symplectic Euler: update velocity first, then position
+			var accel := CelestialData.gravitational_acceleration(ship.position_au)
+			ship.velocity_au_per_tick += accel * dt
+			ship.speed_au_per_tick = ship.velocity_au_per_tick.length()
 			ship.position_au += ship.velocity_au_per_tick * dt
 
-func _update_ship_transit_physics(ship: Ship, start_pos: Vector2, end_pos: Vector2, time_fraction: float, transit_mode: int, total_time: float) -> void:
-	# Update ship position and velocity based on transit physics
+	# Check all moving ships for collisions with Sun or planets
+	_check_ship_collisions(prev_positions)
+
+func _check_ship_collisions(prev_positions: Dictionary) -> void:
+	var destroyed_ships: Array[Ship] = []
+	for ship in GameState.ships:
+		if ship.speed_au_per_tick <= 0.0:
+			continue
+		var prev_pos: Vector2 = prev_positions.get(ship, ship.position_au)
+		var collision := CelestialData.check_collision(prev_pos, ship.position_au)
+		if collision["hit"]:
+			destroyed_ships.append(ship)
+			var body_name: String = collision["body"]
+			EventBus.ship_destroyed.emit(ship, body_name)
+
+	for ship in destroyed_ships:
+		# Remove all crew
+		for w in ship.last_crew:
+			if w is Worker:
+				GameState.workers.erase(w)
+		# Clean up missions
+		if ship.current_mission:
+			GameState.missions.erase(ship.current_mission)
+			ship.current_mission = null
+		if ship.current_trade_mission:
+			GameState.trade_missions.erase(ship.current_trade_mission)
+			ship.current_trade_mission = null
+		# Clean up any pending rescue/refuel
+		GameState.rescue_missions.erase(ship)
+		GameState.refuel_missions.erase(ship)
+		GameState.stranger_offers.erase(ship)
+		# Remove the ship
+		GameState.ships.erase(ship)
+
+func _update_ship_transit_physics(ship: Ship, start_pos: Vector2, end_pos: Vector2, time_fraction: float, transit_mode: int, total_time: float, dt: float) -> void:
+	# Update ship position and velocity based on transit physics + gravity
 	var direction := (end_pos - start_pos).normalized()
 	var total_distance := start_pos.distance_to(end_pos)
 
 	if transit_mode == Mission.TransitMode.HOHMANN:
-		# Hohmann transfer: linear motion (simplified orbital mechanics)
 		ship.position_au = start_pos.lerp(end_pos, time_fraction)
-		# Constant velocity for Hohmann
 		if total_time > 0:
 			ship.velocity_au_per_tick = direction * (total_distance / total_time)
 			ship.speed_au_per_tick = total_distance / total_time
@@ -364,11 +406,8 @@ func _update_ship_transit_physics(ship: Ship, start_pos: Vector2, end_pos: Vecto
 		var distance_fraction := _brachistochrone_distance_fraction(time_fraction)
 		var velocity_fraction := _brachistochrone_velocity_fraction(time_fraction)
 
-		# Update position using S-curve
 		ship.position_au = start_pos.lerp(end_pos, distance_fraction)
 
-		# Calculate velocity: v = (distance / time) * velocity_fraction
-		# Peak velocity occurs at midpoint, is 2x the average velocity
 		if total_time > 0:
 			var avg_velocity := total_distance / total_time
 			var current_speed := avg_velocity * velocity_fraction
@@ -377,6 +416,16 @@ func _update_ship_transit_physics(ship: Ship, start_pos: Vector2, end_pos: Vecto
 		else:
 			ship.velocity_au_per_tick = Vector2.ZERO
 			ship.speed_au_per_tick = 0.0
+
+	# Apply gravitational perturbation from Sun + planets
+	# Gravity bends the trajectory; thrust course-corrects to stay on target
+	# Net effect: perpendicular deflection accumulates then gets corrected
+	var grav_accel := CelestialData.gravitational_acceleration(ship.position_au)
+	# Only apply the component perpendicular to thrust direction
+	# (the along-track component is already handled by the thrust model)
+	var perp := grav_accel - direction * grav_accel.dot(direction)
+	ship.velocity_au_per_tick += perp * dt
+	ship.speed_au_per_tick = ship.velocity_au_per_tick.length()
 
 func _brachistochrone_distance_fraction(time_fraction: float) -> float:
 	# Convert time progress to distance progress for constant-acceleration trajectory
@@ -496,16 +545,12 @@ func _process_rescues(dt: float) -> void:
 		var data: Dictionary = GameState.rescue_missions[ship]
 		GameState.rescue_missions.erase(ship)
 
-		# Ship returns to rescue source at 50% condition/fuel, cargo lost
+		# Rescue ship matches course, repairs in place, transfers fuel
+		# Ship keeps its position and velocity — continues drifting
 		ship.is_derelict = false
 		ship.derelict_reason = ""
-		ship.velocity_au_per_tick = Vector2.ZERO
-		ship.speed_au_per_tick = 0.0
-		var source_pos: Vector2 = data.get("source_pos", CelestialData.get_earth_position_au())
-		ship.position_au = source_pos
 		ship.engine_condition = 50.0
-		ship.fuel = ship.fuel_capacity * 0.5
-		ship.current_cargo.clear()
+		ship.fuel = ship.get_effective_fuel_capacity() * 0.5
 
 		# 10% worker loss chance per worker
 		var workers_to_check: Array = data.get("workers", [])

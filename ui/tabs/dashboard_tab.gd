@@ -70,6 +70,11 @@ func _ready() -> void:
 		_add_event("ALERT: %s — %s" % [ship.ship_name, reason], Color(0.9, 0.2, 0.2))
 		_send_system_notification("Ship Breakdown", "%s — %s" % [ship.ship_name, reason])
 	)
+	EventBus.ship_destroyed.connect(func(ship: Ship, body_name: String) -> void:
+		_refresh_missions()
+		_add_event("DESTROYED: %s crashed into %s — all hands lost" % [ship.ship_name, body_name], Color(1.0, 0.1, 0.1))
+		_send_system_notification("Ship Destroyed", "%s crashed into %s" % [ship.ship_name, body_name])
+	)
 	EventBus.rescue_mission_started.connect(func(ship: Ship, cost: int) -> void:
 		_refresh_missions()
 		_add_event("Rescue dispatched for %s ($%s)" % [ship.ship_name, _format_number(cost)], Color(0.9, 0.6, 0.2))

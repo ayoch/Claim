@@ -482,7 +482,10 @@ func get_rescue_cost(ship: Ship) -> int:
 	# Velocity cost: convert AU/tick to km/s
 	var speed_km_s := ship.speed_au_per_tick * CelestialData.AU_TO_METERS / 1000.0
 	var velocity_cost := int(speed_km_s * RESCUE_COST_PER_KMS)
-	return RESCUE_COST_BASE + distance_cost + velocity_cost
+	# Fuel transfer: rescue delivers 50% tank, player pays for it
+	var fuel_transfer := ship.get_effective_fuel_capacity() * 0.5
+	var fuel_cost := int(fuel_transfer * Ship.FUEL_COST_PER_UNIT)
+	return RESCUE_COST_BASE + distance_cost + velocity_cost + fuel_cost
 
 func get_refuel_cost(ship: Ship, fuel_amount: float) -> int:
 	var source := _find_nearest_rescue_source(ship.position_au)
@@ -499,11 +502,13 @@ func start_rescue(ship: Ship) -> bool:
 	var source := _find_nearest_rescue_source(ship.position_au)
 	var initial_dist: float = source["dist"]
 
-	# Calculate cost including velocity component
+	# Calculate cost including velocity and fuel transfer
 	var distance_cost := int(initial_dist * RESCUE_COST_PER_AU)
 	var speed_km_s := ship.speed_au_per_tick * CelestialData.AU_TO_METERS / 1000.0
 	var velocity_cost := int(speed_km_s * RESCUE_COST_PER_KMS)
-	var cost := RESCUE_COST_BASE + distance_cost + velocity_cost
+	var fuel_transfer := ship.get_effective_fuel_capacity() * 0.5
+	var fuel_cost := int(fuel_transfer * Ship.FUEL_COST_PER_UNIT)
+	var cost := RESCUE_COST_BASE + distance_cost + velocity_cost + fuel_cost
 
 	if money < cost:
 		return false
@@ -573,13 +578,11 @@ func accept_stranger_rescue(ship: Ship, pay_tip: bool) -> void:
 	var offer: Dictionary = stranger_offers[ship]
 	var stranger_name: String = offer["stranger_name"]
 
-	# Restore ship immediately
+	# Restore ship in place — stranger matched course, ship keeps velocity
 	ship.is_derelict = false
 	ship.derelict_reason = ""
-	ship.velocity_au_per_tick = Vector2.ZERO
-	ship.speed_au_per_tick = 0.0
 	ship.engine_condition = 40.0
-	ship.fuel = ship.fuel_capacity * 0.25
+	ship.fuel = ship.get_effective_fuel_capacity() * 0.25
 	# Cargo preserved, no worker loss
 
 	if pay_tip:

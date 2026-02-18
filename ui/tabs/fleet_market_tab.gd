@@ -52,6 +52,7 @@ func _ready() -> void:
 	EventBus.ship_idle_at_colony.connect(func(_s: Ship, _tm: TradeMission) -> void: _mark_dirty())
 	EventBus.ship_breakdown.connect(func(_s: Ship, _r: String) -> void: _mark_dirty())
 	EventBus.ship_derelict.connect(func(_s: Ship) -> void: _mark_dirty())
+	EventBus.ship_destroyed.connect(func(_s: Ship, _b: String) -> void: _mark_dirty())
 	EventBus.rescue_mission_started.connect(func(_s: Ship, _c: int) -> void: _mark_dirty())
 	EventBus.rescue_mission_completed.connect(func(_s: Ship) -> void: _mark_dirty())
 	EventBus.refuel_mission_started.connect(func(_s: Ship, _c: int, _f: float) -> void: _mark_dirty())

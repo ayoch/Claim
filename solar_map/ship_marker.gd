@@ -204,35 +204,16 @@ func _update_mining_target() -> void:
 	var progress := mission.get_progress()
 	_update_mining_target_with_progress(progress)
 
-func _update_mining_target_with_progress(progress: float) -> void:
-	var origin_pos := mission.origin_position_au * AU_PIXELS
-	var asteroid_pos := mission.asteroid.get_position_au() * AU_PIXELS if mission.asteroid else origin_pos
-
-	match mission.status:
-		Mission.Status.TRANSIT_OUT:
-			_target_pos = _calculate_trajectory_position(origin_pos, asteroid_pos, progress, mission.transit_mode)
-		Mission.Status.MINING, Mission.Status.IDLE_AT_DESTINATION:
-			_target_pos = asteroid_pos
-		Mission.Status.TRANSIT_BACK:
-			var return_pos := mission.return_position_au * AU_PIXELS
-			_target_pos = _calculate_trajectory_position(asteroid_pos, return_pos, progress, mission.transit_mode)
+func _update_mining_target_with_progress(_progress: float) -> void:
+	# Use actual ship position from simulation (includes gravity)
+	_target_pos = mission.ship.position_au * AU_PIXELS
 
 func _update_trade_target() -> void:
-	var progress := trade_mission.get_progress()
-	_update_trade_target_with_progress(progress)
+	_update_trade_target_with_progress(0.0)
 
-func _update_trade_target_with_progress(progress: float) -> void:
-	var origin_pos := trade_mission.origin_position_au * AU_PIXELS
-	var colony_pos := trade_mission.colony.get_position_au() * AU_PIXELS
-
-	match trade_mission.status:
-		TradeMission.Status.TRANSIT_TO_COLONY:
-			_target_pos = _calculate_trajectory_position(origin_pos, colony_pos, progress, trade_mission.transit_mode)
-		TradeMission.Status.SELLING, TradeMission.Status.IDLE_AT_COLONY:
-			_target_pos = colony_pos
-		TradeMission.Status.TRANSIT_BACK:
-			var return_pos := trade_mission.return_position_au * AU_PIXELS
-			_target_pos = _calculate_trajectory_position(colony_pos, return_pos, progress, trade_mission.transit_mode)
+func _update_trade_target_with_progress(_progress: float) -> void:
+	# Use actual ship position from simulation (includes gravity)
+	_target_pos = trade_mission.ship.position_au * AU_PIXELS
 
 func update_position() -> void:
 	_update_target()
@@ -245,13 +226,15 @@ func _update_trajectory_cache() -> void:
 	var transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE
 
 	# Build list of legs: each leg is [start_au, end_au]
+	# First leg includes current_progress (0-1) to skip already-traveled portion
 	var legs: Array = []  # Array of [Vector2, Vector2]
+	var current_progress := 0.0  # Progress within first leg
 
 	if mission:
 		transit_mode = mission.transit_mode
 		if mission.status == Mission.Status.TRANSIT_OUT:
 			is_active = true
-			# Current leg
+			current_progress = mission.get_progress()
 			var leg_start := mission.get_current_leg_start_pos()
 			var leg_end := mission.get_current_leg_end_pos()
 			legs.append([leg_start, leg_end])
@@ -268,6 +251,7 @@ func _update_trajectory_cache() -> void:
 				wi += 1
 		elif mission.status == Mission.Status.TRANSIT_BACK:
 			is_active = true
+			current_progress = mission.get_progress()
 			var leg_start := mission.get_current_leg_start_pos()
 			var leg_end := mission.get_current_leg_end_pos()
 			legs.append([leg_start, leg_end])
@@ -285,11 +269,13 @@ func _update_trajectory_cache() -> void:
 		transit_mode = trade_mission.transit_mode
 		if trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY:
 			is_active = true
+			current_progress = trade_mission.get_progress()
 			var leg_start := trade_mission.get_current_leg_start_pos()
 			var leg_end := trade_mission.get_current_leg_end_pos()
 			legs.append([leg_start, leg_end])
 		elif trade_mission.status == TradeMission.Status.TRANSIT_BACK:
 			is_active = true
+			current_progress = trade_mission.get_progress()
 			var leg_start := trade_mission.get_current_leg_start_pos()
 			var leg_end := trade_mission.get_current_leg_end_pos()
 			legs.append([leg_start, leg_end])
@@ -297,29 +283,120 @@ func _update_trajectory_cache() -> void:
 	if not is_active or legs.is_empty():
 		return
 
-	# Generate trajectory points for each leg
-	var num_points_per_leg := 30
-	for leg in legs:
-		var start_px: Vector2 = leg[0] * AU_PIXELS
-		var end_px: Vector2 = leg[1] * AU_PIXELS
-		for i in range(num_points_per_leg + 1):
-			var t := float(i) / float(num_points_per_leg)
-			var world_point := _calculate_trajectory_position(start_px, end_px, t, transit_mode)
-			_cached_trajectory_points.append(world_point)
+	# Forward-simulate trajectory from ship's current state
+	# Uses actual position, velocity, thrust + gravity to trace the real curved path
+	var transit_ship: Ship = null
+	if mission:
+		transit_ship = mission.ship
+	elif trade_mission:
+		transit_ship = trade_mission.ship
+	elif ship:
+		transit_ship = ship
+	if not transit_ship:
+		return
 
-func _calculate_trajectory_position(start: Vector2, end: Vector2, progress: float, transit_mode: int) -> Vector2:
-	# Calculate ship position along trajectory based on transit mode
-	# Returns position in absolute world coordinates
-	var direction := (end - start).normalized()
-	var distance := start.distance_to(end)
+	var thrust_g := transit_ship.get_effective_thrust()
+	var thrust_accel := thrust_g * Brachistochrone.G_ACCEL  # m/s²
+	# Convert to AU/s²: divide by AU_TO_METERS
+	var thrust_au_s2 := thrust_accel / CelestialData.AU_TO_METERS
 
-	if transit_mode == Mission.TransitMode.HOHMANN:
-		# Hohmann: linear interpolation (matches simulation physics)
-		return start.lerp(end, progress)
+	# Determine destination and remaining time for current leg
+	var dest_au: Vector2
+	var remaining_time: float
+	if legs.size() > 0:
+		dest_au = Vector2(legs[0][1])
+		var dist_au := transit_ship.position_au.distance_to(dest_au)
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			remaining_time = Brachistochrone.hohmann_time(dist_au)
+		else:
+			remaining_time = Brachistochrone.transit_time(dist_au, thrust_g)
 	else:
-		# Brachistochrone: S-curve position (matches simulation physics)
-		var distance_fraction := _brachistochrone_distance_fraction(progress)
-		return start.lerp(end, distance_fraction)
+		return
+
+	# Total time across all legs
+	var total_sim_time := remaining_time
+	for li in range(1, legs.size()):
+		var leg_dist: float = Vector2(legs[li][0]).distance_to(Vector2(legs[li][1]))
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			total_sim_time += Brachistochrone.hohmann_time(leg_dist)
+		else:
+			total_sim_time += Brachistochrone.transit_time(leg_dist, thrust_g)
+
+	if total_sim_time <= 0:
+		return
+
+	# Forward simulate
+	var num_points := 60
+	var step_time := total_sim_time / float(num_points)
+	var sim_pos := transit_ship.position_au
+	var sim_vel := transit_ship.velocity_au_per_tick
+	var sim_elapsed := 0.0
+
+	# Track which leg we're on for thrust direction
+	var current_leg := 0
+	var leg_elapsed := current_progress * remaining_time  # Time into current leg
+	var leg_total := remaining_time  # Total time for current leg
+	var leg_dest: Vector2 = dest_au
+
+	# Destination orbital motion — bodies orbit during transit, creating curved pursuit paths
+	var dest_orbit_radius := dest_au.length()
+	var dest_initial_angle := dest_au.angle()
+	var dest_angular_vel := 0.0
+	if dest_orbit_radius > 0.01:
+		# Real Kepler: omega = sqrt(GM / r^3)
+		dest_angular_vel = sqrt(CelestialData.GM_SUN / pow(dest_orbit_radius, 3.0))
+
+	# Forward simulate with thrust toward moving destination + gravity
+	for i in range(num_points + 1):
+		_cached_trajectory_points.append(sim_pos * AU_PIXELS)
+
+		if i == num_points:
+			break
+
+		# Compute where destination will be at this future time (orbital motion)
+		var future_angle := dest_initial_angle + dest_angular_vel * sim_elapsed
+		var future_dest := Vector2(cos(future_angle), sin(future_angle)) * dest_orbit_radius
+
+		# Compute thrust direction: toward future destination, flip at midpoint
+		var to_dest := (future_dest - sim_pos).normalized()
+		var leg_frac := leg_elapsed / maxf(leg_total, 1.0)
+		var thrust_dir: Vector2
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			thrust_dir = to_dest  # Simplified: constant direction
+		else:
+			# Brachistochrone: accelerate first half, decelerate second half
+			if leg_frac < 0.5:
+				thrust_dir = to_dest
+			else:
+				thrust_dir = -to_dest
+
+		# Apply thrust + gravity
+		var accel := thrust_dir * thrust_au_s2
+		accel += CelestialData.gravitational_acceleration(sim_pos)
+
+		# Symplectic Euler integration
+		sim_vel += accel * step_time
+		sim_pos += sim_vel * step_time
+		sim_elapsed += step_time
+		leg_elapsed += step_time
+
+		# Check if we've moved to next leg
+		if current_leg < legs.size() - 1 and leg_elapsed >= leg_total:
+			current_leg += 1
+			leg_elapsed = 0.0
+			leg_dest = Vector2(legs[current_leg][1])
+			# Update orbital params for new leg destination
+			dest_orbit_radius = leg_dest.length()
+			dest_initial_angle = leg_dest.angle()
+			if dest_orbit_radius > 0.01:
+				dest_angular_vel = sqrt(CelestialData.GM_SUN / pow(dest_orbit_radius, 3.0))
+			else:
+				dest_angular_vel = 0.0
+			var leg_dist: float = Vector2(legs[current_leg][0]).distance_to(leg_dest)
+			if transit_mode == Mission.TransitMode.HOHMANN:
+				leg_total = Brachistochrone.hohmann_time(leg_dist)
+			else:
+				leg_total = Brachistochrone.transit_time(leg_dist, thrust_g)
 
 func _brachistochrone_distance_fraction(time_fraction: float) -> float:
 	# Convert time progress to distance progress for constant-acceleration trajectory
