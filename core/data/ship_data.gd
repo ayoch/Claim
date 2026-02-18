@@ -26,6 +26,8 @@ const SHIP_NAMES := [
 	"Anomaly Point",
 	"Sacred Bullshit",
 	"Grave Goods",
+	"Frogblast the Vent Core",
+	"They're Everywhere",
 ]
 
 const CLASS_STATS := {

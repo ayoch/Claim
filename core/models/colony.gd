@@ -5,7 +5,8 @@ extends Resource
 @export var orbit_au: float = 1.0
 @export var orbital_angle: float = 0.0  # radians
 @export var price_multipliers: Dictionary = {}  # OreType -> float
-@export var orbits_earth: bool = false  # if true, orbit_au is distance from Earth
+@export var orbits_earth: bool = false  # if true, orbit_au is distance from Earth (legacy)
+@export var parent_planet_index: int = -1  # if >= 0, orbits this planet from CelestialData.PLANETS
 
 func get_ore_price(ore_type: ResourceTypes.OreType, market: MarketState) -> float:
 	var base_market_price: float = market.get_price(ore_type)
@@ -26,8 +27,17 @@ func get_ore_price(ore_type: ResourceTypes.OreType, market: MarketState) -> floa
 
 func get_position_au() -> Vector2:
 	var local_pos := Vector2(cos(orbital_angle), sin(orbital_angle)) * orbit_au
+
+	# Check parent planet first
+	if parent_planet_index >= 0:
+		var parent_pos := CelestialData.get_planet_position_au(parent_planet_index)
+		return parent_pos + local_pos
+
+	# Legacy: orbits_earth flag
 	if orbits_earth:
 		return CelestialData.get_earth_position_au() + local_pos
+
+	# No parent: orbit sun directly
 	return local_pos
 
 func advance_orbit(dt: float) -> void:

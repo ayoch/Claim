@@ -93,8 +93,8 @@ func _process(delta: float) -> void:
 		actual_progress = trade_mission.get_progress()
 
 	# Smooth progress to avoid jitter while preserving acceleration
-	# Scale with simulation speed, but use minimum at low speeds
-	var progress_lerp_speed := maxf(20.0, 12.0 * TimeScale.speed_multiplier)
+	# Much higher minimum at low speeds to smooth infrequent tick updates
+	var progress_lerp_speed := maxf(50.0, 12.0 * TimeScale.speed_multiplier)
 	_smooth_progress = lerp(_smooth_progress, actual_progress, minf(progress_lerp_speed * delta, 1.0))
 
 	# Update target position using smooth progress
@@ -125,8 +125,8 @@ func _process(delta: float) -> void:
 		var target_angle := _velocity.angle()
 		if _smooth_progress > 0.5:
 			target_angle += PI  # Flip for deceleration burn
-		# Smooth rotation - faster at low speeds to stay responsive
-		var rotation_lerp_speed := maxf(20.0, 15.0 * TimeScale.speed_multiplier)
+		# Smooth rotation - very aggressive at low speeds
+		var rotation_lerp_speed := maxf(40.0, 15.0 * TimeScale.speed_multiplier)
 		var angle_diff := fmod(target_angle - _rotation_angle + PI, TAU) - PI
 		_rotation_angle += angle_diff * minf(rotation_lerp_speed * delta, 1.0)
 
@@ -147,13 +147,13 @@ func _process(delta: float) -> void:
 		var target_angle := _velocity.angle()
 		if _smooth_progress > 0.5:
 			target_angle += PI
-		var rotation_lerp_speed := maxf(20.0, 15.0 * TimeScale.speed_multiplier)
+		var rotation_lerp_speed := maxf(40.0, 15.0 * TimeScale.speed_multiplier)
 		var angle_diff := fmod(target_angle - _rotation_angle + PI, TAU) - PI
 		_rotation_angle += angle_diff * minf(rotation_lerp_speed * delta, 1.0)
 
 	# Smooth position lerp to avoid jitter
-	# Higher speed at low simulation speeds to compensate for infrequent ticks
-	var position_lerp_speed := maxf(25.0, 12.0 * TimeScale.speed_multiplier)
+	# Very aggressive at low speeds to smooth between infrequent tick updates
+	var position_lerp_speed := maxf(50.0, 12.0 * TimeScale.speed_multiplier)
 	position = position.lerp(_target_pos, minf(position_lerp_speed * delta, 1.0))
 
 	# Update trajectory cache periodically

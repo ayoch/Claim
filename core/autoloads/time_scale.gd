@@ -3,7 +3,7 @@ extends Node
 # Simulation speed control and time display conversion
 
 # Speed multipliers
-var speed_multiplier: float = 5.0  # Default to 5x for development (matches old game_speed)
+var speed_multiplier: float = 1.0  # Default to 1x (real-time for compressed game physics)
 const SPEED_SLOW: float = 0.5
 const SPEED_NORMAL: float = 1.0
 const SPEED_FAST: float = 2.0

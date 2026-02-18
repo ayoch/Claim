@@ -26,6 +26,9 @@ var _colony_markers: Array[Node2D] = []
 # Planet labels (Node2D wrappers with Label children)
 var _planet_labels: Array[Node2D] = []
 
+# Label anti-overlap system
+var _label_base_offsets: Dictionary = {}  # Node2D -> Vector2 (original offset from parent)
+
 # Trajectory preview
 var _preview_active: bool = false
 var _preview_ship_pos: Vector2 = Vector2.ZERO
@@ -255,6 +258,9 @@ func _process(delta: float) -> void:
 			var target: Vector2 = marker.get_meta("target_pos")
 			marker.position = marker.position.lerp(target, t)
 
+	# Apply label anti-overlap
+	_adjust_labels_to_prevent_overlap()
+
 	# Update preview blink animation
 	if _preview_active:
 		_preview_blink_time += delta
@@ -262,6 +268,105 @@ func _process(delta: float) -> void:
 			_preview_blink_time -= PREVIEW_BLINK_PERIOD
 
 	queue_redraw()
+
+## Adjust label positions to prevent overlaps
+func _adjust_labels_to_prevent_overlap() -> void:
+	# Collect all labels with their anchor points and current positions
+	var labels: Array[Dictionary] = []
+
+	# Planet labels
+	for i in range(_planet_labels.size()):
+		var label_node := _planet_labels[i]
+		var label := label_node.get_child(0) as Label
+		if label:
+			labels.append({
+				"node": label_node,
+				"label": label,
+				"anchor": label_node.position,  # Planet position
+				"type": "planet"
+			})
+
+	# Colony labels
+	for marker in _colony_markers:
+		var label := marker.get_child(0) as Label
+		if label:
+			labels.append({
+				"node": marker,
+				"label": label,
+				"anchor": marker.position,  # Colony position
+				"type": "colony"
+			})
+
+	# Ship labels
+	for marker in ship_markers.get_children():
+		var label := marker.get_node_or_null("Label") as Label
+		if label:
+			labels.append({
+				"node": marker,
+				"label": label,
+				"anchor": marker.position,  # Ship position
+				"type": "ship"
+			})
+
+	# For each label, check for overlaps and adjust position
+	const PADDING := 4.0  # Minimum spacing between labels
+	const MAX_OFFSET := 60.0  # Maximum distance a label can move from its anchor
+
+	for i in range(labels.size()):
+		var label_a := labels[i]
+		var label_control_a := label_a["label"] as Label
+		var node_a := label_a["node"] as Node2D
+
+		# Get bounding rect in world space
+		var size_a := label_control_a.size
+		var label_offset_a := label_control_a.position
+		var rect_a := Rect2(node_a.position + label_offset_a, size_a)
+
+		# Check against all other labels
+		var accumulated_push := Vector2.ZERO
+		var overlap_count := 0
+
+		for j in range(labels.size()):
+			if i == j:
+				continue
+
+			var label_b := labels[j]
+			var label_control_b := label_b["label"] as Label
+			var node_b := label_b["node"] as Node2D
+
+			var size_b := label_control_b.size
+			var label_offset_b := label_control_b.position
+			var rect_b := Rect2(node_b.position + label_offset_b, size_b)
+
+			# Expand rects by padding
+			var expanded_a := rect_a.grow(PADDING)
+			var expanded_b := rect_b.grow(PADDING)
+
+			# Check for overlap
+			if expanded_a.intersects(expanded_b):
+				# Calculate push direction (away from other label)
+				var center_a := rect_a.get_center()
+				var center_b := rect_b.get_center()
+				var push_dir := (center_a - center_b).normalized()
+
+				# If labels are at same position, push in a consistent direction
+				if push_dir.length() < 0.1:
+					push_dir = Vector2(1, 0).rotated(float(i) * 0.7)  # Spread out evenly
+
+				accumulated_push += push_dir * 2.0
+				overlap_count += 1
+
+		# Apply push to label offset
+		if overlap_count > 0:
+			var current_offset := label_control_a.position
+			var new_offset := current_offset + accumulated_push
+
+			# Clamp offset so label doesn't move too far from anchor
+			var offset_dist := new_offset.length()
+			if offset_dist > MAX_OFFSET:
+				new_offset = new_offset.normalized() * MAX_OFFSET
+
+			label_control_a.position = new_offset
 
 func _on_tick(_dt: float) -> void:
 	_update_planet_targets()

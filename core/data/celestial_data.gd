@@ -16,14 +16,23 @@ const PLANETS: Array[Dictionary] = [
 	{"name": "Neptune", "orbit_au": 30.07, "color": Color(0.3, 0.4, 0.9), "radius": 5.5},
 ]
 
-# Orbital angles for all planets (indexed same as PLANETS)
-static var planet_angles: Array[float] = []
+# Ephemeris system for real orbital positions
+static var ephemeris: EphemerisData = null
 
-# Earth orbital state (shorthand, kept in sync with planet_angles[2])
+# Legacy orbital angles (kept for backwards compatibility)
+static var planet_angles: Array[float] = []
 static var earth_angle: float = 0.0
 
+# Toggle for using real ephemeris data
+static var use_real_ephemeris: bool = true
+
 static func _static_init() -> void:
-	# Initialize random starting angles for all planets
+	# Initialize ephemeris system for real NASA data
+	if ephemeris == null:
+		ephemeris = EphemerisData.new()
+		ephemeris.initialize()
+
+	# Initialize fallback angles
 	planet_angles.clear()
 	for i in range(PLANETS.size()):
 		planet_angles.append(randf() * TAU)
@@ -31,6 +40,8 @@ static func _static_init() -> void:
 
 static func get_earth_position_au() -> Vector2:
 	_ensure_init()
+	if use_real_ephemeris and ephemeris != null:
+		return ephemeris.get_position("Earth")
 	return Vector2(cos(earth_angle), sin(earth_angle)) * EARTH_ORBIT_AU
 
 static func _ensure_init() -> void:
@@ -41,18 +52,32 @@ static func get_planet_position_au(index: int) -> Vector2:
 	_ensure_init()
 	if index < 0 or index >= PLANETS.size():
 		return Vector2.ZERO
+
+	# Use real ephemeris data if available
+	if use_real_ephemeris and ephemeris != null:
+		var planet_name: String = PLANETS[index]["name"]
+		return ephemeris.get_position(planet_name)
+
+	# Fallback to simple orbital mechanics
 	var orbit_au: float = PLANETS[index]["orbit_au"]
 	return Vector2(cos(planet_angles[index]), sin(planet_angles[index])) * orbit_au
 
 static func advance_planets(dt: float) -> void:
 	_ensure_init()
-	for i in range(PLANETS.size()):
-		var orbit_au: float = PLANETS[i]["orbit_au"]
-		var period := pow(orbit_au, 1.5) * 600.0
-		if period > 0:
-			planet_angles[i] += (TAU / period) * dt
-			planet_angles[i] = fmod(planet_angles[i], TAU)
-	earth_angle = planet_angles[2]
+
+	# Check if we need to refresh ephemeris data (new day started)
+	if use_real_ephemeris and ephemeris != null and ephemeris.should_refresh():
+		ephemeris.refresh_for_new_day()
+
+	# Update fallback orbital angles (used when ephemeris is disabled)
+	if not use_real_ephemeris:
+		for i in range(PLANETS.size()):
+			var orbit_au: float = PLANETS[i]["orbit_au"]
+			var period := pow(orbit_au, 1.5) * 600.0
+			if period > 0:
+				planet_angles[i] += (TAU / period) * dt
+				planet_angles[i] = fmod(planet_angles[i], TAU)
+		earth_angle = planet_angles[2]
 
 # Legacy compatibility
 static func advance_earth(dt: float) -> void:
