@@ -1304,7 +1304,7 @@ func _show_worker_selection() -> void:
 			var savings_text: String = "Saves %.0f%% fuel" % route.fuel_savings_percent
 			var time_text := ""
 			if route.time_penalty > 0:
-				var hours: float = route.time_penalty / Brachistochrone.TIME_COMPRESSION * 24.0
+				var hours: float = route.time_penalty / 3600.0  # Convert seconds to hours
 				time_text = " (+%.1fh)" % hours
 			slingshot_btn.text = "%s - %s%s" % [route.route_name, savings_text, time_text]
 			slingshot_btn.custom_minimum_size = Vector2(0, 32)

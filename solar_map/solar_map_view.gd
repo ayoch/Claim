@@ -238,6 +238,11 @@ func _refresh_ship_markers() -> void:
 			ships_with_markers[s] = true
 
 func _process(delta: float) -> void:
+	# Update all targets every frame for smooth movement
+	_update_planet_targets()
+	_update_asteroid_targets()
+	_update_colony_targets()
+
 	var t := minf(LERP_SPEED * delta, 1.0)
 
 	# Interpolate planet positions and labels
