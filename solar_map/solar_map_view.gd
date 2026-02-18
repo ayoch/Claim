@@ -7,6 +7,7 @@ const BELT_OUTER_AU: float = 3.5
 @onready var camera: Camera2D = $Camera2D
 @onready var asteroid_markers: Node2D = $AsteroidMarkers
 @onready var ship_markers: Node2D = $ShipMarkers
+@onready var ship_selector_panel: HBoxContainer = %ShipSelectorPanel
 
 var _drag_start: Vector2 = Vector2.ZERO
 var _dragging: bool = false
@@ -28,15 +29,30 @@ var _planet_labels: Array[Node2D] = []
 var asteroid_marker_scene: PackedScene = preload("res://solar_map/asteroid_marker.tscn")
 var ship_marker_scene: PackedScene = preload("res://solar_map/ship_marker.tscn")
 
+# Interpolation
+const LERP_SPEED: float = 8.0  # lerp factor per second
+var _planet_targets: Array[Vector2] = []
+var _planet_positions: Array[Vector2] = []
+
 func _ready() -> void:
 	_spawn_planet_labels()
 	_spawn_asteroid_markers()
 	_spawn_colony_markers()
-	EventBus.mission_started.connect(func(_m: Mission) -> void: _refresh_ship_markers())
-	EventBus.mission_completed.connect(func(_m: Mission) -> void: _refresh_ship_markers())
-	EventBus.trade_mission_started.connect(func(_tm: TradeMission) -> void: _refresh_ship_markers())
-	EventBus.trade_mission_completed.connect(func(_tm: TradeMission) -> void: _refresh_ship_markers())
+	_refresh_ship_markers()
+	_refresh_ship_selector()
+	EventBus.mission_started.connect(func(_m: Mission) -> void: _refresh_ships())
+	EventBus.mission_completed.connect(func(_m: Mission) -> void: _refresh_ships())
+	EventBus.mission_phase_changed.connect(func(_m: Mission) -> void: _refresh_ships())
+	EventBus.trade_mission_started.connect(func(_tm: TradeMission) -> void: _refresh_ships())
+	EventBus.trade_mission_completed.connect(func(_tm: TradeMission) -> void: _refresh_ships())
+	EventBus.trade_mission_phase_changed.connect(func(_tm: TradeMission) -> void: _refresh_ships())
+	EventBus.ship_derelict.connect(func(_s: Ship) -> void: _refresh_ships())
+	EventBus.rescue_mission_completed.connect(func(_s: Ship) -> void: _refresh_ships())
 	EventBus.tick.connect(_on_tick)
+
+func _refresh_ships() -> void:
+	_refresh_ship_markers()
+	_refresh_ship_selector()
 
 func _draw() -> void:
 	# Draw sun
@@ -52,9 +68,9 @@ func _draw() -> void:
 		# Orbit ring (faint)
 		_draw_circle_outline(Vector2.ZERO, orbit_au * AU_PIXELS, Color(color.r, color.g, color.b, 0.2), 1.0)
 
-		# Planet dot at current position
-		var pos := CelestialData.get_planet_position_au(i) * AU_PIXELS
-		draw_circle(pos, radius, color)
+		# Planet dot at interpolated position
+		if i < _planet_positions.size():
+			draw_circle(_planet_positions[i], radius, color)
 
 	# Draw asteroid belt (translucent annulus)
 	var steps := 64
@@ -89,20 +105,24 @@ func _spawn_planet_labels() -> void:
 		var color: Color = planet["color"]
 		label.add_theme_color_override("font_color", Color(color.r, color.g, color.b, 0.7))
 		node.add_child(label)
-		node.position = CelestialData.get_planet_position_au(i) * AU_PIXELS
+		var pos := CelestialData.get_planet_position_au(i) * AU_PIXELS
+		node.position = pos
 		add_child(node)
 		_planet_labels.append(node)
+		_planet_positions.append(pos)
+		_planet_targets.append(pos)
 
-func _update_planet_positions() -> void:
-	for i in range(mini(_planet_labels.size(), CelestialData.PLANETS.size())):
-		_planet_labels[i].position = CelestialData.get_planet_position_au(i) * AU_PIXELS
+func _update_planet_targets() -> void:
+	for i in range(mini(_planet_targets.size(), CelestialData.PLANETS.size())):
+		_planet_targets[i] = CelestialData.get_planet_position_au(i) * AU_PIXELS
 
 func _spawn_asteroid_markers() -> void:
 	for asteroid in GameState.asteroids:
 		var marker: Node2D = asteroid_marker_scene.instantiate()
 		marker.asteroid = asteroid
-		# Use orbital position
-		marker.position = asteroid.get_position_au() * AU_PIXELS
+		var pos := asteroid.get_position_au() * AU_PIXELS
+		marker.position = pos
+		marker.set_meta("target_pos", pos)
 		asteroid_markers.add_child(marker)
 
 func _spawn_colony_markers() -> void:
@@ -115,7 +135,9 @@ func _spawn_colony_markers() -> void:
 		label.add_theme_font_size_override("font_size", 12)
 		label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 		marker.add_child(label)
-		marker.position = colony.get_position_au() * AU_PIXELS
+		var col_pos := colony.get_position_au() * AU_PIXELS
+		marker.position = col_pos
+		marker.set_meta("target_pos", col_pos)
 		add_child(marker)
 		_colony_markers.append(marker)
 
@@ -132,39 +154,75 @@ class _ColonyMarkerNode extends Node2D:
 func _refresh_ship_markers() -> void:
 	for child in ship_markers.get_children():
 		child.queue_free()
-	# Mining missions
-	for mission: Mission in GameState.missions:
-		var marker: Node2D = ship_marker_scene.instantiate()
-		marker.mission = mission
-		ship_markers.add_child(marker)
-	# Trade missions
-	for tm: TradeMission in GameState.trade_missions:
-		var marker: Node2D = ship_marker_scene.instantiate()
-		marker.trade_mission = tm
-		ship_markers.add_child(marker)
 
-func _on_tick(_dt: float) -> void:
-	_update_planet_positions()
-	_update_asteroid_positions()
-	_update_colony_positions()
-	_update_ship_positions()
+	# Track which ships already have markers to prevent duplicates
+	var ships_with_markers: Dictionary = {}
+
+	# Mining missions (only add if ship not already marked)
+	for mission: Mission in GameState.missions:
+		if mission.ship and mission.ship not in ships_with_markers:
+			var marker: Node2D = ship_marker_scene.instantiate()
+			marker.mission = mission
+			ship_markers.add_child(marker)
+			ships_with_markers[mission.ship] = true
+
+	# Trade missions (only add if ship not already marked)
+	for tm: TradeMission in GameState.trade_missions:
+		if tm.ship and tm.ship not in ships_with_markers:
+			var marker: Node2D = ship_marker_scene.instantiate()
+			marker.trade_mission = tm
+			ship_markers.add_child(marker)
+			ships_with_markers[tm.ship] = true
+
+	# Idle remote and derelict ships without active missions
+	for s: Ship in GameState.ships:
+		if s in ships_with_markers:
+			continue
+		# Only show if not docked (docked ships stay at Earth, don't need map marker)
+		if not s.is_docked and (s.is_idle_remote or s.is_derelict):
+			var marker: Node2D = ship_marker_scene.instantiate()
+			marker.ship = s
+			ship_markers.add_child(marker)
+			ships_with_markers[s] = true
+
+func _process(delta: float) -> void:
+	var t := minf(LERP_SPEED * delta, 1.0)
+
+	# Interpolate planet positions and labels
+	for i in range(_planet_positions.size()):
+		_planet_positions[i] = _planet_positions[i].lerp(_planet_targets[i], t)
+		if i < _planet_labels.size():
+			_planet_labels[i].position = _planet_positions[i]
+
+	# Interpolate asteroid markers
+	for marker in asteroid_markers.get_children():
+		if marker.has_meta("target_pos"):
+			var target: Vector2 = marker.get_meta("target_pos")
+			marker.position = marker.position.lerp(target, t)
+
+	# Interpolate colony markers
+	for marker in _colony_markers:
+		if marker.has_meta("target_pos"):
+			var target: Vector2 = marker.get_meta("target_pos")
+			marker.position = marker.position.lerp(target, t)
+
 	queue_redraw()
 
-func _update_asteroid_positions() -> void:
+func _on_tick(_dt: float) -> void:
+	_update_planet_targets()
+	_update_asteroid_targets()
+	_update_colony_targets()
+
+func _update_asteroid_targets() -> void:
 	for marker in asteroid_markers.get_children():
 		if marker.asteroid:
-			marker.position = marker.asteroid.get_position_au() * AU_PIXELS
+			marker.set_meta("target_pos", marker.asteroid.get_position_au() * AU_PIXELS)
 
-func _update_colony_positions() -> void:
+func _update_colony_targets() -> void:
 	for marker in _colony_markers:
 		var colony: Colony = marker.get_meta("colony")
 		if colony:
-			marker.position = colony.get_position_au() * AU_PIXELS
-
-func _update_ship_positions() -> void:
-	for marker in ship_markers.get_children():
-		if marker.has_method("update_position"):
-			marker.update_position()
+			marker.set_meta("target_pos", colony.get_position_au() * AU_PIXELS)
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Mouse controls
@@ -207,3 +265,37 @@ func _unhandled_input(event: InputEvent) -> void:
 				_zoom_level = clampf(_zoom_level + diff * 0.005, ZOOM_MIN, ZOOM_MAX)
 				camera.zoom = Vector2(_zoom_level, _zoom_level)
 			_last_pinch_distance = dist
+
+func _refresh_ship_selector() -> void:
+	if not ship_selector_panel:
+		return
+
+	# Clear existing buttons
+	for child in ship_selector_panel.get_children():
+		child.queue_free()
+
+	# Add button for each ship
+	for ship in GameState.ships:
+		var btn := Button.new()
+		btn.text = ship.ship_name
+		btn.custom_minimum_size = Vector2(120, 36)
+
+		# Color code by status
+		if ship.is_derelict:
+			btn.add_theme_color_override("font_color", Color(0.9, 0.2, 0.2))
+		elif ship.is_docked:
+			btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		elif ship.is_idle_remote:
+			btn.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+		else:
+			btn.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
+
+		btn.pressed.connect(_center_on_ship.bind(ship))
+		ship_selector_panel.add_child(btn)
+
+func _center_on_ship(ship: Ship) -> void:
+	var target_pos := ship.position_au * AU_PIXELS
+	camera.position = target_pos
+	# Optionally zoom in a bit
+	_zoom_level = 1.5
+	camera.zoom = Vector2(_zoom_level, _zoom_level)

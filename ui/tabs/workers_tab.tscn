@@ -14,54 +14,66 @@ theme_override_constants/margin_right = 16
 theme_override_constants/margin_bottom = 16
 script = ExtResource("1")
 
-[node name="ScrollContainer" type="ScrollContainer" parent="."]
+[node name="VBox" type="VBoxContainer" parent="."]
 layout_mode = 2
-size_flags_vertical = 3
-
-[node name="VBox" type="VBoxContainer" parent="ScrollContainer"]
-layout_mode = 2
-size_flags_horizontal = 3
 theme_override_constants/separation = 16
 
-[node name="CrewHeader" type="HBoxContainer" parent="ScrollContainer/VBox"]
+[node name="CrewSection" type="VBoxContainer" parent="VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 0.5
+theme_override_constants/separation = 8
+
+[node name="CrewHeader" type="HBoxContainer" parent="VBox/CrewSection"]
 layout_mode = 2
 
-[node name="CrewTitle" type="Label" parent="ScrollContainer/VBox/CrewHeader"]
+[node name="CrewTitle" type="Label" parent="VBox/CrewSection/CrewHeader"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "YOUR CREW"
 theme_override_font_sizes/font_size = 20
 
-[node name="CrewCount" type="Label" parent="ScrollContainer/VBox/CrewHeader"]
+[node name="CrewCount" type="Label" parent="VBox/CrewSection/CrewHeader"]
 unique_name_in_owner = true
 layout_mode = 2
 text = "0 crew"
 
-[node name="WorkersList" type="VBoxContainer" parent="ScrollContainer/VBox"]
+[node name="CrewScroll" type="ScrollContainer" parent="VBox/CrewSection"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="WorkersList" type="VBoxContainer" parent="VBox/CrewSection/CrewScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 6
 
-[node name="HireSep" type="HSeparator" parent="ScrollContainer/VBox"]
+[node name="HireSection" type="VBoxContainer" parent="VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+size_flags_stretch_ratio = 0.5
+theme_override_constants/separation = 8
+
+[node name="HireHeader" type="HBoxContainer" parent="VBox/HireSection"]
 layout_mode = 2
 
-[node name="HireHeader" type="HBoxContainer" parent="ScrollContainer/VBox"]
-layout_mode = 2
-
-[node name="HireTitle" type="Label" parent="ScrollContainer/VBox/HireHeader"]
+[node name="HireTitle" type="Label" parent="VBox/HireSection/HireHeader"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "AVAILABLE FOR HIRE"
 theme_override_font_sizes/font_size = 20
 
-[node name="RefreshBtn" type="Button" parent="ScrollContainer/VBox/HireHeader"]
+[node name="RefreshBtn" type="Button" parent="VBox/HireSection/HireHeader"]
 unique_name_in_owner = true
 layout_mode = 2
 custom_minimum_size = Vector2(0, 44)
 text = "New Candidates"
 
-[node name="CandidatesList" type="VBoxContainer" parent="ScrollContainer/VBox"]
+[node name="HireScroll" type="ScrollContainer" parent="VBox/HireSection"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CandidatesList" type="VBoxContainer" parent="VBox/HireSection/HireScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

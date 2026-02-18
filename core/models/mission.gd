@@ -4,8 +4,14 @@ extends Resource
 enum Status {
 	TRANSIT_OUT,
 	MINING,
+	IDLE_AT_DESTINATION,
 	TRANSIT_BACK,
 	COMPLETED,
+}
+
+enum TransitMode {
+	BRACHISTOCHRONE,  # Fast, expensive fuel (continuous thrust)
+	HOHMANN,          # Slow, economical fuel (minimal delta-v)
 }
 
 @export var status: Status = Status.TRANSIT_OUT
@@ -16,6 +22,9 @@ enum Status {
 @export var elapsed_ticks: float = 0.0    # ticks elapsed in current phase
 @export var mining_duration: float = 30.0 # ticks to mine before returning
 @export var fuel_per_tick: float = 0.0    # fuel consumed per tick during transit
+@export var origin_position_au: Vector2 = Vector2.ZERO   # where ship departed from
+@export var return_position_au: Vector2 = Vector2.ZERO    # where ship returns to
+@export var transit_mode: TransitMode = TransitMode.BRACHISTOCHRONE  # orbit type
 
 func get_progress() -> float:
 	match status:
@@ -23,18 +32,32 @@ func get_progress() -> float:
 			return elapsed_ticks / transit_time if transit_time > 0 else 1.0
 		Status.MINING:
 			return elapsed_ticks / mining_duration if mining_duration > 0 else 1.0
+		Status.IDLE_AT_DESTINATION:
+			return 1.0
 		Status.COMPLETED:
 			return 1.0
 	return 0.0
 
 func get_status_text() -> String:
+	var mode_suffix := " (Hohmann)" if transit_mode == TransitMode.HOHMANN else ""
+
 	match status:
 		Status.TRANSIT_OUT:
-			return "In transit to " + asteroid.asteroid_name
+			if asteroid:
+				return "In transit to " + asteroid.asteroid_name + mode_suffix
+			return "In transit" + mode_suffix
 		Status.MINING:
-			return "Mining at " + asteroid.asteroid_name
+			if asteroid:
+				return "Mining at " + asteroid.asteroid_name
+			return "Mining"
+		Status.IDLE_AT_DESTINATION:
+			if asteroid:
+				return "Idle at " + asteroid.asteroid_name
+			return "Idle"
 		Status.TRANSIT_BACK:
-			return "Returning from " + asteroid.asteroid_name
+			if asteroid:
+				return "Returning from " + asteroid.asteroid_name + mode_suffix
+			return "Returning to Earth" + mode_suffix
 		Status.COMPLETED:
 			return "Mission complete"
 	return "Unknown"

@@ -25,10 +25,10 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 func _draw() -> void:
-	# Deep space background
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.02, 0.02, 0.06))
+	# Deep space background - almost black with hint of cold blue
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0.01, 0.015, 0.02))
 
-	# Subtle nebula glow
+	# Subtle nebula glow - cold blue-greys, muted
 	var center := size * 0.3
 	for i in range(3):
 		var nebula_pos := Vector2(
@@ -36,7 +36,7 @@ func _draw() -> void:
 			size.y * (0.3 + i * 0.15)
 		)
 		var nebula_radius := size.x * 0.4
-		var nebula_color := Color(0.08, 0.04, 0.15, 0.15) if i % 2 == 0 else Color(0.04, 0.06, 0.15, 0.12)
+		var nebula_color := Color(0.02, 0.04, 0.06, 0.10) if i % 2 == 0 else Color(0.03, 0.05, 0.08, 0.08)
 		draw_circle(nebula_pos, nebula_radius, nebula_color)
 
 	# Stars
@@ -50,14 +50,14 @@ func _draw() -> void:
 
 		var star_size: float = star["size"]
 
-		# Slight color variation: white/blue/yellow
+		# Cold color variation - cooler tones to match industrial aesthetic
 		var color: Color
 		if base_bright > 0.8:
 			color = Color(0.8, 0.85, 1.0, bright)  # blue-white (bright stars)
 		elif base_bright > 0.5:
-			color = Color(1.0, 1.0, 0.95, bright)   # warm white
+			color = Color(0.85, 0.9, 1.0, bright)   # cool white
 		else:
-			color = Color(0.7, 0.7, 0.8, bright)     # dim blue-grey
+			color = Color(0.6, 0.65, 0.75, bright)     # dim cool blue-grey
 
 		if star_size > 1.8:
 			# Larger stars get a soft glow

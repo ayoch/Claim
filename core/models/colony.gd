@@ -10,7 +10,19 @@ extends Resource
 func get_ore_price(ore_type: ResourceTypes.OreType, market: MarketState) -> float:
 	var base_market_price: float = market.get_price(ore_type)
 	var mult: float = price_multipliers.get(ore_type, 1.0)
-	return base_market_price * mult
+
+	# Distance from Earth increases scarcity and price
+	var earth_pos := CelestialData.get_earth_position_au()
+	var dist_from_earth := get_position_au().distance_to(earth_pos)
+	# Price increases by 20% per AU of distance
+	var scarcity_multiplier := 1.0 + (dist_from_earth * 0.2)
+
+	# Apply market event modifiers
+	var event_multiplier := 1.0
+	for event in GameState.active_market_events:
+		event_multiplier *= event.get_price_modifier(ore_type, self)
+
+	return base_market_price * mult * scarcity_multiplier * event_multiplier
 
 func get_position_au() -> Vector2:
 	var local_pos := Vector2(cos(orbital_angle), sin(orbital_angle)) * orbit_au

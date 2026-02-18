@@ -7,7 +7,9 @@ extends MarginContainer
 @onready var events_list: VBoxContainer = %EventsList
 
 const MAX_EVENTS: int = 8
+const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catchup
 var _event_messages: Array[Dictionary] = []  # { "text": String, "color": Color }
+var _progress_bars: Dictionary = {}  # mission/trade_mission -> ProgressBar
 
 func _ready() -> void:
 	EventBus.money_changed.connect(_on_money_changed)
@@ -15,7 +17,8 @@ func _ready() -> void:
 	EventBus.mission_started.connect(func(_m: Mission) -> void: _refresh_missions())
 	EventBus.mission_completed.connect(func(m: Mission) -> void:
 		_refresh_missions()
-		_add_event("Mission complete: %s returned from %s" % [m.ship.ship_name, m.asteroid.asteroid_name], Color(0.3, 0.9, 0.4))
+		var location := m.asteroid.asteroid_name if m.asteroid else "remote location"
+		_add_event("Mission complete: %s returned from %s" % [m.ship.ship_name, location], Color(0.3, 0.9, 0.4))
 	)
 	EventBus.mission_phase_changed.connect(func(_m: Mission) -> void: _refresh_missions())
 	EventBus.worker_hired.connect(func(_w: Worker) -> void: _refresh_workers())
@@ -64,6 +67,22 @@ func _ready() -> void:
 
 	_refresh_all()
 
+func _process(delta: float) -> void:
+	# Smooth progress bar updates with LERP
+	for mission_or_trade in _progress_bars:
+		var progress_bar: ProgressBar = _progress_bars[mission_or_trade]
+		if not is_instance_valid(progress_bar):
+			continue
+
+		var target_progress: float = 0.0
+		if mission_or_trade is Mission:
+			target_progress = mission_or_trade.get_progress() * 100.0
+		elif mission_or_trade is TradeMission:
+			target_progress = mission_or_trade.get_progress() * 100.0
+
+		# Smooth lerp toward target
+		progress_bar.value = lerp(progress_bar.value, target_progress, PROGRESS_LERP_SPEED * delta)
+
 func _refresh_all() -> void:
 	_on_money_changed(GameState.money)
 	_refresh_resources()
@@ -96,6 +115,19 @@ func _refresh_resources() -> void:
 		resources_list.add_child(label)
 
 func _refresh_missions() -> void:
+	# Clean up old progress bar references for completed missions
+	var to_remove: Array = []
+	for mission_or_trade in _progress_bars:
+		var still_active := false
+		if mission_or_trade is Mission and mission_or_trade in GameState.missions:
+			still_active = true
+		elif mission_or_trade is TradeMission and mission_or_trade in GameState.trade_missions:
+			still_active = true
+		if not still_active:
+			to_remove.append(mission_or_trade)
+	for key in to_remove:
+		_progress_bars.erase(key)
+
 	for child in missions_list.get_children():
 		child.queue_free()
 
@@ -112,6 +144,7 @@ func _refresh_missions() -> void:
 		var progress := ProgressBar.new()
 		progress.custom_minimum_size = Vector2(100, 0)
 		progress.value = mission.get_progress() * 100.0
+		_progress_bars[mission] = progress  # Store reference for lerping
 		hbox.add_child(progress)
 		missions_list.add_child(hbox)
 
@@ -127,6 +160,7 @@ func _refresh_missions() -> void:
 		var progress := ProgressBar.new()
 		progress.custom_minimum_size = Vector2(100, 0)
 		progress.value = tm.get_progress() * 100.0
+		_progress_bars[tm] = progress  # Store reference for lerping
 		hbox.add_child(progress)
 		missions_list.add_child(hbox)
 

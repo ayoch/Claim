@@ -5,10 +5,13 @@ enum Status { AVAILABLE, ACCEPTED, COMPLETED, EXPIRED, FAILED }
 
 @export var ore_type: ResourceTypes.OreType = ResourceTypes.OreType.IRON
 @export var quantity: float = 10.0       # tons required
+@export var quantity_delivered: float = 0.0  # tons delivered so far
 @export var reward: int = 1000           # credits paid on completion
 @export var deadline_ticks: float = 300.0 # ticks remaining
 @export var status: Status = Status.AVAILABLE
 @export var issuer_name: String = "Unknown Corp"
+@export var delivery_colony: Colony = null  # If set, must deliver to this colony
+@export var allows_partial: bool = true  # Can fulfill partially for partial payment
 
 const PREMIUM_MIN: float = 1.3
 const PREMIUM_MAX: float = 2.0
@@ -40,6 +43,17 @@ static func generate_random() -> Contract:
 
 	c.issuer_name = _issuer_names[randi() % _issuer_names.size()]
 	c.status = Status.AVAILABLE
+	c.quantity_delivered = 0.0
+
+	# 60% chance of colony-specific delivery requirement
+	if randf() < 0.6 and not GameState.colonies.is_empty():
+		c.delivery_colony = GameState.colonies[randi() % GameState.colonies.size()]
+		# Colony-specific contracts pay higher premium
+		c.reward = int(c.reward * 1.2)
+
+	# 80% allow partial fulfillment
+	c.allows_partial = randf() < 0.8
+
 	return c
 
 func get_premium_percent() -> float:
@@ -57,3 +71,57 @@ func get_status_text() -> String:
 		Status.EXPIRED: return "Expired"
 		Status.FAILED: return "Failed"
 	return "Unknown"
+
+func get_progress() -> float:
+	# Returns 0.0 to 1.0
+	if quantity <= 0:
+		return 0.0
+	return quantity_delivered / quantity
+
+func get_remaining_quantity() -> float:
+	return maxf(0.0, quantity - quantity_delivered)
+
+func is_completed() -> bool:
+	return quantity_delivered >= quantity
+
+func can_fulfill_partial(amount: float) -> bool:
+	if status != Status.ACCEPTED:
+		return false
+	if amount <= 0:
+		return false
+	if not allows_partial and amount < get_remaining_quantity():
+		return false
+	return true
+
+func get_partial_payment(amount: float) -> int:
+	# Calculate payment for partial delivery
+	var price_per_ton := float(reward) / quantity
+	var delivered_value := amount * price_per_ton
+	return int(delivered_value)
+
+func get_delivery_location_text() -> String:
+	if delivery_colony:
+		return delivery_colony.colony_name
+	return "Any Colony"
+
+func get_display_text() -> String:
+	var ore_name := ResourceTypes.get_ore_name(ore_type)
+	var location := get_delivery_location_text()
+	var progress_text := ""
+	if quantity_delivered > 0:
+		progress_text = " (%.1ft/%.1ft)" % [quantity_delivered, quantity]
+	return "%s: %s %.1ft%s to %s - $%s - %.0f ticks" % [
+		issuer_name, ore_name, quantity, progress_text, location,
+		_format_number(reward), deadline_ticks
+	]
+
+func _format_number(n: int) -> String:
+	var s := str(abs(n))
+	var result := ""
+	for i in range(s.length()):
+		if i > 0 and (s.length() - i) % 3 == 0:
+			result += ","
+		result += s[i]
+	if n < 0:
+		result = "-" + result
+	return result
