@@ -20,7 +20,7 @@ enum TransitMode {
 @export var asteroid: AsteroidData = null
 @export var transit_time: float = 0.0     # ticks for one-way transit
 @export var elapsed_ticks: float = 0.0    # ticks elapsed in current phase
-@export var mining_duration: float = 30.0 # ticks to mine before returning
+@export var mining_duration: float = 86400.0 # ticks to mine (auto-calculated at mission start)
 @export var fuel_per_tick: float = 0.0    # fuel consumed per tick during transit
 @export var origin_position_au: Vector2 = Vector2.ZERO   # where ship departed from
 @export var return_position_au: Vector2 = Vector2.ZERO    # where ship returns to

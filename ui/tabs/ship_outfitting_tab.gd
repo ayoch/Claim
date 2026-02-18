@@ -32,8 +32,8 @@ func _refresh_all() -> void:
 		ships_list.add_child(inv_header)
 
 		for upgrade in GameState.upgrade_inventory:
-			var upgrade_row := HBoxContainer.new()
-			upgrade_row.add_theme_constant_override("separation", 8)
+			var upgrade_row := HFlowContainer.new()
+			upgrade_row.add_theme_constant_override("h_separation", 8)
 			var upgrade_info := Label.new()
 			upgrade_info.text = "%s - %s" % [upgrade.upgrade_name, upgrade.description]
 			upgrade_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

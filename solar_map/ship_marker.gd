@@ -6,17 +6,21 @@ const MOVE_SMOOTHING: float = 12.0  # base lerp speed for smooth movement
 var mission: Mission = null
 var trade_mission: TradeMission = null
 var ship: Ship = null  # for idle/derelict ships without active missions
+var rescue_target_ship: Ship = null  # for rescue/refuel vessel markers
+var rescue_data: Dictionary = {}  # { source_pos, transit_time, elapsed_ticks, ... }
+var is_refuel_vessel: bool = false  # true = refuel, false = rescue
 
 # Cache positions for smooth motion
 var _target_pos: Vector2 = Vector2.ZERO
 var _smooth_progress: float = 0.0  # Frame-smoothed progress
 var _velocity: Vector2 = Vector2.ZERO
 var _rotation_angle: float = 0.0
+var _anim_time: float = 0.0  # For visual animations (pulsing, etc.)
 
 # Cached trajectory to avoid recalculating every frame
 var _cached_trajectory_points: PackedVector2Array = PackedVector2Array()
 var _trajectory_update_timer: float = 0.0
-const TRAJECTORY_UPDATE_INTERVAL: float = 0.1  # Update trajectory every 0.1 seconds
+const TRAJECTORY_UPDATE_INTERVAL: float = 0.033  # Update trajectory every frame (~30fps)
 
 func _ready() -> void:
 	if mission:
@@ -35,6 +39,13 @@ func _ready() -> void:
 		_update_trajectory_cache()  # Initialize trajectory
 		_initialize_rotation()  # Set initial rotation angle
 		visible = true
+	elif rescue_target_ship:
+		var prefix := "Refuel" if is_refuel_vessel else "Rescue"
+		$Label.text = "%s → %s" % [prefix, rescue_target_ship.ship_name]
+		$Label.add_theme_color_override("font_color", Color(0.9, 0.6, 0.2))
+		_update_rescue_target()
+		position = _target_pos
+		visible = true
 	elif ship:
 		$Label.text = ship.ship_name
 		_target_pos = ship.position_au * AU_PIXELS
@@ -44,36 +55,34 @@ func _ready() -> void:
 		visible = false
 
 func _initialize_rotation() -> void:
-	# Set initial rotation based on trajectory direction
+	# Set initial rotation from ship's actual velocity, or fallback to direction
+	var init_ship: Ship = null
 	if mission and (mission.status == Mission.Status.TRANSIT_OUT or mission.status == Mission.Status.TRANSIT_BACK):
-		var start_pos := Vector2.ZERO
-		var end_pos := Vector2.ZERO
-		if mission.status == Mission.Status.TRANSIT_OUT:
-			start_pos = mission.origin_position_au * AU_PIXELS
-			end_pos = (mission.asteroid.get_position_au() if mission.asteroid else mission.origin_position_au) * AU_PIXELS
-		else:
-			start_pos = (mission.asteroid.get_position_au() if mission.asteroid else mission.origin_position_au) * AU_PIXELS
-			end_pos = mission.return_position_au * AU_PIXELS
-		var direction := (end_pos - start_pos).normalized()
-		_rotation_angle = direction.angle()
-		if _smooth_progress > 0.5:
-			_rotation_angle += PI  # Start with retrograde orientation if past midpoint
+		init_ship = mission.ship
 	elif trade_mission and (trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY or trade_mission.status == TradeMission.Status.TRANSIT_BACK):
+		init_ship = trade_mission.ship
+
+	if init_ship and init_ship.velocity_au_per_tick.length_squared() > 0.0:
+		_rotation_angle = init_ship.velocity_au_per_tick.angle()
+	elif init_ship:
+		# Velocity not set yet — use current leg direction
 		var start_pos := Vector2.ZERO
 		var end_pos := Vector2.ZERO
-		if trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY:
-			start_pos = trade_mission.origin_position_au * AU_PIXELS
-			end_pos = trade_mission.colony.get_position_au() * AU_PIXELS
-		else:
-			start_pos = trade_mission.colony.get_position_au() * AU_PIXELS
-			end_pos = trade_mission.return_position_au * AU_PIXELS
+		if mission:
+			start_pos = mission.get_current_leg_start_pos()
+			end_pos = mission.get_current_leg_end_pos()
+		elif trade_mission:
+			start_pos = trade_mission.get_current_leg_start_pos()
+			end_pos = trade_mission.get_current_leg_end_pos()
 		var direction := (end_pos - start_pos).normalized()
 		_rotation_angle = direction.angle()
-		if _smooth_progress > 0.5:
-			_rotation_angle += PI
+
+	if _smooth_progress > 0.5:
+		_rotation_angle += PI
 
 func _process(delta: float) -> void:
-	if not mission and not trade_mission and not ship:
+	_anim_time += delta
+	if not mission and not trade_mission and not ship and not rescue_target_ship:
 		visible = false
 		return
 	# Hide completed missions (marker will be freed on next refresh)
@@ -97,56 +106,50 @@ func _process(delta: float) -> void:
 	var progress_lerp_speed := maxf(50.0, 12.0 * TimeScale.speed_multiplier)
 	_smooth_progress = lerp(_smooth_progress, actual_progress, minf(progress_lerp_speed * delta, 1.0))
 
-	# Update target position using smooth progress
+	# Update target position — use ship.position_au directly for transit
+	# (simulation already updates this each tick via _update_ship_transit_physics)
 	if mission:
-		_update_mining_target_with_progress(_smooth_progress)
+		var s: Ship = mission.ship
+		if s and (mission.status == Mission.Status.TRANSIT_OUT or mission.status == Mission.Status.TRANSIT_BACK):
+			_target_pos = s.position_au * AU_PIXELS
+		else:
+			_update_mining_target_with_progress(_smooth_progress)
 	elif trade_mission:
-		_update_trade_target_with_progress(_smooth_progress)
+		var s: Ship = trade_mission.ship
+		if s and (trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY or trade_mission.status == TradeMission.Status.TRANSIT_BACK):
+			_target_pos = s.position_au * AU_PIXELS
+		else:
+			_update_trade_target_with_progress(_smooth_progress)
+	elif rescue_target_ship:
+		_update_rescue_target()
 	else:
 		_update_target()
 
-	# Calculate velocity and rotation from trajectory
+	# Calculate rotation from ship's actual velocity vector
+	var transit_ship: Ship = null
 	if mission and (mission.status == Mission.Status.TRANSIT_OUT or mission.status == Mission.Status.TRANSIT_BACK):
-		var start_pos := Vector2.ZERO
-		var end_pos := Vector2.ZERO
-		var transit_mode: int = mission.transit_mode
-		if mission.status == Mission.Status.TRANSIT_OUT:
-			start_pos = mission.origin_position_au * AU_PIXELS
-			end_pos = (mission.asteroid.get_position_au() if mission.asteroid else mission.origin_position_au) * AU_PIXELS
-		else:
-			start_pos = (mission.asteroid.get_position_au() if mission.asteroid else mission.origin_position_au) * AU_PIXELS
-			end_pos = mission.return_position_au * AU_PIXELS
-
-		# Calculate tangent to trajectory curve
-		_velocity = _calculate_trajectory_tangent(start_pos, end_pos, _smooth_progress, transit_mode, mission.transit_time)
-
-		# Rotation follows velocity direction, flips at midpoint for retrograde burn
-		# Always update rotation when in transit
-		var target_angle := _velocity.angle()
-		if _smooth_progress > 0.5:
-			target_angle += PI  # Flip for deceleration burn
-		# Smooth rotation - very aggressive at low speeds
-		var rotation_lerp_speed := maxf(40.0, 15.0 * TimeScale.speed_multiplier)
-		var angle_diff := fmod(target_angle - _rotation_angle + PI, TAU) - PI
-		_rotation_angle += angle_diff * minf(rotation_lerp_speed * delta, 1.0)
-
+		transit_ship = mission.ship
 	elif trade_mission and (trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY or trade_mission.status == TradeMission.Status.TRANSIT_BACK):
-		var start_pos := Vector2.ZERO
-		var end_pos := Vector2.ZERO
-		var transit_mode: int = trade_mission.transit_mode
-		if trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY:
-			start_pos = trade_mission.origin_position_au * AU_PIXELS
-			end_pos = trade_mission.colony.get_position_au() * AU_PIXELS
+		transit_ship = trade_mission.ship
+
+	if transit_ship:
+		_velocity = transit_ship.velocity_au_per_tick
+		var target_angle: float
+		if _velocity.length_squared() > 0.0:
+			target_angle = _velocity.angle()
 		else:
-			start_pos = trade_mission.colony.get_position_au() * AU_PIXELS
-			end_pos = trade_mission.return_position_au * AU_PIXELS
-
-		_velocity = _calculate_trajectory_tangent(start_pos, end_pos, _smooth_progress, transit_mode, trade_mission.transit_time)
-
-		# Always update rotation when in transit
-		var target_angle := _velocity.angle()
+			# Fallback: point toward current leg end when velocity not yet set
+			var end_pos := Vector2.ZERO
+			if mission:
+				end_pos = mission.get_current_leg_end_pos() * AU_PIXELS
+			elif trade_mission:
+				end_pos = trade_mission.get_current_leg_end_pos() * AU_PIXELS
+			var dir := (end_pos - position).normalized()
+			target_angle = dir.angle() if dir.length_squared() > 0.0 else _rotation_angle
+		# Flip for deceleration burn (ship flies backward in second half)
 		if _smooth_progress > 0.5:
 			target_angle += PI
+		# Smooth rotation
 		var rotation_lerp_speed := maxf(40.0, 15.0 * TimeScale.speed_multiplier)
 		var angle_diff := fmod(target_angle - _rotation_angle + PI, TAU) - PI
 		_rotation_angle += angle_diff * minf(rotation_lerp_speed * delta, 1.0)
@@ -163,6 +166,31 @@ func _process(delta: float) -> void:
 		_update_trajectory_cache()
 
 	queue_redraw()
+
+func _update_rescue_target() -> void:
+	if not rescue_target_ship:
+		return
+	# Refresh data from GameState
+	var data_dict: Dictionary
+	if is_refuel_vessel:
+		if rescue_target_ship not in GameState.refuel_missions:
+			visible = false
+			return
+		data_dict = GameState.refuel_missions[rescue_target_ship]
+	else:
+		if rescue_target_ship not in GameState.rescue_missions:
+			visible = false
+			return
+		data_dict = GameState.rescue_missions[rescue_target_ship]
+
+	var source_pos: Vector2 = data_dict.get("source_pos", CelestialData.get_earth_position_au())
+	var elapsed: float = data_dict["elapsed_ticks"]
+	var total: float = data_dict["transit_time"]
+	var progress := clampf(elapsed / total, 0.0, 1.0) if total > 0 else 0.0
+
+	var source_px := source_pos * AU_PIXELS
+	var target_px := rescue_target_ship.position_au * AU_PIXELS
+	_target_pos = source_px.lerp(target_px, progress)
 
 func _update_target() -> void:
 	if mission:
@@ -211,47 +239,73 @@ func update_position() -> void:
 
 func _update_trajectory_cache() -> void:
 	# Update cached trajectory points for drawing
-	# Only called periodically to avoid jitter from recalculating every frame
 	_cached_trajectory_points.clear()
 
-	var start_pos := Vector2.ZERO
-	var end_pos := Vector2.ZERO
-	var transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE
 	var is_active := false
+	var transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE
 
-	# Determine trajectory endpoints
+	# Build list of legs: each leg is [start_au, end_au]
+	var legs: Array = []  # Array of [Vector2, Vector2]
+
 	if mission:
+		transit_mode = mission.transit_mode
 		if mission.status == Mission.Status.TRANSIT_OUT:
-			start_pos = mission.origin_position_au * AU_PIXELS
-			end_pos = (mission.asteroid.get_position_au() if mission.asteroid else mission.origin_position_au) * AU_PIXELS
-			transit_mode = mission.transit_mode
 			is_active = true
+			# Current leg
+			var leg_start := mission.get_current_leg_start_pos()
+			var leg_end := mission.get_current_leg_end_pos()
+			legs.append([leg_start, leg_end])
+			# Remaining legs after current waypoint
+			var wi := mission.outbound_waypoint_index
+			while wi < mission.outbound_waypoints.size():
+				var next_start := mission.outbound_waypoints[wi]
+				var next_end: Vector2
+				if wi + 1 < mission.outbound_waypoints.size():
+					next_end = mission.outbound_waypoints[wi + 1]
+				else:
+					next_end = mission.asteroid.get_position_au() if mission.asteroid else mission.origin_position_au
+				legs.append([next_start, next_end])
+				wi += 1
 		elif mission.status == Mission.Status.TRANSIT_BACK:
-			start_pos = (mission.asteroid.get_position_au() if mission.asteroid else mission.origin_position_au) * AU_PIXELS
-			end_pos = mission.return_position_au * AU_PIXELS
-			transit_mode = mission.transit_mode
 			is_active = true
+			var leg_start := mission.get_current_leg_start_pos()
+			var leg_end := mission.get_current_leg_end_pos()
+			legs.append([leg_start, leg_end])
+			var wi := mission.return_waypoint_index
+			while wi < mission.return_waypoints.size():
+				var next_start := mission.return_waypoints[wi]
+				var next_end: Vector2
+				if wi + 1 < mission.return_waypoints.size():
+					next_end = mission.return_waypoints[wi + 1]
+				else:
+					next_end = mission.return_position_au
+				legs.append([next_start, next_end])
+				wi += 1
 	elif trade_mission:
+		transit_mode = trade_mission.transit_mode
 		if trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY:
-			start_pos = trade_mission.origin_position_au * AU_PIXELS
-			end_pos = trade_mission.colony.get_position_au() * AU_PIXELS
-			transit_mode = trade_mission.transit_mode
 			is_active = true
+			var leg_start := trade_mission.get_current_leg_start_pos()
+			var leg_end := trade_mission.get_current_leg_end_pos()
+			legs.append([leg_start, leg_end])
 		elif trade_mission.status == TradeMission.Status.TRANSIT_BACK:
-			start_pos = trade_mission.colony.get_position_au() * AU_PIXELS
-			end_pos = trade_mission.return_position_au * AU_PIXELS
-			transit_mode = trade_mission.transit_mode
 			is_active = true
+			var leg_start := trade_mission.get_current_leg_start_pos()
+			var leg_end := trade_mission.get_current_leg_end_pos()
+			legs.append([leg_start, leg_end])
 
-	if not is_active:
+	if not is_active or legs.is_empty():
 		return
 
-	# Generate trajectory points in world space
-	var num_points := 30
-	for i in range(num_points + 1):
-		var t := float(i) / float(num_points)
-		var world_point := _calculate_trajectory_position(start_pos, end_pos, t, transit_mode)
-		_cached_trajectory_points.append(world_point)
+	# Generate trajectory points for each leg
+	var num_points_per_leg := 30
+	for leg in legs:
+		var start_px: Vector2 = leg[0] * AU_PIXELS
+		var end_px: Vector2 = leg[1] * AU_PIXELS
+		for i in range(num_points_per_leg + 1):
+			var t := float(i) / float(num_points_per_leg)
+			var world_point := _calculate_trajectory_position(start_px, end_px, t, transit_mode)
+			_cached_trajectory_points.append(world_point)
 
 func _calculate_trajectory_position(start: Vector2, end: Vector2, progress: float, transit_mode: int) -> Vector2:
 	# Calculate ship position along trajectory based on transit mode
@@ -260,28 +314,12 @@ func _calculate_trajectory_position(start: Vector2, end: Vector2, progress: floa
 	var distance := start.distance_to(end)
 
 	if transit_mode == Mission.TransitMode.HOHMANN:
-		# Hohmann transfer follows an elliptical arc
-		# Perpendicular to travel direction
-		var perpendicular := Vector2(-direction.y, direction.x)
-
-		# Arc bows outward (away from origin point)
-		# sin creates the arc shape, peaking at progress=0.5
-		var arc_height := distance * 0.15 * sin(progress * PI)  # 15% of distance
-		var arc_offset := perpendicular * arc_height
-
-		return start.lerp(end, progress) + arc_offset
+		# Hohmann: linear interpolation (matches simulation physics)
+		return start.lerp(end, progress)
 	else:
-		# Brachistochrone: constant thrust acceleration/deceleration
-		# Progress is TIME fraction (0 to 1), but position follows S-curve
+		# Brachistochrone: S-curve position (matches simulation physics)
 		var distance_fraction := _brachistochrone_distance_fraction(progress)
-
-		var perpendicular := Vector2(-direction.y, direction.x)
-
-		# Much smaller arc than Hohmann (5% vs 15%)
-		var arc_height := distance * 0.05 * sin(progress * PI)
-		var arc_offset := perpendicular * arc_height
-
-		return start.lerp(end, distance_fraction) + arc_offset
+		return start.lerp(end, distance_fraction)
 
 func _brachistochrone_distance_fraction(time_fraction: float) -> float:
 	# Convert time progress to distance progress for constant-acceleration trajectory
@@ -371,13 +409,42 @@ func _draw() -> void:
 	# Draw trajectory first (behind ship)
 	_draw_trajectory()
 
-	# Derelict ships: red with X marker
+	# Rescue/refuel vessel: amber triangle + trajectory line
+	if rescue_target_ship:
+		var color := Color(0.9, 0.6, 0.2)
+		# Draw trajectory line from source to target
+		var data_dict: Dictionary
+		if is_refuel_vessel:
+			data_dict = GameState.refuel_missions.get(rescue_target_ship, {})
+		else:
+			data_dict = GameState.rescue_missions.get(rescue_target_ship, {})
+		if not data_dict.is_empty():
+			var source_pos: Vector2 = data_dict.get("source_pos", CelestialData.get_earth_position_au())
+			var source_px := source_pos * AU_PIXELS - position
+			var target_px := rescue_target_ship.position_au * AU_PIXELS - position
+			draw_line(source_px, target_px, Color(color.r, color.g, color.b, 0.3), 1.5)
+
+		# Draw amber triangle
+		var s := 8.0
+		var pts := PackedVector2Array([
+			Vector2(0, -s), Vector2(s, s * 0.6), Vector2(-s, s * 0.6)
+		])
+		draw_colored_polygon(pts, color)
+		draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[0]]), Color(1.0, 0.8, 0.4), 1.5)
+		return
+
+	# Derelict ships: red with X marker and pulsing glow
 	if ship and ship.is_derelict:
-		draw_circle(Vector2.ZERO, 6, Color(0.9, 0.2, 0.2))
+		# Pulsing outer glow for visibility
+		var pulse := 0.4 + 0.3 * sin(_anim_time * 4.0)
+		draw_circle(Vector2.ZERO, 14, Color(0.9, 0.1, 0.1, pulse * 0.4))
+		draw_circle(Vector2.ZERO, 8, Color(0.9, 0.2, 0.2))
 		# Draw X
-		var s := 4.0
-		draw_line(Vector2(-s, -s), Vector2(s, s), Color(1.0, 0.3, 0.3), 2.0)
-		draw_line(Vector2(s, -s), Vector2(-s, s), Color(1.0, 0.3, 0.3), 2.0)
+		var s := 5.0
+		draw_line(Vector2(-s, -s), Vector2(s, s), Color(1.0, 0.4, 0.4), 2.5)
+		draw_line(Vector2(s, -s), Vector2(-s, s), Color(1.0, 0.4, 0.4), 2.5)
+		# Draw "SOS" label
+		$Label.add_theme_color_override("font_color", Color(1.0, 0.3, 0.3))
 		return
 
 	# Idle remote ships: amber circle (no rotation)

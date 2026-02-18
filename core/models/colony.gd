@@ -7,6 +7,7 @@ extends Resource
 @export var price_multipliers: Dictionary = {}  # OreType -> float
 @export var orbits_earth: bool = false  # if true, orbit_au is distance from Earth (legacy)
 @export var parent_planet_index: int = -1  # if >= 0, orbits this planet from CelestialData.PLANETS
+@export var has_rescue_ops: bool = false  # Large colonies can dispatch rescue missions
 
 func get_ore_price(ore_type: ResourceTypes.OreType, market: MarketState) -> float:
 	var base_market_price: float = market.get_price(ore_type)
@@ -26,6 +27,11 @@ func get_ore_price(ore_type: ResourceTypes.OreType, market: MarketState) -> floa
 	return base_market_price * mult * scarcity_multiplier * event_multiplier
 
 func get_position_au() -> Vector2:
+	# Moons with tiny orbits (< 0.05 AU) sit at their parent's position
+	# to avoid visual jitter on the map
+	if parent_planet_index >= 0 and orbit_au < 0.05:
+		return CelestialData.get_planet_position_au(parent_planet_index)
+
 	var local_pos := Vector2(cos(orbital_angle), sin(orbital_angle)) * orbit_au
 
 	# Check parent planet first
@@ -47,8 +53,8 @@ func advance_orbit(dt: float) -> void:
 		orbital_angle = fmod(orbital_angle, TAU)
 
 func get_orbital_period() -> float:
-	# Kepler's third law approximation for game ticks
-	# For Earth-orbiting bodies, use a faster period so they visibly orbit
-	if orbits_earth:
-		return maxf(orbit_au * 200.0, 5.0)  # Much faster for nearby bodies
-	return pow(orbit_au, 1.5) * 600.0
+	# Kepler's third law: 200,000 base ticks per orbit at 1 AU
+	if orbits_earth or parent_planet_index >= 0:
+		# Moons orbit parent body: shorter period relative to their local orbit_au
+		return maxf(orbit_au * 50000.0, 1000.0)
+	return pow(orbit_au, 1.5) * 200000.0

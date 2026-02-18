@@ -41,6 +41,11 @@ func _ready() -> void:
 	EventBus.ship_derelict.connect(func(_s: Ship) -> void: _mark_dirty())
 	EventBus.rescue_mission_started.connect(func(_s: Ship, _c: int) -> void: _mark_dirty())
 	EventBus.rescue_mission_completed.connect(func(_s: Ship) -> void: _mark_dirty())
+	EventBus.refuel_mission_started.connect(func(_s: Ship, _c: int, _f: float) -> void: _mark_dirty())
+	EventBus.refuel_mission_completed.connect(func(_s: Ship, _f: float) -> void: _mark_dirty())
+	EventBus.stranger_rescue_offered.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
+	EventBus.stranger_rescue_completed.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
+	EventBus.stranger_rescue_declined.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
 	EventBus.tick.connect(_on_tick)
 	_rebuild_ships()
 
@@ -120,65 +125,117 @@ func _rebuild_ships() -> void:
 		vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		vbox.add_theme_constant_override("separation", 4)
 
-		var header := HBoxContainer.new()
+		var header := VBoxContainer.new()
+		header.add_theme_constant_override("separation", 2)
 		var name_label := Label.new()
 		name_label.text = "%s (%s)" % [ship.ship_name, ship.get_class_name()]
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		header.add_child(name_label)
 
+		var _derelict_actions: HFlowContainer = null  # Populated below for derelict ships
 		if ship.is_derelict:
 			var status := Label.new()
 			var status_text := "STRANDED (OUT OF FUEL)" if ship.derelict_reason == "out_of_fuel" else "DERELICT (BREAKDOWN)"
+			if ship.speed_au_per_tick > 0.0:
+				var speed_km_s := ship.speed_au_per_tick * CelestialData.AU_TO_METERS / 1000.0
+				status_text += " — Drifting %.1f km/s" % speed_km_s
 			status.text = status_text
 			status.add_theme_color_override("font_color", Color(0.9, 0.2, 0.2))
 			header.add_child(status)
 
+			_derelict_actions = HFlowContainer.new()
+			_derelict_actions.add_theme_constant_override("h_separation", 8)
+
 			# Show refuel in progress
 			if ship in GameState.refuel_missions:
 				var refuel_data: Dictionary = GameState.refuel_missions[ship]
-				var progress: float = float(refuel_data["elapsed_ticks"]) / float(refuel_data["transit_time"])
+				var elapsed: float = refuel_data["elapsed_ticks"]
+				var total: float = refuel_data["transit_time"]
+				var progress: float = elapsed / total
+				var remaining := total - elapsed
+				var source_name: String = refuel_data.get("source_name", "Earth")
 				var refuel_label := Label.new()
-				refuel_label.text = "Refuel: %d%%" % int(progress * 100)
+				refuel_label.text = "Refuel: %d%% — ETA %s from %s" % [int(progress * 100), TimeScale.format_time(remaining), source_name]
 				refuel_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
-				header.add_child(refuel_label)
+				_derelict_actions.add_child(refuel_label)
 			# Show rescue in progress
 			elif ship in GameState.rescue_missions:
 				var rescue_data: Dictionary = GameState.rescue_missions[ship]
-				var progress: float = float(rescue_data["elapsed_ticks"]) / float(rescue_data["transit_time"])
+				var elapsed: float = rescue_data["elapsed_ticks"]
+				var total: float = rescue_data["transit_time"]
+				var progress: float = elapsed / total
+				var remaining := total - elapsed
+				var source_name: String = rescue_data.get("source_name", "Earth")
 				var rescue_label := Label.new()
-				rescue_label.text = "Rescue: %d%%" % int(progress * 100)
+				rescue_label.text = "Rescue: %d%% — ETA %s from %s" % [int(progress * 100), TimeScale.format_time(remaining), source_name]
 				rescue_label.add_theme_color_override("font_color", Color(0.9, 0.6, 0.2))
-				header.add_child(rescue_label)
+				_derelict_actions.add_child(rescue_label)
 			else:
-				var dist := ship.position_au.distance_to(CelestialData.get_earth_position_au())
+				# Stranger offer
+				if ship in GameState.stranger_offers:
+					var offer: Dictionary = GameState.stranger_offers[ship]
+					var stranger_name: String = offer["stranger_name"]
+					var tip: int = offer["suggested_tip"]
+					var offer_label := Label.new()
+					offer_label.text = "A passing vessel (%s) is offering assistance" % stranger_name
+					offer_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
+					offer_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+					offer_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+					_derelict_actions.add_child(offer_label)
+
+					var accept_free_btn := Button.new()
+					accept_free_btn.text = "Accept (Free)"
+					accept_free_btn.custom_minimum_size = Vector2(0, 44)
+					accept_free_btn.pressed.connect(func() -> void:
+						GameState.accept_stranger_rescue(ship, false)
+						_mark_dirty()
+					)
+					_derelict_actions.add_child(accept_free_btn)
+
+					var accept_pay_btn := Button.new()
+					accept_pay_btn.text = "Accept + Pay $%s" % _format_number(tip)
+					accept_pay_btn.custom_minimum_size = Vector2(0, 44)
+					accept_pay_btn.disabled = GameState.money < tip
+					accept_pay_btn.pressed.connect(func() -> void:
+						GameState.accept_stranger_rescue(ship, true)
+						_mark_dirty()
+					)
+					_derelict_actions.add_child(accept_pay_btn)
+
+					var decline_btn := Button.new()
+					decline_btn.text = "Decline"
+					decline_btn.custom_minimum_size = Vector2(0, 44)
+					decline_btn.pressed.connect(func() -> void:
+						GameState.decline_stranger_rescue(ship)
+						_mark_dirty()
+					)
+					_derelict_actions.add_child(decline_btn)
 
 				# Refuel option (cheaper, only for fuel depletion)
-				if ship.derelict_reason == "out_of_fuel":
-					var fuel_to_send := ship.fuel_capacity  # Send full tank
-					var distance_cost := int(dist * GameState.REFUEL_COST_PER_AU)
-					var fuel_cost := int(fuel_to_send * Ship.FUEL_COST_PER_UNIT)
-					var refuel_cost := distance_cost + fuel_cost
+				if ship.derelict_reason == "out_of_fuel" and ship not in GameState.stranger_offers:
+					var refuel_cost := GameState.get_refuel_cost(ship, ship.fuel_capacity)
 					var refuel_btn := Button.new()
 					refuel_btn.text = "Refuel ($%s)" % _format_number(refuel_cost)
 					refuel_btn.custom_minimum_size = Vector2(0, 44)
 					refuel_btn.disabled = GameState.money < refuel_cost
 					refuel_btn.pressed.connect(func() -> void:
-						GameState.start_refuel(ship, fuel_to_send)
+						GameState.start_refuel(ship, ship.fuel_capacity)
 						_mark_dirty()
 					)
-					header.add_child(refuel_btn)
+					_derelict_actions.add_child(refuel_btn)
 
 				# Rescue option (expensive, for breakdowns or as alternative)
-				var rescue_cost := int(dist * GameState.RESCUE_COST_PER_AU)
-				var rescue_btn := Button.new()
-				rescue_btn.text = "Rescue ($%s)" % _format_number(rescue_cost)
-				rescue_btn.custom_minimum_size = Vector2(0, 44)
-				rescue_btn.disabled = GameState.money < rescue_cost
-				rescue_btn.pressed.connect(func() -> void:
-					GameState.start_rescue(ship)
-					_mark_dirty()
-				)
-				header.add_child(rescue_btn)
+				if ship not in GameState.stranger_offers:
+					var rescue_cost := GameState.get_rescue_cost(ship)
+					var rescue_btn := Button.new()
+					rescue_btn.text = "Rescue ($%s)" % _format_number(rescue_cost)
+					rescue_btn.custom_minimum_size = Vector2(0, 44)
+					rescue_btn.disabled = GameState.money < rescue_cost
+					rescue_btn.pressed.connect(func() -> void:
+						GameState.start_rescue(ship)
+						_mark_dirty()
+					)
+					_derelict_actions.add_child(rescue_btn)
 		elif ship.is_docked:
 			var status := Label.new()
 			status.text = "Docked"
@@ -213,6 +270,8 @@ func _rebuild_ships() -> void:
 			_status_labels[ship] = status
 
 		vbox.add_child(header)
+		if _derelict_actions:
+			vbox.add_child(_derelict_actions)
 
 		# Location line
 		var loc_label := Label.new()
@@ -324,6 +383,7 @@ func _rebuild_ships() -> void:
 
 				equip_label.text = "%s (%.2fx) %s%s" % [e.equipment_name, e.mining_bonus, dur_str, broken_str]
 				equip_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				equip_label.clip_text = true
 				equip_row.add_child(equip_label)
 
 				var dur_bar := ProgressBar.new()
@@ -420,6 +480,7 @@ func _show_asteroid_selection() -> void:
 		colonies_scroll.name = "ColoniesScroll"
 		colonies_scroll.size_flags_vertical = Control.SIZE_FILL
 		colonies_scroll.custom_minimum_size = Vector2(0, 250)
+		colonies_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 
 		var colonies_vbox := VBoxContainer.new()
 		colonies_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -503,8 +564,8 @@ func _show_asteroid_selection() -> void:
 				route_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
 				colony_row.add_child(route_label)
 
-				var stops_hbox := HBoxContainer.new()
-				stops_hbox.add_theme_constant_override("separation", 8)
+				var stops_hbox := HFlowContainer.new()
+				stops_hbox.add_theme_constant_override("h_separation", 8)
 				for stop_name in fuel_route:
 					# Find the colony by name
 					var stop_colony: Colony = null
@@ -544,8 +605,8 @@ func _show_asteroid_selection() -> void:
 	dispatch_content.add_child(mining_header)
 
 	# Fixed filter/sort controls
-	var controls := HBoxContainer.new()
-	controls.add_theme_constant_override("separation", 8)
+	var controls := HFlowContainer.new()
+	controls.add_theme_constant_override("h_separation", 8)
 
 	var sort_btn := OptionButton.new()
 	sort_btn.add_item("Best Profit")
@@ -581,6 +642,7 @@ func _show_asteroid_selection() -> void:
 	mining_scroll.name = "MiningScroll"
 	mining_scroll.size_flags_vertical = Control.SIZE_FILL
 	mining_scroll.custom_minimum_size = Vector2(0, 400)
+	mining_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 
 	var mining_vbox := VBoxContainer.new()
 	mining_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -590,7 +652,7 @@ func _show_asteroid_selection() -> void:
 	var est_workers := GameState.get_available_workers()
 	if est_workers.is_empty():
 		var placeholder := Worker.new()
-		placeholder.skill = 1.0
+		placeholder.mining_skill = 1.0
 		placeholder.wage = 100
 		est_workers = [placeholder]
 
@@ -653,8 +715,8 @@ func _show_asteroid_selection() -> void:
 			route_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
 			dest_row.add_child(route_label)
 
-			var stops_hbox := HBoxContainer.new()
-			stops_hbox.add_theme_constant_override("separation", 8)
+			var stops_hbox := HFlowContainer.new()
+			stops_hbox.add_theme_constant_override("h_separation", 8)
 			for stop_name in fuel_route:
 				var stop_colony: Colony = null
 				for c in GameState.colonies:
@@ -828,8 +890,8 @@ func _show_worker_selection() -> void:
 
 			var check := CheckBox.new()
 			check.custom_minimum_size = Vector2(0, 44)
-			check.text = "%s  |  Skill: %.2f  |  $%d/pay" % [
-				worker.worker_name, worker.skill, worker.wage
+			check.text = "%s  |  %s  |  $%d/pay" % [
+				worker.worker_name, worker.get_specialties_text(), worker.wage
 			]
 			check.button_pressed = preselect
 			check.toggled.connect(func(on: bool) -> void:
@@ -936,7 +998,7 @@ func _show_worker_selection() -> void:
 	var confirm := Button.new()
 	confirm.text = "Confirm Dispatch"
 	confirm.custom_minimum_size = Vector2(0, 44)
-	confirm.pressed.connect(_execute_dispatch)
+	confirm.pressed.connect(_confirm_dispatch)
 	btn_row.add_child(confirm)
 
 	var cancel := Button.new()
@@ -1054,8 +1116,8 @@ func _confirm_dispatch() -> void:
 func _build_details_text(ship: Ship) -> String:
 	var engine_str := ""
 	if ship.engine_condition < 100.0:
-		engine_str = "  |  Eng: %d%%" % int(ship.engine_condition)
-	return "Thrust: %.1fg (%.0f%%)  |  Cargo: %.0f/%.0ft  |  Fuel: %.0f/%.0f  |  Equip: %d/%d (%.2fx)%s" % [
+		engine_str = " | Eng: %d%%" % int(ship.engine_condition)
+	return "Thrust: %.1fg (%.0f%%) | Cargo: %.0f/%.0ft\nFuel: %.0f/%.0f | Equip: %d/%d (%.2fx)%s" % [
 		ship.get_effective_thrust(), ship.thrust_setting * 100.0, ship.get_cargo_total(), ship.get_effective_cargo_capacity(),
 		ship.fuel, ship.get_effective_fuel_capacity(),
 		ship.equipment.size(), ship.max_equipment_slots, ship.get_mining_multiplier(),

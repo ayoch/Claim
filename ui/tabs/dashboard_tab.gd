@@ -65,8 +65,43 @@ func _ready() -> void:
 	)
 	EventBus.trade_mission_phase_changed.connect(func(_tm: TradeMission) -> void: _refresh_missions())
 
+	# Breakdown & rescue events
+	EventBus.ship_breakdown.connect(func(ship: Ship, reason: String) -> void:
+		_add_event("ALERT: %s — %s" % [ship.ship_name, reason], Color(0.9, 0.2, 0.2))
+		_send_system_notification("Ship Breakdown", "%s — %s" % [ship.ship_name, reason])
+	)
+	EventBus.rescue_mission_started.connect(func(ship: Ship, cost: int) -> void:
+		_refresh_missions()
+		_add_event("Rescue dispatched for %s ($%s)" % [ship.ship_name, _format_number(cost)], Color(0.9, 0.6, 0.2))
+	)
+	EventBus.rescue_mission_completed.connect(func(ship: Ship) -> void:
+		_refresh_missions()
+		_add_event("%s rescued and returned safely" % ship.ship_name, Color(0.3, 0.9, 0.4))
+	)
+	EventBus.refuel_mission_started.connect(func(ship: Ship, cost: int, _fuel: float) -> void:
+		_add_event("Refuel tanker sent to %s ($%s)" % [ship.ship_name, _format_number(cost)], Color(0.3, 0.8, 0.9))
+	)
+	EventBus.refuel_mission_completed.connect(func(ship: Ship, _fuel: float) -> void:
+		_add_event("%s refueled" % ship.ship_name, Color(0.3, 0.8, 0.9))
+	)
+
+	# Stranger rescue events
+	EventBus.stranger_rescue_offered.connect(func(ship: Ship, stranger_name: String) -> void:
+		_add_event("A passing vessel (%s) is offering to help %s!" % [stranger_name, ship.ship_name], Color(1.0, 0.9, 0.3))
+		_send_system_notification("Stranger Offering Help", "%s wants to help %s" % [stranger_name, ship.ship_name])
+	)
+	EventBus.stranger_rescue_completed.connect(func(ship: Ship, stranger_name: String) -> void:
+		_add_event("%s rescued by %s" % [ship.ship_name, stranger_name], Color(0.3, 0.9, 0.4))
+	)
+
+	# Reputation
+	EventBus.reputation_changed.connect(func(_score: float, _tier: int) -> void:
+		_refresh_reputation()
+	)
+
 	_refresh_all()
 	_setup_policies_ui()
+	_setup_reputation_display()
 
 func _setup_policies_ui() -> void:
 	# Find the main VBox in the dashboard
@@ -199,6 +234,7 @@ func _refresh_missions() -> void:
 		var hbox := HBoxContainer.new()
 		var status_label := Label.new()
 		status_label.text = mission.get_status_text()
+		status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hbox.add_child(status_label)
 		var progress := ProgressBar.new()
@@ -214,6 +250,7 @@ func _refresh_missions() -> void:
 		var hbox := HBoxContainer.new()
 		var status_label := Label.new()
 		status_label.text = tm.get_status_text()
+		status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		status_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 		status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hbox.add_child(status_label)
@@ -261,6 +298,54 @@ func _refresh_events() -> void:
 		if entry["color"] != Color.WHITE:
 			label.add_theme_color_override("font_color", entry["color"])
 		events_list.add_child(label)
+
+func _send_system_notification(p_title: String, p_body: String) -> void:
+	# Desktop: flash the taskbar/window
+	if OS.get_name() in ["Windows", "macOS", "Linux"]:
+		DisplayServer.window_request_attention()
+	# Android: TODO — use JavaClassWrapper → NotificationManager
+	# iOS: TODO — requires native plugin
+
+func _setup_reputation_display() -> void:
+	var scroll := get_node("ScrollContainer")
+	var vbox := scroll.get_node("VBox")
+
+	var rep_card := PanelContainer.new()
+	rep_card.name = "ReputationCard"
+	var rep_vbox := VBoxContainer.new()
+	rep_vbox.add_theme_constant_override("separation", 4)
+
+	var rep_title := Label.new()
+	rep_title.text = "REPUTATION"
+	rep_title.add_theme_font_size_override("font_size", 14)
+	rep_vbox.add_child(rep_title)
+
+	var rep_label := Label.new()
+	rep_label.name = "ReputationLabel"
+	rep_label.text = "%s (%+.0f)" % [Reputation.get_tier_name(), Reputation.score]
+	_color_reputation_label(rep_label)
+	rep_vbox.add_child(rep_label)
+
+	rep_card.add_child(rep_vbox)
+	vbox.add_child(rep_card)
+
+func _refresh_reputation() -> void:
+	var rep_card := get_node_or_null("ScrollContainer/VBox/ReputationCard")
+	if not rep_card:
+		return
+	var rep_label: Label = rep_card.find_child("ReputationLabel", true, false)
+	if rep_label:
+		rep_label.text = "%s (%+.0f)" % [Reputation.get_tier_name(), Reputation.score]
+		_color_reputation_label(rep_label)
+
+func _color_reputation_label(label: Label) -> void:
+	var tier := Reputation.get_tier()
+	if tier == Reputation.Tier.NOTORIOUS or tier == Reputation.Tier.SHADY:
+		label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+	elif tier == Reputation.Tier.RESPECTED or tier == Reputation.Tier.RENOWNED:
+		label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+	else:
+		label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 
 func _format_number(n: int) -> String:
 	var s := str(abs(n))

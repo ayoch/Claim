@@ -6,9 +6,9 @@ shader_type canvas_item;
 uniform float scanline_intensity : hint_range(0.0, 0.2) = 0.03;
 uniform float vignette_strength : hint_range(0.0, 0.5) = 0.15;
 uniform float chromatic_aberration : hint_range(0.0, 0.01) = 0.002;
-uniform float static_frequency : hint_range(0.0, 0.3) = 0.08;
-uniform float static_duration : hint_range(0.05, 0.5) = 0.2;
-uniform float static_intensity : hint_range(0.0, 0.5) = 0.15;
+uniform float static_frequency : hint_range(0.0, 0.3) = 0.15;
+uniform float static_duration : hint_range(0.05, 0.5) = 0.25;
+uniform float static_intensity : hint_range(0.0, 0.5) = 0.22;
 
 // Simple hash function for randomization
 float hash(vec2 p) {

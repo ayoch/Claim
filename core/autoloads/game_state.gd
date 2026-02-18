@@ -1,6 +1,6 @@
 extends Node
 
-var money: int = 10000:
+var money: int = 100000000:
 	set(value):
 		money = value
 		EventBus.money_changed.emit(money)
@@ -22,6 +22,61 @@ var settings: Dictionary = {
 # Company policies
 var thrust_policy: int = CompanyPolicy.ThrustPolicy.BALANCED  # Default to balanced
 
+# Game clock: total elapsed game-seconds (ticks) since game start
+var total_ticks: float = 0.0
+const START_YEAR: int = 2026
+const START_MONTH: int = 2
+const START_DAY: int = 18
+
+# Days per month (non-leap)
+const DAYS_IN_MONTH: Array[int] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+func _is_leap_year(y: int) -> bool:
+	return (y % 4 == 0 and y % 100 != 0) or (y % 400 == 0)
+
+func _days_in_year(y: int) -> int:
+	return 366 if _is_leap_year(y) else 365
+
+func _days_in_month(m: int, y: int) -> int:
+	if m == 2 and _is_leap_year(y):
+		return 29
+	return DAYS_IN_MONTH[m - 1]
+
+func get_game_date() -> Dictionary:
+	var total_days := int(total_ticks / 86400.0)
+	var remaining_secs := int(total_ticks) % 86400
+	var hours := remaining_secs / 3600
+	var minutes := (remaining_secs % 3600) / 60
+
+	var year := START_YEAR
+	var month := START_MONTH
+	var day := START_DAY + total_days
+
+	# Roll forward through months/years
+	while day > _days_in_month(month, year):
+		day -= _days_in_month(month, year)
+		month += 1
+		if month > 12:
+			month = 1
+			year += 1
+
+	return { "year": year, "month": month, "day": day, "hours": hours, "minutes": minutes }
+
+func get_game_date_string() -> String:
+	var d := get_game_date()
+	var fmt: String = settings.get("date_format", "us")
+	match fmt:
+		"us":
+			return "%02d/%02d/%04d  %02d:%02d" % [d["month"], d["day"], d["year"], d["hours"], d["minutes"]]
+		"eu":
+			return "%02d.%02d.%04d  %02d:%02d" % [d["day"], d["month"], d["year"], d["hours"], d["minutes"]]
+		"iso":
+			return "%04d-%02d-%02d  %02d:%02d" % [d["year"], d["month"], d["day"], d["hours"], d["minutes"]]
+		"uk":
+			return "%02d/%02d/%04d  %02d:%02d" % [d["day"], d["month"], d["year"], d["hours"], d["minutes"]]
+		_:
+			return "%02d/%02d/%04d  %02d:%02d" % [d["month"], d["day"], d["year"], d["hours"], d["minutes"]]
+
 # Phase 2: Market
 var market: MarketState = null
 
@@ -41,8 +96,11 @@ var trade_missions: Array[TradeMission] = []
 # Rescue missions: ship -> {elapsed_ticks, transit_time, workers}
 var rescue_missions: Dictionary = {}
 
-# Refuel missions: ship -> {elapsed_ticks, transit_time, fuel_amount}
+# Refuel missions: ship -> {elapsed_ticks, transit_time, fuel_amount, source_name, source_pos}
 var refuel_missions: Dictionary = {}
+
+# Stranger rescue offers: ship -> {stranger_name, expires_ticks, suggested_tip}
+var stranger_offers: Dictionary = {}
 
 func _ready() -> void:
 	_init_resources()
@@ -61,12 +119,18 @@ func _init_starter_ship() -> void:
 	ships.append(starter)
 
 func _init_starter_crew() -> void:
-	# Hire starter crew equal to first ship's min_crew requirement
+	# Hire starter crew with guaranteed specialty coverage: pilot, engineer, miner
 	var starter_ship := ships[0] if ships.size() > 0 else null
 	var crew_needed := starter_ship.min_crew if starter_ship else 3
 
+	# First 3 workers get guaranteed primary specialties
+	var primaries := [0, 1, 2]  # pilot, engineer, mining
 	for i in range(crew_needed):
-		var worker := Worker.generate_random()
+		var worker: Worker
+		if i < primaries.size():
+			worker = Worker.generate_with_primary(primaries[i])
+		else:
+			worker = Worker.generate_random()
 		workers.append(worker)
 
 func add_resource(ore_type: ResourceTypes.OreType, amount: float) -> void:
@@ -240,7 +304,31 @@ func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[W
 		else:
 			mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 
+	# Apply pilot skill modifier to transit time
+	var best_pilot := 0.0
+	for w in assigned_workers:
+		if w.pilot_skill > best_pilot:
+			best_pilot = w.pilot_skill
+	var pilot_factor := 1.15 - (best_pilot * 0.2)  # 0.0 = 1.15x slower, 1.0 = 0.95x, 1.5 = 0.85x
+	mission.transit_time *= pilot_factor
+
 	mission.elapsed_ticks = 0.0
+
+	# Calculate mining duration: time to fill cargo hold (uses mining_skill)
+	var skill_total := 0.0
+	for w in assigned_workers:
+		skill_total += w.mining_skill
+	if skill_total < 0.1:
+		skill_total = 0.1
+	var equip_mult := ship.get_mining_multiplier()
+	var total_yield_per_tick := 0.0
+	for ore_type in asteroid.ore_yields:
+		var base_yield: float = asteroid.ore_yields[ore_type]
+		total_yield_per_tick += base_yield * skill_total * equip_mult * Simulation.BASE_MINING_RATE
+	if total_yield_per_tick > 0:
+		mission.mining_duration = ship.cargo_capacity / total_yield_per_tick
+	else:
+		mission.mining_duration = 86400.0  # Fallback: 1 day
 
 	# Calculate fuel burn rate
 	if slingshot_route:
@@ -363,8 +451,44 @@ func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned_worker
 
 	return start_trade_mission(ship, colony_target, assigned_workers, cargo_to_load, transit_mode)
 
-const RESCUE_COST_PER_AU: int = 2000
-const REFUEL_COST_PER_AU: int = 1000  # Cheaper than rescue, just delivers fuel
+const RESCUE_COST_BASE: int = 20000  # Crew wages, equipment, opportunity cost — even nearby rescues are expensive
+const RESCUE_COST_PER_AU: int = 8000  # Fuel + extended crew time for distance
+const RESCUE_COST_PER_KMS: int = 5000  # Velocity-matching difficulty
+const REFUEL_COST_BASE: int = 5000  # Base dispatch cost for a tanker
+const REFUEL_COST_PER_AU: int = 4000  # Tanker fuel + crew time
+
+func _find_nearest_rescue_source(ship_pos: Vector2) -> Dictionary:
+	# Returns { "name": String, "pos": Vector2, "dist": float }
+	var earth_pos := CelestialData.get_earth_position_au()
+	var best_name := "Earth"
+	var best_pos := earth_pos
+	var best_dist := ship_pos.distance_to(earth_pos)
+
+	for colony in colonies:
+		if not colony.has_rescue_ops:
+			continue
+		var colony_pos := colony.get_position_au()
+		var d := ship_pos.distance_to(colony_pos)
+		if d < best_dist:
+			best_dist = d
+			best_pos = colony_pos
+			best_name = colony.colony_name
+
+	return { "name": best_name, "pos": best_pos, "dist": best_dist }
+
+func get_rescue_cost(ship: Ship) -> int:
+	var source := _find_nearest_rescue_source(ship.position_au)
+	var distance_cost := int(source["dist"] * RESCUE_COST_PER_AU)
+	# Velocity cost: convert AU/tick to km/s
+	var speed_km_s := ship.speed_au_per_tick * CelestialData.AU_TO_METERS / 1000.0
+	var velocity_cost := int(speed_km_s * RESCUE_COST_PER_KMS)
+	return RESCUE_COST_BASE + distance_cost + velocity_cost
+
+func get_refuel_cost(ship: Ship, fuel_amount: float) -> int:
+	var source := _find_nearest_rescue_source(ship.position_au)
+	var distance_cost := REFUEL_COST_BASE + int(source["dist"] * REFUEL_COST_PER_AU)
+	var fuel_cost := int(fuel_amount * Ship.FUEL_COST_PER_UNIT)
+	return distance_cost + fuel_cost
 
 func start_rescue(ship: Ship) -> bool:
 	if not ship.is_derelict:
@@ -372,21 +496,37 @@ func start_rescue(ship: Ship) -> bool:
 	if ship in rescue_missions:
 		return false
 
-	var earth_pos := CelestialData.get_earth_position_au()
-	var dist := ship.position_au.distance_to(earth_pos)
-	var cost := int(dist * RESCUE_COST_PER_AU)
+	var source := _find_nearest_rescue_source(ship.position_au)
+	var initial_dist: float = source["dist"]
+
+	# Calculate cost including velocity component
+	var distance_cost := int(initial_dist * RESCUE_COST_PER_AU)
+	var speed_km_s := ship.speed_au_per_tick * CelestialData.AU_TO_METERS / 1000.0
+	var velocity_cost := int(speed_km_s * RESCUE_COST_PER_KMS)
+	var cost := RESCUE_COST_BASE + distance_cost + velocity_cost
 
 	if money < cost:
 		return false
 
 	money -= cost
 
-	# Rescue transit uses a slow 0.5g ship
-	var transit := Brachistochrone.transit_time(dist, 0.5) * 2.0  # round trip for rescue vessel
+	# Iterate to find intercept distance (derelict drifts during rescue transit)
+	var est_dist := initial_dist
+	for i in range(5):
+		var outbound := Brachistochrone.transit_time(est_dist, 0.5)
+		est_dist = initial_dist + ship.speed_au_per_tick * outbound
+
+	# Total: outbound at 0.5g + return at 0.3g (slower tow)
+	var outbound_time := Brachistochrone.transit_time(est_dist, 0.5)
+	var return_time := Brachistochrone.transit_time(est_dist, 0.3)
+	var transit := outbound_time + return_time
+
 	rescue_missions[ship] = {
 		"elapsed_ticks": 0.0,
 		"transit_time": transit,
 		"workers": ship.last_crew.duplicate(),
+		"source_name": source["name"],
+		"source_pos": source["pos"],
 	}
 
 	EventBus.rescue_mission_started.emit(ship, cost)
@@ -399,11 +539,11 @@ func start_refuel(ship: Ship, fuel_amount: float) -> bool:
 	if ship in refuel_missions:
 		return false  # Already has refuel in progress
 
-	var earth_pos := CelestialData.get_earth_position_au()
-	var dist := ship.position_au.distance_to(earth_pos)
+	var source := _find_nearest_rescue_source(ship.position_au)
+	var dist: float = source["dist"]
 
-	# Cost: distance charge + fuel cost
-	var distance_cost := int(dist * REFUEL_COST_PER_AU)
+	# Cost: base dispatch + distance charge + fuel cost
+	var distance_cost := REFUEL_COST_BASE + int(dist * REFUEL_COST_PER_AU)
 	var fuel_cost := int(fuel_amount * Ship.FUEL_COST_PER_UNIT)
 	var total_cost := distance_cost + fuel_cost
 
@@ -418,10 +558,47 @@ func start_refuel(ship: Ship, fuel_amount: float) -> bool:
 		"elapsed_ticks": 0.0,
 		"transit_time": transit,
 		"fuel_amount": fuel_amount,
+		"source_name": source["name"],
+		"source_pos": source["pos"],
 	}
 
 	EventBus.refuel_mission_started.emit(ship, total_cost, fuel_amount)
 	return true
+
+# --- Stranger rescue methods ---
+
+func accept_stranger_rescue(ship: Ship, pay_tip: bool) -> void:
+	if ship not in stranger_offers:
+		return
+	var offer: Dictionary = stranger_offers[ship]
+	var stranger_name: String = offer["stranger_name"]
+
+	# Restore ship immediately
+	ship.is_derelict = false
+	ship.derelict_reason = ""
+	ship.velocity_au_per_tick = Vector2.ZERO
+	ship.speed_au_per_tick = 0.0
+	ship.engine_condition = 40.0
+	ship.fuel = ship.fuel_capacity * 0.25
+	# Cargo preserved, no worker loss
+
+	if pay_tip:
+		var tip: int = offer["suggested_tip"]
+		money -= tip
+		Reputation.modify(5.0)
+	else:
+		Reputation.modify(-10.0)
+
+	stranger_offers.erase(ship)
+	EventBus.stranger_rescue_completed.emit(ship, stranger_name)
+
+func decline_stranger_rescue(ship: Ship) -> void:
+	if ship not in stranger_offers:
+		return
+	var offer: Dictionary = stranger_offers[ship]
+	var stranger_name: String = offer["stranger_name"]
+	stranger_offers.erase(ship)
+	EventBus.stranger_rescue_declined.emit(ship, stranger_name)
 
 # --- Contract methods ---
 
@@ -536,6 +713,18 @@ func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Ar
 	else:
 		tm.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 
+	# Apply pilot skill modifier to transit time
+	var best_pilot := 0.0
+	for w in assigned_workers:
+		if w.pilot_skill > best_pilot:
+			best_pilot = w.pilot_skill
+	# Also check last_crew for trade missions (workers aren't locked)
+	for w in ship.last_crew:
+		if w.pilot_skill > best_pilot:
+			best_pilot = w.pilot_skill
+	var pilot_factor := 1.15 - (best_pilot * 0.2)
+	tm.transit_time *= pilot_factor
+
 	tm.elapsed_ticks = 0.0
 
 	# Fuel calculation: loaded outbound (with cargo), empty return
@@ -586,7 +775,9 @@ func save_game() -> void:
 	for w in workers:
 		save_data["workers"].append({
 			"name": w.worker_name,
-			"skill": w.skill,
+			"pilot_skill": w.pilot_skill,
+			"engineer_skill": w.engineer_skill,
+			"mining_skill": w.mining_skill,
 			"wage": w.wage,
 		})
 	for s in ships:
@@ -600,6 +791,9 @@ func save_game() -> void:
 			"position_au_y": s.position_au.y,
 			"engine_condition": s.engine_condition,
 			"is_derelict": s.is_derelict,
+			"derelict_reason": s.derelict_reason,
+			"velocity_au_x": s.velocity_au_per_tick.x,
+			"velocity_au_y": s.velocity_au_per_tick.y,
 			"fuel": s.fuel,
 			"fuel_capacity": s.fuel_capacity,
 			"equipment": [],
@@ -652,7 +846,15 @@ func load_game() -> bool:
 	for wd in data.get("workers", []):
 		var w := Worker.new()
 		w.worker_name = wd.get("name", "Unknown")
-		w.skill = float(wd.get("skill", 1.0))
+		# Backward compat: old saves have single "skill" → assign to mining_skill
+		if wd.has("pilot_skill"):
+			w.pilot_skill = float(wd.get("pilot_skill", 0.0))
+			w.engineer_skill = float(wd.get("engineer_skill", 0.0))
+			w.mining_skill = float(wd.get("mining_skill", 0.0))
+		else:
+			w.mining_skill = float(wd.get("skill", 1.0))
+			w.pilot_skill = 0.0
+			w.engineer_skill = 0.0
 		w.wage = int(wd.get("wage", 100))
 		workers.append(w)
 
@@ -678,6 +880,13 @@ func load_game() -> bool:
 		)
 		s.engine_condition = float(sd.get("engine_condition", 100.0))
 		s.is_derelict = sd.get("is_derelict", false)
+		s.derelict_reason = sd.get("derelict_reason", "")
+		# Restore velocity for drifting derelicts
+		s.velocity_au_per_tick = Vector2(
+			float(sd.get("velocity_au_x", 0.0)),
+			float(sd.get("velocity_au_y", 0.0))
+		)
+		s.speed_au_per_tick = s.velocity_au_per_tick.length()
 		# Restore cargo
 		var cargo_data: Dictionary = sd.get("cargo", {})
 		for key in cargo_data:

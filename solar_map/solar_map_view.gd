@@ -11,6 +11,7 @@ const BELT_OUTER_AU: float = 3.5
 
 var _drag_start: Vector2 = Vector2.ZERO
 var _dragging: bool = false
+var _following_ship: Ship = null  # Ship the camera is tracking
 var _zoom_level: float = 1.0
 const ZOOM_MIN: float = 0.3
 const ZOOM_MAX: float = 3.0
@@ -41,6 +42,13 @@ const PREVIEW_BLINK_PERIOD: float = 1.0  # seconds for full blink cycle
 var asteroid_marker_scene: PackedScene = preload("res://solar_map/asteroid_marker.tscn")
 var ship_marker_scene: PackedScene = preload("res://solar_map/ship_marker.tscn")
 
+# Starfield background
+const STAR_TILE_SIZE: float = 800.0  # Each tile is 800x800 pixels
+const STARS_PER_TILE: int = 80
+var _star_cache: Dictionary = {}  # Vector2i tile coord -> Array of star dicts
+var _starfield_time: float = 0.0
+const STAR_TWINKLE_SPEED: float = 1.2
+
 # Interpolation
 const LERP_SPEED: float = 8.0  # lerp factor per second
 var _planet_targets: Array[Vector2] = []
@@ -59,7 +67,10 @@ func _ready() -> void:
 	EventBus.trade_mission_completed.connect(func(_tm: TradeMission) -> void: _refresh_ships())
 	EventBus.trade_mission_phase_changed.connect(func(_tm: TradeMission) -> void: _refresh_ships())
 	EventBus.ship_derelict.connect(func(_s: Ship) -> void: _refresh_ships())
+	EventBus.rescue_mission_started.connect(func(_s: Ship, _c: int) -> void: _refresh_ships())
 	EventBus.rescue_mission_completed.connect(func(_s: Ship) -> void: _refresh_ships())
+	EventBus.refuel_mission_started.connect(func(_s: Ship, _c: int, _f: float) -> void: _refresh_ships())
+	EventBus.refuel_mission_completed.connect(func(_s: Ship, _f: float) -> void: _refresh_ships())
 	EventBus.tick.connect(_on_tick)
 	EventBus.mission_preview_started.connect(_on_preview_started)
 	EventBus.mission_preview_cancelled.connect(_on_preview_cancelled)
@@ -68,23 +79,99 @@ func _refresh_ships() -> void:
 	_refresh_ship_markers()
 	_refresh_ship_selector()
 
+func _get_star_tile(tile_coord: Vector2i) -> Array:
+	if tile_coord in _star_cache:
+		return _star_cache[tile_coord]
+	# Seed-based star generation for consistent tiles
+	var stars: Array = []
+	var seed_val := tile_coord.x * 73856093 + tile_coord.y * 19349663
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_val
+	for _i in range(STARS_PER_TILE):
+		stars.append({
+			"offset": Vector2(rng.randf() * STAR_TILE_SIZE, rng.randf() * STAR_TILE_SIZE),
+			"size": rng.randf_range(0.5, 2.2),
+			"brightness": rng.randf_range(0.3, 1.0),
+			"twinkle_phase": rng.randf() * TAU,
+			"twinkle_amount": rng.randf_range(0.0, 0.35),
+			"color_type": rng.randi() % 3,
+		})
+	_star_cache[tile_coord] = stars
+	return stars
+
+func _draw_starfield() -> void:
+	# Get visible area in world coords
+	var viewport_size := get_viewport_rect().size
+	var cam_pos := camera.global_position
+	var zoom := camera.zoom.x
+	var half_view := viewport_size / (2.0 * zoom)
+	var visible_rect := Rect2(cam_pos - half_view, half_view * 2.0)
+
+	# Dark background covering visible area
+	draw_rect(visible_rect, Color(0.008, 0.012, 0.018))
+
+	# Determine which tiles are visible
+	var tile_min_x := int(floor(visible_rect.position.x / STAR_TILE_SIZE))
+	var tile_min_y := int(floor(visible_rect.position.y / STAR_TILE_SIZE))
+	var tile_max_x := int(floor(visible_rect.end.x / STAR_TILE_SIZE))
+	var tile_max_y := int(floor(visible_rect.end.y / STAR_TILE_SIZE))
+
+	for tx in range(tile_min_x, tile_max_x + 1):
+		for ty in range(tile_min_y, tile_max_y + 1):
+			var tile_origin := Vector2(tx * STAR_TILE_SIZE, ty * STAR_TILE_SIZE)
+			var stars := _get_star_tile(Vector2i(tx, ty))
+			for star in stars:
+				var pos: Vector2 = tile_origin + star["offset"]
+				var base_bright: float = star["brightness"]
+				var twinkle: float = star["twinkle_amount"]
+				var phase: float = star["twinkle_phase"]
+				var bright := clampf(base_bright + sin(_starfield_time + phase) * twinkle, 0.1, 1.0)
+				var star_size: float = star["size"]
+
+				var color: Color
+				match star["color_type"]:
+					0: color = Color(0.8, 0.85, 1.0, bright)   # blue-white
+					1: color = Color(0.85, 0.9, 1.0, bright)    # cool white
+					_: color = Color(0.6, 0.65, 0.75, bright)   # dim blue-grey
+
+				if star_size > 1.6:
+					draw_circle(pos, star_size * 2.0, Color(color.r, color.g, color.b, bright * 0.12))
+				draw_circle(pos, star_size, color)
+
 func _draw() -> void:
+	# Starfield background
+	_draw_starfield()
+
 	# Draw sun
 	draw_circle(Vector2.ZERO, 15, Color(1.0, 0.9, 0.3))
 
 	# Draw planet orbits and positions
 	for i in range(CelestialData.PLANETS.size()):
 		var planet: Dictionary = CelestialData.PLANETS[i]
-		var orbit_au: float = planet["orbit_au"]
 		var color: Color = planet["color"]
 		var radius: float = planet["radius"]
+		var planet_name: String = planet["name"]
 
-		# Orbit ring (faint)
-		_draw_circle_outline(Vector2.ZERO, orbit_au * AU_PIXELS, Color(color.r, color.g, color.b, 0.2), 1.0)
+		# Draw elliptical orbit ring from Keplerian elements
+		if EphemerisData.ELEMENTS.has(planet_name):
+			var el: Dictionary = EphemerisData.ELEMENTS[planet_name]
+			_draw_orbit_ellipse(el, Color(color.r, color.g, color.b, 0.25), 1.0)
+		else:
+			# Fallback: circular orbit
+			var orbit_au: float = planet["orbit_au"]
+			_draw_circle_outline(Vector2.ZERO, orbit_au * AU_PIXELS, Color(color.r, color.g, color.b, 0.25), 1.0)
 
-		# Planet dot at interpolated position
+		# Planet with glow and outline
 		if i < _planet_positions.size():
-			draw_circle(_planet_positions[i], radius, color)
+			var pos: Vector2 = _planet_positions[i]
+			# Outer glow
+			draw_circle(pos, radius + 5, Color(color.r, color.g, color.b, 0.2))
+			# Bright outline ring for visibility
+			_draw_circle_outline(pos, radius + 1.5, Color(color.r, color.g, color.b, 0.7), 1.5)
+			# Planet body
+			draw_circle(pos, radius, color)
+			# Bright highlight
+			draw_circle(pos, radius * 0.4, Color(1.0, 1.0, 1.0, 0.35))
 
 	# Draw asteroid belt (translucent annulus)
 	var steps := 64
@@ -146,16 +233,48 @@ func _draw_circle_outline(center: Vector2, radius: float, color: Color, width: f
 		var to := center + Vector2(cos(angle_to), sin(angle_to)) * radius
 		draw_line(from, to, color, width)
 
+## Draw an elliptical orbit from Keplerian elements (Sun at focus)
+func _draw_orbit_ellipse(el: Dictionary, color: Color, width: float) -> void:
+	var a: float = el["a"]       # semi-major axis (AU)
+	var e: float = el["e"]       # eccentricity
+	var w: float = el["w"]       # longitude of perihelion (degrees)
+
+	var b := a * sqrt(1.0 - e * e)  # semi-minor axis
+	var c := a * e                    # distance from center to focus
+	var w_rad := deg_to_rad(w)        # orientation angle
+
+	var points := 96
+	for i in range(points):
+		var angle_from := (float(i) / points) * TAU
+		var angle_to := (float(i + 1) / points) * TAU
+
+		# Ellipse centered at origin, then shifted so Sun is at focus
+		var from := Vector2(
+			a * cos(angle_from) - c,
+			b * sin(angle_from)
+		)
+		var to := Vector2(
+			a * cos(angle_to) - c,
+			b * sin(angle_to)
+		)
+
+		# Rotate by longitude of perihelion
+		from = from.rotated(w_rad) * AU_PIXELS
+		to = to.rotated(w_rad) * AU_PIXELS
+
+		draw_line(from, to, color, width)
+
 func _spawn_planet_labels() -> void:
 	for i in range(CelestialData.PLANETS.size()):
 		var planet: Dictionary = CelestialData.PLANETS[i]
 		var node := Node2D.new()
 		var label := Label.new()
 		label.text = planet["name"]
-		label.position = Vector2(planet["radius"] + 4, -8)
-		label.add_theme_font_size_override("font_size", 11)
+		var radius: float = planet["radius"]
+		label.position = Vector2(radius + 6, -10)
+		label.add_theme_font_size_override("font_size", 14)
 		var color: Color = planet["color"]
-		label.add_theme_color_override("font_color", Color(color.r, color.g, color.b, 0.7))
+		label.add_theme_color_override("font_color", color)
 		node.add_child(label)
 		var pos := CelestialData.get_planet_position_au(i) * AU_PIXELS
 		node.position = pos
@@ -237,17 +356,43 @@ func _refresh_ship_markers() -> void:
 			ship_markers.add_child(marker)
 			ships_with_markers[s] = true
 
+	# Rescue mission vessels
+	for target_ship: Ship in GameState.rescue_missions:
+		var marker: Node2D = ship_marker_scene.instantiate()
+		marker.rescue_target_ship = target_ship
+		marker.rescue_data = GameState.rescue_missions[target_ship]
+		marker.is_refuel_vessel = false
+		ship_markers.add_child(marker)
+
+	# Refuel mission vessels
+	for target_ship: Ship in GameState.refuel_missions:
+		var marker: Node2D = ship_marker_scene.instantiate()
+		marker.rescue_target_ship = target_ship
+		marker.rescue_data = GameState.refuel_missions[target_ship]
+		marker.is_refuel_vessel = true
+		ship_markers.add_child(marker)
+
 func _process(delta: float) -> void:
+	_starfield_time += delta * STAR_TWINKLE_SPEED
+
 	# Update all targets every frame for smooth movement
 	_update_planet_targets()
 	_update_asteroid_targets()
 	_update_colony_targets()
 
+	# Lerp at a rate that keeps up with high sim speeds
+	# At high speed, targets jump far — use a higher lerp factor to keep up
 	var t := minf(LERP_SPEED * delta, 1.0)
 
 	# Interpolate planet positions and labels
 	for i in range(_planet_positions.size()):
-		_planet_positions[i] = _planet_positions[i].lerp(_planet_targets[i], t)
+		var target: Vector2 = _planet_targets[i]
+		var current: Vector2 = _planet_positions[i]
+		# If target jumped very far (high sim speed), snap instead of lerping
+		if current.distance_to(target) > 20.0:
+			_planet_positions[i] = target
+		else:
+			_planet_positions[i] = current.lerp(target, t)
 		if i < _planet_labels.size():
 			_planet_labels[i].position = _planet_positions[i]
 
@@ -255,16 +400,22 @@ func _process(delta: float) -> void:
 	for marker in asteroid_markers.get_children():
 		if marker.has_meta("target_pos"):
 			var target: Vector2 = marker.get_meta("target_pos")
-			marker.position = marker.position.lerp(target, t)
+			if marker.position.distance_to(target) > 20.0:
+				marker.position = target
+			else:
+				marker.position = marker.position.lerp(target, t)
 
-	# Interpolate colony markers
+	# Snap colony markers directly (no lerp — moon colonies orbit too fast for lerp)
 	for marker in _colony_markers:
 		if marker.has_meta("target_pos"):
-			var target: Vector2 = marker.get_meta("target_pos")
-			marker.position = marker.position.lerp(target, t)
+			marker.position = marker.get_meta("target_pos")
 
 	# Apply label anti-overlap
 	_adjust_labels_to_prevent_overlap()
+
+	# Follow selected ship
+	if _following_ship:
+		camera.position = _following_ship.position_au * AU_PIXELS
 
 	# Update preview blink animation
 	if _preview_active:
@@ -398,6 +549,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_dragging = true
 				_drag_start = mb.position
 			else:
+				# Check if this was a click (not a drag)
+				if mb.position.distance_to(_drag_start) < 5.0:
+					_try_select_ship_at(mb.position)
 				_dragging = false
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_zoom_level = clampf(_zoom_level + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
@@ -408,6 +562,19 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and _dragging:
 		var motion := event as InputEventMouseMotion
 		camera.position -= motion.relative / camera.zoom
+		_following_ship = null  # Stop following on manual pan
+
+	# Trackpad pinch-to-zoom (macOS)
+	if event is InputEventMagnifyGesture:
+		var magnify := event as InputEventMagnifyGesture
+		_zoom_level = clampf(_zoom_level * magnify.factor, ZOOM_MIN, ZOOM_MAX)
+		camera.zoom = Vector2(_zoom_level, _zoom_level)
+
+	# Trackpad pan gesture (macOS two-finger scroll)
+	if event is InputEventPanGesture:
+		var pan := event as InputEventPanGesture
+		camera.position += pan.delta * 20.0 / camera.zoom
+		_following_ship = null  # Stop following on manual pan
 
 	# Touch controls (pan and pinch-to-zoom)
 	if event is InputEventScreenTouch:
@@ -422,6 +589,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		_touches[drag.index] = drag.position
 		if _touches.size() == 1:
 			camera.position -= drag.relative / camera.zoom
+			_following_ship = null  # Stop following on touch pan
 		elif _touches.size() == 2:
 			var points := _touches.values()
 			var dist: float = (points[0] as Vector2).distance_to(points[1] as Vector2)
@@ -459,11 +627,26 @@ func _refresh_ship_selector() -> void:
 		ship_selector_panel.add_child(btn)
 
 func _center_on_ship(ship: Ship) -> void:
+	_following_ship = ship
 	var target_pos := ship.position_au * AU_PIXELS
 	camera.position = target_pos
 	# Optionally zoom in a bit
 	_zoom_level = 1.5
 	camera.zoom = Vector2(_zoom_level, _zoom_level)
+
+func _try_select_ship_at(screen_pos: Vector2) -> void:
+	# Convert screen position to world position
+	var world_pos := camera.position + (screen_pos - get_viewport_rect().size / 2.0) / camera.zoom
+	var best_ship: Ship = null
+	var best_dist := 30.0  # Max click distance in pixels (generous for touch)
+	for ship in GameState.ships:
+		var ship_px := ship.position_au * AU_PIXELS
+		var dist := world_pos.distance_to(ship_px)
+		if dist < best_dist:
+			best_dist = dist
+			best_ship = ship
+	if best_ship:
+		_center_on_ship(best_ship)
 
 func _on_preview_started(ship: Ship, destination_pos: Vector2, slingshot_route) -> void:
 	_preview_active = true

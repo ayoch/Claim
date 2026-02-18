@@ -6,82 +6,45 @@ const AU_TO_METERS: float = 1.496e11
 
 # Planet data: [name, orbit_au, color_r, color_g, color_b, radius_px]
 const PLANETS: Array[Dictionary] = [
-	{"name": "Mercury", "orbit_au": 0.39, "color": Color(0.7, 0.7, 0.6), "radius": 3.0},
-	{"name": "Venus",   "orbit_au": 0.72, "color": Color(0.9, 0.8, 0.5), "radius": 4.0},
-	{"name": "Earth",   "orbit_au": 1.00, "color": Color(0.2, 0.5, 1.0), "radius": 5.0},
-	{"name": "Mars",    "orbit_au": 1.52, "color": Color(0.9, 0.4, 0.2), "radius": 4.0},
-	{"name": "Jupiter", "orbit_au": 5.20, "color": Color(0.8, 0.7, 0.5), "radius": 8.0},
-	{"name": "Saturn",  "orbit_au": 9.54, "color": Color(0.9, 0.8, 0.6), "radius": 7.0},
-	{"name": "Uranus",  "orbit_au": 19.19, "color": Color(0.5, 0.8, 0.9), "radius": 5.5},
-	{"name": "Neptune", "orbit_au": 30.07, "color": Color(0.3, 0.4, 0.9), "radius": 5.5},
+	{"name": "Mercury", "orbit_au": 0.39, "color": Color(0.7, 0.7, 0.6), "radius": 5.0},
+	{"name": "Venus",   "orbit_au": 0.72, "color": Color(0.9, 0.8, 0.5), "radius": 6.0},
+	{"name": "Earth",   "orbit_au": 1.00, "color": Color(0.2, 0.5, 1.0), "radius": 7.0},
+	{"name": "Mars",    "orbit_au": 1.52, "color": Color(0.9, 0.4, 0.2), "radius": 6.0},
+	{"name": "Jupiter", "orbit_au": 5.20, "color": Color(0.8, 0.7, 0.5), "radius": 12.0},
+	{"name": "Saturn",  "orbit_au": 9.54, "color": Color(0.9, 0.8, 0.6), "radius": 10.0},
+	{"name": "Uranus",  "orbit_au": 19.19, "color": Color(0.5, 0.8, 0.9), "radius": 8.0},
+	{"name": "Neptune", "orbit_au": 30.07, "color": Color(0.3, 0.4, 0.9), "radius": 8.0},
 ]
 
-# Ephemeris system for real orbital positions
+# Keplerian ephemeris — computes positions from game time
 static var ephemeris: EphemerisData = null
+static var _initialized: bool = false
 
-# Legacy orbital angles (kept for backwards compatibility)
-static var planet_angles: Array[float] = []
-static var earth_angle: float = 0.0
-
-# Toggle for using real ephemeris data
-static var use_real_ephemeris: bool = true
-
-static func _static_init() -> void:
-	# Initialize ephemeris system for real NASA data
-	if ephemeris == null:
+static func _ensure_init() -> void:
+	if not _initialized:
+		_initialized = true
 		ephemeris = EphemerisData.new()
 		ephemeris.initialize()
 
-	# Initialize fallback angles
-	planet_angles.clear()
-	for i in range(PLANETS.size()):
-		planet_angles.append(randf() * TAU)
-	earth_angle = planet_angles[2]
-
 static func get_earth_position_au() -> Vector2:
 	_ensure_init()
-	if use_real_ephemeris and ephemeris != null:
-		return ephemeris.get_position("Earth")
-	return Vector2(cos(earth_angle), sin(earth_angle)) * EARTH_ORBIT_AU
-
-static func _ensure_init() -> void:
-	if planet_angles.size() != PLANETS.size():
-		_static_init()
+	return ephemeris.get_position("Earth")
 
 static func get_planet_position_au(index: int) -> Vector2:
 	_ensure_init()
 	if index < 0 or index >= PLANETS.size():
 		return Vector2.ZERO
+	var planet_name: String = PLANETS[index]["name"]
+	return ephemeris.get_position(planet_name)
 
-	# Use real ephemeris data if available
-	if use_real_ephemeris and ephemeris != null:
-		var planet_name: String = PLANETS[index]["name"]
-		return ephemeris.get_position(planet_name)
-
-	# Fallback to simple orbital mechanics
-	var orbit_au: float = PLANETS[index]["orbit_au"]
-	return Vector2(cos(planet_angles[index]), sin(planet_angles[index])) * orbit_au
-
-static func advance_planets(dt: float) -> void:
+static func advance_planets(_dt: float) -> void:
+	# Positions are computed from GameState.total_ticks in EphemerisData
+	# No explicit advancing needed — just ensure init
 	_ensure_init()
 
-	# Check if we need to refresh ephemeris data (new day started)
-	if use_real_ephemeris and ephemeris != null and ephemeris.should_refresh():
-		ephemeris.refresh_for_new_day()
-
-	# Update fallback orbital angles (used when ephemeris is disabled)
-	if not use_real_ephemeris:
-		for i in range(PLANETS.size()):
-			var orbit_au: float = PLANETS[i]["orbit_au"]
-			var period := pow(orbit_au, 1.5) * 600.0
-			if period > 0:
-				planet_angles[i] += (TAU / period) * dt
-				planet_angles[i] = fmod(planet_angles[i], TAU)
-		earth_angle = planet_angles[2]
-
 # Legacy compatibility
-static func advance_earth(dt: float) -> void:
-	advance_planets(dt)
+static func advance_earth(_dt: float) -> void:
+	_ensure_init()
 
 static func _make(
 	p_name: String,
@@ -196,11 +159,34 @@ static func get_asteroids() -> Array[AsteroidData]:
 	list.append(_make("2006 RH120", 1.03, T.NEO, {
 		O.IRON: 0.5, O.NICKEL: 0.2,
 	}))
+	list.append(_make("3554 Amun", 0.97, T.NEO, {
+		O.IRON: 4.0, O.NICKEL: 3.0, O.PLATINUM: 1.5,
+	}))
+	list.append(_make("1986 DA", 2.81, T.NEO, {
+		O.IRON: 4.5, O.NICKEL: 3.5, O.PLATINUM: 2.0,
+	}))
+	list.append(_make("2011 AG5", 1.43, T.NEO, {
+		O.IRON: 1.2, O.NICKEL: 0.6, O.PLATINUM: 0.3,
+	}))
+	list.append(_make("2001 SN263", 1.99, T.NEO, {
+		O.IRON: 2.5, O.NICKEL: 1.5, O.CARBON_ORGANICS: 0.8,
+	}))
+
+	# ═══════════════════════════════════════════════════════════════
+	#  MARS TROJANS (~1.52 AU, L5 point)
+	# ═══════════════════════════════════════════════════════════════
+
+	list.append(_make("5261 Eureka", 1.52, T.ASTEROID, {
+		O.IRON: 2.0, O.NICKEL: 1.5, O.PLATINUM: 0.4,
+	}))
 
 	# ═══════════════════════════════════════════════════════════════
 	#  MAIN BELT – INNER (2.0-2.5 AU)
 	# ═══════════════════════════════════════════════════════════════
 
+	list.append(_make("Ceres", 2.77, T.ASTEROID, {
+		O.WATER_ICE: 4.0, O.CARBON_ORGANICS: 2.5, O.IRON: 1.0, O.NICKEL: 0.5,
+	}))
 	list.append(_make("Vesta", 2.36, T.ASTEROID, {
 		O.IRON: 4.0, O.NICKEL: 2.0,
 	}))
@@ -632,6 +618,12 @@ static func get_asteroids() -> Array[AsteroidData]:
 	list.append(_make("Schwassmann-Wachmann 3", 3.06, T.COMET, {
 		O.WATER_ICE: 3.0, O.CARBON_ORGANICS: 2.0,
 	}))
+	list.append(_make("Hale-Bopp", 186.0, T.COMET, {
+		O.WATER_ICE: 8.0, O.CARBON_ORGANICS: 5.0, O.PLATINUM: 0.5,
+	}))
+	list.append(_make("ISON", 0.93, T.COMET, {
+		O.WATER_ICE: 3.5, O.CARBON_ORGANICS: 4.0,
+	}))
 
 	# ═══════════════════════════════════════════════════════════════
 	#  KUIPER BELT OBJECTS (30-50+ AU, no dwarf planets)
@@ -696,6 +688,21 @@ static func get_asteroids() -> Array[AsteroidData]:
 	}))
 	list.append(_make("2005 QU182", 48.0, T.KBO, {
 		O.WATER_ICE: 4.0, O.CARBON_ORGANICS: 2.0,
+	}))
+	list.append(_make("Eris", 67.8, T.KBO, {
+		O.WATER_ICE: 8.0, O.CARBON_ORGANICS: 4.0, O.PLATINUM: 1.0,
+	}))
+	list.append(_make("Makemake", 45.8, T.KBO, {
+		O.WATER_ICE: 7.0, O.CARBON_ORGANICS: 3.5,
+	}))
+	list.append(_make("Haumea", 43.1, T.KBO, {
+		O.WATER_ICE: 9.0, O.CARBON_ORGANICS: 2.0, O.IRON: 0.5,
+	}))
+	list.append(_make("Gonggong", 67.3, T.KBO, {
+		O.WATER_ICE: 7.0, O.CARBON_ORGANICS: 3.0, O.PLATINUM: 0.5,
+	}))
+	list.append(_make("Arrokoth", 44.6, T.KBO, {
+		O.WATER_ICE: 5.0, O.CARBON_ORGANICS: 4.0,
 	}))
 
 	return list

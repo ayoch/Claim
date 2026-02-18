@@ -29,8 +29,10 @@ func get_type_name() -> String:
 	return BODY_TYPE_NAMES.get(body_type, "Unknown")
 
 ## Kepler's third law: orbital period in game ticks
+## 200,000 base = ~2.8 hours real-time at 20x for Earth (1 AU)
+## Outer bodies orbit proportionally slower (Kepler's law)
 func get_orbital_period() -> float:
-	return pow(orbit_au, 1.5) * 600.0
+	return pow(orbit_au, 1.5) * 200000.0
 
 ## Advance orbital position by dt ticks
 func advance_orbit(dt: float) -> void:
@@ -50,7 +52,7 @@ static func estimate_mission(
 	asteroid: AsteroidData,
 	ship: Ship,
 	workers: Array[Worker],
-	mining_duration: float = 30.0,
+	mining_duration: float = -1.0,  # -1 = auto-calculate to fill cargo
 	from_position_au: Vector2 = Vector2(-999, -999),  # Sentinel value
 	force_transit_mode: int = -1  # -1 = auto, 0 = brachistochrone, 1 = hohmann
 ) -> Dictionary:
@@ -74,32 +76,58 @@ static func estimate_mission(
 		use_hohmann = Brachistochrone.should_use_hohmann(ship, dist, ship.cargo_capacity)
 
 	var transit := hohmann_transit if use_hohmann else brach_transit
-	var total_time := transit * 2.0 + mining_duration
 
-	# Calculate total worker skill
+	# Calculate total mining skill and best pilot skill
 	var skill_total := 0.0
+	var best_pilot := 0.0
 	var wage_per_tick := 0.0
 	for w in workers:
-		skill_total += w.skill
+		skill_total += w.mining_skill
+		if w.pilot_skill > best_pilot:
+			best_pilot = w.pilot_skill
 		wage_per_tick += w.wage
+	if skill_total < 0.1:
+		skill_total = 0.1  # Minimum so crew can still mine (slowly)
+
+	# Apply pilot skill modifier to transit time
+	var pilot_factor := 1.15 - (best_pilot * 0.2)  # 0.0 = 1.15x slower, 1.0 = 0.95x, 1.5 = 0.85x
+	brach_transit *= pilot_factor
+	hohmann_transit *= pilot_factor
+	transit = hohmann_transit if use_hohmann else brach_transit
 
 	var equip_mult := ship.get_mining_multiplier()
+
+	# Calculate mining rate (tons per tick across all ore types)
+	var mining_rate := Simulation.BASE_MINING_RATE
+	var total_yield_per_tick := 0.0
+	for ore_type in asteroid.ore_yields:
+		var base_yield: float = asteroid.ore_yields[ore_type]
+		total_yield_per_tick += base_yield * skill_total * equip_mult * mining_rate
+
+	# Auto-calculate mining duration: time to fill cargo hold
+	if mining_duration < 0:
+		if total_yield_per_tick > 0:
+			mining_duration = ship.cargo_capacity / total_yield_per_tick
+		else:
+			mining_duration = 86400.0  # Fallback: 1 day
+
+	var total_time := transit * 2.0 + mining_duration
 
 	# Estimate ore mined over mining_duration ticks
 	var cargo_breakdown: Dictionary = {}  # OreType -> tons
 	var total_mined := 0.0
 	for ore_type in asteroid.ore_yields:
 		var base_yield: float = asteroid.ore_yields[ore_type]
-		var per_tick: float = base_yield * skill_total * equip_mult
+		var per_tick: float = base_yield * skill_total * equip_mult * mining_rate
 		var total_ore: float = per_tick * mining_duration
 		total_mined += total_ore
 		cargo_breakdown[ore_type] = total_ore
 
 	# Cap to cargo capacity - scale each proportionally
 	if total_mined > ship.cargo_capacity and total_mined > 0:
-		var scale: float = ship.cargo_capacity / total_mined
+		var scale_factor: float = ship.cargo_capacity / total_mined
 		for ore_type in cargo_breakdown:
-			cargo_breakdown[ore_type] *= scale
+			cargo_breakdown[ore_type] *= scale_factor
 		total_mined = ship.cargo_capacity
 
 	# Calculate revenue using dynamic prices
@@ -108,7 +136,7 @@ static func estimate_mission(
 		revenue += cargo_breakdown[ore_type] * MarketData.get_ore_price(ore_type)
 
 	# Wage cost covers the full mission duration, prorated from payroll interval
-	var payroll_cycles := total_time / 60.0  # PAYROLL_INTERVAL = 60
+	var payroll_cycles := total_time / Simulation.PAYROLL_INTERVAL
 	var wage_cost := wage_per_tick * payroll_cycles
 
 	# Fuel cost - account for cargo mass difference on outbound vs return
@@ -136,7 +164,7 @@ static func estimate_mission(
 	var alt_fuel := fuel_outbound + fuel_return
 	if alt_use_hohmann:
 		alt_fuel *= Brachistochrone.hohmann_fuel_multiplier()
-	var alt_payroll_cycles := alt_total_time / 60.0
+	var alt_payroll_cycles := alt_total_time / Simulation.PAYROLL_INTERVAL
 	var alt_wage_cost := wage_per_tick * alt_payroll_cycles
 	var alt_fuel_cost := alt_fuel * fuel_price_per_unit  # Use same dynamic pricing
 	var alt_profit := revenue - alt_wage_cost - alt_fuel_cost

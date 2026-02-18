@@ -16,6 +16,15 @@ static func transit_time(d_au: float, accel_g: float) -> float:
 	# TimeScale.speed_multiplier controls how fast time passes (2x, 5x, etc.)
 	return real_seconds
 
+## Calculate delta-V for a Brachistochrone transfer in km/s
+## d_au: distance in AU, accel_g: ship acceleration in g-forces
+static func delta_v_km_s(d_au: float, accel_g: float) -> float:
+	var d_meters: float = d_au * CelestialData.AU_TO_METERS
+	var a: float = accel_g * G_ACCEL
+	# Brachistochrone delta-V: dv = 2 * sqrt(d * a) for flip-and-burn
+	var dv_m_s: float = 2.0 * sqrt(d_meters * a)
+	return dv_m_s / 1000.0
+
 ## Get the 2D distance from Earth to an asteroid using orbital positions
 static func distance_to(asteroid: AsteroidData) -> float:
 	var earth_pos := CelestialData.get_earth_position_au()

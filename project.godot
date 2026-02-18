@@ -22,6 +22,7 @@ GameState="*res://core/autoloads/game_state.gd"
 Simulation="*res://core/autoloads/simulation.gd"
 TimeScale="*res://core/autoloads/time_scale.gd"
 HTTPFetcher="*res://core/services/http_fetcher.gd"
+EphemerisVerifier="*res://core/services/ephemeris_verifier.gd"
 
 [display]
 

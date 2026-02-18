@@ -59,7 +59,7 @@ func _on_request_completed(result: int, response_code: int, _headers: PackedStri
 	var body_str := body.get_string_from_utf8()
 
 	if result != HTTPRequest.RESULT_SUCCESS:
-		push_error("HTTP request failed: %s (result %d)" % [url, result])
+		push_warning("HTTP request failed: %s (result %d)" % [url, result])
 		fetch_failed.emit(url, "Request failed with result %d" % result)
 		_cleanup_request(url)
 		return

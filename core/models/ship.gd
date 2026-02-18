@@ -24,7 +24,7 @@ const EARTH_PROXIMITY_AU: float = 0.05  # within this distance counts as "at Ear
 @export var derelict_reason: String = ""  # "out_of_fuel" or "breakdown"
 @export var base_mass: float = 0.0  # tons, auto-calculated if zero
 
-var engine_wear_per_tick: float = 0.02
+var engine_wear_per_tick: float = 0.00003
 
 var current_mission: Mission = null
 var current_trade_mission: TradeMission = null
@@ -124,16 +124,20 @@ func calc_fuel_for_distance(dist_au: float, cargo_mass: float = -1.0) -> float:
 	return dist_au * get_effective_thrust() * total_mass * fuel_efficiency_constant * efficiency_multiplier
 
 func get_breakdown_chance_per_tick() -> float:
-	# Higher chance when engine condition is low or fuel is critically low
-	var chance := 0.0
+	# Target: once every 2-30 trips depending on condition
+	# Baseline: manufacturing defects, worker misuse — rare but always possible
+	var chance := 0.00000002  # ~1 per 50 trips even with perfect maintenance
 	if engine_condition < 50.0:
-		chance += (50.0 - engine_condition) * 0.001  # up to 5% per tick at 0 condition
+		# At 40% condition: 10 * 0.0000001 = 0.000001/tick → ~1 per 5 trips
+		# At 30% condition: 20 * 0.0000001 = 0.000002/tick → ~1 per 2.5 trips
+		# At  0% condition: 50 * 0.0000001 = 0.000005/tick → ~1 per trip
+		chance += (50.0 - engine_condition) * 0.0000001
 	if fuel < fuel_capacity * 0.1:
-		chance += 0.005
-	# Broken equipment adds risk
+		chance += 0.0000005  # ~1 per 10 trips with critically low fuel
+	# Broken equipment adds minor risk
 	for e in equipment:
 		if e.durability <= 0:
-			chance += 0.002
+			chance += 0.0000002  # ~1 per 25 trips per broken piece
 	return chance
 
 func get_engine_repair_cost() -> int:

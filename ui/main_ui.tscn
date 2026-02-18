@@ -97,6 +97,62 @@ text = "Save"
 layout_mode = 2
 text = "Exit"
 
+[node name="SpeedBar" type="PanelContainer" parent="VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 36)
+
+[node name="HBox" type="HFlowContainer" parent="VBox/SpeedBar"]
+layout_mode = 2
+theme_override_constants/h_separation = 6
+alignment = 1
+
+[node name="SpeedLabel" type="Label" parent="VBox/SpeedBar/HBox"]
+layout_mode = 2
+text = "Speed:"
+theme_override_font_sizes/font_size = 14
+
+[node name="DecBtn" type="Button" parent="VBox/SpeedBar/HBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(36, 0)
+text = "-"
+
+[node name="SpeedInput" type="LineEdit" parent="VBox/SpeedBar/HBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(80, 0)
+text = "20x"
+alignment = 1
+
+[node name="IncBtn" type="Button" parent="VBox/SpeedBar/HBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(36, 0)
+text = "+"
+
+[node name="Preset1x" type="Button" parent="VBox/SpeedBar/HBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(44, 0)
+text = "1x"
+
+[node name="Preset20x" type="Button" parent="VBox/SpeedBar/HBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(48, 0)
+text = "20x"
+
+[node name="Preset100x" type="Button" parent="VBox/SpeedBar/HBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(52, 0)
+text = "100x"
+
+[node name="DateSpacer" type="Control" parent="VBox/SpeedBar/HBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(12, 0)
+
+[node name="DateDisplay" type="Label" parent="VBox/SpeedBar/HBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "02/18/2026  00:00"
+theme_override_font_sizes/font_size = 17
+theme_override_colors/font_color = Color(0.5, 0.7, 0.9, 1)
+
 [node name="TabContainer" type="TabContainer" parent="VBox"]
 unique_name_in_owner = true
 layout_mode = 2

@@ -5,6 +5,8 @@ extends MarginContainer
 @onready var ships_list: VBoxContainer = %ShipsList
 @onready var dispatch_popup: PanelContainer = %DispatchPopup
 @onready var dispatch_content: VBoxContainer = %DispatchContent
+@onready var _ships_scroll: ScrollContainer = %ShipsList.get_parent()
+@onready var _tab_title: Label = $VBox/Title
 
 var _selected_ship: Ship = null
 var _selected_asteroid: AsteroidData = null
@@ -28,10 +30,15 @@ var _on_selection_screen: bool = false  # Track if we're on the initial destinat
 var _on_estimate_screen: bool = false  # Track if we're on the worker selection / estimate screen
 var _saved_colonies_scroll: float = 0.0  # Preserve scroll position across refreshes
 var _saved_mining_scroll: float = 0.0  # Preserve scroll position across refreshes
+# In-place update references for destination lists
+var _colony_dest_buttons: Dictionary = {}  # Colony -> Button
+var _mining_dest_buttons: Dictionary = {}  # AsteroidData -> Button
+var _colony_dest_data: Array = []  # Ordered list of Colony for current view
+var _mining_dest_data: Array = []  # Ordered list of AsteroidData for current view
 
 func _ready() -> void:
 	_cancel_preview()
-	dispatch_popup.visible = false
+	_hide_dispatch()
 	EventBus.mission_started.connect(func(_m: Mission) -> void: _mark_dirty())
 	EventBus.mission_completed.connect(func(_m: Mission) -> void: _mark_dirty())
 	EventBus.mission_phase_changed.connect(func(_m: Mission) -> void: _mark_dirty())
@@ -47,6 +54,11 @@ func _ready() -> void:
 	EventBus.ship_derelict.connect(func(_s: Ship) -> void: _mark_dirty())
 	EventBus.rescue_mission_started.connect(func(_s: Ship, _c: int) -> void: _mark_dirty())
 	EventBus.rescue_mission_completed.connect(func(_s: Ship) -> void: _mark_dirty())
+	EventBus.refuel_mission_started.connect(func(_s: Ship, _c: int, _f: float) -> void: _mark_dirty())
+	EventBus.refuel_mission_completed.connect(func(_s: Ship, _f: float) -> void: _mark_dirty())
+	EventBus.stranger_rescue_offered.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
+	EventBus.stranger_rescue_completed.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
+	EventBus.stranger_rescue_declined.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
 	EventBus.resource_changed.connect(func(_o: ResourceTypes.OreType, _a: float) -> void: _mark_dirty())
 	EventBus.money_changed.connect(func(_m: int) -> void: _mark_dirty())
 	EventBus.tick.connect(_on_tick)
@@ -54,6 +66,16 @@ func _ready() -> void:
 
 func _mark_dirty() -> void:
 	_needs_full_rebuild = true
+
+func _show_dispatch() -> void:
+	dispatch_popup.visible = true
+	_ships_scroll.visible = false
+	_tab_title.visible = false
+
+func _hide_dispatch() -> void:
+	dispatch_popup.visible = false
+	_ships_scroll.visible = true
+	_tab_title.visible = true
 
 func _process(delta: float) -> void:
 	# Smooth LERP for progress bars
@@ -85,10 +107,11 @@ func _on_tick(dt: float) -> void:
 		_dispatch_refresh_timer += dt
 		if _dispatch_refresh_timer >= DISPATCH_REFRESH_INTERVAL:
 			_dispatch_refresh_timer = 0.0
-			# Only refresh estimate screen, not selection screen (causes layout shifts)
 			if _on_estimate_screen:
-				# Refresh estimate display to show updated calculations
 				_update_estimate_display()
+				return
+			elif _on_selection_screen:
+				_update_destination_labels()
 				return
 
 	if _needs_full_rebuild:
@@ -141,65 +164,117 @@ func _rebuild_ships() -> void:
 		vbox.add_theme_constant_override("separation", 4)
 
 		# === SHIP HEADER ===
-		var header := HBoxContainer.new()
+		var header := VBoxContainer.new()
+		header.add_theme_constant_override("separation", 2)
 		var name_label := Label.new()
 		name_label.text = "%s (%s)" % [ship.ship_name, ship.get_class_name()]
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		header.add_child(name_label)
 
+		var _derelict_actions: HFlowContainer = null  # Populated below for derelict ships
 		if ship.is_derelict:
 			var status := Label.new()
 			var status_text := "STRANDED (OUT OF FUEL)" if ship.derelict_reason == "out_of_fuel" else "DERELICT (BREAKDOWN)"
+			if ship.speed_au_per_tick > 0.0:
+				var speed_km_s := ship.speed_au_per_tick * CelestialData.AU_TO_METERS / 1000.0
+				status_text += " — Drifting %.1f km/s" % speed_km_s
 			status.text = status_text
 			status.add_theme_color_override("font_color", Color(0.9, 0.2, 0.2))
 			header.add_child(status)
 
+			_derelict_actions = HFlowContainer.new()
+			_derelict_actions.add_theme_constant_override("h_separation", 8)
+
 			# Show refuel in progress
 			if ship in GameState.refuel_missions:
 				var refuel_data: Dictionary = GameState.refuel_missions[ship]
-				var progress: float = float(refuel_data["elapsed_ticks"]) / float(refuel_data["transit_time"])
+				var elapsed: float = refuel_data["elapsed_ticks"]
+				var total: float = refuel_data["transit_time"]
+				var progress: float = elapsed / total
+				var remaining := total - elapsed
+				var source_name: String = refuel_data.get("source_name", "Earth")
 				var refuel_label := Label.new()
-				refuel_label.text = "Refuel: %d%%" % int(progress * 100)
+				refuel_label.text = "Refuel: %d%% — ETA %s from %s" % [int(progress * 100), TimeScale.format_time(remaining), source_name]
 				refuel_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
-				header.add_child(refuel_label)
+				_derelict_actions.add_child(refuel_label)
 			# Show rescue in progress
 			elif ship in GameState.rescue_missions:
 				var rescue_data: Dictionary = GameState.rescue_missions[ship]
-				var progress: float = float(rescue_data["elapsed_ticks"]) / float(rescue_data["transit_time"])
+				var elapsed: float = rescue_data["elapsed_ticks"]
+				var total: float = rescue_data["transit_time"]
+				var progress: float = elapsed / total
+				var remaining := total - elapsed
+				var source_name: String = rescue_data.get("source_name", "Earth")
 				var rescue_label := Label.new()
-				rescue_label.text = "Rescue: %d%%" % int(progress * 100)
+				rescue_label.text = "Rescue: %d%% — ETA %s from %s" % [int(progress * 100), TimeScale.format_time(remaining), source_name]
 				rescue_label.add_theme_color_override("font_color", Color(0.9, 0.6, 0.2))
-				header.add_child(rescue_label)
+				_derelict_actions.add_child(rescue_label)
 			else:
-				var dist := ship.position_au.distance_to(CelestialData.get_earth_position_au())
+				# Stranger offer
+				if ship in GameState.stranger_offers:
+					var offer: Dictionary = GameState.stranger_offers[ship]
+					var stranger_name: String = offer["stranger_name"]
+					var tip: int = offer["suggested_tip"]
+					var offer_label := Label.new()
+					offer_label.text = "A passing vessel (%s) is offering assistance" % stranger_name
+					offer_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
+					offer_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+					offer_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+					_derelict_actions.add_child(offer_label)
+
+					var accept_free_btn := Button.new()
+					accept_free_btn.text = "Accept (Free)"
+					accept_free_btn.custom_minimum_size = Vector2(0, 44)
+					accept_free_btn.pressed.connect(func() -> void:
+						GameState.accept_stranger_rescue(ship, false)
+						_mark_dirty()
+					)
+					_derelict_actions.add_child(accept_free_btn)
+
+					var accept_pay_btn := Button.new()
+					accept_pay_btn.text = "Accept + Pay $%s" % _format_number(tip)
+					accept_pay_btn.custom_minimum_size = Vector2(0, 44)
+					accept_pay_btn.disabled = GameState.money < tip
+					accept_pay_btn.pressed.connect(func() -> void:
+						GameState.accept_stranger_rescue(ship, true)
+						_mark_dirty()
+					)
+					_derelict_actions.add_child(accept_pay_btn)
+
+					var decline_btn := Button.new()
+					decline_btn.text = "Decline"
+					decline_btn.custom_minimum_size = Vector2(0, 44)
+					decline_btn.pressed.connect(func() -> void:
+						GameState.decline_stranger_rescue(ship)
+						_mark_dirty()
+					)
+					_derelict_actions.add_child(decline_btn)
 
 				# Refuel option (cheaper, only for fuel depletion)
-				if ship.derelict_reason == "out_of_fuel":
-					var fuel_to_send := ship.fuel_capacity  # Send full tank
-					var distance_cost := int(dist * GameState.REFUEL_COST_PER_AU)
-					var fuel_cost := int(fuel_to_send * Ship.FUEL_COST_PER_UNIT)
-					var refuel_cost := distance_cost + fuel_cost
+				if ship.derelict_reason == "out_of_fuel" and ship not in GameState.stranger_offers:
+					var refuel_cost := GameState.get_refuel_cost(ship, ship.fuel_capacity)
 					var refuel_btn := Button.new()
 					refuel_btn.text = "Refuel ($%s)" % _format_number(refuel_cost)
 					refuel_btn.custom_minimum_size = Vector2(0, 44)
 					refuel_btn.disabled = GameState.money < refuel_cost
 					refuel_btn.pressed.connect(func() -> void:
-						GameState.start_refuel(ship, fuel_to_send)
+						GameState.start_refuel(ship, ship.fuel_capacity)
 						_mark_dirty()
 					)
-					header.add_child(refuel_btn)
+					_derelict_actions.add_child(refuel_btn)
 
 				# Rescue option (expensive, for breakdowns or as alternative)
-				var rescue_cost := int(dist * GameState.RESCUE_COST_PER_AU)
-				var rescue_btn := Button.new()
-				rescue_btn.text = "Rescue ($%s)" % _format_number(rescue_cost)
-				rescue_btn.custom_minimum_size = Vector2(0, 44)
-				rescue_btn.disabled = GameState.money < rescue_cost
-				rescue_btn.pressed.connect(func() -> void:
-					GameState.start_rescue(ship)
-					_mark_dirty()
-				)
-				header.add_child(rescue_btn)
+				if ship not in GameState.stranger_offers:
+					var rescue_cost := GameState.get_rescue_cost(ship)
+					var rescue_btn := Button.new()
+					rescue_btn.text = "Rescue ($%s)" % _format_number(rescue_cost)
+					rescue_btn.custom_minimum_size = Vector2(0, 44)
+					rescue_btn.disabled = GameState.money < rescue_cost
+					rescue_btn.pressed.connect(func() -> void:
+						GameState.start_rescue(ship)
+						_mark_dirty()
+					)
+					_derelict_actions.add_child(rescue_btn)
 		elif ship.is_docked:
 			var status := Label.new()
 			status.text = "Docked at Earth"
@@ -234,6 +309,8 @@ func _rebuild_ships() -> void:
 			_status_labels[ship] = status
 
 		vbox.add_child(header)
+		if _derelict_actions:
+			vbox.add_child(_derelict_actions)
 
 		# === LOCATION & DETAILS ===
 		var loc_label := Label.new()
@@ -391,6 +468,7 @@ func _rebuild_ships() -> void:
 
 				equip_label.text = "%s (%.2fx) %s%s" % [e.equipment_name, e.mining_bonus, dur_str, broken_str]
 				equip_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				equip_label.clip_text = true
 				equip_row.add_child(equip_label)
 
 				var dur_bar := ProgressBar.new()
@@ -462,6 +540,10 @@ func _show_asteroid_selection() -> void:
 				_saved_mining_scroll = child.scroll_vertical
 
 	_clear_dispatch_content()
+	_colony_dest_buttons.clear()
+	_colony_dest_data.clear()
+	_mining_dest_buttons.clear()
+	_mining_dest_data.clear()
 
 	var title := Label.new()
 	title.text = "Select Destination"
@@ -476,6 +558,7 @@ func _show_asteroid_selection() -> void:
 	else:
 		origin_label.text = "Dispatching from: %s" % _get_location_text(_selected_ship)
 	origin_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+	origin_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dispatch_content.add_child(origin_label)
 
 	# If ship has cargo, show colonies first
@@ -492,6 +575,7 @@ func _show_asteroid_selection() -> void:
 		colonies_scroll.name = "ColoniesScroll"
 		colonies_scroll.size_flags_vertical = Control.SIZE_FILL
 		colonies_scroll.custom_minimum_size = Vector2(0, 250)
+		colonies_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 
 		var colonies_vbox := VBoxContainer.new()
 		colonies_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -562,21 +646,64 @@ func _show_asteroid_selection() -> void:
 			var colony_row := VBoxContainer.new()
 			colony_row.add_theme_constant_override("separation", 4)
 
+			# Name label
+			var name_label := Label.new()
+			name_label.text = "%s (MARKET)" % colony.colony_name
+			name_label.add_theme_color_override("font_color", Color(0.9, 0.85, 0.6))
+			colony_row.add_child(name_label)
+
+			# Fixed-width data fields
+			var data_row := HBoxContainer.new()
+			data_row.add_theme_constant_override("separation", 8)
+
+			var col_dist_label := Label.new()
+			col_dist_label.custom_minimum_size = Vector2(120, 0)
+			col_dist_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+			var col_dv := Brachistochrone.delta_v_km_s(dist, _selected_ship.get_effective_thrust())
+			col_dist_label.text = "%.0f km/s Δv" % col_dv
+			data_row.add_child(col_dist_label)
+
+			var col_time_label := Label.new()
+			col_time_label.custom_minimum_size = Vector2(100, 0)
+			col_time_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+			col_time_label.text = _format_time(transit)
+			data_row.add_child(col_time_label)
+
+			var col_revenue_label := Label.new()
+			col_revenue_label.custom_minimum_size = Vector2(120, 0)
+			col_revenue_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			col_revenue_label.text = "$%s" % _format_number(revenue)
+			col_revenue_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+			data_row.add_child(col_revenue_label)
+
+			var col_warning_label := Label.new()
+			col_warning_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			col_warning_label.add_theme_font_size_override("font_size", 12)
+			col_warning_label.text = fuel_status
+			if "CRITICAL" in fuel_status or "UNREACHABLE" in fuel_status:
+				col_warning_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+			elif fuel_status != "":
+				col_warning_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+			data_row.add_child(col_warning_label)
+
+			colony_row.add_child(data_row)
+
+			# Cargo breakdown row
+			if cargo_breakdown != "":
+				var cargo_label := Label.new()
+				cargo_label.text = cargo_breakdown
+				cargo_label.add_theme_font_size_override("font_size", 12)
+				cargo_label.add_theme_color_override("font_color", Color(0.5, 0.7, 0.5))
+				cargo_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				colony_row.add_child(cargo_label)
+
+			# Dispatch button
 			var btn := Button.new()
-			btn.custom_minimum_size = Vector2(0, 80)
-			btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-			btn.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			btn.text = "Sell Here"
+			btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+			btn.custom_minimum_size = Vector2(0, 36)
 			btn.focus_mode = Control.FOCUS_NONE
-			btn.flat = true
-			# Disable all focus/hover visual effects
-			var empty_style := StyleBoxEmpty.new()
-			btn.add_theme_stylebox_override("focus", empty_style)
-			btn.text = "%s (MARKET)\n%.2f AU | %s | Revenue: $%s%s\n%s" % [
-				colony.colony_name, dist, _format_time(transit),
-				_format_number(revenue), fuel_status, cargo_breakdown
-			]
-			btn.disabled = is_unreachable  # Disable if unreachable
+			btn.disabled = is_unreachable
 			btn.pressed.connect(func() -> void:
 				_confirm_colony_dispatch(colony)
 			)
@@ -589,8 +716,8 @@ func _show_asteroid_selection() -> void:
 				route_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
 				colony_row.add_child(route_label)
 
-				var stops_hbox := HBoxContainer.new()
-				stops_hbox.add_theme_constant_override("separation", 8)
+				var stops_hbox := HFlowContainer.new()
+				stops_hbox.add_theme_constant_override("h_separation", 8)
 				for stop_name in fuel_route:
 					# Find the colony by name
 					var stop_colony: Colony = null
@@ -613,8 +740,8 @@ func _show_asteroid_selection() -> void:
 
 			# ALWAYS show action buttons if ship has cargo
 			if has_cargo:
-				var jettison_row := HBoxContainer.new()
-				jettison_row.add_theme_constant_override("separation", 8)
+				var jettison_row := HFlowContainer.new()
+				jettison_row.add_theme_constant_override("h_separation", 8)
 
 				var jettison_label := Label.new()
 				jettison_label.text = "  Jettison cargo:"
@@ -650,7 +777,14 @@ func _show_asteroid_selection() -> void:
 
 				colony_row.add_child(jettison_row)
 
+			_colony_dest_buttons[colony] = {
+				"dist": col_dist_label, "time": col_time_label,
+				"revenue": col_revenue_label, "warning": col_warning_label,
+				"btn": btn,
+			}
+			_colony_dest_data.append(colony)
 			colonies_vbox.add_child(colony_row)
+			colonies_vbox.add_child(HSeparator.new())
 
 		colonies_scroll.add_child(colonies_vbox)
 		dispatch_content.add_child(colonies_scroll)
@@ -671,8 +805,8 @@ func _show_asteroid_selection() -> void:
 	dispatch_content.add_child(mining_header)
 
 	# Fixed filter/sort controls
-	var controls := HBoxContainer.new()
-	controls.add_theme_constant_override("separation", 8)
+	var controls := HFlowContainer.new()
+	controls.add_theme_constant_override("h_separation", 8)
 
 	var sort_btn := OptionButton.new()
 	sort_btn.add_item("Best Profit")
@@ -708,7 +842,7 @@ func _show_asteroid_selection() -> void:
 	market_toggle.toggle_mode = true
 	market_toggle.button_pressed = _sell_at_destination_markets
 	market_toggle.text = "Sell at Dest. Markets" if _sell_at_destination_markets else "Return w/ Ore"
-	market_toggle.custom_minimum_size = Vector2(180, 44)
+	market_toggle.custom_minimum_size = Vector2(0, 44)
 	market_toggle.tooltip_text = "Toggle: Return with ore vs sell at markets near destination"
 	market_toggle.focus_mode = Control.FOCUS_NONE
 	market_toggle.toggled.connect(func(pressed: bool) -> void:
@@ -725,6 +859,7 @@ func _show_asteroid_selection() -> void:
 	mining_scroll.name = "MiningScroll"
 	mining_scroll.size_flags_vertical = Control.SIZE_FILL
 	mining_scroll.custom_minimum_size = Vector2(0, 400)
+	mining_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 
 	var mining_vbox := VBoxContainer.new()
 	mining_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -734,7 +869,7 @@ func _show_asteroid_selection() -> void:
 	var est_workers := GameState.get_available_workers()
 	if est_workers.is_empty():
 		var placeholder := Worker.new()
-		placeholder.skill = 1.0
+		placeholder.mining_skill = 1.0
 		placeholder.wage = 100
 		est_workers = [placeholder]
 
@@ -747,7 +882,7 @@ func _show_asteroid_selection() -> void:
 
 		# Get base estimate for mining (using Brachistochrone as default)
 		var est := AsteroidData.estimate_mission(
-			asteroid, _selected_ship, est_workers, 30.0, Vector2(-999, -999), Mission.TransitMode.BRACHISTOCHRONE
+			asteroid, _selected_ship, est_workers, -1.0, Vector2(-999, -999), Mission.TransitMode.BRACHISTOCHRONE
 		)
 
 		# Calculate based on market strategy
@@ -820,7 +955,7 @@ func _show_asteroid_selection() -> void:
 
 			# Wages for total mission time
 			total_time = total_transit + est["mining_time"]
-			var payroll_cycles: float = total_time / 60.0
+			var payroll_cycles: float = total_time / Simulation.PAYROLL_INTERVAL
 			var wage_per_tick := 0.0
 			for w in est_workers:
 				wage_per_tick += w.wage
@@ -853,39 +988,77 @@ func _show_asteroid_selection() -> void:
 		elif total_fuel_needed > available_fuel * 0.9:
 			fuel_warning = " [CRITICAL - %.0f/%.0f fuel]" % [available_fuel, total_fuel_needed]
 
-		var profit_str := "$%s" % _format_number(int(adjusted_profit))
-
 		# Create row container for destination + jettison buttons
 		var dest_row := VBoxContainer.new()
 		dest_row.add_theme_constant_override("separation", 4)
 
-		var btn := Button.new()
-		btn.custom_minimum_size = Vector2(0, 80)  # Taller to prevent wrapping issues
-		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		btn.focus_mode = Control.FOCUS_NONE
-		btn.flat = true
-		# Disable all focus/hover visual effects
-		var empty_style := StyleBoxEmpty.new()
-		btn.add_theme_stylebox_override("focus", empty_style)
+		# Row 1: Name label
+		var name_label := Label.new()
+		name_label.text = "%s (%s)" % [asteroid.asteroid_name, asteroid.get_type_name()]
+		dest_row.add_child(name_label)
 
-		# Show distance and strategy
-		var dist_text := ""
-		if absf(dist_outbound - dist_return) < 0.01:
-			dist_text = "%.2f AU%s" % [dist_outbound, strategy_label]
+		# Row 2: Fixed-width data fields
+		var data_row := HBoxContainer.new()
+		data_row.add_theme_constant_override("separation", 8)
+
+		var dist_label := Label.new()
+		dist_label.custom_minimum_size = Vector2(220, 0)
+		dist_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+		data_row.add_child(dist_label)
+
+		var time_label := Label.new()
+		time_label.custom_minimum_size = Vector2(100, 0)
+		time_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+		data_row.add_child(time_label)
+
+		var profit_label := Label.new()
+		profit_label.custom_minimum_size = Vector2(120, 0)
+		profit_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		data_row.add_child(profit_label)
+
+		var warning_label := Label.new()
+		warning_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		warning_label.add_theme_font_size_override("font_size", 12)
+		data_row.add_child(warning_label)
+
+		dest_row.add_child(data_row)
+
+		# Set initial values
+		var thrust := _selected_ship.get_effective_thrust()
+		var dv_out := Brachistochrone.delta_v_km_s(dist_outbound, thrust)
+		var dv_ret := Brachistochrone.delta_v_km_s(dist_return, thrust)
+		dist_label.text = "%.0f out %.0f ret Δv" % [dv_out, dv_ret]
+		time_label.text = _format_time(total_transit)
+		var profit_str := "$%s" % _format_number(int(adjusted_profit))
+		profit_label.text = "%s%s" % ["+" if adjusted_profit > 0 else "", profit_str]
+		if adjusted_profit >= 0:
+			profit_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 		else:
-			dist_text = "%.2f AU out, %.2f AU%s" % [dist_outbound, dist_return, strategy_label]
+			profit_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		warning_label.text = fuel_warning
+		if "CRITICAL" in fuel_warning or "UNREACHABLE" in fuel_warning:
+			warning_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		elif fuel_warning != "":
+			warning_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
 
-		btn.text = "%s (%s)\n%s | %s | Est: %s%s%s" % [
-			asteroid.asteroid_name, asteroid.get_type_name(),
-			dist_text, _format_time(total_transit),
-			"+" if adjusted_profit > 0 else "", profit_str, fuel_warning,
-		]
-		btn.disabled = is_unreachable  # Disable if unreachable
+		# Dispatch button
+		var btn := Button.new()
+		btn.text = "Dispatch"
+		btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		btn.custom_minimum_size = Vector2(0, 36)
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.disabled = is_unreachable
 		btn.pressed.connect(func() -> void:
 			_confirm_asteroid_dispatch(asteroid)
 		)
 		dest_row.add_child(btn)
+		# Store references for in-place updates: {dist, time, profit, warning}
+		_mining_dest_buttons[asteroid] = {
+			"dist": dist_label, "time": time_label,
+			"profit": profit_label, "warning": warning_label,
+			"btn": btn,
+		}
+		_mining_dest_data.append(asteroid)
 
 		# Show fuel stop route as clickable buttons
 		if not fuel_route.is_empty():
@@ -894,8 +1067,8 @@ func _show_asteroid_selection() -> void:
 			route_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
 			dest_row.add_child(route_label)
 
-			var stops_hbox := HBoxContainer.new()
-			stops_hbox.add_theme_constant_override("separation", 8)
+			var stops_hbox := HFlowContainer.new()
+			stops_hbox.add_theme_constant_override("h_separation", 8)
 			for stop_name in fuel_route:
 				# Find the colony by name
 				var stop_colony: Colony = null
@@ -918,8 +1091,8 @@ func _show_asteroid_selection() -> void:
 
 		# ALWAYS show action buttons if ship has cargo
 		if has_cargo:
-			var jettison_row := HBoxContainer.new()
-			jettison_row.add_theme_constant_override("separation", 8)
+			var jettison_row := HFlowContainer.new()
+			jettison_row.add_theme_constant_override("h_separation", 8)
 
 			var jettison_label := Label.new()
 			jettison_label.text = "  Jettison cargo:"
@@ -966,6 +1139,7 @@ func _show_asteroid_selection() -> void:
 			dest_row.add_child(jettison_row)
 
 		mining_vbox.add_child(dest_row)
+		mining_vbox.add_child(HSeparator.new())
 
 	mining_scroll.add_child(mining_vbox)
 	dispatch_content.add_child(mining_scroll)
@@ -980,11 +1154,137 @@ func _show_asteroid_selection() -> void:
 	cancel.custom_minimum_size = Vector2(0, 44)
 	cancel.pressed.connect(func() -> void:
 		_cancel_preview()
-		dispatch_popup.visible = false
+		_hide_dispatch()
 	)
 	dispatch_content.add_child(cancel)
 
-	dispatch_popup.visible = true
+	_show_dispatch()
+
+func _update_destination_labels() -> void:
+	# Update existing destination buttons in place without rebuilding layout
+	if not _selected_ship:
+		return
+
+	# Update colony destination labels in place
+	for colony: Colony in _colony_dest_buttons:
+		var refs: Dictionary = _colony_dest_buttons[colony]
+		var col_dist_label: Label = refs["dist"]
+		var col_time_label: Label = refs["time"]
+		var col_revenue_label: Label = refs["revenue"]
+		var col_warning_label: Label = refs["warning"]
+		if not is_instance_valid(col_dist_label):
+			continue
+		var colony_pos: Vector2 = colony.get_position_au()
+		var dist := _selected_ship.position_au.distance_to(colony_pos)
+		var transit := Brachistochrone.transit_time(dist, _selected_ship.get_effective_thrust())
+		var cargo_mass := _selected_ship.get_cargo_total()
+		var fuel_outbound := _selected_ship.calc_fuel_for_distance(dist, cargo_mass)
+		var fuel_return := _selected_ship.calc_fuel_for_distance(dist, 0.0)
+		var fuel_needed := fuel_outbound + fuel_return
+		var revenue := 0
+		for ore_type in _selected_ship.current_cargo:
+			var amount: float = _selected_ship.current_cargo[ore_type]
+			var price: float = colony.get_ore_price(ore_type, GameState.market)
+			revenue += int(amount * price)
+		var col_dv := Brachistochrone.delta_v_km_s(dist, _selected_ship.get_effective_thrust())
+		col_dist_label.text = "%.0f km/s Δv" % col_dv
+		col_time_label.text = _format_time(transit)
+		col_revenue_label.text = "$%s" % _format_number(revenue)
+		var available_fuel := _selected_ship.get_effective_fuel_capacity() if _selected_ship.is_idle_remote else _selected_ship.fuel
+		if fuel_needed > available_fuel:
+			col_warning_label.text = " [NEEDS REFUEL]"
+			col_warning_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+		elif fuel_needed > available_fuel * 0.9:
+			col_warning_label.text = " [CRITICAL]"
+			col_warning_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		else:
+			col_warning_label.text = ""
+
+	# Update mining destination labels in place
+	var est_workers := GameState.get_available_workers()
+	if est_workers.is_empty():
+		var placeholder := Worker.new()
+		placeholder.mining_skill = 1.0
+		placeholder.wage = 100
+		est_workers = [placeholder]
+
+	for asteroid: AsteroidData in _mining_dest_buttons:
+		var refs: Dictionary = _mining_dest_buttons[asteroid]
+		var dist_label: Label = refs["dist"]
+		var time_label: Label = refs["time"]
+		var profit_label: Label = refs["profit"]
+		var warning_label: Label = refs["warning"]
+		if not is_instance_valid(dist_label):
+			continue
+		var asteroid_pos: Vector2 = asteroid.get_position_au()
+		var dist_outbound := _selected_ship.position_au.distance_to(asteroid_pos)
+		var est := AsteroidData.estimate_mission(
+			asteroid, _selected_ship, est_workers, -1.0, Vector2(-999, -999), Mission.TransitMode.BRACHISTOCHRONE
+		)
+		var dist_return: float
+		var revenue: float
+		if _sell_at_destination_markets:
+			var nearest_colony: Colony = null
+			var nearest_dist := 999999.0
+			for colony in GameState.colonies:
+				var d := asteroid_pos.distance_to(colony.get_position_au())
+				if d < nearest_dist:
+					nearest_dist = d
+					nearest_colony = colony
+			if nearest_colony:
+				dist_return = nearest_dist
+				revenue = 0.0
+				var cargo_breakdown: Dictionary = est["cargo_breakdown"]
+				for ore_type in cargo_breakdown:
+					var tons: float = cargo_breakdown[ore_type]
+					revenue += tons * nearest_colony.get_ore_price(ore_type, GameState.market)
+			else:
+				dist_return = dist_outbound
+				revenue = est["revenue"]
+		else:
+			dist_return = dist_outbound
+			revenue = est["revenue"]
+		var total_transit: float
+		var adjusted_profit: float
+		if absf(dist_outbound - dist_return) < 0.01 and not _sell_at_destination_markets:
+			adjusted_profit = est["profit"]
+			var transit_one_way := Brachistochrone.transit_time(dist_outbound, _selected_ship.get_effective_thrust())
+			total_transit = transit_one_way * 2.0
+		else:
+			var transit_out := Brachistochrone.transit_time(dist_outbound, _selected_ship.get_effective_thrust())
+			var transit_ret := Brachistochrone.transit_time(dist_return, _selected_ship.get_effective_thrust())
+			total_transit = transit_out + transit_ret
+			var fuel_out := _selected_ship.calc_fuel_for_distance(dist_outbound, _selected_ship.get_cargo_total())
+			var fuel_ret := _selected_ship.calc_fuel_for_distance(dist_return, est["cargo_total"])
+			var custom_fuel_cost := (fuel_out + fuel_ret) * Ship.FUEL_COST_PER_UNIT
+			var total_time: float = total_transit + est["mining_time"]
+			var payroll_cycles: float = total_time / Simulation.PAYROLL_INTERVAL
+			var wage_per_tick := 0.0
+			for w in est_workers:
+				wage_per_tick += w.wage
+			adjusted_profit = revenue - wage_per_tick * payroll_cycles - custom_fuel_cost
+		# Update labels in place
+		var thrust := _selected_ship.get_effective_thrust()
+		var dv_out := Brachistochrone.delta_v_km_s(dist_outbound, thrust)
+		var dv_ret := Brachistochrone.delta_v_km_s(dist_return, thrust)
+		dist_label.text = "%.0f out %.0f ret Δv" % [dv_out, dv_ret]
+		time_label.text = _format_time(total_transit)
+		var profit_str := "$%s" % _format_number(int(adjusted_profit))
+		profit_label.text = "%s%s" % ["+" if adjusted_profit > 0 else "", profit_str]
+		if adjusted_profit >= 0:
+			profit_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+		else:
+			profit_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		var available_fuel := _selected_ship.get_effective_fuel_capacity() if _selected_ship.is_idle_remote else _selected_ship.fuel
+		var total_fuel := _selected_ship.calc_fuel_for_distance(dist_outbound, _selected_ship.get_cargo_total()) + _selected_ship.calc_fuel_for_distance(dist_return, est["cargo_total"])
+		if total_fuel > available_fuel:
+			warning_label.text = " [NEEDS REFUEL]"
+			warning_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+		elif total_fuel > available_fuel * 0.9:
+			warning_label.text = " [CRITICAL]"
+			warning_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		else:
+			warning_label.text = ""
 
 func _get_sorted_asteroids(est_workers: Array[Worker]) -> Array[AsteroidData]:
 	var filtered: Array[AsteroidData] = []
@@ -1019,7 +1319,7 @@ func _calculate_adjusted_profit(asteroid: AsteroidData, est_workers: Array[Worke
 
 	# Get base estimate for mining (using Brachistochrone as default)
 	var est := AsteroidData.estimate_mission(
-		asteroid, _selected_ship, est_workers, 30.0, Vector2(-999, -999), Mission.TransitMode.BRACHISTOCHRONE
+		asteroid, _selected_ship, est_workers, -1.0, Vector2(-999, -999), Mission.TransitMode.BRACHISTOCHRONE
 	)
 
 	# Calculate based on market strategy
@@ -1074,7 +1374,7 @@ func _calculate_adjusted_profit(asteroid: AsteroidData, est_workers: Array[Worke
 
 	# Wages for total mission time
 	var total_time: float = total_transit + est["mining_time"]
-	var payroll_cycles: float = total_time / 60.0
+	var payroll_cycles: float = total_time / Simulation.PAYROLL_INTERVAL
 	var wage_per_tick := 0.0
 	for w in est_workers:
 		wage_per_tick += w.wage
@@ -1116,7 +1416,7 @@ func _select_colony_trade(colony: Colony) -> void:
 	else:
 		GameState.start_trade_mission(_selected_ship, colony, assigned, cargo)
 	_cancel_preview()
-	dispatch_popup.visible = false
+	_hide_dispatch()
 	_mark_dirty()
 
 func _show_worker_selection() -> void:
@@ -1169,7 +1469,8 @@ func _show_worker_selection() -> void:
 	# Distance from ship position
 	var dist := _selected_ship.position_au.distance_to(_selected_asteroid.get_position_au())
 	var dist_label := Label.new()
-	dist_label.text = "Distance: %.2f AU from ship" % dist
+	var dv := Brachistochrone.delta_v_km_s(dist, _selected_ship.get_effective_thrust())
+	dist_label.text = "Δv: %.0f km/s (%.2f AU)" % [dv, dist]
 	dist_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 	dispatch_content.add_child(dist_label)
 
@@ -1206,8 +1507,8 @@ func _show_worker_selection() -> void:
 
 			var check := CheckBox.new()
 			check.custom_minimum_size = Vector2(0, 44)
-			check.text = "%s  |  Skill: %.2f  |  $%d/pay" % [
-				worker.worker_name, worker.skill, worker.wage
+			check.text = "%s  |  %s  |  $%d/pay" % [
+				worker.worker_name, worker.get_specialties_text(), worker.wage
 			]
 			check.button_pressed = preselect
 			check.toggled.connect(func(on: bool) -> void:
@@ -1234,9 +1535,9 @@ func _show_worker_selection() -> void:
 	est_vbox.add_child(est_title)
 
 	# Transit mode selection buttons
-	var mode_hbox := HBoxContainer.new()
+	var mode_hbox := HFlowContainer.new()
 	mode_hbox.name = "TransitModeButtons"
-	mode_hbox.add_theme_constant_override("separation", 8)
+	mode_hbox.add_theme_constant_override("h_separation", 8)
 
 	var brach_btn := Button.new()
 	brach_btn.name = "BrachButton"
@@ -1408,7 +1709,7 @@ func _show_worker_selection() -> void:
 	cancel.custom_minimum_size = Vector2(0, 44)
 	cancel.pressed.connect(func() -> void:
 		_cancel_preview()
-		dispatch_popup.visible = false
+		_hide_dispatch()
 	)
 	btn_row.add_child(cancel)
 
@@ -1448,7 +1749,7 @@ func _update_estimate_display() -> void:
 
 	# Get estimate with current transit mode
 	var est := AsteroidData.estimate_mission(
-		_selected_asteroid, _selected_ship, _selected_workers, 30.0, Vector2(-999, -999), _selected_transit_mode
+		_selected_asteroid, _selected_ship, _selected_workers, -1.0, Vector2(-999, -999), _selected_transit_mode
 	)
 
 	# Override estimates if using slingshot route
@@ -1503,7 +1804,7 @@ func _update_estimate_display() -> void:
 				hohmann_btn.button_pressed = false
 				# Recalculate
 				est = AsteroidData.estimate_mission(
-					_selected_asteroid, _selected_ship, _selected_workers, 30.0, Vector2(-999, -999), _selected_transit_mode
+					_selected_asteroid, _selected_ship, _selected_workers, -1.0, Vector2(-999, -999), _selected_transit_mode
 				)
 
 	# Update thrust labels
@@ -1602,7 +1903,7 @@ func _confirm_dispatch() -> void:
 
 	# Get mission estimate for confirmation
 	var est := AsteroidData.estimate_mission(
-		_selected_asteroid, _selected_ship, _selected_workers, 30.0, Vector2(-999, -999), _selected_transit_mode
+		_selected_asteroid, _selected_ship, _selected_workers, -1.0, Vector2(-999, -999), _selected_transit_mode
 	)
 
 	var dist := _selected_ship.position_au.distance_to(_selected_asteroid.get_position_au())
@@ -1636,7 +1937,7 @@ func _show_dispatch_confirmation(message: String) -> void:
 	var msg_label := Label.new()
 	msg_label.text = message
 	msg_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	msg_label.custom_minimum_size = Vector2(400, 0)
+	msg_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	dispatch_content.add_child(msg_label)
 
 	var btn_row := HBoxContainer.new()
@@ -1660,7 +1961,7 @@ func _show_dispatch_confirmation(message: String) -> void:
 
 	dispatch_content.add_child(btn_row)
 
-	dispatch_popup.visible = true
+	_show_dispatch()
 
 func _execute_dispatch() -> void:
 	# Actually execute the dispatch after confirmation
@@ -1683,14 +1984,14 @@ func _execute_dispatch() -> void:
 	else:
 		GameState.start_mission(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode, _selected_slingshot_route)
 	_cancel_preview()
-	dispatch_popup.visible = false
+	_hide_dispatch()
 	_mark_dirty()
 
 func _build_details_text(ship: Ship) -> String:
 	var engine_str := ""
 	if ship.engine_condition < 100.0:
-		engine_str = "  |  Eng: %d%%" % int(ship.engine_condition)
-	return "Thrust: %.1fg (%.0f%%)  |  Cargo: %.0f/%.0ft  |  Fuel: %.0f/%.0f  |  Equip: %d/%d (%.2fx)%s" % [
+		engine_str = " | Eng: %d%%" % int(ship.engine_condition)
+	return "Thrust: %.1fg (%.0f%%) | Cargo: %.0f/%.0ft\nFuel: %.0f/%.0f | Equip: %d/%d (%.2fx)%s" % [
 		ship.get_effective_thrust(), ship.thrust_setting * 100.0, ship.get_cargo_total(), ship.get_effective_cargo_capacity(),
 		ship.fuel, ship.get_effective_fuel_capacity(),
 		ship.equipment.size(), ship.max_equipment_slots, ship.get_mining_multiplier(),
@@ -1959,7 +2260,7 @@ func _show_confirmation_dialog(message: String, on_confirm: Callable) -> void:
 	var msg_label := Label.new()
 	msg_label.text = message
 	msg_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	msg_label.custom_minimum_size = Vector2(400, 0)
+	msg_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	dispatch_content.add_child(msg_label)
 
 	var btn_row := HBoxContainer.new()
@@ -1983,7 +2284,7 @@ func _show_confirmation_dialog(message: String, on_confirm: Callable) -> void:
 
 	dispatch_content.add_child(btn_row)
 
-	dispatch_popup.visible = true
+	_show_dispatch()
 
 func _get_matching_contracts(ship: Ship, colony: Colony) -> Array[Contract]:
 	# Find active contracts that match ship's cargo and can be delivered at this colony

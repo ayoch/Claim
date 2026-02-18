@@ -13,7 +13,7 @@ const SPEED_SLOW: float = 5.0          # 5x (slow)
 const SPEED_NORMAL: float = 20.0       # 20x (default)
 const SPEED_FAST: float = 50.0         # 50x (fast)
 const SPEED_VERYFAST: float = 100.0    # 100x (very fast)
-const SPEED_MAX: float = 10000.0       # 10000x (maximum allowed)
+const SPEED_MAX: float = 200000.0      # 200000x (maximum allowed)
 
 func _ready() -> void:
 	# Listen for speed control keys
@@ -43,6 +43,12 @@ func speed_up() -> void:
 func set_speed(new_speed: float) -> void:
 	speed_multiplier = clampf(new_speed, SPEED_REALTIME, SPEED_MAX)
 	print("Simulation speed: %s" % get_speed_display())
+
+## Auto-slow to 1x on critical events (breakdown, stranger rescue offer, etc.)
+func slow_for_critical_event() -> void:
+	if speed_multiplier > SPEED_REALTIME:
+		speed_multiplier = SPEED_REALTIME
+		print("Auto-slowed to 1x for critical event")
 
 func get_speed_display() -> String:
 	if speed_multiplier >= 1000.0:

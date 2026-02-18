@@ -5,89 +5,67 @@ const TESTING_MODE: bool = true
 
 @onready var money_display: Label = %MoneyDisplay
 @onready var tab_container: TabContainer = %TabContainer
+@onready var top_bar_hbox: HBoxContainer = $VBox/TopBar/HBox
+@onready var speed_bar: PanelContainer = $VBox/SpeedBar
+@onready var date_display: Label = %DateDisplay
 
 var _settings_popup: PanelContainer = null
-var _speed_control: HBoxContainer = null
 var _speed_input: LineEdit = null
 
 func _ready() -> void:
 	EventBus.money_changed.connect(_on_money_changed)
 	_on_money_changed(GameState.money)
 
-	# Only show speed control in testing mode
 	if TESTING_MODE:
-		_create_speed_control()
+		_setup_speed_bar()
+	else:
+		speed_bar.visible = false
 
-func _create_speed_control() -> void:
-	# Create speed control panel in top-left corner
-	_speed_control = HBoxContainer.new()
-	_speed_control.position = Vector2(10, 10)
-	_speed_control.add_theme_constant_override("separation", 8)
-	add_child(_speed_control)
+	_update_date_display()
 
-	# Speed label
-	var label := Label.new()
-	label.text = "Speed:"
-	label.add_theme_font_size_override("font_size", 14)
-	label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	_speed_control.add_child(label)
+func _process(_delta: float) -> void:
+	_update_date_display()
 
-	# Decrease button
-	var dec_btn := Button.new()
-	dec_btn.text = "-"
-	dec_btn.custom_minimum_size = Vector2(32, 32)
+func _update_date_display() -> void:
+	if date_display:
+		date_display.text = GameState.get_game_date_string()
+
+func _setup_speed_bar() -> void:
+	var hbox: HFlowContainer = speed_bar.get_node("HBox")
+
+	# Wire decrease button
+	var dec_btn: Button = hbox.get_node("DecBtn")
 	dec_btn.pressed.connect(func() -> void:
 		TimeScale.slow_down()
 		_update_speed_display()
 	)
-	_speed_control.add_child(dec_btn)
 
-	# Editable speed input
-	_speed_input = LineEdit.new()
-	_speed_input.custom_minimum_size = Vector2(80, 32)
-	_speed_input.text = str(TimeScale.speed_multiplier)
-	_speed_input.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# Wire speed input
+	_speed_input = hbox.get_node("SpeedInput")
+	_speed_input.text = TimeScale.get_speed_display()
 	_speed_input.text_submitted.connect(_on_speed_submitted)
 	_speed_input.focus_exited.connect(_on_speed_focus_lost)
-	_speed_control.add_child(_speed_input)
 
-	# Increase button
-	var inc_btn := Button.new()
-	inc_btn.text = "+"
-	inc_btn.custom_minimum_size = Vector2(32, 32)
+	# Wire increase button
+	var inc_btn: Button = hbox.get_node("IncBtn")
 	inc_btn.pressed.connect(func() -> void:
 		TimeScale.speed_up()
 		_update_speed_display()
 	)
-	_speed_control.add_child(inc_btn)
 
-	# Preset buttons
-	var preset_1x := Button.new()
-	preset_1x.text = "1x"
-	preset_1x.custom_minimum_size = Vector2(40, 32)
-	preset_1x.pressed.connect(func() -> void:
+	# Wire preset buttons
+	hbox.get_node("Preset1x").pressed.connect(func() -> void:
 		TimeScale.set_speed(TimeScale.SPEED_REALTIME)
 		_update_speed_display()
 	)
-	_speed_control.add_child(preset_1x)
-
-	var preset_20x := Button.new()
-	preset_20x.text = "20x"
-	preset_20x.custom_minimum_size = Vector2(48, 32)
-	preset_20x.pressed.connect(func() -> void:
+	hbox.get_node("Preset20x").pressed.connect(func() -> void:
 		TimeScale.set_speed(TimeScale.SPEED_NORMAL)
 		_update_speed_display()
 	)
-	_speed_control.add_child(preset_20x)
-
-	var preset_100x := Button.new()
-	preset_100x.text = "100x"
-	preset_100x.custom_minimum_size = Vector2(52, 32)
-	preset_100x.pressed.connect(func() -> void:
+	hbox.get_node("Preset100x").pressed.connect(func() -> void:
 		TimeScale.set_speed(TimeScale.SPEED_VERYFAST)
 		_update_speed_display()
 	)
-	_speed_control.add_child(preset_100x)
 
 func _on_speed_submitted(new_text: String) -> void:
 	var new_speed := new_text.to_float()
@@ -158,6 +136,33 @@ func _show_settings() -> void:
 		GameState.settings["auto_sell_at_markets"] = on
 	)
 	vbox.add_child(auto_sell_check)
+
+	var date_label := Label.new()
+	date_label.text = "Date format:"
+	date_label.add_theme_font_size_override("font_size", 16)
+	vbox.add_child(date_label)
+
+	var date_formats := {
+		"us": "MM/DD/YYYY (US)",
+		"uk": "DD/MM/YYYY (UK)",
+		"eu": "DD.MM.YYYY (EU)",
+		"iso": "YYYY-MM-DD (ISO)",
+	}
+	var current_fmt: String = GameState.settings.get("date_format", "us")
+	var date_option := OptionButton.new()
+	date_option.custom_minimum_size = Vector2(0, 44)
+	var idx := 0
+	for key in date_formats:
+		date_option.add_item(date_formats[key], idx)
+		date_option.set_item_metadata(idx, key)
+		if key == current_fmt:
+			date_option.selected = idx
+		idx += 1
+	date_option.item_selected.connect(func(item_idx: int) -> void:
+		var fmt_key: String = date_option.get_item_metadata(item_idx)
+		GameState.settings["date_format"] = fmt_key
+	)
+	vbox.add_child(date_option)
 
 	var close_btn := Button.new()
 	close_btn.text = "Close"

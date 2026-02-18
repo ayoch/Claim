@@ -57,9 +57,10 @@ func _refresh_crew() -> void:
 			status_text = "On mission to %s" % worker.assigned_mission.asteroid.asteroid_name
 		else:
 			status_text = "On Mission"
-		details.text = "Skill: %.2f  |  $%d/pay  |  %s" % [
-			worker.skill, worker.wage, status_text
+		details.text = "%s  |  $%d/pay  |  %s" % [
+			worker.get_specialties_text(), worker.wage, status_text
 		]
+		details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		if worker.is_available:
 			details.add_theme_color_override("font_color", Color(0.3, 0.8, 0.3))
 		else:
@@ -98,9 +99,10 @@ func _refresh_candidates() -> void:
 		hbox.add_theme_constant_override("separation", 8)
 
 		var info := Label.new()
-		info.text = "%s  |  Skill: %.2f  |  $%d/pay" % [
-			candidate.worker_name, candidate.skill, candidate.wage
+		info.text = "%s  |  %s  |  $%d/pay" % [
+			candidate.worker_name, candidate.get_specialties_text(), candidate.wage
 		]
+		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hbox.add_child(info)
 

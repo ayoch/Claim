@@ -6,7 +6,7 @@ extends Node
 var _tick_accumulator: float = 0.0
 const TICK_INTERVAL: float = 1.0  # 1 second per tick at 1x speed
 var _payroll_accumulator: float = 0.0
-const PAYROLL_INTERVAL: float = 60.0  # pay wages every 60 ticks
+const PAYROLL_INTERVAL: float = 86400.0  # pay wages every game-day (86400 ticks = 24h at 1x)
 var _survey_accumulator: float = 0.0
 const SURVEY_INTERVAL: float = 120.0  # check for survey events every 120 ticks
 
@@ -24,8 +24,20 @@ const CONTRACT_CHANCE: float = 0.40  # 40% chance per interval
 const MINING_VARIANCE_MIN: float = 0.7
 const MINING_VARIANCE_MAX: float = 1.3
 
+# Scale factor for ore yields: converts abstract yield values to tons per tick
+# With this rate, a typical asteroid fills a 100t cargo hold in ~1 game-day
+const BASE_MINING_RATE: float = 0.0001
+
 # Chance per survey interval that a random asteroid gets re-surveyed
 const SURVEY_CHANCE: float = 0.15
+
+const MAX_STEPS_PER_FRAME: int = 30  # Max simulation steps per frame
+const MAX_DT_PER_STEP: float = 500.0  # Max ticks batched into one step (random events stay accurate at this scale)
+
+func _ready() -> void:
+	# Auto-slow to 1x on critical events
+	EventBus.ship_breakdown.connect(func(_s: Ship, _r: String) -> void: TimeScale.slow_for_critical_event())
+	EventBus.stranger_rescue_offered.connect(func(_s: Ship, _n: String) -> void: TimeScale.slow_for_critical_event())
 
 func _process(delta: float) -> void:
 	var game_speed := TimeScale.speed_multiplier
@@ -33,11 +45,16 @@ func _process(delta: float) -> void:
 		return
 
 	_tick_accumulator += delta * game_speed
-	while _tick_accumulator >= TICK_INTERVAL:
-		_tick_accumulator -= TICK_INTERVAL
-		_process_tick(TICK_INTERVAL)
+	var steps := 0
+	while _tick_accumulator >= TICK_INTERVAL and steps < MAX_STEPS_PER_FRAME:
+		# Batch ticks into larger steps when backlog is large
+		var dt := minf(_tick_accumulator, MAX_DT_PER_STEP)
+		_tick_accumulator -= dt
+		_process_tick(dt)
+		steps += 1
 
 func _process_tick(dt: float) -> void:
+	GameState.total_ticks += dt
 	_process_orbits(dt)
 	EventBus.tick.emit(dt)
 	_process_missions(dt)
@@ -47,6 +64,7 @@ func _process_tick(dt: float) -> void:
 	_process_rescues(dt)
 	_process_refuels(dt)
 	_process_fabrication(dt)
+	_process_stranger_rescue(dt)
 	_process_payroll(dt)
 	_process_survey_events(dt)
 	_process_market_events(dt)
@@ -167,7 +185,7 @@ func _burn_fuel(mission: Mission, dt: float) -> void:
 	if ship.fuel <= 0 and not ship.is_derelict:
 		_trigger_fuel_depletion(ship)
 
-func _mine_tick(mission: Mission, _dt: float) -> void:
+func _mine_tick(mission: Mission, dt: float) -> void:
 	var ship := mission.ship
 
 	# Don't mine if cargo is already full
@@ -178,30 +196,34 @@ func _mine_tick(mission: Mission, _dt: float) -> void:
 	if ship.get_cargo_remaining() <= 0:
 		return
 
-	var worker_skill_total := 0.0
+	var mining_skill_total := 0.0
+	var best_engineer := 0.0
 	for w in mission.workers:
-		worker_skill_total += w.skill
-	if worker_skill_total <= 0:
-		return
+		mining_skill_total += w.mining_skill
+		if w.engineer_skill > best_engineer:
+			best_engineer = w.engineer_skill
+	if mining_skill_total < 0.1:
+		mining_skill_total = 0.1  # Minimum so crew can still mine (slowly)
 
 	var equip_mult := ship.get_mining_multiplier()
+	var engineer_wear_factor := 1.0 - (best_engineer * 0.3)  # 1.0 = 0.7x wear, 1.5 = 0.55x
 
 	# Random variance on this tick's output
 	var luck := randf_range(MINING_VARIANCE_MIN, MINING_VARIANCE_MAX)
 
 	for ore_type in mission.asteroid.ore_yields:
 		var base_yield: float = mission.asteroid.ore_yields[ore_type]
-		var mined: float = base_yield * worker_skill_total * equip_mult * luck
+		var mined: float = base_yield * mining_skill_total * equip_mult * luck * BASE_MINING_RATE * dt
 		var remaining := ship.get_cargo_remaining()
 		mined = minf(mined, remaining)
 		if mined > 0:
 			ship.current_cargo[ore_type] = ship.current_cargo.get(ore_type, 0.0) + mined
 
-	# Degrade equipment during mining
+	# Degrade equipment during mining (reduced by engineer skill)
 	for equip in ship.equipment:
 		if equip.is_functional() and equip.durability > 0:
 			var old_durability := equip.durability
-			equip.durability = maxf(equip.durability - equip.wear_per_tick, 0.0)
+			equip.durability = maxf(equip.durability - equip.wear_per_tick * engineer_wear_factor * dt, 0.0)
 			if equip.durability <= 0.0 and old_durability > 0.0:
 				EventBus.equipment_broken.emit(ship, equip)
 
@@ -290,9 +312,7 @@ func _update_ship_positions(dt: float) -> void:
 	for mission: Mission in GameState.missions:
 		var ship := mission.ship
 		if ship.is_derelict:
-			ship.velocity_au_per_tick = Vector2.ZERO
-			ship.speed_au_per_tick = 0.0
-			continue
+			continue  # Derelicts handled in drift loop below
 		match mission.status:
 			Mission.Status.TRANSIT_OUT, Mission.Status.TRANSIT_BACK:
 				var progress := mission.get_progress()
@@ -307,9 +327,7 @@ func _update_ship_positions(dt: float) -> void:
 	for tm: TradeMission in GameState.trade_missions:
 		var ship := tm.ship
 		if ship.is_derelict:
-			ship.velocity_au_per_tick = Vector2.ZERO
-			ship.speed_au_per_tick = 0.0
-			continue
+			continue  # Derelicts handled in drift loop below
 		match tm.status:
 			TradeMission.Status.TRANSIT_TO_COLONY, TradeMission.Status.TRANSIT_BACK:
 				var progress := tm.get_progress()
@@ -320,6 +338,11 @@ func _update_ship_positions(dt: float) -> void:
 				ship.position_au = tm.colony.get_position_au()
 				ship.velocity_au_per_tick = Vector2.ZERO
 				ship.speed_au_per_tick = 0.0
+
+	# Derelict drift: maintain velocity, update position
+	for ship in GameState.ships:
+		if ship.is_derelict and ship.speed_au_per_tick > 0.0:
+			ship.position_au += ship.velocity_au_per_tick * dt
 
 func _update_ship_transit_physics(ship: Ship, start_pos: Vector2, end_pos: Vector2, time_fraction: float, transit_mode: int, total_time: float) -> void:
 	# Update ship position and velocity based on transit physics
@@ -391,10 +414,17 @@ func _check_breakdowns(dt: float) -> void:
 		if ship.is_derelict:
 			continue
 		if mission.status == Mission.Status.TRANSIT_OUT or mission.status == Mission.Status.TRANSIT_BACK:
-			# Degrade engine during transit
-			ship.engine_condition = maxf(ship.engine_condition - ship.engine_wear_per_tick * dt, 0.0)
-			# Roll for breakdown
-			var chance := ship.get_breakdown_chance_per_tick()
+			# Find best engineer skill in crew for wear reduction
+			var best_engineer := 0.0
+			for w in mission.workers:
+				if w.engineer_skill > best_engineer:
+					best_engineer = w.engineer_skill
+			var eng_factor := 1.0 - (best_engineer * 0.3)
+
+			# Degrade engine during transit (reduced by engineer skill)
+			ship.engine_condition = maxf(ship.engine_condition - ship.engine_wear_per_tick * eng_factor * dt, 0.0)
+			# Roll for breakdown (reduced by engineer skill)
+			var chance := ship.get_breakdown_chance_per_tick() * eng_factor
 			if chance > 0 and randf() < chance * dt:
 				_trigger_breakdown(ship, "Engine failure during transit")
 
@@ -403,18 +433,24 @@ func _check_breakdowns(dt: float) -> void:
 		if ship.is_derelict:
 			continue
 		if tm.status == TradeMission.Status.TRANSIT_TO_COLONY or tm.status == TradeMission.Status.TRANSIT_BACK:
-			ship.engine_condition = maxf(ship.engine_condition - ship.engine_wear_per_tick * dt, 0.0)
-			var chance := ship.get_breakdown_chance_per_tick()
+			# Find best engineer skill (trade missions store workers but don't lock them)
+			var best_engineer := 0.0
+			for w in ship.last_crew:
+				if w.engineer_skill > best_engineer:
+					best_engineer = w.engineer_skill
+			var eng_factor := 1.0 - (best_engineer * 0.3)
+
+			ship.engine_condition = maxf(ship.engine_condition - ship.engine_wear_per_tick * eng_factor * dt, 0.0)
+			var chance := ship.get_breakdown_chance_per_tick() * eng_factor
 			if chance > 0 and randf() < chance * dt:
 				_trigger_breakdown(ship, "Engine failure during transit")
 
 func _trigger_breakdown(ship: Ship, reason: String) -> void:
 	ship.is_derelict = true
 	ship.derelict_reason = "breakdown"
-	EventBus.ship_breakdown.emit(ship, reason)
-	EventBus.ship_derelict.emit(ship)
 
-	# Remove from active mission tracking but keep the mission reference for position
+	# Remove from active mission tracking BEFORE emitting signals
+	# so _refresh_ship_markers creates a derelict marker, not a mission marker
 	if ship.current_mission:
 		ship.current_mission.status = Mission.Status.COMPLETED
 		GameState.missions.erase(ship.current_mission)
@@ -425,14 +461,15 @@ func _trigger_breakdown(ship: Ship, reason: String) -> void:
 		ship.current_trade_mission.status = TradeMission.Status.COMPLETED
 		GameState.trade_missions.erase(ship.current_trade_mission)
 		ship.current_trade_mission = null
+
+	EventBus.ship_breakdown.emit(ship, reason)
+	EventBus.ship_derelict.emit(ship)
 
 func _trigger_fuel_depletion(ship: Ship) -> void:
 	ship.is_derelict = true
 	ship.derelict_reason = "out_of_fuel"
-	EventBus.ship_breakdown.emit(ship, "Fuel depleted")
-	EventBus.ship_derelict.emit(ship)
 
-	# Remove from active mission tracking but keep the mission reference for position
+	# Remove from active mission tracking BEFORE emitting signals
 	if ship.current_mission:
 		ship.current_mission.status = Mission.Status.COMPLETED
 		GameState.missions.erase(ship.current_mission)
@@ -443,6 +480,9 @@ func _trigger_fuel_depletion(ship: Ship) -> void:
 		ship.current_trade_mission.status = TradeMission.Status.COMPLETED
 		GameState.trade_missions.erase(ship.current_trade_mission)
 		ship.current_trade_mission = null
+
+	EventBus.ship_breakdown.emit(ship, "Fuel depleted")
+	EventBus.ship_derelict.emit(ship)
 
 func _process_rescues(dt: float) -> void:
 	var completed_rescues: Array[Ship] = []
@@ -456,10 +496,13 @@ func _process_rescues(dt: float) -> void:
 		var data: Dictionary = GameState.rescue_missions[ship]
 		GameState.rescue_missions.erase(ship)
 
-		# Ship returns to Earth at 50% condition/fuel, cargo lost
+		# Ship returns to rescue source at 50% condition/fuel, cargo lost
 		ship.is_derelict = false
 		ship.derelict_reason = ""
-		ship.position_au = CelestialData.get_earth_position_au()
+		ship.velocity_au_per_tick = Vector2.ZERO
+		ship.speed_au_per_tick = 0.0
+		var source_pos: Vector2 = data.get("source_pos", CelestialData.get_earth_position_au())
+		ship.position_au = source_pos
 		ship.engine_condition = 50.0
 		ship.fuel = ship.fuel_capacity * 0.5
 		ship.current_cargo.clear()
@@ -493,8 +536,67 @@ func _process_refuels(dt: float) -> void:
 		if ship.is_derelict and ship.derelict_reason == "out_of_fuel":
 			ship.is_derelict = false
 			ship.derelict_reason = ""
+			ship.velocity_au_per_tick = Vector2.ZERO
+			ship.speed_au_per_tick = 0.0
 
 		EventBus.refuel_mission_completed.emit(ship, fuel_delivered)
+
+const STRANGER_NAMES: Array[String] = [
+	"ISV Wanderer", "MV Perseverance", "ISV Nomad", "FV Mercy",
+	"MV Starlight", "ISV Vagrant", "FV Good Hope", "MV Solidarity",
+	"ISV Horizon", "FV Kindred Spirit", "MV Dawn Treader", "ISV Wayfarer",
+]
+
+func _process_stranger_rescue(dt: float) -> void:
+	# Expire old offers
+	var expired_ships: Array[Ship] = []
+	for ship: Ship in GameState.stranger_offers:
+		var offer: Dictionary = GameState.stranger_offers[ship]
+		offer["expires_ticks"] -= dt
+		if offer["expires_ticks"] <= 0:
+			expired_ships.append(ship)
+
+	for ship in expired_ships:
+		var offer: Dictionary = GameState.stranger_offers[ship]
+		GameState.stranger_offers.erase(ship)
+		EventBus.stranger_rescue_declined.emit(ship, offer["stranger_name"])
+
+	# Check for new stranger rescue offers
+	for ship: Ship in GameState.ships:
+		if not ship.is_derelict:
+			continue
+		if ship in GameState.rescue_missions:
+			continue
+		if ship in GameState.refuel_missions:
+			continue
+		if ship in GameState.stranger_offers:
+			continue
+
+		# Base chance: 1 in 500,000 per tick (~once per 6 game-days)
+		var chance := 1.0 / 500000.0
+
+		# Traffic multiplier based on proximity to Earth/colonies
+		var earth_dist := ship.position_au.distance_to(CelestialData.get_earth_position_au())
+		var min_dist := earth_dist
+		for colony in GameState.colonies:
+			var d := ship.position_au.distance_to(colony.get_position_au())
+			if d < min_dist:
+				min_dist = d
+
+		if min_dist < 1.0:
+			chance *= 3.0  # Near civilization
+		elif min_dist > 3.0:
+			chance *= 0.5  # Deep space
+
+		if randf() < chance * dt:
+			var stranger_name: String = STRANGER_NAMES[randi() % STRANGER_NAMES.size()]
+			var suggested_tip := randi_range(2000, 5000)
+			GameState.stranger_offers[ship] = {
+				"stranger_name": stranger_name,
+				"expires_ticks": 43200.0,  # 12 hours game-time
+				"suggested_tip": suggested_tip,
+			}
+			EventBus.stranger_rescue_offered.emit(ship, stranger_name)
 
 func _process_payroll(dt: float) -> void:
 	_payroll_accumulator += dt

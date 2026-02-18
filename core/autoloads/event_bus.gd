@@ -63,3 +63,11 @@ signal rescue_mission_started(ship: Ship, cost: int)
 signal rescue_mission_completed(ship: Ship)
 signal refuel_mission_started(ship: Ship, cost: int, fuel_amount: float)
 signal refuel_mission_completed(ship: Ship, fuel_amount: float)
+
+# Stranger rescue
+signal stranger_rescue_offered(ship: Ship, stranger_name: String)
+signal stranger_rescue_completed(ship: Ship, stranger_name: String)
+signal stranger_rescue_declined(ship: Ship, stranger_name: String)
+
+# Reputation
+signal reputation_changed(new_score: float, tier: int)
