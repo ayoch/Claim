@@ -11,8 +11,21 @@ const TESTING_MODE: bool = true
 
 var _settings_popup: PanelContainer = null
 var _speed_input: LineEdit = null
+var _stored_speed: float = 0.0
+var _is_speed_paused: bool = false
+var _date_update_timer: float = 0.0
+const DATE_UPDATE_INTERVAL: float = 0.2  # Update date 5 times per second
 
 func _ready() -> void:
+	# Position window slightly lower on screen
+	var screen_size := DisplayServer.screen_get_size()
+	var window_size := DisplayServer.window_get_size()
+	var new_pos := Vector2i(
+		(screen_size.x - window_size.x) / 2,  # Centered horizontally
+		(screen_size.y - window_size.y) / 2 + 100  # Centered vertically + 100 pixels down
+	)
+	DisplayServer.window_set_position(new_pos)
+
 	EventBus.money_changed.connect(_on_money_changed)
 	_on_money_changed(GameState.money)
 
@@ -23,8 +36,35 @@ func _ready() -> void:
 
 	_update_date_display()
 
-func _process(_delta: float) -> void:
-	_update_date_display()
+func _process(delta: float) -> void:
+	# Throttle date display updates - doesn't need to be every frame
+	_date_update_timer += delta
+	if _date_update_timer >= DATE_UPDATE_INTERVAL:
+		_update_date_display()
+		_date_update_timer = 0.0
+
+	# Update speed display continuously to catch keyboard shortcuts
+	if _speed_input and TimeScale.get_speed_display() != _speed_input.text:
+		_update_speed_display()
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_SPACE:
+			_toggle_pause_speed()
+			get_viewport().set_input_as_handled()
+
+func _toggle_pause_speed() -> void:
+	if _is_speed_paused:
+		# Resume to stored speed
+		if _stored_speed > 0:
+			TimeScale.set_speed(_stored_speed)
+		_is_speed_paused = false
+	else:
+		# Store current speed and pause to 1x
+		_stored_speed = TimeScale.speed_multiplier
+		TimeScale.set_speed(TimeScale.SPEED_REALTIME)  # 1x
+		_is_speed_paused = true
+	_update_speed_display()
 
 func _update_date_display() -> void:
 	if date_display:
@@ -78,6 +118,9 @@ func _on_speed_focus_lost() -> void:
 
 func _update_speed_display() -> void:
 	if _speed_input:
+		# Release focus before updating to prevent triggering events
+		if _speed_input.has_focus():
+			_speed_input.release_focus()
 		_speed_input.text = TimeScale.get_speed_display()
 
 func _on_money_changed(amount: int) -> void:

@@ -258,8 +258,8 @@ func _refresh_equip() -> void:
 				dur_bar.max_value = equip.max_durability
 				eq_row.add_child(dur_bar)
 
-				# Repair button (only when docked and damaged)
-				if ship.is_docked and equip.durability < equip.max_durability:
+				# Repair button (only when docked at facility and damaged)
+				if ship.can_access_services() and equip.durability < equip.max_durability:
 					var repair_btn := Button.new()
 					var rcost := equip.repair_cost()
 					repair_btn.text = "Repair $%s" % _format_number(rcost)

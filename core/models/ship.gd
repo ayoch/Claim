@@ -3,9 +3,11 @@ extends Resource
 
 const FUEL_COST_PER_UNIT: float = 5.0  # $ per unit of fuel
 const EARTH_PROXIMITY_AU: float = 0.05  # within this distance counts as "at Earth"
+const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at colony"
 
 @export var ship_name: String = ""
 @export var ship_class: int = -1        # ShipData.ShipClass enum value
+@export var docked_at_colony: Colony = null  # Which colony the ship is docked at (if any)
 @export var max_thrust_g: float = 0.3   # maximum acceleration in g
 @export var thrust_setting: float = 1.0 # 0.0 to 1.0, percentage of max_thrust to use
 @export var cargo_capacity: float = 100.0 # tons
@@ -30,6 +32,13 @@ var current_mission: Mission = null
 var current_trade_mission: TradeMission = null
 var last_crew: Array[Worker] = []  # Remember last crew used
 
+# Queued mission data (set destination while ship is busy)
+var queued_destination: Variant = null  # AsteroidData or Colony
+var queued_workers: Array[Worker] = []
+var queued_transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE
+var queued_mining_duration: float = 86400.0
+var queued_slingshot_route = null  # GravityAssist.SlingshotRoute or null
+
 var is_at_earth: bool:
 	get:
 		return position_au.distance_to(CelestialData.get_earth_position_au()) < EARTH_PROXIMITY_AU
@@ -44,8 +53,26 @@ var _has_active_mission: bool:
 
 var is_docked: bool:
 	get:
-		# Ship is only docked if it has NO mission at all and is at Earth
-		return current_mission == null and current_trade_mission == null and is_at_earth and not is_derelict
+		# Ship is docked if it has NO mission and is either at Earth or at a colony
+		if current_mission != null or current_trade_mission != null or is_derelict:
+			return false
+		return is_at_earth or docked_at_colony != null
+
+## Get the colony the ship is currently docked at (if any)
+func get_docked_colony() -> Colony:
+	return docked_at_colony if is_docked else null
+
+## Check if ship can access services (repairs, upgrades)
+func can_access_services() -> bool:
+	if not is_docked:
+		return false
+	# At Earth, always have services
+	if is_at_earth:
+		return true
+	# At colony, only if it has rescue ops (= large colony with facilities)
+	if docked_at_colony != null:
+		return docked_at_colony.has_rescue_ops
+	return false
 
 var is_idle_remote: bool:
 	get:
@@ -147,3 +174,20 @@ func get_class_name() -> String:
 	if ship_class >= 0 and ship_class < ShipData.ShipClass.size():
 		return ShipData.CLASS_NAMES.get(ship_class, "Unknown")
 	return "Legacy"  # For old saves without ship_class
+
+func has_queued_mission() -> bool:
+	return queued_destination != null
+
+func clear_queued_mission() -> void:
+	queued_destination = null
+	queued_workers.clear()
+	queued_transit_mode = Mission.TransitMode.BRACHISTOCHRONE
+	queued_mining_duration = 86400.0
+	queued_slingshot_route = null
+
+func queue_mission(destination: Variant, workers: Array[Worker], transit_mode: int, mining_dur: float = 86400.0, slingshot_route = null) -> void:
+	queued_destination = destination
+	queued_workers = workers.duplicate()
+	queued_transit_mode = transit_mode
+	queued_mining_duration = mining_dur
+	queued_slingshot_route = slingshot_route

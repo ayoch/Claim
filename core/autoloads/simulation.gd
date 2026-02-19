@@ -54,10 +54,13 @@ func _process(delta: float) -> void:
 		_process_tick(dt)
 		steps += 1
 
-func _process_tick(dt: float) -> void:
+func _process_tick(dt: float, emit_event: bool = true) -> void:
 	GameState.total_ticks += dt
 	_process_orbits(dt)
-	EventBus.tick.emit(dt)
+
+	# Only emit tick event when throttled (prevents UI spam at high speeds)
+	if emit_event:
+		EventBus.tick.emit(dt)
 	_process_missions(dt)
 	_process_trade_missions(dt)
 	_update_ship_positions(dt)
@@ -81,11 +84,17 @@ func _process_orbits(dt: float) -> void:
 	for colony in GameState.colonies:
 		colony.advance_orbit(dt)
 
-	# Sync docked ships with Earth's position
+	# Sync docked ships with their dock location
 	var earth_pos := CelestialData.get_earth_position_au()
 	for ship in GameState.ships:
 		if ship.is_docked:
-			ship.position_au = earth_pos
+			if ship.docked_at_colony != null:
+				ship.position_au = ship.docked_at_colony.get_position_au()
+			else:
+				ship.position_au = earth_pos
+		# Auto-dock at nearby colonies with services
+		elif not ship.is_derelict and ship.current_mission == null and ship.current_trade_mission == null:
+			_check_auto_dock_colony(ship)
 
 func _process_missions(dt: float) -> void:
 	var missions := GameState.missions.duplicate()
@@ -275,8 +284,10 @@ func _process_trade_missions(dt: float) -> void:
 						# Manual selling: go directly to idle at colony
 						tm.status = TradeMission.Status.IDLE_AT_COLONY
 						tm.elapsed_ticks = 0.0
-						# Set ship position to colony location
+						# Dock ship at colony
 						tm.ship.position_au = tm.colony.get_position_au()
+						if tm.colony.has_rescue_ops:
+							tm.ship.docked_at_colony = tm.colony
 						# Auto-refuel at colony
 						_auto_refuel_at_colony(tm.ship)
 						EventBus.trade_mission_phase_changed.emit(tm)
@@ -286,8 +297,10 @@ func _process_trade_missions(dt: float) -> void:
 				if tm.elapsed_ticks >= TradeMission.SELL_DURATION:
 					tm.status = TradeMission.Status.IDLE_AT_COLONY
 					tm.elapsed_ticks = 0.0
-					# Set ship position to colony location
+					# Dock ship at colony
 					tm.ship.position_au = tm.colony.get_position_au()
+					if tm.colony.has_rescue_ops:
+						tm.ship.docked_at_colony = tm.colony
 					# Auto-refuel at colony
 					_auto_refuel_at_colony(tm.ship)
 					# Workers are already freed (trade missions don't lock them)
@@ -360,6 +373,10 @@ func _update_ship_positions(dt: float) -> void:
 func _check_ship_collisions(prev_positions: Dictionary) -> void:
 	var destroyed_ships: Array[Ship] = []
 	for ship in GameState.ships:
+		# Only check collisions for derelict ships (no power/control)
+		# Ships with working engines can navigate around obstacles
+		if not ship.is_derelict:
+			continue
 		if ship.speed_au_per_tick <= 0.0:
 			continue
 		var prev_pos: Vector2 = prev_positions.get(ship, ship.position_au)
@@ -532,6 +549,19 @@ func _trigger_fuel_depletion(ship: Ship) -> void:
 
 	EventBus.ship_breakdown.emit(ship, "Fuel depleted")
 	EventBus.ship_derelict.emit(ship)
+
+## Check if ship is near a colony with services and auto-dock
+func _check_auto_dock_colony(ship: Ship) -> void:
+	for colony in GameState.colonies:
+		if not colony.has_rescue_ops:
+			continue  # Only dock at colonies with services
+
+		var dist := ship.position_au.distance_to(colony.get_position_au())
+		if dist < Ship.COLONY_PROXIMITY_AU:
+			ship.docked_at_colony = colony
+			ship.position_au = colony.get_position_au()
+			print("%s auto-docked at %s" % [ship.ship_name, colony.colony_name])
+			return
 
 func _process_rescues(dt: float) -> void:
 	var completed_rescues: Array[Ship] = []

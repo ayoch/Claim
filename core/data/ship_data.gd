@@ -28,6 +28,7 @@ const SHIP_NAMES := [
 	"Grave Goods",
 	"Frogblast the Vent Core",
 	"They're Everywhere",
+	"Phaistos",
 ]
 
 const CLASS_STATS := {

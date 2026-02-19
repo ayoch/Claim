@@ -53,8 +53,15 @@ func advance_orbit(dt: float) -> void:
 		orbital_angle = fmod(orbital_angle, TAU)
 
 func get_orbital_period() -> float:
-	# Kepler's third law: 200,000 base ticks per orbit at 1 AU
+	# Kepler's third law for real-time orbital periods (in seconds)
+	const SECONDS_PER_YEAR := 31557600.0  # 365.25 days
+
 	if orbits_earth or parent_planet_index >= 0:
-		# Moons orbit parent body: shorter period relative to their local orbit_au
-		return maxf(orbit_au * 50000.0, 1000.0)
-	return pow(orbit_au, 1.5) * 200000.0
+		# Moons orbiting planets: use scaled period based on distance
+		# This is arbitrary since we don't have planet masses
+		# ~116 days at 0.01 AU, scales with distance
+		return orbit_au * 1_000_000_000.0
+
+	# Bodies orbiting Sun: Kepler's third law T = a^1.5 years
+	var period_years := pow(orbit_au, 1.5)
+	return period_years * SECONDS_PER_YEAR

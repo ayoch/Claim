@@ -26,6 +26,8 @@ var _cargo_labels: Dictionary = {}  # Ship -> Label for cargo display
 const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catch up
 var _dispatch_refresh_timer: float = 0.0
 const DISPATCH_REFRESH_INTERVAL: float = 2.0  # Refresh dispatch popup every 2 seconds
+var _tick_throttle_timer: float = 0.0
+const TICK_THROTTLE_INTERVAL: float = 0.1  # Only process ticks every 0.1 seconds
 var _on_selection_screen: bool = false  # Track if we're on the initial destination selection screen
 var _on_estimate_screen: bool = false  # Track if we're on the worker selection / estimate screen
 var _saved_colonies_scroll: float = 0.0  # Preserve scroll position across refreshes
@@ -103,6 +105,12 @@ func _process(delta: float) -> void:
 				bar.value = lerp(bar.value, target_progress, PROGRESS_LERP_SPEED * delta)
 
 func _on_tick(dt: float) -> void:
+	# Throttle tick processing to avoid performance issues at high simulation speeds
+	_tick_throttle_timer += dt
+	if _tick_throttle_timer < TICK_THROTTLE_INTERVAL:
+		return  # Early exit - don't process this tick
+	_tick_throttle_timer = 0.0
+
 	# Refresh dispatch popup periodically to update orbital positions and fuel estimates
 	if dispatch_popup.visible:
 		_dispatch_refresh_timer += dt
@@ -494,6 +502,42 @@ func _rebuild_ships() -> void:
 			vbox.add_child(progress)
 			_progress_bars[ship] = progress
 
+			# === QUEUED MISSION INFO & PLAN BUTTON ===
+			# Show queued mission info if one is set
+			if ship.has_queued_mission():
+				var queued_info := Label.new()
+				var dest_name := ""
+				if ship.queued_destination is AsteroidData:
+					dest_name = ship.queued_destination.asteroid_name
+				elif ship.queued_destination is Colony:
+					dest_name = ship.queued_destination.colony_name
+				queued_info.text = "Queued: %s (%d crew)" % [dest_name, ship.queued_workers.size()]
+				queued_info.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
+				queued_info.add_theme_font_size_override("font_size", 14)
+				vbox.add_child(queued_info)
+
+			var plan_row := HBoxContainer.new()
+			plan_row.add_theme_constant_override("separation", 8)
+
+			var plan_btn := Button.new()
+			plan_btn.text = "Plan Next Mission" if not ship.has_queued_mission() else "Change Queued Mission"
+			plan_btn.custom_minimum_size = Vector2(0, 44)
+			plan_btn.pressed.connect(_start_dispatch.bind(ship, true))  # true = planning mode
+			plan_row.add_child(plan_btn)
+
+			# Clear queue button if mission is queued
+			if ship.has_queued_mission():
+				var clear_btn := Button.new()
+				clear_btn.text = "Clear Queue"
+				clear_btn.custom_minimum_size = Vector2(0, 44)
+				clear_btn.pressed.connect(func() -> void:
+					ship.clear_queued_mission()
+					_mark_dirty()
+				)
+				plan_row.add_child(clear_btn)
+
+			vbox.add_child(plan_row)
+
 		panel.add_child(vbox)
 		ships_list.add_child(panel)
 
@@ -520,12 +564,15 @@ func _get_location_text(ship: Ship) -> String:
 func _cancel_preview() -> void:
 	EventBus.mission_preview_cancelled.emit()
 
-func _start_dispatch(ship: Ship) -> void:
+var _is_planning_mode: bool = false  # Track if we're planning next mission (vs immediate dispatch)
+
+func _start_dispatch(ship: Ship, planning_mode: bool = false) -> void:
 	_selected_ship = ship
 	_selected_asteroid = null
 	_selected_workers.clear()
 	_sort_by = "profit"
 	_filter_type = -1
+	_is_planning_mode = planning_mode
 	_show_asteroid_selection()
 
 func _show_asteroid_selection() -> void:
@@ -1453,7 +1500,7 @@ func _show_worker_selection() -> void:
 	EventBus.mission_preview_started.emit(_selected_ship, _selected_asteroid.get_position_au(), _selected_slingshot_route)
 
 	var title := Label.new()
-	title.text = "Assign Workers"
+	title.text = "Assign Crew"
 	title.add_theme_font_size_override("font_size", 20)
 	dispatch_content.add_child(title)
 
@@ -1483,12 +1530,22 @@ func _show_worker_selection() -> void:
 	crew_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	dispatch_content.add_child(crew_label)
 
+	# When planning a queued mission, allow using the ship's current crew
 	var available := GameState.get_available_workers()
+	if _is_planning_mode and _selected_ship.last_crew.size() >= _selected_ship.min_crew:
+		# Ship is underway - allow selecting current crew for queued mission
+		available = _selected_ship.last_crew.duplicate()
+
 	if available.size() < _selected_ship.min_crew:
 		var label := Label.new()
-		label.text = "Not enough workers! Need %d, have %d available. Hire more first." % [
-			_selected_ship.min_crew, available.size()
-		]
+		if _is_planning_mode:
+			label.text = "Not enough crew! Need %d, but current mission has %d. Cannot queue mission." % [
+				_selected_ship.min_crew, _selected_ship.last_crew.size()
+			]
+		else:
+			label.text = "Not enough crew! Need %d, have %d available. Hire more first." % [
+				_selected_ship.min_crew, available.size()
+			]
 		label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		dispatch_content.add_child(label)
@@ -1681,7 +1738,7 @@ func _show_worker_selection() -> void:
 
 	var est_details := Label.new()
 	est_details.name = "EstimateDetails"
-	est_details.text = "Select workers to see estimate"
+	est_details.text = "Select crew to see estimate"
 	est_vbox.add_child(est_details)
 
 	est_panel.add_child(est_vbox)
@@ -1944,13 +2001,35 @@ func _show_dispatch_confirmation(message: String) -> void:
 	var btn_row := HBoxContainer.new()
 	btn_row.add_theme_constant_override("separation", 8)
 
-	var confirm_btn := Button.new()
-	confirm_btn.text = "Confirm Dispatch"
-	confirm_btn.custom_minimum_size = Vector2(0, 44)
-	confirm_btn.pressed.connect(func() -> void:
-		_execute_dispatch()
-	)
-	btn_row.add_child(confirm_btn)
+	# Show different buttons based on whether we're planning or immediately dispatching
+	if _is_planning_mode:
+		# Queue mission button
+		var queue_btn := Button.new()
+		queue_btn.text = "Queue for After Current Task"
+		queue_btn.custom_minimum_size = Vector2(0, 44)
+		queue_btn.pressed.connect(func() -> void:
+			_queue_mission()
+		)
+		btn_row.add_child(queue_btn)
+
+		# Dispatch now (abort current) button
+		var abort_btn := Button.new()
+		abort_btn.text = "Dispatch Now (Abort Current)"
+		abort_btn.custom_minimum_size = Vector2(0, 44)
+		abort_btn.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		abort_btn.pressed.connect(func() -> void:
+			_abort_and_dispatch()
+		)
+		btn_row.add_child(abort_btn)
+	else:
+		# Normal immediate dispatch
+		var confirm_btn := Button.new()
+		confirm_btn.text = "Confirm Dispatch"
+		confirm_btn.custom_minimum_size = Vector2(0, 44)
+		confirm_btn.pressed.connect(func() -> void:
+			_execute_dispatch()
+		)
+		btn_row.add_child(confirm_btn)
 
 	var cancel_btn := Button.new()
 	cancel_btn.text = "Cancel"
@@ -1963,6 +2042,46 @@ func _show_dispatch_confirmation(message: String) -> void:
 	dispatch_content.add_child(btn_row)
 
 	_show_dispatch()
+
+func _queue_mission() -> void:
+	# Queue the mission to start when current task completes
+	var mining_duration := 86400.0  # Default 1 day
+	if _selected_asteroid:
+		# Calculate mining duration based on workers and ore amount
+		var total_mining_rate := 0.0
+		for worker in _selected_workers:
+			total_mining_rate += worker.mining_rate
+		var total_ore: float = _selected_asteroid.get_total_ore()
+		var cargo_space: float = _selected_ship.get_cargo_remaining()
+		var minable_ore: float = min(total_ore, cargo_space)
+		if total_mining_rate > 0:
+			mining_duration = minable_ore / total_mining_rate
+
+	_selected_ship.queue_mission(
+		_selected_asteroid,
+		_selected_workers,
+		_selected_transit_mode,
+		mining_duration,
+		_selected_slingshot_route
+	)
+
+	# Remember crew for next dispatch
+	_selected_ship.last_crew = _selected_workers.duplicate()
+
+	_cancel_preview()
+	_hide_dispatch()
+	_mark_dirty()
+
+func _abort_and_dispatch() -> void:
+	# Abort current mission and dispatch immediately
+	# Clear current mission
+	if _selected_ship.current_mission:
+		_selected_ship.current_mission = null
+	if _selected_ship.current_trade_mission:
+		_selected_ship.current_trade_mission = null
+
+	# Now execute normal dispatch
+	_execute_dispatch()
 
 func _execute_dispatch() -> void:
 	# Actually execute the dispatch after confirmation

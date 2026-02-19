@@ -18,6 +18,8 @@ var _location_labels: Dictionary = {}  # Ship -> Label for location display
 const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catch up
 var _dispatch_refresh_timer: float = 0.0
 const DISPATCH_REFRESH_INTERVAL: float = 2.0  # Refresh dispatch popup every 2 seconds
+var _tick_throttle_timer: float = 0.0
+const TICK_THROTTLE_INTERVAL: float = 0.1  # Only process ticks every 0.1 seconds
 var _on_selection_screen: bool = false  # Track if we're on the initial destination selection screen
 var _on_estimate_screen: bool = false  # Track if we're on the worker selection / estimate screen
 var _saved_colonies_scroll: float = 0.0  # Preserve scroll position across refreshes
@@ -65,6 +67,12 @@ func _process(delta: float) -> void:
 			bar.value = lerp(bar.value, target_progress, PROGRESS_LERP_SPEED * delta)
 
 func _on_tick(dt: float) -> void:
+	# Throttle tick processing to avoid performance issues at high simulation speeds
+	_tick_throttle_timer += dt
+	if _tick_throttle_timer < TICK_THROTTLE_INTERVAL:
+		return  # Early exit - don't process this tick
+	_tick_throttle_timer = 0.0
+
 	# Refresh dispatch popup periodically to update orbital positions and fuel estimates
 	if dispatch_popup.visible:
 		_dispatch_refresh_timer += dt
@@ -238,7 +246,10 @@ func _rebuild_ships() -> void:
 					_derelict_actions.add_child(rescue_btn)
 		elif ship.is_docked:
 			var status := Label.new()
-			status.text = "Docked"
+			var location := "Earth"
+			if ship.docked_at_colony != null:
+				location = ship.docked_at_colony.colony_name
+			status.text = "Docked at %s" % location
 			status.add_theme_color_override("font_color", Color(0.3, 0.8, 0.3))
 			header.add_child(status)
 
@@ -351,8 +362,8 @@ func _rebuild_ships() -> void:
 			)
 			vbox.add_child(unload_btn)
 
-		# Engine repair button (docked ships with engine < 100)
-		if ship.is_docked and ship.engine_condition < 100.0:
+		# Engine repair button (ships at facilities with engine < 100)
+		if ship.can_access_services() and ship.engine_condition < 100.0:
 			var repair_cost := ship.get_engine_repair_cost()
 			var engine_btn := Button.new()
 			engine_btn.text = "Repair Engine ($%s)" % _format_number(repair_cost)
@@ -397,10 +408,36 @@ func _rebuild_ships() -> void:
 		# Progress bar for active transit/mining
 		if not ship.is_docked and not ship.is_idle_remote and not ship.is_derelict:
 			var progress := ProgressBar.new()
+			var elapsed_time := 0.0
+			var total_time := 0.0
+			var progress_value := 0.0
+
 			if ship.current_mission:
-				progress.value = ship.current_mission.get_progress() * 100.0
+				elapsed_time = ship.current_mission.elapsed_ticks
+				total_time = ship.current_mission.get_current_phase_duration()
+				progress_value = ship.current_mission.get_progress()
+				print("DEBUG [%s]: Mission elapsed=%f, total=%f, progress=%f" % [ship.ship_name, elapsed_time, total_time, progress_value])
 			elif ship.current_trade_mission:
-				progress.value = ship.current_trade_mission.get_progress() * 100.0
+				elapsed_time = ship.current_trade_mission.elapsed_ticks
+				total_time = ship.current_trade_mission.get_current_phase_duration()
+				progress_value = ship.current_trade_mission.get_progress()
+				print("DEBUG [%s]: Trade elapsed=%f, total=%f, progress=%f" % [ship.ship_name, elapsed_time, total_time, progress_value])
+
+			# Time display above progress bar
+			if total_time > 0:
+				var time_label := Label.new()
+				time_label.text = "%s / %s" % [
+					TimeScale.format_time(elapsed_time),
+					TimeScale.format_time(total_time)
+				]
+				print("DEBUG [%s]: Time label text = '%s'" % [ship.ship_name, time_label.text])
+				time_label.add_theme_font_size_override("font_size", 11)
+				time_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+				vbox.add_child(time_label)
+			else:
+				print("DEBUG [%s]: total_time <= 0, skipping time label" % ship.ship_name)
+
+			progress.value = progress_value * 100.0
 			vbox.add_child(progress)
 			_progress_bars[ship] = progress
 
@@ -836,7 +873,7 @@ func _show_worker_selection() -> void:
 	EventBus.mission_preview_started.emit(_selected_ship, _selected_asteroid.get_position_au())
 
 	var title := Label.new()
-	title.text = "Assign Workers"
+	title.text = "Assign Crew"
 	title.add_theme_font_size_override("font_size", 20)
 	dispatch_content.add_child(title)
 
@@ -868,7 +905,7 @@ func _show_worker_selection() -> void:
 	var available := GameState.get_available_workers()
 	if available.size() < _selected_ship.min_crew:
 		var label := Label.new()
-		label.text = "Not enough workers! Need %d, have %d available. Hire more first." % [
+		label.text = "Not enough crew! Need %d, have %d available. Hire more first." % [
 			_selected_ship.min_crew, available.size()
 		]
 		label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
@@ -977,7 +1014,7 @@ func _show_worker_selection() -> void:
 
 	var est_details := Label.new()
 	est_details.name = "EstimateDetails"
-	est_details.text = "Select workers to see estimate"
+	est_details.text = "Select crew to see estimate"
 	est_vbox.add_child(est_details)
 
 	est_panel.add_child(est_vbox)

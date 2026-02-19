@@ -2,10 +2,21 @@ extends Node
 
 var money: int = 100000000:
 	set(value):
+		var old_money := money
 		money = value
 		EventBus.money_changed.emit(money)
+		# Record financial change - DISABLED FOR PERFORMANCE TESTING
+		#if value != old_money:
+		#	_record_financial_change(value - old_money, total_ticks)
 
 var resources: Dictionary = {} # OreType -> float (tons)
+
+# Financial history tracking
+# Each entry: { "timestamp": float (ticks), "balance": int, "change": int }
+var financial_history: Array[Dictionary] = []
+const MAX_FINANCIAL_HISTORY: int = 10000  # Keep last 10k entries
+var _last_financial_record_time: float = 0.0
+const MIN_RECORD_INTERVAL: float = 1.0  # Min 1 second between records
 var workers: Array[Worker] = []
 var ships: Array[Ship] = []
 var missions: Array[Mission] = []
@@ -76,6 +87,48 @@ func get_game_date_string() -> String:
 			return "%02d/%02d/%04d  %02d:%02d" % [d["day"], d["month"], d["year"], d["hours"], d["minutes"]]
 		_:
 			return "%02d/%02d/%04d  %02d:%02d" % [d["month"], d["day"], d["year"], d["hours"], d["minutes"]]
+
+func _record_financial_change(change: int, timestamp: float) -> void:
+	# Throttle recording to prevent too many entries
+	if timestamp - _last_financial_record_time < MIN_RECORD_INTERVAL:
+		# Too soon - just update the last entry if it exists
+		if not financial_history.is_empty():
+			var last_entry = financial_history[-1]
+			last_entry["balance"] = money
+			last_entry["change"] = int(last_entry["change"]) + change
+		return
+
+	_last_financial_record_time = timestamp
+	financial_history.append({
+		"timestamp": timestamp,
+		"balance": money,
+		"change": change
+	})
+	# Trim old entries if too many
+	if financial_history.size() > MAX_FINANCIAL_HISTORY:
+		financial_history = financial_history.slice(financial_history.size() - MAX_FINANCIAL_HISTORY)
+
+func get_financial_data(time_range_seconds: float) -> Array[Dictionary]:
+	# Returns financial history within the time range
+	var cutoff_time := total_ticks - time_range_seconds
+	var result: Array[Dictionary] = []
+	for entry in financial_history:
+		if entry["timestamp"] >= cutoff_time:
+			result.append(entry)
+	return result
+
+func calculate_profit_rate(time_range_seconds: float) -> float:
+	# Calculate profit per second over the time range
+	var data := get_financial_data(time_range_seconds)
+	if data.is_empty():
+		return 0.0
+	var total_change := 0
+	for entry in data:
+		total_change += entry["change"]
+	var actual_time: float = total_ticks - float(data[0]["timestamp"])
+	if actual_time > 0:
+		return float(total_change) / actual_time
+	return 0.0
 
 # Phase 2: Market
 var market: MarketState = null
@@ -374,6 +427,10 @@ func complete_mission(mission: Mission) -> void:
 	mission.status = Mission.Status.COMPLETED
 	EventBus.mission_completed.emit(mission)
 	missions.erase(mission)
+
+	# Check for queued mission and auto-start it
+	if mission.ship.has_queued_mission():
+		_start_queued_mission(mission.ship)
 
 func order_return_to_earth(ship: Ship) -> void:
 	# Start a transit-back mission from current idle position to Earth
@@ -759,6 +816,35 @@ func complete_trade_mission(tm: TradeMission) -> void:
 	tm.status = TradeMission.Status.COMPLETED
 	EventBus.trade_mission_completed.emit(tm)
 	trade_missions.erase(tm)
+
+	# Check for queued mission and auto-start it
+	if tm.ship.has_queued_mission():
+		_start_queued_mission(tm.ship)
+
+func _start_queued_mission(ship: Ship) -> void:
+	# Automatically start a queued mission
+	if not ship.has_queued_mission():
+		return
+
+	var dest = ship.queued_destination
+	var workers_array = ship.queued_workers
+	var transit_mode = ship.queued_transit_mode
+	var slingshot_route = ship.queued_slingshot_route
+
+	# Clear the queue before starting (to avoid recursion)
+	ship.clear_queued_mission()
+
+	# Start the appropriate mission type based on destination
+	if dest is AsteroidData:
+		# Mining mission
+		start_mission(ship, dest, workers_array, transit_mode, slingshot_route)
+	elif dest is Colony:
+		# Trade mission (if ship has cargo)
+		if ship.get_cargo_total() > 0:
+			start_trade_mission(ship, dest, workers_array, transit_mode, slingshot_route)
+		else:
+			# No cargo, can't trade - mission cancelled
+			print("Queued trade mission cancelled: ship has no cargo")
 
 # Save/Load
 func save_game() -> void:

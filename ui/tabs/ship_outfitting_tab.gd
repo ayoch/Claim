@@ -40,8 +40,10 @@ func _refresh_all() -> void:
 			upgrade_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			upgrade_row.add_child(upgrade_info)
 
-			# Install on docked ships
+			# Install on ships with service access (Earth or large colonies)
 			for ship in GameState.get_docked_ships():
+				if not ship.can_access_services():
+					continue  # Skip ships at colonies without services
 				var install_btn := Button.new()
 				install_btn.text = "Install on %s" % ship.ship_name
 				install_btn.custom_minimum_size = Vector2(0, 40)
@@ -72,11 +74,17 @@ func _refresh_all() -> void:
 		# Status
 		var status_text := ""
 		if ship.is_docked:
-			status_text = "Docked at Earth (can install upgrades)"
+			var location := "Earth"
+			if ship.docked_at_colony != null:
+				location = ship.docked_at_colony.colony_name
+			if ship.can_access_services():
+				status_text = "Docked at %s (services available)" % location
+			else:
+				status_text = "Docked at %s (no services)" % location
 		elif ship.is_derelict:
 			status_text = "DERELICT"
 		else:
-			status_text = "In space (dock to install upgrades)"
+			status_text = "In space (dock at Earth or large colony for services)"
 
 		var status_label := Label.new()
 		status_label.text = status_text

@@ -28,11 +28,12 @@ const BODY_TYPE_NAMES: Dictionary = {
 func get_type_name() -> String:
 	return BODY_TYPE_NAMES.get(body_type, "Unknown")
 
-## Kepler's third law: orbital period in game ticks
-## 200,000 base = ~2.8 hours real-time at 20x for Earth (1 AU)
-## Outer bodies orbit proportionally slower (Kepler's law)
+## Kepler's third law: orbital period in real seconds
+## T = a^1.5 years for bodies orbiting the Sun
 func get_orbital_period() -> float:
-	return pow(orbit_au, 1.5) * 200000.0
+	const SECONDS_PER_YEAR := 31557600.0  # 365.25 days
+	var period_years := pow(orbit_au, 1.5)
+	return period_years * SECONDS_PER_YEAR
 
 ## Advance orbital position by dt ticks
 func advance_orbit(dt: float) -> void:

@@ -125,7 +125,7 @@ func _draw_starfield() -> void:
 				var base_bright: float = star["brightness"]
 				var twinkle: float = star["twinkle_amount"]
 				var phase: float = star["twinkle_phase"]
-				var bright := clampf(base_bright + sin(_starfield_time + phase) * twinkle, 0.1, 1.0)
+				var bright: float = clampf(base_bright + sin(_starfield_time + phase) * twinkle, 0.1, 1.0)
 				var star_size: float = star["size"]
 
 				var color: Color

@@ -30,7 +30,7 @@ func _refresh_crew() -> void:
 
 	if GameState.workers.is_empty():
 		var label := Label.new()
-		label.text = "No workers hired yet"
+		label.text = "No crew hired yet"
 		label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		workers_list.add_child(label)
 		return

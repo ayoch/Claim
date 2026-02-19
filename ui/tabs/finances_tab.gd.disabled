@@ -1,0 +1,247 @@
+extends MarginContainer
+
+@onready var graph_container: Control = %GraphContainer
+@onready var stats_container: VBoxContainer = %StatsContainer
+
+# Time range buttons
+const TIME_RANGES := {
+	"1h": 3600.0,
+	"6h": 21600.0,
+	"1d": 86400.0,
+	"3d": 259200.0,
+	"7d": 604800.0,
+	"30d": 2592000.0,
+}
+
+var current_time_range: float = 86400.0  # Default to 1 day
+var _graph_dirty := true
+var _refresh_timer: float = 0.0
+const REFRESH_INTERVAL: float = 2.0  # Only refresh every 2 seconds
+
+func _ready() -> void:
+	EventBus.money_changed.connect(func(_m: int) -> void: _mark_dirty())
+	# Don't connect to tick - too frequent!
+	_setup_ui()
+	_refresh_all()
+
+func _mark_dirty() -> void:
+	_graph_dirty = true
+
+func _process(delta: float) -> void:
+	# Only refresh periodically when tab is visible
+	if not visible:
+		return
+
+	_refresh_timer += delta
+	if _graph_dirty and _refresh_timer >= REFRESH_INTERVAL:
+		_refresh_timer = 0.0
+		_graph_dirty = false
+		_refresh_all()
+
+func _setup_ui() -> void:
+	# Add time range buttons
+	var buttons_container := HBoxContainer.new()
+	buttons_container.add_theme_constant_override("separation", 8)
+
+	var label := Label.new()
+	label.text = "Time Range:"
+	label.add_theme_font_size_override("font_size", 14)
+	buttons_container.add_child(label)
+
+	for range_key in ["1h", "6h", "1d", "3d", "7d", "30d"]:
+		var btn := Button.new()
+		btn.text = range_key
+		btn.custom_minimum_size = Vector2(60, 40)
+		btn.pressed.connect(func() -> void:
+			current_time_range = TIME_RANGES[range_key]
+			_refresh_all()
+		)
+		buttons_container.add_child(btn)
+
+	# Insert at top of stats container
+	stats_container.add_child(buttons_container)
+	stats_container.move_child(buttons_container, 0)
+
+func _refresh_all() -> void:
+	_refresh_graph()
+	_refresh_stats()
+
+func _refresh_graph() -> void:
+	# Clear previous graph
+	for child in graph_container.get_children():
+		child.queue_free()
+
+	var data := GameState.get_financial_data(current_time_range)
+
+	if data.is_empty():
+		var no_data := Label.new()
+		no_data.text = "No financial data available for this time range"
+		no_data.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+		no_data.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		no_data.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		graph_container.add_child(no_data)
+		return
+
+	# Create graph
+	var graph := GraphDrawer.new()
+	graph.custom_minimum_size = Vector2(0, 300)
+	graph.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	graph.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	graph.data = data
+	graph.time_range = current_time_range
+	graph_container.add_child(graph)
+
+func _refresh_stats() -> void:
+	# Find or create stats labels area
+	var stats_labels := stats_container.get_node_or_null("StatsLabels")
+	if not stats_labels:
+		stats_labels = VBoxContainer.new()
+		stats_labels.name = "StatsLabels"
+		stats_labels.add_theme_constant_override("separation", 4)
+		stats_container.add_child(stats_labels)
+
+	# Clear old stats
+	for child in stats_labels.get_children():
+		child.queue_free()
+
+	# Current balance
+	var balance_label := Label.new()
+	balance_label.text = "Current Balance: $%s" % _format_number(GameState.money)
+	balance_label.add_theme_font_size_override("font_size", 18)
+	balance_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+	stats_labels.add_child(balance_label)
+
+	# Profit rate
+	var profit_rate := GameState.calculate_profit_rate(current_time_range)
+	var rate_label := Label.new()
+	var time_label := _get_time_range_label()
+	rate_label.text = "Profit Rate (%s): $%s/sec" % [time_label, _format_number(int(profit_rate))]
+	var color := Color(0.3, 0.9, 0.4) if profit_rate >= 0 else Color(0.9, 0.3, 0.3)
+	rate_label.add_theme_color_override("font_color", color)
+	stats_labels.add_child(rate_label)
+
+	# Estimated daily profit
+	var daily_profit := profit_rate * 86400.0
+	var daily_label := Label.new()
+	daily_label.text = "Estimated Daily: $%s/day" % _format_number(int(daily_profit))
+	daily_label.add_theme_color_override("font_color", color)
+	stats_labels.add_child(daily_label)
+
+	# Data points count
+	var data := GameState.get_financial_data(current_time_range)
+	var count_label := Label.new()
+	count_label.text = "%d data points" % data.size()
+	count_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	count_label.add_theme_font_size_override("font_size", 12)
+	stats_labels.add_child(count_label)
+
+func _get_time_range_label() -> String:
+	for key in TIME_RANGES:
+		if TIME_RANGES[key] == current_time_range:
+			return key
+	return "custom"
+
+func _format_number(n: int) -> String:
+	var s := str(abs(n))
+	var result := ""
+	for i in range(s.length()):
+		if i > 0 and (s.length() - i) % 3 == 0:
+			result += ","
+		result += s[i]
+	if n < 0:
+		result = "-" + result
+	return result
+
+# Custom graph drawing control
+class GraphDrawer extends Control:
+	var data: Array[Dictionary] = []
+	var time_range: float = 86400.0
+
+	func _draw() -> void:
+		if data.is_empty():
+			return
+
+		var rect := get_rect()
+		var padding := 40.0
+		var graph_rect := Rect2(padding, padding, rect.size.x - padding * 2, rect.size.y - padding * 2)
+
+		# Draw background
+		draw_rect(graph_rect, Color(0.1, 0.1, 0.15, 0.8))
+
+		# Find min/max balance for scaling
+		var min_balance: float = float(data[0]["balance"])
+		var max_balance: float = float(data[0]["balance"])
+		for entry in data:
+			min_balance = min(min_balance, float(entry["balance"]))
+			max_balance = max(max_balance, float(entry["balance"]))
+
+		# Add some padding to the range
+		var range_padding := (max_balance - min_balance) * 0.1
+		if range_padding == 0:
+			range_padding = max_balance * 0.1  # If flat line, add 10% padding
+		min_balance -= range_padding
+		max_balance += range_padding
+
+		var balance_range := max_balance - min_balance
+		if balance_range == 0:
+			balance_range = 1  # Avoid division by zero
+
+		# Draw grid lines
+		var grid_color := Color(0.3, 0.3, 0.35, 0.5)
+		for i in range(5):
+			var y := graph_rect.position.y + graph_rect.size.y * (i / 4.0)
+			draw_line(Vector2(graph_rect.position.x, y), Vector2(graph_rect.end.x, y), grid_color, 1.0)
+
+		# Draw axes labels
+		var font := get_theme_default_font()
+		var font_size := 12
+
+		# Y-axis labels (balance)
+		for i in range(5):
+			var balance := max_balance - (balance_range * (i / 4.0))
+			var y := graph_rect.position.y + graph_rect.size.y * (i / 4.0)
+			var label_text := "$%s" % _format_short(int(balance))
+			draw_string(font, Vector2(5, y + 4), label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color(0.7, 0.7, 0.7))
+
+		# Draw profit/loss line
+		var points: Array[Vector2] = []
+		var current_time := GameState.total_ticks
+		var start_time := current_time - time_range
+
+		for entry in data:
+			var x_ratio: float = (float(entry["timestamp"]) - start_time) / time_range
+			var y_ratio: float = (max_balance - float(entry["balance"])) / balance_range
+
+			var x := graph_rect.position.x + graph_rect.size.x * x_ratio
+			var y := graph_rect.position.y + graph_rect.size.y * y_ratio
+
+			points.append(Vector2(x, y))
+
+		# Draw the line
+		if points.size() > 1:
+			for i in range(points.size() - 1):
+				var color := Color(0.3, 0.9, 0.4) if int(data[i + 1]["change"]) >= 0 else Color(0.9, 0.3, 0.3)
+				draw_line(points[i], points[i + 1], color, 2.0)
+
+		# Draw points
+		for i in range(points.size()):
+			var color := Color(0.3, 0.9, 0.4) if int(data[i]["change"]) >= 0 else Color(0.9, 0.3, 0.3)
+			draw_circle(points[i], 3.0, color)
+
+	func _format_short(n: int) -> String:
+		var abs_n: int = abs(n)
+		var suffix := ""
+		var value: float = float(abs_n)
+
+		if abs_n >= 1000000000:
+			value = abs_n / 1000000000.0
+			suffix = "B"
+		elif abs_n >= 1000000:
+			value = abs_n / 1000000.0
+			suffix = "M"
+		elif abs_n >= 1000:
+			value = abs_n / 1000.0
+			suffix = "K"
+
+		var result := "%.1f%s" % [value, suffix] if suffix else str(n)
+		return ("-" + result) if n < 0 else result

@@ -6,10 +6,12 @@ extends MarginContainer
 @onready var workers_summary: Label = %WorkersSummary
 @onready var events_list: VBoxContainer = %EventsList
 
-const MAX_EVENTS: int = 8
+const MAX_EVENTS: int = 100  # Keep more event history for scrolling
 const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catchup
 var _event_messages: Array[Dictionary] = []  # { "text": String, "color": Color }
 var _progress_bars: Dictionary = {}  # mission/trade_mission -> ProgressBar
+var _tick_throttle_timer: float = 0.0
+const TICK_THROTTLE_INTERVAL: float = 0.1  # Only process ticks every 0.1 seconds
 
 func _ready() -> void:
 	EventBus.money_changed.connect(_on_money_changed)
@@ -195,7 +197,13 @@ func _on_money_changed(amount: int) -> void:
 func _on_resource_changed(_ore_type: ResourceTypes.OreType, _amount: float) -> void:
 	_refresh_resources()
 
-func _on_tick(_dt: float) -> void:
+func _on_tick(dt: float) -> void:
+	# Throttle tick processing to avoid performance issues at high simulation speeds
+	_tick_throttle_timer += dt
+	if _tick_throttle_timer < TICK_THROTTLE_INTERVAL:
+		return  # Early exit - don't process this tick
+	_tick_throttle_timer = 0.0
+
 	_refresh_missions()
 
 func _refresh_resources() -> void:
@@ -275,7 +283,7 @@ func _refresh_missions() -> void:
 func _refresh_workers() -> void:
 	var total := GameState.workers.size()
 	var available := GameState.get_available_workers().size()
-	workers_summary.text = "%d workers (%d available)" % [total, available]
+	workers_summary.text = "%d crew (%d available)" % [total, available]
 
 func _on_survey_update(_asteroid: AsteroidData, message: String) -> void:
 	var color := Color(0.3, 0.9, 0.4) if message.contains("richer") else Color(0.9, 0.6, 0.3)

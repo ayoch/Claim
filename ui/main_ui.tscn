@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://ui/main_ui.gd" id="1"]
 [ext_resource type="Theme" path="res://ui/theme/claim_theme.tres" id="7"]
@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" path="res://ui/tabs/workers_tab.tscn" id="4"]
 [ext_resource type="PackedScene" path="res://ui/tabs/ship_outfitting_tab.tscn" id="5"]
 [ext_resource type="PackedScene" path="res://ui/tabs/solar_map_tab.tscn" id="6"]
+;[ext_resource type="PackedScene" path="res://ui/tabs/finances_tab.tscn" id="10"]
 [ext_resource type="Shader" path="res://ui/shaders/crt_static.gdshader" id="9"]
 
 [sub_resource type="ShaderMaterial" id="crt_material"]
@@ -170,6 +171,9 @@ layout_mode = 2
 
 [node name="Ships" parent="VBox/TabContainer" instance=ExtResource("5")]
 layout_mode = 2
+
+;[node name="Finances" parent="VBox/TabContainer" instance=ExtResource("10")]
+;layout_mode = 2
 
 [node name="Map" parent="VBox/TabContainer" instance=ExtResource("6")]
 layout_mode = 2

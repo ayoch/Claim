@@ -36,29 +36,30 @@ enum TransitMode {
 @export var return_leg_times: Array[float] = []
 @export var return_waypoint_index: int = 0
 
-func get_progress() -> float:
+func get_current_phase_duration() -> float:
 	match status:
 		Status.TRANSIT_OUT:
-			# For multi-leg journeys, use current leg's time
 			if outbound_leg_times.size() > outbound_waypoint_index:
-				var leg_time: float = outbound_leg_times[outbound_waypoint_index]
-				return elapsed_ticks / leg_time if leg_time > 0 else 1.0
-			else:
-				return elapsed_ticks / transit_time if transit_time > 0 else 1.0
+				return outbound_leg_times[outbound_waypoint_index]
+			return transit_time
 		Status.TRANSIT_BACK:
-			# For multi-leg journeys, use current leg's time
 			if return_leg_times.size() > return_waypoint_index:
-				var leg_time: float = return_leg_times[return_waypoint_index]
-				return elapsed_ticks / leg_time if leg_time > 0 else 1.0
-			else:
-				return elapsed_ticks / transit_time if transit_time > 0 else 1.0
+				return return_leg_times[return_waypoint_index]
+			return transit_time
 		Status.MINING:
-			return elapsed_ticks / mining_duration if mining_duration > 0 else 1.0
-		Status.IDLE_AT_DESTINATION:
+			return mining_duration
+		_:
+			return 0.0
+
+func get_progress() -> float:
+	var duration := get_current_phase_duration()
+	if duration > 0:
+		return elapsed_ticks / duration
+	match status:
+		Status.IDLE_AT_DESTINATION, Status.COMPLETED:
 			return 1.0
-		Status.COMPLETED:
-			return 1.0
-	return 0.0
+		_:
+			return 0.0
 
 func get_status_text() -> String:
 	var mode_suffix := " (Hohmann)" if transit_mode == TransitMode.HOHMANN else ""
