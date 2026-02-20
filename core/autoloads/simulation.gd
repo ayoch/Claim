@@ -168,6 +168,15 @@ func _process_missions(dt: float) -> void:
 
 		match mission.status:
 			Mission.Status.TRANSIT_OUT:
+				# Grant pilot XP to best pilot (they're flying)
+				var best_pilot: Worker = null
+				var best_pilot_skill := -1.0
+				for w in mission.workers:
+					if w.pilot_skill > best_pilot_skill:
+						best_pilot = w
+						best_pilot_skill = w.pilot_skill
+				if best_pilot:
+					best_pilot.add_xp(0, dt)  # 0 = pilot skill
 				_burn_fuel(mission, dt)
 				if mission.elapsed_ticks >= mission.transit_time:
 					# Check if using slingshot with more waypoints
@@ -226,6 +235,9 @@ func _process_missions(dt: float) -> void:
 					_complete_refuel_stop(mission, true)  # true = outbound
 
 			Mission.Status.MINING:
+				# Grant mining XP to crew during mining
+				for w in mission.workers:
+					w.add_xp(2, dt)  # 2 = mining skill
 				_mine_tick(mission, dt)
 				# Stay until hold is full; safety timeout at 2x estimated duration
 				var cargo_full := mission.ship.get_cargo_total() >= mission.ship.get_effective_cargo_capacity() * 0.99
@@ -274,6 +286,15 @@ func _process_missions(dt: float) -> void:
 				pass
 
 			Mission.Status.TRANSIT_BACK:
+				# Grant pilot XP to best pilot (they're flying)
+				var best_pilot: Worker = null
+				var best_pilot_skill := -1.0
+				for w in mission.workers:
+					if w.pilot_skill > best_pilot_skill:
+						best_pilot = w
+						best_pilot_skill = w.pilot_skill
+				if best_pilot:
+					best_pilot.add_xp(0, dt)  # 0 = pilot skill
 				_burn_fuel(mission, dt)
 				if mission.elapsed_ticks >= mission.transit_time:
 					# Check if using slingshot with more waypoints
@@ -651,6 +672,15 @@ func _process_trade_missions(dt: float) -> void:
 
 		match tm.status:
 			TradeMission.Status.TRANSIT_TO_COLONY:
+				# Grant pilot XP to best pilot (they're flying)
+				var best_pilot: Worker = null
+				var best_pilot_skill := -1.0
+				for w in tm.workers:
+					if w.pilot_skill > best_pilot_skill:
+						best_pilot = w
+						best_pilot_skill = w.pilot_skill
+				if best_pilot:
+					best_pilot.add_xp(0, dt)  # 0 = pilot skill
 				tm.ship.fuel = maxf(tm.ship.fuel - tm.fuel_per_tick * dt, 0.0)
 				# Check for fuel depletion
 				if tm.ship.fuel <= 0 and not tm.ship.is_derelict:
@@ -723,6 +753,15 @@ func _process_trade_missions(dt: float) -> void:
 				pass
 
 			TradeMission.Status.TRANSIT_BACK:
+				# Grant pilot XP to best pilot (they're flying)
+				var best_pilot: Worker = null
+				var best_pilot_skill := -1.0
+				for w in tm.workers:
+					if w.pilot_skill > best_pilot_skill:
+						best_pilot = w
+						best_pilot_skill = w.pilot_skill
+				if best_pilot:
+					best_pilot.add_xp(0, dt)  # 0 = pilot skill
 				tm.ship.fuel = maxf(tm.ship.fuel - tm.fuel_per_tick * dt, 0.0)
 				# Check for fuel depletion
 				if tm.ship.fuel <= 0 and not tm.ship.is_derelict:
@@ -973,6 +1012,11 @@ func _trigger_breakdown(ship: Ship, reason: String) -> void:
 		# Engineer patched it! Reduce engine condition but continue mission
 		ship.engine_condition = maxf(ship.engine_condition * 0.5, 20.0)
 		print("Ship %s: Engineer patched breakdown in-situ (skill %.1f)" % [ship.ship_name, best_engineer])
+		# Grant bonus engineer XP to the engineer who performed the repair
+		for w in crew:
+			if w.engineer_skill == best_engineer:
+				w.add_xp(1, 43200.0)  # 1 = engineer skill, half a day's worth as bonus
+				break
 		EventBus.ship_breakdown.emit(ship, "Minor failure (repaired)")
 		return
 
@@ -1900,6 +1944,9 @@ func _process_mining_units(dt: float) -> void:
 			skill_total = 0.1
 		var luck := randf_range(MINING_VARIANCE_MIN, MINING_VARIANCE_MAX)
 		var unit_mult := unit.get_effective_multiplier()
+		# Grant mining XP to assigned workers while unit is operational
+		for w in unit.assigned_workers:
+			w.add_xp(2, dt)  # 2 = mining skill
 		# Mine each ore type and add to stockpile
 		for ore_type in asteroid.ore_yields:
 			var base_yield: float = asteroid.ore_yields[ore_type]

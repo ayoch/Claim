@@ -7,6 +7,7 @@ signal resource_changed(ore_type: ResourceTypes.OreType, new_amount: float)
 # Workers
 signal worker_hired(worker: Worker)
 signal worker_fired(worker: Worker)
+signal worker_skill_leveled(worker: Worker, skill_type: int, new_value: float)
 
 # Ships & equipment
 signal ship_purchased(ship: Ship, cost: int)

@@ -19,6 +19,7 @@ func _ready() -> void:
 	refresh_btn.pressed.connect(_generate_candidates)
 	EventBus.worker_hired.connect(func(_w: Worker) -> void: _dirty_all = true)
 	EventBus.worker_fired.connect(func(_w: Worker) -> void: _dirty_all = true)
+	EventBus.worker_skill_leveled.connect(func(_w: Worker, _st: int, _nv: float) -> void: _dirty_crew = true)
 	EventBus.mission_started.connect(func(_m: Mission) -> void: _dirty_crew = true)
 	EventBus.mission_completed.connect(func(_m: Mission) -> void: _dirty_crew = true)
 	EventBus.tick.connect(_on_tick)
@@ -106,6 +107,58 @@ func _refresh_crew() -> void:
 		details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		details.add_theme_color_override("font_color", status_color)
 		info_vbox.add_child(details)
+
+		# XP Progress Bars
+		var xp_container := HBoxContainer.new()
+		xp_container.add_theme_constant_override("separation", 12)
+
+		# Pilot XP bar
+		if worker.pilot_skill >= 0.1 or worker.pilot_xp > 0.0:
+			var pilot_vbox := VBoxContainer.new()
+			pilot_vbox.add_theme_constant_override("separation", 2)
+			var pilot_label := Label.new()
+			pilot_label.text = "Pilot %.2f" % worker.pilot_skill
+			pilot_label.add_theme_color_override("font_color", Color(0.4, 0.7, 1.0))
+			pilot_vbox.add_child(pilot_label)
+			var pilot_bar := ProgressBar.new()
+			pilot_bar.custom_minimum_size = Vector2(80, 16)
+			pilot_bar.value = worker.get_xp_progress(0) * 100.0
+			pilot_bar.show_percentage = false
+			pilot_vbox.add_child(pilot_bar)
+			xp_container.add_child(pilot_vbox)
+
+		# Engineer XP bar
+		if worker.engineer_skill >= 0.1 or worker.engineer_xp > 0.0:
+			var eng_vbox := VBoxContainer.new()
+			eng_vbox.add_theme_constant_override("separation", 2)
+			var eng_label := Label.new()
+			eng_label.text = "Eng %.2f" % worker.engineer_skill
+			eng_label.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
+			eng_vbox.add_child(eng_label)
+			var eng_bar := ProgressBar.new()
+			eng_bar.custom_minimum_size = Vector2(80, 16)
+			eng_bar.value = worker.get_xp_progress(1) * 100.0
+			eng_bar.show_percentage = false
+			eng_vbox.add_child(eng_bar)
+			xp_container.add_child(eng_vbox)
+
+		# Mining XP bar
+		if worker.mining_skill >= 0.1 or worker.mining_xp > 0.0:
+			var mine_vbox := VBoxContainer.new()
+			mine_vbox.add_theme_constant_override("separation", 2)
+			var mine_label := Label.new()
+			mine_label.text = "Mining %.2f" % worker.mining_skill
+			mine_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+			mine_vbox.add_child(mine_label)
+			var mine_bar := ProgressBar.new()
+			mine_bar.custom_minimum_size = Vector2(80, 16)
+			mine_bar.value = worker.get_xp_progress(2) * 100.0
+			mine_bar.show_percentage = false
+			mine_vbox.add_child(mine_bar)
+			xp_container.add_child(mine_vbox)
+
+		if xp_container.get_child_count() > 0:
+			info_vbox.add_child(xp_container)
 
 		hbox.add_child(info_vbox)
 

@@ -17,6 +17,12 @@ extends Resource
 @export var hired_at: float = 0.0          # total_ticks at hire
 @export var leave_status: int = 0          # 0=active, 1=on_leave, 2=waiting_for_ride, 3=tardy
 @export var assigned_mining_unit: MiningUnit = null
+@export var pilot_xp: float = 0.0
+@export var engineer_xp: float = 0.0
+@export var mining_xp: float = 0.0
+
+const BASE_XP: float = 86400.0  # 1 game-day at skill 0.0
+const SKILL_CAP: float = 2.0
 
 ## Backward-compat: returns best skill across all specialties
 var skill: float:
@@ -167,3 +173,99 @@ func get_specialties_text() -> String:
 static func release_name(name: String) -> void:
 	# Call this when a worker is fired to free up their name
 	_used_names.erase(name)
+
+## Get XP needed for next level based on current skill
+## skill_type: 0=pilot, 1=engineer, 2=mining
+func get_xp_for_next_level(skill_type: int) -> float:
+	var current_skill := 0.0
+	match skill_type:
+		0: current_skill = pilot_skill
+		1: current_skill = engineer_skill
+		2: current_skill = mining_skill
+	if current_skill >= SKILL_CAP:
+		return 0.0
+	return BASE_XP * pow(current_skill + 1.0, 2.0)
+
+## Add XP to a skill and check for level-up
+## skill_type: 0=pilot, 1=engineer, 2=mining
+func add_xp(skill_type: int, amount: float) -> void:
+	if amount <= 0.0:
+		return
+
+	# Get current skill and XP
+	var current_skill := 0.0
+	var current_xp := 0.0
+	match skill_type:
+		0:
+			current_skill = pilot_skill
+			current_xp = pilot_xp
+		1:
+			current_skill = engineer_skill
+			current_xp = engineer_xp
+		2:
+			current_skill = mining_skill
+			current_xp = mining_xp
+
+	# Cap at max skill
+	if current_skill >= SKILL_CAP:
+		return
+
+	# Add XP
+	current_xp += amount
+
+	# Check for level-up
+	var xp_needed := get_xp_for_next_level(skill_type)
+	while current_xp >= xp_needed and xp_needed > 0.0 and current_skill < SKILL_CAP:
+		current_xp -= xp_needed
+		current_skill += 0.05  # Increment skill by 0.05 per level
+		current_skill = minf(current_skill, SKILL_CAP)
+
+		# Update skill value
+		match skill_type:
+			0: pilot_skill = current_skill
+			1: engineer_skill = current_skill
+			2: mining_skill = current_skill
+
+		# Recalculate XP needed for next level
+		xp_needed = get_xp_for_next_level(skill_type)
+
+		# Recalculate wage based on new total skill
+		var total_skill := pilot_skill + engineer_skill + mining_skill
+		wage = int(80 + total_skill * 40)
+
+		# Small loyalty boost for career development
+		loyalty = minf(loyalty + 2.0, 100.0)
+
+		# Emit signal
+		EventBus.worker_skill_leveled.emit(self, skill_type, current_skill)
+
+	# Store updated XP
+	match skill_type:
+		0: pilot_xp = current_xp
+		1: engineer_xp = current_xp
+		2: mining_xp = current_xp
+
+## Get progress to next level (0.0-1.0) for UI bars
+## skill_type: 0=pilot, 1=engineer, 2=mining
+func get_xp_progress(skill_type: int) -> float:
+	var current_skill := 0.0
+	var current_xp := 0.0
+	match skill_type:
+		0:
+			current_skill = pilot_skill
+			current_xp = pilot_xp
+		1:
+			current_skill = engineer_skill
+			current_xp = engineer_xp
+		2:
+			current_skill = mining_skill
+			current_xp = mining_xp
+
+	if current_skill >= SKILL_CAP:
+		return 0.0
+
+	var xp_needed := get_xp_for_next_level(skill_type)
+	if xp_needed <= 0.0:
+		return 0.0
+
+	return current_xp / xp_needed

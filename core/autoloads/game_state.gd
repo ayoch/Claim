@@ -437,6 +437,9 @@ func repair_mining_unit(unit: MiningUnit) -> bool:
 		return false
 	money -= cost
 	unit.durability = unit.max_durability
+	# Grant engineer XP to workers assigned to the unit
+	for w in unit.assigned_workers:
+		w.add_xp(1, 21600.0)  # 1 = engineer skill, quarter day per repair event
 	return true
 
 func rebuild_mining_unit(unit: MiningUnit) -> bool:
@@ -1633,6 +1636,9 @@ func save_game() -> void:
 			"pilot_skill": w.pilot_skill,
 			"engineer_skill": w.engineer_skill,
 			"mining_skill": w.mining_skill,
+			"pilot_xp": w.pilot_xp,
+			"engineer_xp": w.engineer_xp,
+			"mining_xp": w.mining_xp,
 			"wage": w.wage,
 			"fatigue": w.fatigue,
 			"days_deployed": w.days_deployed,
@@ -1943,6 +1949,10 @@ func load_game() -> bool:
 			w.mining_skill = float(wd.get("skill", 1.0))
 			w.pilot_skill = 0.0
 			w.engineer_skill = 0.0
+		# Load XP (default to 0.0 for old saves)
+		w.pilot_xp = float(wd.get("pilot_xp", 0.0))
+		w.engineer_xp = float(wd.get("engineer_xp", 0.0))
+		w.mining_xp = float(wd.get("mining_xp", 0.0))
 		w.wage = int(wd.get("wage", 100))
 		w.fatigue = float(wd.get("fatigue", 0.0))
 		w.days_deployed = float(wd.get("days_deployed", 0.0))

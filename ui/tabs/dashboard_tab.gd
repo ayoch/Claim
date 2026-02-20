@@ -48,6 +48,7 @@ func _ready() -> void:
 	EventBus.mission_phase_changed.connect(func(_m: Mission) -> void: _dirty_missions = true)
 	EventBus.worker_hired.connect(func(_w: Worker) -> void: _dirty_workers = true)
 	EventBus.worker_fired.connect(func(_w: Worker) -> void: _dirty_workers = true)
+	EventBus.worker_skill_leveled.connect(_on_worker_skill_leveled)
 	EventBus.survey_update.connect(func(_a: AsteroidData, msg: String) -> void:
 		var color := Color(0.3, 0.9, 0.4) if msg.contains("richer") else Color(0.9, 0.6, 0.3)
 		_queue_activity(msg, color)
@@ -867,3 +868,12 @@ func _format_number(n: int) -> String:
 	if n < 0:
 		result = "-" + result
 	return result
+
+func _on_worker_skill_leveled(worker: Worker, skill_type: int, new_value: float) -> void:
+	var skill_name := ""
+	match skill_type:
+		0: skill_name = "Pilot"
+		1: skill_name = "Engineer"
+		2: skill_name = "Mining"
+	var message := "[Worker] %s's %s skill increased to %.2f!" % [worker.worker_name, skill_name, new_value]
+	_queue_activity(message, Color(0.3, 0.9, 0.9))
