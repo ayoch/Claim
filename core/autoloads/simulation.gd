@@ -34,6 +34,14 @@ const SURVEY_CHANCE: float = 0.15
 const MAX_STEPS_PER_FRAME: int = 30  # Max simulation steps per frame
 const MAX_DT_PER_STEP: float = 500.0  # Max ticks batched into one step (random events stay accurate at this scale)
 
+# Real-time throttling for expensive operations (wall-clock time, not game time)
+var _contracts_realtime_timer: float = 0.0
+var _survey_realtime_timer: float = 0.0
+var _ship_positions_realtime_timer: float = 0.0
+const CONTRACTS_REALTIME_INTERVAL: float = 0.5  # Process contracts twice per second max
+const SURVEY_REALTIME_INTERVAL: float = 1.0  # Process surveys once per second max
+const SHIP_POSITIONS_REALTIME_INTERVAL: float = 0.0333  # Update ship positions 30 times per second (smooth at high speeds)
+
 func _ready() -> void:
 	# Auto-slow to 1x on critical events
 	EventBus.ship_breakdown.connect(func(_s: Ship, _r: String) -> void: TimeScale.slow_for_critical_event())
@@ -45,6 +53,11 @@ func _process(delta: float) -> void:
 	if game_speed <= 0.0:
 		return
 
+	# Increment real-time throttle timers
+	_contracts_realtime_timer += delta
+	_survey_realtime_timer += delta
+	_ship_positions_realtime_timer += delta
+
 	_tick_accumulator += delta * game_speed
 	var steps := 0
 	while _tick_accumulator >= TICK_INTERVAL and steps < MAX_STEPS_PER_FRAME:
@@ -55,12 +68,17 @@ func _process(delta: float) -> void:
 		steps += 1
 
 func _process_tick(dt: float, emit_event: bool = true) -> void:
+
 	GameState.total_ticks += dt
+
+	# var t0 := Time.get_ticks_usec()
 	_process_orbits(dt)
+	# _record_perf("orbits", Time.get_ticks_usec() - t0)
 
 	# Only emit tick event when throttled (prevents UI spam at high speeds)
 	if emit_event:
 		EventBus.tick.emit(dt)
+
 	_process_missions(dt)
 	_process_trade_missions(dt)
 	_update_ship_positions(dt)
@@ -322,6 +340,12 @@ func _process_trade_missions(dt: float) -> void:
 					GameState.complete_trade_mission(tm)
 
 func _update_ship_positions(dt: float) -> void:
+	# Real-time throttle - only update 10 times per second for mobile performance
+	# This is smooth enough for visuals while being much cheaper than every tick
+	if _ship_positions_realtime_timer < SHIP_POSITIONS_REALTIME_INTERVAL:
+		return
+	_ship_positions_realtime_timer = 0.0
+
 	# Save previous positions for collision detection (enter-radius check)
 	var prev_positions: Dictionary = {}  # Ship -> Vector2
 	for ship in GameState.ships:
@@ -358,11 +382,18 @@ func _update_ship_positions(dt: float) -> void:
 				ship.velocity_au_per_tick = Vector2.ZERO
 				ship.speed_au_per_tick = 0.0
 
-	# Drift with n-body gravity: Sun + planets influence drifting ships
+	# Drift with Sun gravity only (planets are ~1000x less massive, negligible for mobile perf)
 	for ship in GameState.ships:
 		if ship.speed_au_per_tick > 0.0 and ship.current_mission == null and ship.current_trade_mission == null:
 			# Symplectic Euler: update velocity first, then position
-			var accel := CelestialData.gravitational_acceleration(ship.position_au)
+			# Sun-only gravity (simple, fast, 90% accurate)
+			var r_sun := -ship.position_au
+			var dist_sq := r_sun.length_squared()
+			var accel := Vector2.ZERO
+			if dist_sq > 1e-12:
+				var dist := sqrt(dist_sq)
+				accel = r_sun * (CelestialData.GM_SUN / (dist_sq * dist))
+
 			ship.velocity_au_per_tick += accel * dt
 			ship.speed_au_per_tick = ship.velocity_au_per_tick.length()
 			ship.position_au += ship.velocity_au_per_tick * dt
@@ -405,8 +436,16 @@ func _check_ship_collisions(prev_positions: Dictionary) -> void:
 		# Remove the ship
 		GameState.ships.erase(ship)
 
-func _update_ship_transit_physics(ship: Ship, start_pos: Vector2, end_pos: Vector2, time_fraction: float, transit_mode: int, total_time: float, dt: float) -> void:
-	# Update ship position and velocity based on transit physics + gravity
+func _update_ship_transit_physics(ship: Ship, start_pos: Vector2, end_pos_stored: Vector2, time_fraction: float, transit_mode: int, total_time: float, dt: float) -> void:
+	# Simplified physics for mobile: Sun-only gravity (planets negligible for performance)
+
+	# IMPORTANT: If target is Earth, use current Earth position (it's orbiting!)
+	# Otherwise ship aims where Earth WAS, not where it IS
+	var end_pos := end_pos_stored
+	var earth_pos := CelestialData.get_earth_position_au()
+	if end_pos_stored.distance_to(earth_pos) < 0.05:  # Within 0.05 AU = targeting Earth
+		end_pos = earth_pos  # Track Earth's current position
+
 	var direction := (end_pos - start_pos).normalized()
 	var total_distance := start_pos.distance_to(end_pos)
 
@@ -434,15 +473,17 @@ func _update_ship_transit_physics(ship: Ship, start_pos: Vector2, end_pos: Vecto
 			ship.velocity_au_per_tick = Vector2.ZERO
 			ship.speed_au_per_tick = 0.0
 
-	# Apply gravitational perturbation from Sun + planets
-	# Gravity bends the trajectory; thrust course-corrects to stay on target
-	# Net effect: perpendicular deflection accumulates then gets corrected
-	var grav_accel := CelestialData.gravitational_acceleration(ship.position_au)
-	# Only apply the component perpendicular to thrust direction
-	# (the along-track component is already handled by the thrust model)
-	var perp := grav_accel - direction * grav_accel.dot(direction)
-	ship.velocity_au_per_tick += perp * dt
-	ship.speed_au_per_tick = ship.velocity_au_per_tick.length()
+	# Apply Sun gravity (simple, fast, 90% accurate)
+	# Gravity bends trajectory; thrust corrects to stay on target
+	var r_sun := -ship.position_au
+	var dist_sq := r_sun.length_squared()
+	if dist_sq > 1e-12:
+		var dist := sqrt(dist_sq)
+		var grav_accel := r_sun * (CelestialData.GM_SUN / (dist_sq * dist))
+		# Apply only perpendicular component (along-track handled by thrust model)
+		var perp := grav_accel - direction * grav_accel.dot(direction)
+		ship.velocity_au_per_tick += perp * dt
+		ship.speed_au_per_tick = ship.velocity_au_per_tick.length()
 
 func _brachistochrone_distance_fraction(time_fraction: float) -> float:
 	# Convert time progress to distance progress for constant-acceleration trajectory
@@ -684,6 +725,11 @@ func _process_payroll(dt: float) -> void:
 			GameState.money -= total_wages
 
 func _process_survey_events(dt: float) -> void:
+	# Real-time throttle - only process once per second max regardless of simulation speed
+	if _survey_realtime_timer < SURVEY_REALTIME_INTERVAL:
+		return
+	_survey_realtime_timer = 0.0
+
 	_survey_accumulator += dt
 	if _survey_accumulator < SURVEY_INTERVAL:
 		return
@@ -755,6 +801,11 @@ func _trigger_market_event() -> void:
 	EventBus.market_event_started.emit(event)
 
 func _process_contracts(dt: float) -> void:
+	# Real-time throttle - only process twice per second max regardless of simulation speed
+	if _contracts_realtime_timer < CONTRACTS_REALTIME_INTERVAL:
+		return
+	_contracts_realtime_timer = 0.0
+
 	# Tick down active contract deadlines
 	var failed: Array[Contract] = []
 	for contract in GameState.active_contracts:

@@ -20,7 +20,7 @@ var _anim_time: float = 0.0  # For visual animations (pulsing, etc.)
 # Cached trajectory to avoid recalculating every frame
 var _cached_trajectory_points: PackedVector2Array = PackedVector2Array()
 var _trajectory_update_timer: float = 0.0
-const TRAJECTORY_UPDATE_INTERVAL: float = 0.033  # Update trajectory every frame (~30fps)
+const TRAJECTORY_UPDATE_INTERVAL: float = 1.0  # Update trajectory every second (patched conics is cheap!)
 
 func _ready() -> void:
 	if mission:
@@ -219,7 +219,8 @@ func update_position() -> void:
 	_update_target()
 
 func _update_trajectory_cache() -> void:
-	# Update cached trajectory points for drawing
+	# Update cached trajectory points using PATCHED CONICS (like Kerbal Space Program)
+	# Much cheaper than forward simulation - uses analytical conic sections
 	_cached_trajectory_points.clear()
 
 	var is_active := false
@@ -280,11 +281,10 @@ func _update_trajectory_cache() -> void:
 			var leg_end := trade_mission.get_current_leg_end_pos()
 			legs.append([leg_start, leg_end])
 
-	if not is_active or legs.is_empty():
+	if not is_active:
 		return
 
-	# Forward-simulate trajectory from ship's current state
-	# Uses actual position, velocity, thrust + gravity to trace the real curved path
+	# Get ship state
 	var transit_ship: Ship = null
 	if mission:
 		transit_ship = mission.ship
@@ -295,175 +295,41 @@ func _update_trajectory_cache() -> void:
 	if not transit_ship:
 		return
 
-	var thrust_g := transit_ship.get_effective_thrust()
-	var thrust_accel := thrust_g * Brachistochrone.G_ACCEL  # m/s²
-	# Convert to AU/s²: divide by AU_TO_METERS
-	var thrust_au_s2 := thrust_accel / CelestialData.AU_TO_METERS
+	# PATCHED CONICS: Use analytical conic sections instead of expensive simulation
+	# Determine which SOI we're in
+	var soi_body := CelestialData.get_soi_body(transit_ship.position_au)
+	var mu: float
+	var relative_pos: Vector2
+	var relative_vel: Vector2
 
-	# Determine destination and remaining time for current leg
-	var dest_au: Vector2
-	var remaining_time: float
-	if legs.size() > 0:
-		dest_au = Vector2(legs[0][1])
-		var dist_au := transit_ship.position_au.distance_to(dest_au)
-		if transit_mode == Mission.TransitMode.HOHMANN:
-			remaining_time = Brachistochrone.hohmann_time(dist_au)
+	if soi_body["is_planet"]:
+		# In a planet's SOI - orbit relative to planet
+		var planet_idx: int = soi_body["body_index"]
+		var planet_pos := CelestialData.get_planet_position_au(planet_idx)
+		relative_pos = transit_ship.position_au - planet_pos
+		relative_vel = transit_ship.velocity_au_per_tick  # Simplified: ignore planet velocity for now
+		mu = CelestialData.GM_PLANETS[planet_idx]
+	else:
+		# In Sun's SOI (most common)
+		relative_pos = transit_ship.position_au
+		relative_vel = transit_ship.velocity_au_per_tick
+		mu = CelestialData.GM_SUN
+
+	# Convert state vector to orbital elements
+	var elements := CelestialData.state_to_elements(relative_pos, relative_vel, mu)
+
+	# Generate conic section points (cheap analytical calculation)
+	var conic_points := CelestialData.generate_conic_points(elements, mu, 40)  # 40 points is plenty
+
+	# Convert back to absolute positions and scale to pixels
+	for point in conic_points:
+		var abs_pos: Vector2
+		if soi_body["is_planet"]:
+			var planet_pos := CelestialData.get_planet_position_au(soi_body["body_index"])
+			abs_pos = point + planet_pos
 		else:
-			remaining_time = Brachistochrone.transit_time(dist_au, thrust_g)
-	else:
-		return
-
-	# Total time across all legs
-	var total_sim_time := remaining_time
-	for li in range(1, legs.size()):
-		var leg_dist: float = Vector2(legs[li][0]).distance_to(Vector2(legs[li][1]))
-		if transit_mode == Mission.TransitMode.HOHMANN:
-			total_sim_time += Brachistochrone.hohmann_time(leg_dist)
-		else:
-			total_sim_time += Brachistochrone.transit_time(leg_dist, thrust_g)
-
-	if total_sim_time <= 0:
-		return
-
-	# Forward simulate
-	var num_points := 60
-	var step_time := total_sim_time / float(num_points)
-	var sim_pos := transit_ship.position_au
-	var sim_vel := transit_ship.velocity_au_per_tick
-	var sim_elapsed := 0.0
-
-	# Track which leg we're on for thrust direction
-	var current_leg := 0
-	var leg_elapsed := current_progress * remaining_time  # Time into current leg
-	var leg_total := remaining_time  # Total time for current leg
-	var leg_dest: Vector2 = dest_au
-
-	# Destination orbital motion — bodies orbit during transit, creating curved pursuit paths
-	var dest_orbit_radius := dest_au.length()
-	var dest_initial_angle := dest_au.angle()
-	var dest_angular_vel := 0.0
-	if dest_orbit_radius > 0.01:
-		# Real Kepler: omega = sqrt(GM / r^3)
-		dest_angular_vel = sqrt(CelestialData.GM_SUN / pow(dest_orbit_radius, 3.0))
-
-	# Forward simulate with thrust toward moving destination + gravity
-	for i in range(num_points + 1):
-		_cached_trajectory_points.append(sim_pos * AU_PIXELS)
-
-		if i == num_points:
-			break
-
-		# Compute where destination will be at this future time (orbital motion)
-		var future_angle := dest_initial_angle + dest_angular_vel * sim_elapsed
-		var future_dest := Vector2(cos(future_angle), sin(future_angle)) * dest_orbit_radius
-
-		# Compute thrust direction: toward future destination, flip at midpoint
-		var to_dest := (future_dest - sim_pos).normalized()
-		var leg_frac := leg_elapsed / maxf(leg_total, 1.0)
-		var thrust_dir: Vector2
-		if transit_mode == Mission.TransitMode.HOHMANN:
-			thrust_dir = to_dest  # Simplified: constant direction
-		else:
-			# Brachistochrone: accelerate first half, decelerate second half
-			if leg_frac < 0.5:
-				thrust_dir = to_dest
-			else:
-				thrust_dir = -to_dest
-
-		# Apply thrust + gravity
-		var accel := thrust_dir * thrust_au_s2
-		accel += CelestialData.gravitational_acceleration(sim_pos)
-
-		# Symplectic Euler integration
-		sim_vel += accel * step_time
-		sim_pos += sim_vel * step_time
-		sim_elapsed += step_time
-		leg_elapsed += step_time
-
-		# Check if we've moved to next leg
-		if current_leg < legs.size() - 1 and leg_elapsed >= leg_total:
-			current_leg += 1
-			leg_elapsed = 0.0
-			leg_dest = Vector2(legs[current_leg][1])
-			# Update orbital params for new leg destination
-			dest_orbit_radius = leg_dest.length()
-			dest_initial_angle = leg_dest.angle()
-			if dest_orbit_radius > 0.01:
-				dest_angular_vel = sqrt(CelestialData.GM_SUN / pow(dest_orbit_radius, 3.0))
-			else:
-				dest_angular_vel = 0.0
-			var leg_dist: float = Vector2(legs[current_leg][0]).distance_to(leg_dest)
-			if transit_mode == Mission.TransitMode.HOHMANN:
-				leg_total = Brachistochrone.hohmann_time(leg_dist)
-			else:
-				leg_total = Brachistochrone.transit_time(leg_dist, thrust_g)
-
-func _brachistochrone_distance_fraction(time_fraction: float) -> float:
-	# Convert time progress to distance progress for constant-acceleration trajectory
-	# Physics: x(t) = (1/2)*a*t² during acceleration, symmetric during deceleration
-	# Results in S-curve: slow start, fast middle, slow end
-	if time_fraction <= 0.5:
-		# Acceleration phase: quadratic growth
-		# At t=0.25: distance = 2*(0.25)² = 0.125 (12.5%)
-		return 2.0 * time_fraction * time_fraction
-	else:
-		# Deceleration phase: mirror of acceleration
-		# At t=0.75: distance = 1 - 2*(0.25)² = 0.875 (87.5%)
-		var t_from_end := 1.0 - time_fraction
-		return 1.0 - 2.0 * t_from_end * t_from_end
-
-func _get_velocity_multiplier(time_fraction: float) -> float:
-	# Derivative of brachistochrone distance fraction = velocity profile
-	# Shows acceleration in first half, deceleration in second half
-	if time_fraction <= 0.5:
-		# Acceleration phase: derivative of 2*t² = 4*t
-		# Velocity increases linearly from 0 to max at t=0.5
-		return 4.0 * time_fraction
-	else:
-		# Deceleration phase: derivative of 1 - 2*(1-t)² = 4*(1-t)
-		# Velocity decreases linearly from max to 0
-		return 4.0 * (1.0 - time_fraction)
-
-func _calculate_trajectory_tangent(start: Vector2, end: Vector2, progress: float, transit_mode: int, transit_time: float) -> Vector2:
-	# Calculate the tangent (velocity vector) to the trajectory curve at the given progress
-	# Returns a vector pointing in the direction of travel with magnitude = speed
-
-	var direction := (end - start).normalized()
-	var distance := start.distance_to(end)
-
-	if transit_mode == Mission.TransitMode.HOHMANN:
-		# Hohmann has curved path - calculate tangent to the elliptical arc
-		var perpendicular := Vector2(-direction.y, direction.x)
-		# Arc derivative: height varies as cos(progress * PI) * PI
-		var arc_derivative := distance * 0.15 * cos(progress * PI) * PI
-
-		# Linear component (constant velocity along straight path)
-		var linear_component := direction
-		# Arc component (perpendicular, varies with progress)
-		var arc_component := perpendicular * arc_derivative
-
-		# Total tangent = linear + arc components
-		var tangent := linear_component + arc_component
-		return tangent.normalized() * (distance / transit_time)
-	else:
-		# Brachistochrone: tangent includes both linear motion and arc curvature
-		var perpendicular := Vector2(-direction.y, direction.x)
-
-		# Distance fraction derivative (velocity profile from S-curve)
-		var velocity_scale := _get_velocity_multiplier(progress)
-
-		# Arc derivative: small arc with cos variation
-		var arc_derivative := distance * 0.05 * cos(progress * PI) * PI
-
-		# Linear component scaled by velocity profile
-		var linear_component := direction * velocity_scale
-		# Arc component (perpendicular)
-		var arc_component := perpendicular * arc_derivative
-
-		# Total tangent
-		var tangent := linear_component + arc_component
-		# Scale to actual velocity magnitude
-		return tangent.normalized() * velocity_scale * (distance / transit_time)
+			abs_pos = point
+		_cached_trajectory_points.append(abs_pos * AU_PIXELS)
 
 func _draw_trajectory() -> void:
 	# Draw cached trajectory path

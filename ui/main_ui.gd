@@ -17,12 +17,12 @@ var _date_update_timer: float = 0.0
 const DATE_UPDATE_INTERVAL: float = 0.2  # Update date 5 times per second
 
 func _ready() -> void:
-	# Position window slightly lower on screen
+	# Position window lower on screen
 	var screen_size := DisplayServer.screen_get_size()
 	var window_size := DisplayServer.window_get_size()
 	var new_pos := Vector2i(
 		(screen_size.x - window_size.x) / 2,  # Centered horizontally
-		(screen_size.y - window_size.y) / 2 + 100  # Centered vertically + 100 pixels down
+		(screen_size.y - window_size.y) / 2 + 150  # Centered vertically + 150 pixels down
 	)
 	DisplayServer.window_set_position(new_pos)
 

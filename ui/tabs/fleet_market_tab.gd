@@ -573,6 +573,12 @@ func _start_dispatch(ship: Ship, planning_mode: bool = false) -> void:
 	_sort_by = "profit"
 	_filter_type = -1
 	_is_planning_mode = planning_mode
+
+	# Show popup immediately for responsiveness
+	dispatch_popup.visible = true
+
+	# Populate content in next frame (feels instant, avoids UI lag)
+	await get_tree().process_frame
 	_show_asteroid_selection()
 
 func _show_asteroid_selection() -> void:

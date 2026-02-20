@@ -9,6 +9,8 @@
 **Version:** 0.4 -- Added Servers, Leaderboards, Unions, Mining Unit Generations
 **February 2026**
 
+> **PENDING:** A comprehensive design conversation about "what the game is supposed to do and why" is scheduled for the next session on a different machine. The results of that conversation should be integrated into this GDD or stored in a separate architectural reference document. See Section 16.5 for context.
+
 ---
 
 ## 1. Vision & Core Concept
@@ -752,7 +754,51 @@ Add deferred systems and refine the experience.
 
 ---
 
-## 16. Open Design Questions
+## 16. Performance & Architectural Patterns
+
+### 16.1 Performance Optimization Principles
+
+**Real-time throttling for expensive operations:** Not all simulation subsystems need to run at full tick rate. Visual updates and O(N²) operations should be throttled to wall-clock intervals (e.g., label overlap detection at 2x/sec, orbital updates at 2x/sec, dashboard updates at 5x/sec) to maintain framerate at high simulation speeds.
+
+**Analytical over numerical:** Where possible, use closed-form analytical solutions rather than iterative numerical simulation. Example: patched conics trajectory visualization (30 lines, 1-second update interval) replaced 180 lines of forward simulation (30x/sec update) with 10-100x performance improvement.
+
+**Sun-only gravity for drifting ships:** Full N-body gravity is computationally expensive. For ships in transit or idle (not under active thrust), Sun-only gravity provides visually correct orbital behavior at a fraction of the cost.
+
+**Mobile-first performance:** Target sustained 60fps on mid-range phones. Profile CPU bottlenecks early. Assume single-threaded execution.
+
+### 16.2 Industry-Standard Solutions
+
+**Prefer proven approaches over custom implementations:** When a problem domain has well-established solutions (e.g., patched conics for orbital trajectory visualization in space games), default to the industry standard rather than building custom systems from scratch. Custom solutions should only be used when standard approaches don't fit the specific requirements.
+
+**KSP-style patched conics:** Ships entering planetary Sphere of Influence (SOI) switch reference frames. Trajectories are computed analytically from state vectors converted to Keplerian orbital elements, then rendered as conic sections (ellipse/hyperbola/parabola). This is the standard approach used by Kerbal Space Program and similar games.
+
+### 16.3 Technical Debt Identified
+
+The following areas were identified during performance optimization work and may need architectural review:
+
+- **Label overlap detection:** Currently O(N²) on all visible labels. Consider spatial partitioning or limiting overlap checks to nearby labels only.
+- **Simulation subsystem organization:** Some systems (contracts, surveys, ship positions) were added ad-hoc. Consider formalizing subsystem registration and throttling configuration.
+- **Save system gaps:** Many active game state elements (missions, contracts, market events, fabrication queue) are not persisted. This needs comprehensive audit and incremental implementation.
+
+### 16.4 Collaborative Pattern
+
+**User describes WHAT and WHY; assistant determines HOW:** The user's role is to articulate the desired game experience, feature requirements, and design constraints. The assistant's role is to research the codebase, identify architectural approaches, and propose implementation strategies. When unclear, ask clarifying questions about requirements rather than implementation details.
+
+**Proactive suggestion of alternatives:** When the user proposes a specific implementation approach, consider whether there are industry-standard or more efficient alternatives and suggest them proactively rather than only optimizing the proposed approach.
+
+### 16.5 Pending Architectural Discussions
+
+**NOTE:** A comprehensive conversation about game design vision and architectural patterns is scheduled for the next session. Topics include:
+- Core gameplay loop clarification (what the game is supposed to do and why)
+- Feature prioritization and roadmap alignment
+- Architectural patterns for new features
+- Technical debt remediation strategy
+
+This conversation should be documented and integrated into this GDD or stored in a separate architectural reference document.
+
+---
+
+## 17. Open Design Questions
 
 The following questions are identified but not yet resolved:
 

@@ -26,8 +26,8 @@ EphemerisVerifier="*res://core/services/ephemeris_verifier.gd"
 
 [display]
 
-window/size/viewport_width=720
-window/size/viewport_height=1280
+window/size/viewport_width=680
+window/size/viewport_height=1200
 window/stretch/mode="canvas_items"
 window/handheld/orientation=1
 

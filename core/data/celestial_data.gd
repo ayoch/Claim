@@ -33,6 +33,20 @@ const GM_PLANETS: Array[float] = [
 	3.964e-14 / 19412.24,    # Neptune
 ]
 
+# Sphere of Influence (SOI) radii in AU - calculated using Hill sphere approximation
+# r_soi ≈ a * (m_planet / (3 * m_sun))^(1/3) where a is semi-major axis
+# Simplified for gameplay: we use smaller SOIs for performance
+const SOI_RADII_AU: Array[float] = [
+	0.1,    # Mercury - small SOI
+	0.15,   # Venus
+	0.15,   # Earth
+	0.12,   # Mars
+	0.8,    # Jupiter - large SOI
+	0.6,    # Saturn
+	0.4,    # Uranus
+	0.4,    # Neptune
+]
+
 # Planet data: [name, orbit_au, color_r, color_g, color_b, radius_px]
 const PLANETS: Array[Dictionary] = [
 	{"name": "Mercury", "orbit_au": 0.39, "color": Color(0.7, 0.7, 0.6), "radius": 5.0},
@@ -73,7 +87,8 @@ static func advance_planets(_dt: float) -> void:
 
 ## Compute gravitational acceleration at a position from Sun + all planets
 ## Returns acceleration in AU/s² (add to velocity each tick)
-static func gravitational_acceleration(pos_au: Vector2) -> Vector2:
+## cached_planet_positions: optional pre-calculated planet positions for performance
+static func gravitational_acceleration(pos_au: Vector2, cached_planet_positions: Array = []) -> Vector2:
 	_ensure_init()
 	var accel := Vector2.ZERO
 
@@ -86,7 +101,12 @@ static func gravitational_acceleration(pos_au: Vector2) -> Vector2:
 
 	# Planets
 	for i in range(PLANETS.size()):
-		var planet_pos := get_planet_position_au(i)
+		var planet_pos: Vector2
+		if cached_planet_positions.size() > i:
+			planet_pos = cached_planet_positions[i]
+		else:
+			planet_pos = get_planet_position_au(i)
+
 		var r := planet_pos - pos_au  # Vector from pos to planet
 		dist_sq = r.length_squared()
 		if dist_sq > 1e-12:
@@ -779,3 +799,103 @@ static func get_asteroids() -> Array[AsteroidData]:
 	}))
 
 	return list
+
+## ========================================
+## PATCHED CONICS - Trajectory Prediction
+## ========================================
+
+## Determine which body's SOI contains the given position
+## Returns: {"body_index": int, "is_planet": bool} where body_index is planet index or -1 for Sun
+static func get_soi_body(pos_au: Vector2) -> Dictionary:
+	_ensure_init()
+
+	# Check each planet's SOI
+	for i in range(PLANETS.size()):
+		var planet_pos := get_planet_position_au(i)
+		var dist_to_planet := pos_au.distance_to(planet_pos)
+		if dist_to_planet < SOI_RADII_AU[i]:
+			return {"body_index": i, "is_planet": true}
+
+	# Default: Sun's SOI (everything else)
+	return {"body_index": -1, "is_planet": false}
+
+## Convert state vector (position + velocity) to orbital elements
+## pos_au: position in AU relative to central body
+## vel_au_per_s: velocity in AU/s relative to central body
+## mu: gravitational parameter of central body (GM in AU³/s²)
+## Returns: Dictionary with orbital elements
+static func state_to_elements(pos_au: Vector2, vel_au_per_s: Vector2, mu: float) -> Dictionary:
+	var r := pos_au.length()
+	var v := vel_au_per_s.length()
+
+	# Specific orbital energy: epsilon = v²/2 - mu/r
+	var energy := (v * v) / 2.0 - mu / r
+
+	# Semi-major axis: a = -mu / (2 * epsilon)
+	# Negative energy = ellipse, positive = hyperbola
+	var a: float
+	var e: float  # eccentricity
+	var is_ellipse := energy < 0.0
+
+	if is_ellipse:
+		a = -mu / (2.0 * energy)
+	else:
+		# Hyperbola: a is negative for hyperbolic orbits
+		a = -mu / (2.0 * energy) if energy != 0.0 else 1e10
+
+	# Eccentricity vector: e_vec = (v × h) / mu - r_hat
+	# where h = r × v (specific angular momentum)
+	var h := pos_au.x * vel_au_per_s.y - pos_au.y * vel_au_per_s.x  # 2D cross product (scalar)
+	var h_vec := Vector2(-vel_au_per_s.y, vel_au_per_s.x) * h  # perpendicular to orbital plane
+
+	# In 2D: e_vec = ((v² - mu/r) * pos - (pos · v) * vel) / mu
+	var pos_dot_vel := pos_au.dot(vel_au_per_s)
+	var e_vec := ((v * v - mu / r) * pos_au - pos_dot_vel * vel_au_per_s) / mu
+	e = e_vec.length()
+
+	# Argument of periapsis (angle from reference direction to periapsis)
+	var arg_periapsis := e_vec.angle() if e > 1e-6 else 0.0
+
+	# True anomaly (angle from periapsis to current position)
+	var true_anomaly := pos_au.angle() - arg_periapsis
+
+	return {
+		"semi_major_axis": a,
+		"eccentricity": e,
+		"arg_periapsis": arg_periapsis,
+		"true_anomaly": true_anomaly,
+		"is_ellipse": is_ellipse,
+		"specific_angular_momentum": h
+	}
+
+## Generate points along a conic section for drawing
+## elements: orbital elements from state_to_elements()
+## mu: gravitational parameter of central body
+## num_points: how many points to generate
+## Returns: Array of Vector2 positions in AU
+static func generate_conic_points(elements: Dictionary, mu: float, num_points: int = 60) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	var a: float = elements["semi_major_axis"]
+	var e: float = elements["eccentricity"]
+	var arg_p: float = elements["arg_periapsis"]
+	var is_ellipse: bool = elements["is_ellipse"]
+
+	if is_ellipse:
+		# Ellipse: draw full orbit
+		for i in range(num_points + 1):
+			var true_anom := (float(i) / num_points) * TAU
+			var r := a * (1.0 - e * e) / (1.0 + e * cos(true_anom))
+			var pos := Vector2(r * cos(true_anom + arg_p), r * sin(true_anom + arg_p))
+			points.append(pos)
+	else:
+		# Hyperbola: draw the approach and departure branches
+		# Limit angle to avoid going to infinity
+		var max_angle := acos(-1.0 / e) if e > 1.0 else PI * 0.9
+		for i in range(num_points + 1):
+			var true_anom := -max_angle + (float(i) / num_points) * (2.0 * max_angle)
+			var r := a * (e * e - 1.0) / (1.0 + e * cos(true_anom))
+			if r > 0 and r < 100.0:  # Clamp to reasonable distances
+				var pos := Vector2(r * cos(true_anom + arg_p), r * sin(true_anom + arg_p))
+				points.append(pos)
+
+	return points

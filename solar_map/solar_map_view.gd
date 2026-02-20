@@ -53,6 +53,10 @@ const STAR_TWINKLE_SPEED: float = 1.2
 const LERP_SPEED: float = 8.0  # lerp factor per second
 var _planet_targets: Array[Vector2] = []
 var _planet_positions: Array[Vector2] = []
+var _orbital_update_timer: float = 0.0
+const ORBITAL_UPDATE_INTERVAL: float = 0.5  # Update orbital positions twice per second instead of 60x/sec
+var _label_overlap_timer: float = 0.0
+const LABEL_OVERLAP_INTERVAL: float = 0.5  # Check label overlaps twice per second, not every frame
 
 func _ready() -> void:
 	_spawn_planet_labels()
@@ -139,8 +143,8 @@ func _draw_starfield() -> void:
 				draw_circle(pos, star_size, color)
 
 func _draw() -> void:
-	# Starfield background
-	_draw_starfield()
+	# Starfield background - DISABLED FOR PERFORMANCE
+	# _draw_starfield()
 
 	# Draw sun
 	draw_circle(Vector2.ZERO, 15, Color(1.0, 0.9, 0.3))
@@ -375,10 +379,13 @@ func _refresh_ship_markers() -> void:
 func _process(delta: float) -> void:
 	_starfield_time += delta * STAR_TWINKLE_SPEED
 
-	# Update all targets every frame for smooth movement
-	_update_planet_targets()
-	_update_asteroid_targets()
-	_update_colony_targets()
+	# Throttle orbital position updates - don't need to recalculate 60x/second
+	_orbital_update_timer += delta
+	if _orbital_update_timer >= ORBITAL_UPDATE_INTERVAL:
+		_orbital_update_timer = 0.0
+		_update_planet_targets()
+		_update_asteroid_targets()
+		_update_colony_targets()
 
 	# Lerp at a rate that keeps up with high sim speeds
 	# At high speed, targets jump far — use a higher lerp factor to keep up
@@ -410,8 +417,11 @@ func _process(delta: float) -> void:
 		if marker.has_meta("target_pos"):
 			marker.position = marker.get_meta("target_pos")
 
-	# Apply label anti-overlap
-	_adjust_labels_to_prevent_overlap()
+	# Apply label anti-overlap (throttled - O(N²) is expensive!)
+	_label_overlap_timer += delta
+	if _label_overlap_timer >= LABEL_OVERLAP_INTERVAL:
+		_label_overlap_timer = 0.0
+		_adjust_labels_to_prevent_overlap()
 
 	# Follow selected ship
 	if _following_ship:
