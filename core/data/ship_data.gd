@@ -31,6 +31,13 @@ const SHIP_NAMES := [
 	"Phaistos",
 ]
 
+const CLASS_PRICES := {
+	ShipClass.COURIER: 800000,
+	ShipClass.HAULER: 1500000,
+	ShipClass.PROSPECTOR: 1000000,
+	ShipClass.EXPLORER: 1200000,
+}
+
 const CLASS_STATS := {
 	ShipClass.COURIER: {
 		"thrust_g": 0.5,           # Fast

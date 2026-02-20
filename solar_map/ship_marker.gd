@@ -110,13 +110,16 @@ func _process(delta: float) -> void:
 	# (simulation already updates this each tick via _update_ship_transit_physics)
 	if mission:
 		var s: Ship = mission.ship
-		if s and (mission.status == Mission.Status.TRANSIT_OUT or mission.status == Mission.Status.TRANSIT_BACK):
+		if not s:
+			# Mission has null ship - shouldn't happen, but handle gracefully
+			return
+		if mission.status == Mission.Status.TRANSIT_OUT or mission.status == Mission.Status.TRANSIT_BACK or mission.status == Mission.Status.REFUELING:
 			_target_pos = s.position_au * AU_PIXELS
 		else:
 			_update_mining_target_with_progress(_smooth_progress)
 	elif trade_mission:
 		var s: Ship = trade_mission.ship
-		if s and (trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY or trade_mission.status == TradeMission.Status.TRANSIT_BACK):
+		if s and (trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY or trade_mission.status == TradeMission.Status.TRANSIT_BACK or trade_mission.status == TradeMission.Status.REFUELING):
 			_target_pos = s.position_au * AU_PIXELS
 		else:
 			_update_trade_target_with_progress(_smooth_progress)
@@ -206,14 +209,16 @@ func _update_mining_target() -> void:
 
 func _update_mining_target_with_progress(_progress: float) -> void:
 	# Use actual ship position from simulation (includes gravity)
-	_target_pos = mission.ship.position_au * AU_PIXELS
+	if mission and mission.ship:
+		_target_pos = mission.ship.position_au * AU_PIXELS
 
 func _update_trade_target() -> void:
 	_update_trade_target_with_progress(0.0)
 
 func _update_trade_target_with_progress(_progress: float) -> void:
 	# Use actual ship position from simulation (includes gravity)
-	_target_pos = trade_mission.ship.position_au * AU_PIXELS
+	if trade_mission and trade_mission.ship:
+		_target_pos = trade_mission.ship.position_au * AU_PIXELS
 
 func update_position() -> void:
 	_update_target()
@@ -332,6 +337,9 @@ func _update_trajectory_cache() -> void:
 		_cached_trajectory_points.append(abs_pos * AU_PIXELS)
 
 func _draw_trajectory() -> void:
+	# Trajectory visualization disabled
+	return
+
 	# Draw cached trajectory path
 	if _cached_trajectory_points.size() < 2:
 		return

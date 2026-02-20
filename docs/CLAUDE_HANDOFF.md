@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-19 22:13:49 EST
-**Updated By:** Instance on Machine 2 (Mac laptop)
-**Session Context:** Design conversation complete, GDD cleaned up
-**Next Session Priority:** Review GDD changes, then begin implementation (crew roles plan is ready)
+**Last Updated:** 2026-02-20 07:44:36 EST
+**Updated By:** Instance on Machine 1 (Windows desktop)
+**Session Context:** Testing session - critical bug fixes for life support and engineer repairs
+**Next Session Priority:** Continue testing fuel stop routing, verify engineer self-repair
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -11,6 +11,128 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-20 07:44 EST - Testing Session & Critical Bug Fixes
+- **Machine:** Windows desktop
+- **Work Completed:**
+  - **CRITICAL BUG FIX - Life Support:**
+    - Rescue completion wasn't resetting life support
+    - Ships rescued with low supplies would die instantly on second breakdown
+    - Fixed: rescue now resets life support to 30 days per crew member
+  - **Engineer Self-Repair Feature** (NEW):
+    - Engineers can now patch breakdowns in-place without rescue
+    - Repair chance: 0% at 0.0 skill, 30% at 1.0 skill, 50% at 1.5 skill
+    - Success: engine condition halved (min 20%), mission continues
+    - Failure: full breakdown, ship becomes derelict as before
+    - Gives players agency, prevents "instant death" frustration
+  - **UI/UX Improvements:**
+    - Crew list in dispatch now scrollable (200px height, saves space)
+    - "Sell at Dest. Markets" button renamed to "Local Market" (clearer)
+    - Space key toggles between 1x and previous speed (quick panic button)
+    - Life support failure message fixed ("crashed into life support failure" → proper message)
+  - **Stability Fixes:**
+    - Added null checks in ship_marker.gd (prevented crashes during fuel stop dispatch)
+    - Disabled trajectory visualization (broken, needs rework)
+    - Fixed REFUELING status handling in ship marker
+- **Files Modified:**
+  - core/autoloads/simulation.gd (life support reset, engineer self-repair)
+  - solar_map/ship_marker.gd (null checks, REFUELING status, trajectory disabled)
+  - ui/tabs/fleet_tab.gd (scrollable crew list)
+  - ui/tabs/fleet_market_tab.gd (button text)
+  - ui/main_ui.gd (space key toggle)
+  - ui/tabs/dashboard_tab.gd (life support failure message)
+- **Status:** Critical bugs fixed. Engineer repair needs playtesting to verify balance.
+- **Player Feedback:** "Even a partial fix in situ is more satisfying than losing everything 3 minutes into a new game"
+
+### 2026-02-20 07:29 EST - Automated Fuel Stop Routing System
+- **Machine:** Windows desktop
+- **Work Completed:**
+  - **Automated Fuel Stop Routing** (COMPLETE):
+    - Created FuelRoutePlanner utility - greedy nearest-colony algorithm finds optimal fuel stops
+    - Added waypoint type metadata to Mission/TradeMission (WaypointType enum, colony refs, fuel amounts/costs)
+    - REFUELING status added to both mission types (5 tick duration)
+    - Refueling execution in simulation.gd with abort-on-unreachable safety check
+    - Validates only NEXT leg at each fuel stop (not entire route - accounts for orbital drift)
+    - Mission creation integrates route planner for both outbound and return journeys
+    - UI preview in fleet dispatch shows fuel stops with costs before mission start
+    - Save/load persists all waypoint metadata and colony references
+  - **Design Decision - Abort on Arrival Approach:**
+    - At each fuel stop, ship refuels then checks if NEXT waypoint/destination is reachable
+    - If unreachable: mission aborted, ship left idle at fuel stop colony
+    - Does NOT predict future orbital positions (simpler, more robust)
+    - **NEEDS PLAYER TESTING:** Will players tolerate missions aborting mid-route due to orbital drift? Alternative is full predictive planning using Kepler's equations for future colony positions.
+- **Files Modified:**
+  - core/utils/fuel_route_planner.gd (NEW)
+  - core/models/mission.gd (waypoint metadata, REFUELING status)
+  - core/models/trade_mission.gd (waypoint metadata, REFUELING status)
+  - core/autoloads/simulation.gd (refueling execution, waypoint transitions)
+  - core/autoloads/game_state.gd (route planning in mission creation, save/load)
+  - ui/tabs/fleet_tab.gd (fuel stop UI preview)
+- **Status:** Ready for testing. Needs player feedback on abort-on-arrival behavior.
+- **Testing Priorities:**
+  1. Dispatch to distant asteroid requiring fuel stops
+  2. Multi-stop journeys (2-3 stops)
+  3. Mission abort scenario (manually advance time to create orbital drift)
+  4. Save/load with active refueling missions
+  5. Trade missions with fuel stops
+
+### 2026-02-20 06:56 EST - Ship Purchasing UI & Project Reorganization
+- **Machine:** Windows desktop
+- **Work Completed:**
+  - **Ship Purchasing UI** (COMPLETE):
+    - Added "Buy New Ship" button to fleet list
+    - Created popup showing all 4 ship classes with specs and prices
+    - Displays: thrust, cargo, fuel capacity, min crew, equipment slots
+    - Purchase buttons disabled if insufficient funds
+    - Color-coded prices (green if affordable, red if not)
+    - Auto-refreshes fleet list after purchase via EventBus.ship_purchased signal
+  - **Project Reorganization**:
+    - Created `docs/` folder for non-Godot files
+    - Moved CLAUDE_HANDOFF.md, GDD.md, LORE.md to `docs/`
+    - Cleaner root directory with only Godot project files
+- **Files Modified:**
+  - ui/tabs/fleet_market_tab.tscn (added BuyShipPopup scene nodes)
+  - ui/tabs/fleet_market_tab.gd (buy ship UI implementation)
+  - MEMORY.md (updated docs folder location)
+- **Status:** Ship purchasing fully functional. Backend was already complete from previous session.
+
+### 2026-02-20 06:43 EST - Critical Systems Implementation
+- **Machine:** Windows desktop
+- **Work Completed:**
+  - **Physics-Based Rescue System** (COMPLETE):
+    - Ships maintain velocity when derelict (no magic stopping)
+    - Life support tracking (30 days per crew member, consumes over time)
+    - Intercept trajectory calculation with realistic physics
+    - Rescue feasibility checks: fuel required, time to intercept, crew survival
+    - Rescue ships modeled as upgraded haulers (0.45g, 550t fuel capacity)
+    - Three outcomes: successful rescue, crew dies before arrival, or impossible (fuel/velocity)
+    - Ships destroyed if life support runs out
+    - Updated rescue cost calculation based on intercept difficulty
+  - **Complete Save/Load System** (COMPLETE):
+    - Game clock (total_ticks) - was missing, now saved
+    - Active missions with full reconnection (ships, asteroids, workers)
+    - Trade missions with cargo and colony references
+    - Contracts (available and active) with colony delivery tracking
+    - Market events with affected ores and colonies
+    - Fabrication queue
+    - Reputation score
+    - Rescue missions (in-progress rescues persist across saves)
+    - Refuel missions
+    - Stranger rescue offers
+  - **Ship Purchasing** (BACKEND COMPLETE):
+    - Pricing for all 4 ship classes (Courier $800k, Prospector $1M, Explorer $1.2M, Hauler $1.5M)
+    - `purchase_ship()` function in GameState
+    - `ship_purchased` signal added to EventBus
+    - Ships spawn at Earth with full fuel and 100% engine condition
+  - **Crew Specialization** - Already implemented! (pilot/engineer/mining skills functional)
+- **Files Modified:**
+  - core/models/ship.gd (life support tracking)
+  - core/autoloads/simulation.gd (life support consumption, removed velocity zeroing on refuel)
+  - core/physics/brachistochrone.gd (intercept calculation)
+  - core/autoloads/game_state.gd (rescue info, save/load expansion, ship purchasing)
+  - core/autoloads/event_bus.gd (rescue_impossible, ship_purchased signals)
+  - core/data/ship_data.gd (pricing)
+- **Status:** Ready for testing. UI for ship purchasing needs to be added.
 
 ### 2026-02-19 22:13 EST - Design Conversation Complete + GDD Cleanup
 - **Machine:** Mac laptop
@@ -215,8 +337,12 @@ A plan exists at `C:\Users\Jonat\.claude\plans\compressed-knitting-hammock.md`:
 
 ## Files You'll Want to Read
 
-### Essential
-- `GDD.md` - Complete game design document (~870 lines, v0.5 with consortia, policies, colony tiers, design pillars)
+### Essential Documentation
+- `docs/GDD.md` - Complete game design document (~870 lines, v0.5 with consortia, policies, colony tiers, design pillars)
+- `docs/CLAUDE_HANDOFF.md` - This file (read FIRST every session)
+- `docs/LORE.md` - Narrative and worldbuilding
+
+### Essential Code
 - `core/autoloads/simulation.gd` - Main simulation loop
 - `core/autoloads/game_state.gd` - Central state management
 - `core/data/celestial_data.gd` - Orbital mechanics, patched conics implementation
@@ -224,10 +350,10 @@ A plan exists at `C:\Users\Jonat\.claude\plans\compressed-knitting-hammock.md`:
 ### For Context on Recent Work
 - `solar_map/ship_marker.gd` - Patched conics trajectory visualization
 - `solar_map/solar_map_view.gd` - Solar system view with throttling
-- `ui/tabs/fleet_market_tab.gd` - Fleet management and market UI
+- `ui/tabs/fleet_market_tab.gd` - Fleet management, market UI, and ship purchasing
 
 ### Plan File
-- `C:\Users\Jonat\.claude\plans\compressed-knitting-hammock.md` - Position-aware dispatch plan (wait for design conversation before implementing)
+- `C:\Users\Jonat\.claude\plans\compressed-knitting-hammock.md` - Position-aware dispatch plan (ALREADY IMPLEMENTED in previous session)
 
 ---
 
@@ -296,11 +422,10 @@ When major architectural decisions are made during the design conversation, docu
 
 ## Quick Start Checklist for Next Instance
 
-- [ ] **READ THIS FILE FIRST** — check "Last Updated" timestamp for updates from other instances
+- [ ] **READ `docs/CLAUDE_HANDOFF.md` FIRST** — check "Last Updated" timestamp for updates from other instances
 - [ ] If timestamp is newer than expected, read Session Log to catch up
-- [ ] Skim GDD.md (v0.5 — design conversation already completed)
+- [ ] Skim `docs/GDD.md` (v0.5 — design conversation already completed)
 - [ ] Check git status to see current work
-- [ ] Ask user if they've reviewed GDD and are ready to proceed with implementation
-- [ ] Review crew roles plan (`reactive-squishing-shannon.md`) — ready to implement
-- [ ] Review position-aware dispatch plan (Windows machine plan file) — ready to implement
+- [ ] Note: Ship purchasing UI is COMPLETE, rescue system COMPLETE, save/load COMPLETE
+- [ ] Note: Position-aware dispatch plan was ALREADY IMPLEMENTED in previous session
 - [ ] **UPDATE TIMESTAMP** whenever you modify this handoff document

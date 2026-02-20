@@ -912,6 +912,12 @@ func _show_worker_selection() -> void:
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		dispatch_content.add_child(label)
 	else:
+		# Create scrollable crew list container
+		var crew_scroll := ScrollContainer.new()
+		crew_scroll.custom_minimum_size = Vector2(0, 200)  # Fixed height, scrollable
+		var crew_vbox := VBoxContainer.new()
+		crew_vbox.add_theme_constant_override("separation", 4)
+
 		# Auto-select: pre-select last crew, or first min_crew workers
 		var should_preselect := func(worker: Worker) -> bool:
 			if _selected_ship.last_crew.size() > 0:
@@ -926,7 +932,7 @@ func _show_worker_selection() -> void:
 				_selected_workers.append(worker)
 
 			var check := CheckBox.new()
-			check.custom_minimum_size = Vector2(0, 44)
+			check.custom_minimum_size = Vector2(0, 36)
 			check.text = "%s  |  %s  |  $%d/pay" % [
 				worker.worker_name, worker.get_specialties_text(), worker.wage
 			]
@@ -938,7 +944,11 @@ func _show_worker_selection() -> void:
 					_selected_workers.erase(worker)
 				_update_estimate_display()
 			)
-			dispatch_content.add_child(check)
+			crew_vbox.add_child(check)
+
+		crew_scroll.add_child(crew_vbox)
+		dispatch_content.add_child(crew_scroll)
+
 		# Show initial estimate if workers were pre-selected
 		if not _selected_workers.is_empty():
 			call_deferred("_update_estimate_display")
@@ -1089,10 +1099,60 @@ func _update_estimate_display() -> void:
 		var fuel_cost: float = est.get("fuel_cost", 0.0)
 		lines.append("Fuel cost: $%s" % _format_number(int(fuel_cost)))
 
-	# Fuel warning for one-way insufficiency
+	# Check if fuel stops are needed
 	var dist := _selected_ship.position_au.distance_to(_selected_asteroid.get_position_au())
 	var fuel_round_trip := _selected_ship.calc_fuel_for_distance(dist)
-	if fuel_round_trip > _selected_ship.fuel_capacity:
+
+	# Calculate fuel route (if needed)
+	var expected_cargo_out := _selected_ship.get_cargo_total()
+	var outbound_fuel_route := FuelRoutePlanner.plan_route_to_position(
+		_selected_ship,
+		_selected_asteroid.get_position_au(),
+		expected_cargo_out,
+		3
+	)
+
+	if outbound_fuel_route["feasible"] and outbound_fuel_route["waypoints"].size() > 0:
+		# Show fuel stops UI
+		lines.append("")
+		lines.append("FUEL STOPS REQUIRED (Outbound)")
+		lines.append("Route requires %d fuel stop(s). Total cost: $%s" % [
+			outbound_fuel_route["colonies"].size(),
+			_format_number(outbound_fuel_route["total_cost"])
+		])
+		for i in range(outbound_fuel_route["colonies"].size()):
+			var colony: Colony = outbound_fuel_route["colonies"][i]
+			var fuel_amt: float = outbound_fuel_route["fuel_amounts"][i]
+			var cost: int = outbound_fuel_route["fuel_costs"][i]
+			lines.append("  Stop %d: %s (%.0f units, $%s)" % [
+				i + 1, colony.colony_name, fuel_amt, _format_number(cost)
+			])
+
+	# Check return journey fuel stops
+	var expected_cargo_return := _selected_ship.cargo_capacity
+	var return_fuel_route := FuelRoutePlanner.plan_route_to_position(
+		_selected_ship,
+		_selected_ship.position_au,  # Return to current position
+		expected_cargo_return,
+		3
+	)
+
+	if return_fuel_route["feasible"] and return_fuel_route["waypoints"].size() > 0:
+		lines.append("")
+		lines.append("FUEL STOPS REQUIRED (Return)")
+		lines.append("Route requires %d fuel stop(s). Total cost: $%s" % [
+			return_fuel_route["colonies"].size(),
+			_format_number(return_fuel_route["total_cost"])
+		])
+		for i in range(return_fuel_route["colonies"].size()):
+			var colony: Colony = return_fuel_route["colonies"][i]
+			var fuel_amt: float = return_fuel_route["fuel_amounts"][i]
+			var cost: int = return_fuel_route["fuel_costs"][i]
+			lines.append("  Stop %d: %s (%.0f units, $%s)" % [
+				i + 1, colony.colony_name, fuel_amt, _format_number(cost)
+			])
+
+	if fuel_round_trip > _selected_ship.fuel_capacity and outbound_fuel_route["waypoints"].is_empty():
 		lines.append("WARNING: Insufficient fuel capacity for round trip!")
 
 	lines.append("")

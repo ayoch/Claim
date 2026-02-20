@@ -3,10 +3,16 @@ extends Resource
 
 enum Status {
 	TRANSIT_OUT,
+	REFUELING,
 	MINING,
 	IDLE_AT_DESTINATION,
 	TRANSIT_BACK,
 	COMPLETED,
+}
+
+enum WaypointType {
+	GRAVITY_ASSIST,  # Existing - flyby planet
+	REFUEL_STOP,     # New - stop at colony to refuel
 }
 
 enum TransitMode {
@@ -35,6 +41,19 @@ enum TransitMode {
 @export var return_waypoint_planet_ids: Array[int] = []
 @export var return_leg_times: Array[float] = []
 @export var return_waypoint_index: int = 0
+
+# Waypoint metadata (parallel arrays to outbound_waypoints/return_waypoints)
+@export var outbound_waypoint_types: Array[int] = []
+@export var outbound_waypoint_colony_refs: Array[Colony] = []
+@export var outbound_waypoint_fuel_amounts: Array[float] = []
+@export var outbound_waypoint_fuel_costs: Array[int] = []
+@export var return_waypoint_types: Array[int] = []
+@export var return_waypoint_colony_refs: Array[Colony] = []
+@export var return_waypoint_fuel_amounts: Array[float] = []
+@export var return_waypoint_fuel_costs: Array[int] = []
+
+# Refueling status and duration
+const REFUEL_DURATION: float = 5.0  # ticks spent refueling
 
 func get_current_phase_duration() -> float:
 	match status:
@@ -72,10 +91,25 @@ func get_status_text() -> String:
 		slingshot_suffix = " [Slingshot]"
 
 	match status:
+		Status.REFUELING:
+			var colony_name := "waypoint"
+			var idx := outbound_waypoint_index - 1 if outbound_waypoint_index > 0 else return_waypoint_index - 1
+			var is_outbound := outbound_waypoint_index > 0
+			var refs := outbound_waypoint_colony_refs if is_outbound else return_waypoint_colony_refs
+			if idx >= 0 and idx < refs.size():
+				var colony := refs[idx]
+				if colony:
+					colony_name = colony.colony_name
+			return "Refueling at %s" % colony_name
 		Status.TRANSIT_OUT:
+			var fuel_stop_suffix := ""
+			if outbound_waypoint_types.size() > 0:
+				var refuel_count := outbound_waypoint_types.count(WaypointType.REFUEL_STOP)
+				if refuel_count > 0:
+					fuel_stop_suffix = " [%d fuel stop%s]" % [refuel_count, "s" if refuel_count > 1 else ""]
 			if asteroid:
-				return "In transit to " + asteroid.asteroid_name + mode_suffix + slingshot_suffix
-			return "In transit" + mode_suffix + slingshot_suffix
+				return "In transit to " + asteroid.asteroid_name + mode_suffix + slingshot_suffix + fuel_stop_suffix
+			return "In transit" + mode_suffix + slingshot_suffix + fuel_stop_suffix
 		Status.MINING:
 			if asteroid:
 				return "Mining at " + asteroid.asteroid_name
@@ -85,9 +119,14 @@ func get_status_text() -> String:
 				return "Idle at " + asteroid.asteroid_name
 			return "Idle"
 		Status.TRANSIT_BACK:
+			var fuel_stop_suffix := ""
+			if return_waypoint_types.size() > 0:
+				var refuel_count := return_waypoint_types.count(WaypointType.REFUEL_STOP)
+				if refuel_count > 0:
+					fuel_stop_suffix = " [%d fuel stop%s]" % [refuel_count, "s" if refuel_count > 1 else ""]
 			if asteroid:
-				return "Returning from " + asteroid.asteroid_name + mode_suffix + slingshot_suffix
-			return "Returning to Earth" + mode_suffix + slingshot_suffix
+				return "Returning from " + asteroid.asteroid_name + mode_suffix + slingshot_suffix + fuel_stop_suffix
+			return "Returning to Earth" + mode_suffix + slingshot_suffix + fuel_stop_suffix
 		Status.COMPLETED:
 			return "Mission complete"
 	return "Unknown"

@@ -26,6 +26,9 @@ const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at co
 @export var derelict_reason: String = ""  # "out_of_fuel" or "breakdown"
 @export var base_mass: float = 0.0  # tons, auto-calculated if zero
 
+# Life support tracking (in game-seconds remaining)
+@export var life_support_remaining: float = 2592000.0  # 30 days default
+
 var engine_wear_per_tick: float = 0.00003
 
 var current_mission: Mission = null
@@ -184,6 +187,20 @@ func clear_queued_mission() -> void:
 	queued_transit_mode = Mission.TransitMode.BRACHISTOCHRONE
 	queued_mining_duration = 86400.0
 	queued_slingshot_route = null
+
+## Calculate life support duration based on crew size
+## Assumes standard rations: food, water, O2 for N crew members
+## Returns duration in game-seconds
+func calculate_life_support_duration(crew_count: int) -> float:
+	if crew_count <= 0:
+		return 0.0
+	# Assume ship carries 30 days of supplies per crew member
+	var days_per_crew := 30.0
+	return days_per_crew * 86400.0  # Convert to seconds
+
+## Reset life support to full based on current crew
+func reset_life_support(crew_count: int) -> void:
+	life_support_remaining = calculate_life_support_duration(crew_count)
 
 func queue_mission(destination: Variant, workers: Array[Worker], transit_mode: int, mining_dur: float = 86400.0, slingshot_route = null) -> void:
 	queued_destination = destination

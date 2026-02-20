@@ -5,6 +5,8 @@ extends MarginContainer
 @onready var ships_list: VBoxContainer = %ShipsList
 @onready var dispatch_popup: PanelContainer = %DispatchPopup
 @onready var dispatch_content: VBoxContainer = %DispatchContent
+@onready var buy_ship_popup: PanelContainer = %BuyShipPopup
+@onready var buy_ship_content: VBoxContainer = %BuyShipContent
 @onready var _ships_scroll: ScrollContainer = %ShipsList.get_parent()
 @onready var _tab_title: Label = $VBox/Title
 
@@ -41,6 +43,8 @@ var _mining_dest_data: Array = []  # Ordered list of AsteroidData for current vi
 func _ready() -> void:
 	_cancel_preview()
 	_hide_dispatch()
+	_hide_buy_ship()
+	EventBus.ship_purchased.connect(func(_s: Ship, _c: int) -> void: _mark_dirty())
 	EventBus.mission_started.connect(func(_m: Mission) -> void: _mark_dirty())
 	EventBus.mission_completed.connect(func(_m: Mission) -> void: _mark_dirty())
 	EventBus.mission_phase_changed.connect(func(_m: Mission) -> void: _mark_dirty())
@@ -64,6 +68,7 @@ func _ready() -> void:
 	EventBus.stranger_rescue_declined.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
 	EventBus.resource_changed.connect(func(_o: ResourceTypes.OreType, _a: float) -> void: _mark_dirty())
 	EventBus.money_changed.connect(func(_m: int) -> void: _mark_dirty())
+	EventBus.worker_hired.connect(_on_worker_hired)
 	EventBus.tick.connect(_on_tick)
 	_rebuild_ships()
 
@@ -72,11 +77,24 @@ func _mark_dirty() -> void:
 
 func _show_dispatch() -> void:
 	dispatch_popup.visible = true
+	buy_ship_popup.visible = false
 	_ships_scroll.visible = false
 	_tab_title.visible = false
 
 func _hide_dispatch() -> void:
 	dispatch_popup.visible = false
+	_ships_scroll.visible = true
+	_tab_title.visible = true
+
+func _show_buy_ship() -> void:
+	buy_ship_popup.visible = true
+	dispatch_popup.visible = false
+	_ships_scroll.visible = false
+	_tab_title.visible = false
+	_build_buy_ship_ui()
+
+func _hide_buy_ship() -> void:
+	buy_ship_popup.visible = false
 	_ships_scroll.visible = true
 	_tab_title.visible = true
 
@@ -103,6 +121,11 @@ func _process(delta: float) -> void:
 				bar.value = target_progress
 			else:
 				bar.value = lerp(bar.value, target_progress, PROGRESS_LERP_SPEED * delta)
+
+func _on_worker_hired(_worker: Worker) -> void:
+	# Refresh worker selection screen if currently visible
+	if dispatch_popup.visible and _on_estimate_screen:
+		_show_worker_selection()
 
 func _on_tick(dt: float) -> void:
 	# Throttle tick processing to avoid performance issues at high simulation speeds
@@ -541,6 +564,21 @@ func _rebuild_ships() -> void:
 		panel.add_child(vbox)
 		ships_list.add_child(panel)
 
+	# Add "Buy Ship" button at the end
+	var buy_ship_panel := PanelContainer.new()
+	buy_ship_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var buy_ship_vbox := VBoxContainer.new()
+	buy_ship_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var buy_ship_btn := Button.new()
+	buy_ship_btn.text = "Buy New Ship"
+	buy_ship_btn.custom_minimum_size = Vector2(0, 56)
+	buy_ship_btn.pressed.connect(_show_buy_ship)
+	buy_ship_vbox.add_child(buy_ship_btn)
+
+	buy_ship_panel.add_child(buy_ship_vbox)
+	ships_list.add_child(buy_ship_panel)
+
 # Include all the helper functions from fleet_tab.gd
 func _get_location_text(ship: Ship) -> String:
 	if ship.is_at_earth:
@@ -895,13 +933,13 @@ func _show_asteroid_selection() -> void:
 	var market_toggle := Button.new()
 	market_toggle.toggle_mode = true
 	market_toggle.button_pressed = _sell_at_destination_markets
-	market_toggle.text = "Sell at Dest. Markets" if _sell_at_destination_markets else "Return w/ Ore"
+	market_toggle.text = "Local Market" if _sell_at_destination_markets else "Return w/ Ore"
 	market_toggle.custom_minimum_size = Vector2(0, 44)
 	market_toggle.tooltip_text = "Toggle: Return with ore vs sell at markets near destination"
 	market_toggle.focus_mode = Control.FOCUS_NONE
 	market_toggle.toggled.connect(func(pressed: bool) -> void:
 		_sell_at_destination_markets = pressed
-		market_toggle.text = "Sell at Dest. Markets" if pressed else "Return w/ Ore"
+		market_toggle.text = "Local Market" if pressed else "Return w/ Ore"
 		_show_asteroid_selection()
 	)
 	controls.add_child(market_toggle)
@@ -2493,3 +2531,113 @@ func _add_contract_fulfillment_ui(container: VBoxContainer, ship: Ship, contract
 	vbox.add_child(btn_row)
 	panel.add_child(vbox)
 	container.add_child(panel)
+
+func _build_buy_ship_ui() -> void:
+	# Clear existing content
+	for child in buy_ship_content.get_children():
+		child.queue_free()
+
+	# Header with title and close button
+	var header := HBoxContainer.new()
+	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var title := Label.new()
+	title.text = "BUY NEW SHIP"
+	title.add_theme_font_size_override("font_size", 20)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+
+	var close_btn := Button.new()
+	close_btn.text = "Close"
+	close_btn.custom_minimum_size = Vector2(0, 40)
+	close_btn.pressed.connect(_hide_buy_ship)
+	header.add_child(close_btn)
+
+	buy_ship_content.add_child(header)
+
+	var sep := HSeparator.new()
+	buy_ship_content.add_child(sep)
+
+	# Show current money
+	var money_label := Label.new()
+	money_label.text = "Available Funds: $%s" % _format_number(GameState.money)
+	money_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
+	money_label.add_theme_font_size_override("font_size", 16)
+	buy_ship_content.add_child(money_label)
+
+	buy_ship_content.add_child(HSeparator.new())
+
+	# Display each ship class
+	var ship_classes := [
+		ShipData.ShipClass.COURIER,
+		ShipData.ShipClass.PROSPECTOR,
+		ShipData.ShipClass.EXPLORER,
+		ShipData.ShipClass.HAULER,
+	]
+
+	for ship_class in ship_classes:
+		var panel := PanelContainer.new()
+		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+		var vbox := VBoxContainer.new()
+		vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		vbox.add_theme_constant_override("separation", 6)
+
+		# Ship class name and price
+		var class_header := HBoxContainer.new()
+		var class_label := Label.new()
+		class_label.text = ShipData.CLASS_NAMES[ship_class]
+		class_label.add_theme_font_size_override("font_size", 18)
+		class_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		class_header.add_child(class_label)
+
+		var price: int = ShipData.CLASS_PRICES[ship_class]
+		var price_label := Label.new()
+		price_label.text = "$%s" % _format_number(price)
+		price_label.add_theme_font_size_override("font_size", 18)
+		if GameState.money >= price:
+			price_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
+		else:
+			price_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		class_header.add_child(price_label)
+
+		vbox.add_child(class_header)
+
+		# Description
+		var desc := Label.new()
+		desc.text = ShipData.get_class_description(ship_class)
+		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		desc.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
+		vbox.add_child(desc)
+
+		# Specs
+		var stats: Dictionary = ShipData.CLASS_STATS[ship_class]
+		var specs := Label.new()
+		var spec_lines: Array[String] = []
+		spec_lines.append("Thrust: %.2fg" % stats["thrust_g"])
+		spec_lines.append("Cargo: %.0ft" % stats["cargo_capacity"])
+		spec_lines.append("Fuel: %.0f units" % stats["fuel_capacity"])
+		spec_lines.append("Min Crew: %d" % stats["min_crew"])
+		spec_lines.append("Equipment Slots: %d" % stats["max_equipment_slots"])
+		specs.text = " • ".join(spec_lines)
+		specs.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		specs.add_theme_color_override("font_color", Color(0.6, 0.8, 0.9))
+		vbox.add_child(specs)
+
+		# Purchase button
+		var purchase_btn := Button.new()
+		purchase_btn.text = "Purchase"
+		purchase_btn.custom_minimum_size = Vector2(0, 48)
+		purchase_btn.disabled = GameState.money < price
+
+		purchase_btn.pressed.connect(func() -> void:
+			var new_ship := GameState.purchase_ship(ship_class)
+			if new_ship:
+				_hide_buy_ship()
+				_mark_dirty()
+		)
+
+		vbox.add_child(purchase_btn)
+
+		panel.add_child(vbox)
+		buy_ship_content.add_child(panel)

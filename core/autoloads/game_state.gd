@@ -171,14 +171,110 @@ func _init_starter_ship() -> void:
 	var starter := ShipData.create_ship(ShipData.ShipClass.PROSPECTOR)  # Random evocative name
 	ships.append(starter)
 
+func purchase_ship(ship_class: ShipData.ShipClass) -> Ship:
+	var price: int = ShipData.CLASS_PRICES[ship_class]
+	if money < price:
+		return null
+	money -= price
+	var new_ship := ShipData.create_ship(ship_class)
+	ships.append(new_ship)
+	EventBus.ship_purchased.emit(new_ship, price)
+	return new_ship
+
+## Redirect a ship in transit to a new asteroid
+## Returns true if redirect successful, false if not feasible or not enough fuel/money
+func redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> bool:
+	if mission.status != Mission.Status.TRANSIT_OUT and mission.status != Mission.Status.TRANSIT_BACK:
+		return false  # Can only redirect during transit
+
+	var ship := mission.ship
+	var new_dest := new_asteroid.get_position_au()
+
+	# Calculate course change from current position/velocity
+	var course_change := Brachistochrone.calculate_course_change(
+		ship.position_au,
+		ship.velocity_au_per_tick,
+		ship.get_effective_thrust(),
+		ship.fuel,
+		new_dest
+	)
+
+	if not course_change["feasible"]:
+		EventBus.mission_redirect_failed.emit(ship, course_change["reason"])
+		return false
+
+	# Redirect costs money (crew time, recalculation, opportunity cost)
+	var redirect_cost := int(course_change["fuel_cost"] * Ship.FUEL_COST_PER_UNIT * 2.0)  # 2x fuel cost as penalty
+	if money < redirect_cost:
+		EventBus.mission_redirect_failed.emit(ship, "Cannot afford redirect cost ($%d)" % redirect_cost)
+		return false
+
+	money -= redirect_cost
+
+	# Update mission to new destination
+	mission.asteroid = new_asteroid
+
+	# Reset transit for outbound leg
+	if mission.status == Mission.Status.TRANSIT_OUT:
+		mission.elapsed_ticks = 0.0
+		mission.transit_time = course_change["new_transit_time"]
+		# Fuel already consumed doesn't change, but update fuel_per_tick for remaining transit
+		var remaining_fuel_budget := ship.fuel
+		mission.fuel_per_tick = remaining_fuel_budget / mission.transit_time if mission.transit_time > 0 else 0.0
+
+	EventBus.mission_redirected.emit(ship, new_asteroid, redirect_cost)
+	return true
+
+## Redirect a ship in trade mission to a new colony
+func redirect_trade_mission(trade_mission: TradeMission, new_colony: Colony) -> bool:
+	if trade_mission.status != TradeMission.Status.TRANSIT_TO_COLONY and trade_mission.status != TradeMission.Status.TRANSIT_BACK:
+		return false  # Can only redirect during transit
+
+	var ship := trade_mission.ship
+	var new_dest := new_colony.get_position_au()
+
+	# Calculate course change
+	var course_change := Brachistochrone.calculate_course_change(
+		ship.position_au,
+		ship.velocity_au_per_tick,
+		ship.get_effective_thrust(),
+		ship.fuel,
+		new_dest
+	)
+
+	if not course_change["feasible"]:
+		EventBus.trade_mission_redirect_failed.emit(ship, course_change["reason"])
+		return false
+
+	# Redirect cost
+	var redirect_cost := int(course_change["fuel_cost"] * Ship.FUEL_COST_PER_UNIT * 2.0)
+	if money < redirect_cost:
+		EventBus.trade_mission_redirect_failed.emit(ship, "Cannot afford redirect cost ($%d)" % redirect_cost)
+		return false
+
+	money -= redirect_cost
+
+	# Update trade mission
+	trade_mission.colony = new_colony
+
+	# Reset transit
+	if trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY:
+		trade_mission.elapsed_ticks = 0.0
+		trade_mission.transit_time = course_change["new_transit_time"]
+		var remaining_fuel_budget := ship.fuel
+		trade_mission.fuel_per_tick = remaining_fuel_budget / trade_mission.transit_time if trade_mission.transit_time > 0 else 0.0
+
+	EventBus.trade_mission_redirected.emit(ship, new_colony, redirect_cost)
+	return true
+
 func _init_starter_crew() -> void:
 	# Hire starter crew with guaranteed specialty coverage: pilot, engineer, miner
-	var starter_ship := ships[0] if ships.size() > 0 else null
-	var crew_needed := starter_ship.min_crew if starter_ship else 3
+	# Extra workers for testing ship purchases (12 total allows buying multiple ships)
+	var total_workers := 12
 
 	# First 3 workers get guaranteed primary specialties
 	var primaries := [0, 1, 2]  # pilot, engineer, mining
-	for i in range(crew_needed):
+	for i in range(total_workers):
 		var worker: Worker
 		if i < primaries.size():
 			worker = Worker.generate_with_primary(primaries[i])
@@ -357,6 +453,71 @@ func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[W
 		else:
 			mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 
+	# Check if fuel stops are needed for outbound journey
+	var expected_cargo_out := ship.get_cargo_total()
+	var outbound_fuel_route := FuelRoutePlanner.plan_route_to_position(
+		ship,
+		asteroid.get_position_au(),
+		expected_cargo_out,
+		3  # max stops
+	)
+
+	if outbound_fuel_route["feasible"] and outbound_fuel_route["waypoints"].size() > 0:
+		# Need fuel stops - add them to waypoint arrays
+		# If we already have slingshot waypoints, we need to merge them
+		if slingshot_route:
+			# For now, append fuel stops after slingshot (simple approach)
+			# TODO: Could optimize by interleaving based on positions
+			for i in range(outbound_fuel_route["waypoints"].size()):
+				mission.outbound_waypoints.append(outbound_fuel_route["waypoints"][i])
+				mission.outbound_waypoint_types.append(Mission.WaypointType.REFUEL_STOP)
+				mission.outbound_waypoint_colony_refs.append(outbound_fuel_route["colonies"][i])
+				mission.outbound_waypoint_fuel_amounts.append(outbound_fuel_route["fuel_amounts"][i])
+				mission.outbound_waypoint_fuel_costs.append(outbound_fuel_route["fuel_costs"][i])
+				mission.outbound_leg_times.append(outbound_fuel_route["leg_times"][i])
+			# Mark slingshot waypoints
+			for i in range(mission.outbound_waypoint_planet_ids.size()):
+				if i < mission.outbound_waypoint_types.size():
+					mission.outbound_waypoint_types[i] = Mission.WaypointType.GRAVITY_ASSIST
+		else:
+			# No slingshot, just fuel stops
+			mission.outbound_waypoints = outbound_fuel_route["waypoints"].duplicate()
+			mission.outbound_waypoint_colony_refs = outbound_fuel_route["colonies"].duplicate()
+			mission.outbound_waypoint_fuel_amounts = outbound_fuel_route["fuel_amounts"].duplicate()
+			mission.outbound_waypoint_fuel_costs = outbound_fuel_route["fuel_costs"].duplicate()
+			mission.outbound_leg_times = outbound_fuel_route["leg_times"].duplicate()
+			mission.outbound_waypoint_types = []
+			for i in range(outbound_fuel_route["waypoints"].size()):
+				mission.outbound_waypoint_types.append(Mission.WaypointType.REFUEL_STOP)
+
+			# Set initial transit time to first leg
+			mission.transit_time = mission.outbound_leg_times[0] if mission.outbound_leg_times.size() > 0 else mission.transit_time
+
+		# Deduct total fuel cost upfront
+		money -= outbound_fuel_route["total_cost"]
+
+	# Calculate return fuel stops separately (assume full cargo)
+	var expected_cargo_return := ship.cargo_capacity
+	var return_fuel_route := FuelRoutePlanner.plan_route_to_position(
+		ship,
+		mission.return_position_au,
+		expected_cargo_return,
+		3
+	)
+
+	if return_fuel_route["feasible"] and return_fuel_route["waypoints"].size() > 0:
+		mission.return_waypoints = return_fuel_route["waypoints"].duplicate()
+		mission.return_waypoint_colony_refs = return_fuel_route["colonies"].duplicate()
+		mission.return_waypoint_fuel_amounts = return_fuel_route["fuel_amounts"].duplicate()
+		mission.return_waypoint_fuel_costs = return_fuel_route["fuel_costs"].duplicate()
+		mission.return_leg_times = return_fuel_route["leg_times"].duplicate()
+		mission.return_waypoint_types = []
+		for i in range(return_fuel_route["waypoints"].size()):
+			mission.return_waypoint_types.append(Mission.WaypointType.REFUEL_STOP)
+
+		# Deduct return fuel cost upfront
+		money -= return_fuel_route["total_cost"]
+
 	# Apply pilot skill modifier to transit time
 	var best_pilot := 0.0
 	for w in assigned_workers:
@@ -405,6 +566,7 @@ func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[W
 
 	ship.current_mission = mission
 	ship.current_cargo.clear()
+	ship.reset_life_support(assigned_workers.size())  # Reset life support based on crew
 	for w in assigned_workers:
 		w.assigned_mission = mission
 
@@ -533,16 +695,57 @@ func _find_nearest_rescue_source(ship_pos: Vector2) -> Dictionary:
 
 	return { "name": best_name, "pos": best_pos, "dist": best_dist }
 
-func get_rescue_cost(ship: Ship) -> int:
+## Calculate rescue feasibility and cost
+## Returns: { "feasible": bool, "cost": int, "time": float, "reason": String, "crew_survives": bool }
+func calculate_rescue_info(ship: Ship) -> Dictionary:
 	var source := _find_nearest_rescue_source(ship.position_au)
-	var distance_cost := int(source["dist"] * RESCUE_COST_PER_AU)
-	# Velocity cost: convert AU/tick to km/s
-	var speed_km_s := ship.speed_au_per_tick * CelestialData.AU_TO_METERS / 1000.0
-	var velocity_cost := int(speed_km_s * RESCUE_COST_PER_KMS)
-	# Fuel transfer: rescue delivers 50% tank, player pays for it
+
+	# Rescue ship specs: upgraded hauler for rescue operations
+	var rescue_accel_g := 0.45  # Upgraded engines
+	var rescue_fuel_capacity := 550.0  # Most cargo space converted to fuel
+
+	# Calculate intercept
+	var intercept := Brachistochrone.calculate_rescue_intercept(
+		source["pos"],           # Rescue starting position
+		rescue_accel_g,          # Rescue ship acceleration
+		rescue_fuel_capacity,    # Rescue ship fuel capacity
+		ship.position_au,        # Derelict position
+		ship.velocity_au_per_tick  # Derelict velocity
+	)
+
+	# Check if crew will survive the rescue time
+	var crew_survives: bool = ship.life_support_remaining >= intercept["time"]
+
+	# Calculate cost based on fuel used, time, and risk
+	var fuel_cost_for_rescue := int(intercept["fuel"] * Ship.FUEL_COST_PER_UNIT)
+	var crew_time_cost := int(intercept["time"] / 3600.0 * 500.0)  # $500/hour crew time
+	var risk_premium := int(intercept.get("velocity_match_km_s", 0.0) * 100.0)  # High velocity = risky
 	var fuel_transfer := ship.get_effective_fuel_capacity() * 0.5
-	var fuel_cost := int(fuel_transfer * Ship.FUEL_COST_PER_UNIT)
-	return RESCUE_COST_BASE + distance_cost + velocity_cost + fuel_cost
+	var fuel_transfer_cost := int(fuel_transfer * Ship.FUEL_COST_PER_UNIT)
+
+	var total_cost := RESCUE_COST_BASE + fuel_cost_for_rescue + crew_time_cost + risk_premium + fuel_transfer_cost
+
+	# Determine final feasibility and reason
+	var feasible: bool = intercept["feasible"] and crew_survives
+	var reason: String = intercept["reason"]
+
+	if intercept["feasible"] and not crew_survives:
+		var hours_short := int((intercept["time"] - ship.life_support_remaining) / 3600.0)
+		reason = "Crew will run out of life support %d hours before rescue arrives" % hours_short
+		feasible = false
+
+	return {
+		"feasible": feasible,
+		"cost": total_cost,
+		"time": intercept["time"],
+		"reason": reason,
+		"crew_survives": crew_survives,
+		"intercept_info": intercept
+	}
+
+func get_rescue_cost(ship: Ship) -> int:
+	var info := calculate_rescue_info(ship)
+	return info["cost"]
 
 func get_refuel_cost(ship: Ship, fuel_amount: float) -> int:
 	var source := _find_nearest_rescue_source(ship.position_au)
@@ -556,36 +759,27 @@ func start_rescue(ship: Ship) -> bool:
 	if ship in rescue_missions:
 		return false
 
-	var source := _find_nearest_rescue_source(ship.position_au)
-	var initial_dist: float = source["dist"]
+	# Calculate rescue feasibility and cost
+	var rescue_info := calculate_rescue_info(ship)
 
-	# Calculate cost including velocity and fuel transfer
-	var distance_cost := int(initial_dist * RESCUE_COST_PER_AU)
-	var speed_km_s := ship.speed_au_per_tick * CelestialData.AU_TO_METERS / 1000.0
-	var velocity_cost := int(speed_km_s * RESCUE_COST_PER_KMS)
-	var fuel_transfer := ship.get_effective_fuel_capacity() * 0.5
-	var fuel_cost := int(fuel_transfer * Ship.FUEL_COST_PER_UNIT)
-	var cost := RESCUE_COST_BASE + distance_cost + velocity_cost + fuel_cost
+	# Check if rescue is even possible
+	if not rescue_info["feasible"]:
+		# Emit event with failure reason
+		EventBus.rescue_impossible.emit(ship, rescue_info["reason"])
+		return false
+
+	var cost: int = rescue_info["cost"]
 
 	if money < cost:
 		return false
 
 	money -= cost
 
-	# Iterate to find intercept distance (derelict drifts during rescue transit)
-	var est_dist := initial_dist
-	for i in range(5):
-		var outbound := Brachistochrone.transit_time(est_dist, 0.5)
-		est_dist = initial_dist + ship.speed_au_per_tick * outbound
-
-	# Total: outbound at 0.5g + return at 0.3g (slower tow)
-	var outbound_time := Brachistochrone.transit_time(est_dist, 0.5)
-	var return_time := Brachistochrone.transit_time(est_dist, 0.3)
-	var transit := outbound_time + return_time
+	var source := _find_nearest_rescue_source(ship.position_au)
 
 	rescue_missions[ship] = {
 		"elapsed_ticks": 0.0,
-		"transit_time": transit,
+		"transit_time": rescue_info["time"],
 		"workers": ship.last_crew.duplicate(),
 		"source_name": source["name"],
 		"source_pos": source["pos"],
@@ -773,6 +967,53 @@ func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Ar
 	else:
 		tm.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 
+	# Check if fuel stops are needed for outbound journey
+	var cargo_mass := ship.get_cargo_total()
+	var outbound_fuel_route := FuelRoutePlanner.plan_route_to_position(
+		ship,
+		colony_pos,
+		cargo_mass,
+		3  # max stops
+	)
+
+	if outbound_fuel_route["feasible"] and outbound_fuel_route["waypoints"].size() > 0:
+		# Need fuel stops
+		tm.outbound_waypoints = outbound_fuel_route["waypoints"].duplicate()
+		tm.outbound_waypoint_colony_refs = outbound_fuel_route["colonies"].duplicate()
+		tm.outbound_waypoint_fuel_amounts = outbound_fuel_route["fuel_amounts"].duplicate()
+		tm.outbound_waypoint_fuel_costs = outbound_fuel_route["fuel_costs"].duplicate()
+		tm.outbound_leg_times = outbound_fuel_route["leg_times"].duplicate()
+		tm.outbound_waypoint_types = []
+		for i in range(outbound_fuel_route["waypoints"].size()):
+			tm.outbound_waypoint_types.append(TradeMission.WaypointType.REFUEL_STOP)
+
+		# Set initial transit time to first leg
+		tm.transit_time = tm.outbound_leg_times[0] if tm.outbound_leg_times.size() > 0 else tm.transit_time
+
+		# Deduct total fuel cost upfront
+		money -= outbound_fuel_route["total_cost"]
+
+	# Calculate return fuel stops (empty cargo after selling)
+	var return_fuel_route := FuelRoutePlanner.plan_route_to_position(
+		ship,
+		tm.return_position_au,
+		0.0,  # Empty after selling
+		3
+	)
+
+	if return_fuel_route["feasible"] and return_fuel_route["waypoints"].size() > 0:
+		tm.return_waypoints = return_fuel_route["waypoints"].duplicate()
+		tm.return_waypoint_colony_refs = return_fuel_route["colonies"].duplicate()
+		tm.return_waypoint_fuel_amounts = return_fuel_route["fuel_amounts"].duplicate()
+		tm.return_waypoint_fuel_costs = return_fuel_route["fuel_costs"].duplicate()
+		tm.return_leg_times = return_fuel_route["leg_times"].duplicate()
+		tm.return_waypoint_types = []
+		for i in range(return_fuel_route["waypoints"].size()):
+			tm.return_waypoint_types.append(TradeMission.WaypointType.REFUEL_STOP)
+
+		# Deduct return fuel cost upfront
+		money -= return_fuel_route["total_cost"]
+
 	# Apply pilot skill modifier to transit time
 	var best_pilot := 0.0
 	for w in assigned_workers:
@@ -788,7 +1029,6 @@ func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Ar
 	tm.elapsed_ticks = 0.0
 
 	# Fuel calculation: loaded outbound (with cargo), empty return
-	var cargo_mass := ship.get_cargo_total()
 	var fuel_outbound := ship.calc_fuel_for_distance(dist, cargo_mass)
 	# Empty on return from trade
 	var fuel_return := ship.calc_fuel_for_distance(dist, 0.0)
@@ -803,6 +1043,7 @@ func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Ar
 
 	ship.current_trade_mission = tm
 	ship.current_cargo = tm.cargo.duplicate()
+	ship.reset_life_support(assigned_workers.size())  # Reset life support based on crew
 	for w in assigned_workers:
 		w.assigned_mission = null  # Trade missions don't lock workers via assigned_mission for simplicity
 
@@ -850,11 +1091,22 @@ func _start_queued_mission(ship: Ship) -> void:
 func save_game() -> void:
 	var save_data := {
 		"money": money,
+		"total_ticks": total_ticks,
 		"thrust_policy": thrust_policy,
 		"resources": {},
 		"workers": [],
 		"ships": [],
 		"market_prices": {},
+		"missions": [],
+		"trade_missions": [],
+		"available_contracts": [],
+		"active_contracts": [],
+		"market_events": [],
+		"fabrication_queue": [],
+		"reputation": Reputation.score,
+		"rescue_missions": {},
+		"refuel_missions": {},
+		"stranger_offers": {},
 	}
 	for ore_type in resources:
 		save_data["resources"][str(ore_type)] = resources[ore_type]
@@ -904,6 +1156,123 @@ func save_game() -> void:
 				cargo_data[str(ore_type)] = s.current_cargo[ore_type]
 			ship_data["cargo"] = cargo_data
 		save_data["ships"].append(ship_data)
+
+	# Save missions
+	for m in missions:
+		save_data["missions"].append({
+			"ship_name": m.ship.ship_name,
+			"asteroid_name": m.asteroid.asteroid_name,
+			"status": m.status,
+			"elapsed_ticks": m.elapsed_ticks,
+			"transit_time": m.transit_time,
+			"mining_duration": m.mining_duration,
+			"fuel_per_tick": m.fuel_per_tick,
+			"workers": m.workers.map(func(w): return w.worker_name),
+			"outbound_waypoint_types": m.outbound_waypoint_types,
+			"outbound_waypoint_fuel_amounts": m.outbound_waypoint_fuel_amounts,
+			"outbound_waypoint_fuel_costs": m.outbound_waypoint_fuel_costs,
+			"outbound_waypoint_colony_names": m.outbound_waypoint_colony_refs.map(func(c): return c.colony_name if c else ""),
+			"return_waypoint_types": m.return_waypoint_types,
+			"return_waypoint_fuel_amounts": m.return_waypoint_fuel_amounts,
+			"return_waypoint_fuel_costs": m.return_waypoint_fuel_costs,
+			"return_waypoint_colony_names": m.return_waypoint_colony_refs.map(func(c): return c.colony_name if c else ""),
+		})
+
+	# Save trade missions
+	for tm in trade_missions:
+		var cargo_data := {}
+		for ore_type in tm.cargo:
+			cargo_data[str(ore_type)] = tm.cargo[ore_type]
+		save_data["trade_missions"].append({
+			"ship_name": tm.ship.ship_name,
+			"colony_name": tm.colony.colony_name if tm.colony else "",
+			"status": tm.status,
+			"elapsed_ticks": tm.elapsed_ticks,
+			"transit_time": tm.transit_time,
+			"fuel_per_tick": tm.fuel_per_tick,
+			"cargo": cargo_data,
+			"origin_position_au": {"x": tm.origin_position_au.x, "y": tm.origin_position_au.y},
+			"return_position_au": {"x": tm.return_position_au.x, "y": tm.return_position_au.y},
+			"transit_mode": tm.transit_mode,
+			"revenue": tm.revenue,
+			"workers": tm.workers.map(func(w): return w.worker_name),
+			"outbound_waypoint_types": tm.outbound_waypoint_types,
+			"outbound_waypoint_fuel_amounts": tm.outbound_waypoint_fuel_amounts,
+			"outbound_waypoint_fuel_costs": tm.outbound_waypoint_fuel_costs,
+			"outbound_waypoint_colony_names": tm.outbound_waypoint_colony_refs.map(func(c): return c.colony_name if c else ""),
+			"return_waypoint_types": tm.return_waypoint_types,
+			"return_waypoint_fuel_amounts": tm.return_waypoint_fuel_amounts,
+			"return_waypoint_fuel_costs": tm.return_waypoint_fuel_costs,
+			"return_waypoint_colony_names": tm.return_waypoint_colony_refs.map(func(c): return c.colony_name if c else ""),
+		})
+
+	# Save contracts
+	for c in available_contracts:
+		save_data["available_contracts"].append({
+			"ore_type": c.ore_type,
+			"amount": c.amount_tons,
+			"premium": c.premium_multiplier,
+			"deadline_ticks": c.deadline_ticks,
+			"issuer": c.issuer_name,
+			"colony_name": c.delivery_colony.colony_name if c.delivery_colony else "",
+		})
+	for c in active_contracts:
+		save_data["active_contracts"].append({
+			"ore_type": c.ore_type,
+			"amount": c.amount_tons,
+			"fulfilled": c.fulfilled_tons,
+			"premium": c.premium_multiplier,
+			"deadline_ticks": c.deadline_ticks,
+			"issuer": c.issuer_name,
+			"colony_name": c.delivery_colony.colony_name if c.delivery_colony else "",
+		})
+
+	# Save market events
+	for e in active_market_events:
+		save_data["market_events"].append({
+			"type": e.type,
+			"ore_types": e.affected_ore_types.map(func(ot): return int(ot)),
+			"multiplier": e.price_multiplier,
+			"remaining": e.remaining_ticks,
+			"message": e.message,
+			"colony_name": e.affected_colony.colony_name if e.affected_colony else "",
+		})
+
+	# Save fabrication queue
+	for eq in fabrication_queue:
+		save_data["fabrication_queue"].append({
+			"name": eq.equipment_name,
+			"type": eq.type,
+			"bonus": eq.mining_bonus,
+			"cost": eq.cost,
+			"durability": eq.durability,
+		})
+
+	# Save rescue/refuel missions (ship name -> data)
+	for ship in rescue_missions:
+		var rm_data = rescue_missions[ship]
+		save_data["rescue_missions"][ship.ship_name] = {
+			"elapsed": rm_data["elapsed_ticks"],
+			"transit": rm_data["transit_time"],
+			"source": rm_data["source_name"],
+		}
+	for ship in refuel_missions:
+		var rf_data = refuel_missions[ship]
+		save_data["refuel_missions"][ship.ship_name] = {
+			"elapsed": rf_data["elapsed_ticks"],
+			"transit": rf_data["transit_time"],
+			"fuel": rf_data["fuel_amount"],
+			"source": rf_data["source_name"],
+		}
+
+	# Save stranger offers
+	for ship in stranger_offers:
+		var so_data = stranger_offers[ship]
+		save_data["stranger_offers"][ship.ship_name] = {
+			"name": so_data["stranger_name"],
+			"expires": so_data["expires_ticks"],
+			"tip": so_data["suggested_tip"],
+		}
 
 	var file := FileAccess.open("user://save_game.json", FileAccess.WRITE)
 	file.store_string(JSON.stringify(save_data, "\t"))
@@ -987,5 +1356,252 @@ func load_game() -> bool:
 			e.fabrication_ticks = 0.0  # Already fabricated if saved
 			s.equipment.append(e)
 		ships.append(s)
+
+	# Restore game clock
+	total_ticks = float(data.get("total_ticks", 0.0))
+
+	# Restore reputation
+	if data.has("reputation"):
+		Reputation.score = float(data.get("reputation", 0.0))
+
+	# Restore missions (need to reconnect ship and asteroid references)
+	missions.clear()
+	for md in data.get("missions", []):
+		var m := Mission.new()
+		# Find ship by name
+		for ship in ships:
+			if ship.ship_name == md.get("ship_name", ""):
+				m.ship = ship
+				ship.current_mission = m
+				break
+		# Find asteroid by name
+		for asteroid in asteroids:
+			if asteroid.asteroid_name == md.get("asteroid_name", ""):
+				m.asteroid = asteroid
+				break
+		m.status = int(md.get("status", Mission.Status.TRANSIT_OUT))
+		m.elapsed_ticks = float(md.get("elapsed_ticks", 0.0))
+		m.transit_time = float(md.get("transit_time", 0.0))
+		m.mining_duration = float(md.get("mining_duration", 86400.0))
+		m.fuel_per_tick = float(md.get("fuel_per_tick", 0.0))
+		# Reconnect workers
+		var worker_names: Array = md.get("workers", [])
+		for wname in worker_names:
+			for w in workers:
+				if w.worker_name == wname:
+					m.workers.append(w)
+					w.assigned_mission = m
+					break
+		# Load waypoint metadata
+		m.outbound_waypoint_types = md.get("outbound_waypoint_types", [])
+		m.outbound_waypoint_fuel_amounts = md.get("outbound_waypoint_fuel_amounts", [])
+		m.outbound_waypoint_fuel_costs = md.get("outbound_waypoint_fuel_costs", [])
+		m.return_waypoint_types = md.get("return_waypoint_types", [])
+		m.return_waypoint_fuel_amounts = md.get("return_waypoint_fuel_amounts", [])
+		m.return_waypoint_fuel_costs = md.get("return_waypoint_fuel_costs", [])
+		# Reconnect colony references
+		var outbound_colony_names: Array = md.get("outbound_waypoint_colony_names", [])
+		for colony_name in outbound_colony_names:
+			var found_colony: Colony = null
+			for colony in colonies:
+				if colony.colony_name == colony_name:
+					found_colony = colony
+					break
+			m.outbound_waypoint_colony_refs.append(found_colony)
+		var return_colony_names: Array = md.get("return_waypoint_colony_names", [])
+		for colony_name in return_colony_names:
+			var found_colony: Colony = null
+			for colony in colonies:
+				if colony.colony_name == colony_name:
+					found_colony = colony
+					break
+			m.return_waypoint_colony_refs.append(found_colony)
+		if m.ship and m.asteroid:
+			missions.append(m)
+
+	# Restore trade missions
+	trade_missions.clear()
+	for tmd in data.get("trade_missions", []):
+		var tm := TradeMission.new()
+		# Find ship
+		for ship in ships:
+			if ship.ship_name == tmd.get("ship_name", ""):
+				tm.ship = ship
+				ship.current_trade_mission = tm
+				break
+		# Find colony
+		var colony_name: String = tmd.get("colony_name", "")
+		if colony_name != "":
+			for colony in colonies:
+				if colony.colony_name == colony_name:
+					tm.colony = colony
+					break
+		tm.status = int(tmd.get("status", TradeMission.Status.TRANSIT_TO_COLONY))
+		tm.elapsed_ticks = float(tmd.get("elapsed_ticks", 0.0))
+		tm.transit_time = float(tmd.get("transit_time", 0.0))
+		tm.fuel_per_tick = float(tmd.get("fuel_per_tick", 0.0))
+		tm.revenue = int(tmd.get("revenue", 0))
+		tm.transit_mode = int(tmd.get("transit_mode", TradeMission.TransitMode.BRACHISTOCHRONE))
+
+		# Restore positions
+		var origin_data: Dictionary = tmd.get("origin_position_au", {})
+		if origin_data.has("x") and origin_data.has("y"):
+			tm.origin_position_au = Vector2(float(origin_data["x"]), float(origin_data["y"]))
+		var return_data: Dictionary = tmd.get("return_position_au", {})
+		if return_data.has("x") and return_data.has("y"):
+			tm.return_position_au = Vector2(float(return_data["x"]), float(return_data["y"]))
+
+		# Restore cargo
+		var cargo_data: Dictionary = tmd.get("cargo", {})
+		for key in cargo_data:
+			tm.cargo[int(key)] = float(cargo_data[key])
+
+		# Restore workers
+		var worker_names: Array = tmd.get("workers", [])
+		for worker_name in worker_names:
+			for w in workers:
+				if w.worker_name == worker_name:
+					tm.workers.append(w)
+					break
+
+		# Load waypoint metadata
+		tm.outbound_waypoint_types = tmd.get("outbound_waypoint_types", [])
+		tm.outbound_waypoint_fuel_amounts = tmd.get("outbound_waypoint_fuel_amounts", [])
+		tm.outbound_waypoint_fuel_costs = tmd.get("outbound_waypoint_fuel_costs", [])
+		tm.return_waypoint_types = tmd.get("return_waypoint_types", [])
+		tm.return_waypoint_fuel_amounts = tmd.get("return_waypoint_fuel_amounts", [])
+		tm.return_waypoint_fuel_costs = tmd.get("return_waypoint_fuel_costs", [])
+		# Reconnect colony references
+		var tm_outbound_colony_names: Array = tmd.get("outbound_waypoint_colony_names", [])
+		for tm_colony_name in tm_outbound_colony_names:
+			var tm_found_colony: Colony = null
+			for colony in colonies:
+				if colony.colony_name == tm_colony_name:
+					tm_found_colony = colony
+					break
+			tm.outbound_waypoint_colony_refs.append(tm_found_colony)
+		var tm_return_colony_names: Array = tmd.get("return_waypoint_colony_names", [])
+		for tm_colony_name in tm_return_colony_names:
+			var tm_found_colony: Colony = null
+			for colony in colonies:
+				if colony.colony_name == tm_colony_name:
+					tm_found_colony = colony
+					break
+			tm.return_waypoint_colony_refs.append(tm_found_colony)
+
+		if tm.ship:
+			trade_missions.append(tm)
+
+	# Restore contracts
+	available_contracts.clear()
+	for cd in data.get("available_contracts", []):
+		var c := Contract.new()
+		c.ore_type = int(cd.get("ore_type", 0))
+		c.amount_tons = float(cd.get("amount", 100.0))
+		c.premium_multiplier = float(cd.get("premium", 1.5))
+		c.deadline_ticks = float(cd.get("deadline_ticks", 86400.0))
+		c.issuer_name = cd.get("issuer", "Unknown")
+		var colony_name = cd.get("colony_name", "")
+		if colony_name != "":
+			for colony in colonies:
+				if colony.colony_name == colony_name:
+					c.delivery_colony = colony
+					break
+		available_contracts.append(c)
+
+	active_contracts.clear()
+	for cd in data.get("active_contracts", []):
+		var c := Contract.new()
+		c.ore_type = int(cd.get("ore_type", 0))
+		c.amount_tons = float(cd.get("amount", 100.0))
+		c.fulfilled_tons = float(cd.get("fulfilled", 0.0))
+		c.premium_multiplier = float(cd.get("premium", 1.5))
+		c.deadline_ticks = float(cd.get("deadline_ticks", 86400.0))
+		c.issuer_name = cd.get("issuer", "Unknown")
+		var colony_name = cd.get("colony_name", "")
+		if colony_name != "":
+			for colony in colonies:
+				if colony.colony_name == colony_name:
+					c.delivery_colony = colony
+					break
+		active_contracts.append(c)
+
+	# Restore market events
+	active_market_events.clear()
+	for ed in data.get("market_events", []):
+		var e := MarketEvent.new()
+		e.type = int(ed.get("type", 0))
+		var ore_types_arr: Array = ed.get("ore_types", [])
+		for ot_int in ore_types_arr:
+			e.affected_ore_types.append(int(ot_int))
+		e.price_multiplier = float(ed.get("multiplier", 1.0))
+		e.remaining_ticks = float(ed.get("remaining", 0.0))
+		e.message = ed.get("message", "")
+		var colony_name = ed.get("colony_name", "")
+		if colony_name != "":
+			for colony in colonies:
+				if colony.colony_name == colony_name:
+					e.affected_colony = colony
+					break
+		active_market_events.append(e)
+
+	# Restore fabrication queue
+	fabrication_queue.clear()
+	for eqd in data.get("fabrication_queue", []):
+		var eq := Equipment.new()
+		eq.equipment_name = eqd.get("name", "Equipment")
+		eq.type = eqd.get("type", "processor")
+		eq.mining_bonus = float(eqd.get("bonus", 1.2))
+		eq.cost = int(eqd.get("cost", 1000))
+		eq.durability = float(eqd.get("durability", 100.0))
+		eq.max_durability = eq.durability
+		fabrication_queue.append(eq)
+
+	# Restore rescue missions
+	rescue_missions.clear()
+	var rescue_data: Dictionary = data.get("rescue_missions", {})
+	for ship_name in rescue_data:
+		var rd: Dictionary = rescue_data[ship_name]
+		# Find ship
+		for ship in ships:
+			if ship.ship_name == ship_name:
+				rescue_missions[ship] = {
+					"elapsed_ticks": float(rd.get("elapsed", 0.0)),
+					"transit_time": float(rd.get("transit", 0.0)),
+					"workers": ship.last_crew.duplicate(),
+					"source_name": rd.get("source", "Earth"),
+					"source_pos": CelestialData.get_earth_position_au(),  # Approximate
+				}
+				break
+
+	# Restore refuel missions
+	refuel_missions.clear()
+	var refuel_data: Dictionary = data.get("refuel_missions", {})
+	for ship_name in refuel_data:
+		var rfd: Dictionary = refuel_data[ship_name]
+		for ship in ships:
+			if ship.ship_name == ship_name:
+				refuel_missions[ship] = {
+					"elapsed_ticks": float(rfd.get("elapsed", 0.0)),
+					"transit_time": float(rfd.get("transit", 0.0)),
+					"fuel_amount": float(rfd.get("fuel", 0.0)),
+					"source_name": rfd.get("source", "Earth"),
+					"source_pos": CelestialData.get_earth_position_au(),
+				}
+				break
+
+	# Restore stranger offers
+	stranger_offers.clear()
+	var stranger_data: Dictionary = data.get("stranger_offers", {})
+	for ship_name in stranger_data:
+		var sod: Dictionary = stranger_data[ship_name]
+		for ship in ships:
+			if ship.ship_name == ship_name:
+				stranger_offers[ship] = {
+					"stranger_name": sod.get("name", "Unknown"),
+					"expires_ticks": float(sod.get("expires", 0.0)),
+					"suggested_tip": int(sod.get("tip", 3000)),
+				}
+				break
 
 	return true

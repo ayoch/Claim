@@ -54,15 +54,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 
 func _toggle_pause_speed() -> void:
-	if _is_speed_paused:
-		# Resume to stored speed
-		if _stored_speed > 0:
+	# Space toggles between 1x and previous speed
+	if TimeScale.speed_multiplier == 1.0 and _is_speed_paused:
+		# At 1x and we stored a speed - restore it
+		if _stored_speed > 0 and _stored_speed != 1.0:
 			TimeScale.set_speed(_stored_speed)
 		_is_speed_paused = false
 	else:
-		# Store current speed and pause to 1x
+		# Not at 1x, or at 1x but haven't stored - go to 1x
 		_stored_speed = TimeScale.speed_multiplier
-		TimeScale.set_speed(TimeScale.SPEED_REALTIME)  # 1x
+		TimeScale.set_speed(1.0)
 		_is_speed_paused = true
 	_update_speed_display()
 

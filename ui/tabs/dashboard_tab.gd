@@ -74,8 +74,13 @@ func _ready() -> void:
 	)
 	EventBus.ship_destroyed.connect(func(ship: Ship, body_name: String) -> void:
 		_refresh_missions()
-		_add_event("DESTROYED: %s crashed into %s — all hands lost" % [ship.ship_name, body_name], Color(1.0, 0.1, 0.1))
-		_send_system_notification("Ship Destroyed", "%s crashed into %s" % [ship.ship_name, body_name])
+		var msg := ""
+		if body_name == "Life support failure":
+			msg = "DESTROYED: %s — life support failure, all hands lost" % ship.ship_name
+		else:
+			msg = "DESTROYED: %s crashed into %s — all hands lost" % [ship.ship_name, body_name]
+		_add_event(msg, Color(1.0, 0.1, 0.1))
+		_send_system_notification("Ship Destroyed", "%s: %s" % [ship.ship_name, body_name])
 	)
 	EventBus.rescue_mission_started.connect(func(ship: Ship, cost: int) -> void:
 		_refresh_missions()

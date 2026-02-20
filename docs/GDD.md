@@ -44,7 +44,7 @@ The game supports two modes with identical mechanics:
 ## 2. Setting & Lore
 
 ### 2.1 Time Period
-The game begins on **February 18, 2026** (the real launch date). The game world uses real calendar dates computed from the simulation clock, displayed in the player's preferred format (US, UK, EU, or ISO).
+The game begins on the day it launches. The game world uses real calendar dates computed from the simulation clock, displayed in the player's preferred format (US, UK, EU, or ISO).
 
 > **STATUS: IMPLEMENTED.** Game clock starts at today's date with full calendar math (leap years, proper month lengths). Date display in the speed bar with format options in settings.
 
@@ -538,6 +538,8 @@ Categories: total revenue, claims held, ore extracted, project contributions, ne
 
 ### 11.1 Engine Wear & Breakdowns
 Engines degrade at 0.00003/tick (~6% per 200,000-tick trip). Below 50% condition, breakdown probability increases. Baseline chance exists even on well-maintained ships. Typical frequency: once every 2-30 trips. Breakdowns and fuel depletion both trigger derelict state.
+
+**Engineer Self-Repair:** When breakdown occurs, engineers can attempt in-situ repairs before ship becomes derelict. Repair chance scales with engineer skill: 0% at 0.0, 30% at 1.0, 50% at 1.5. Success halves engine condition (min 20%) but mission continues. Failure results in full breakdown requiring rescue.
 
 ### 11.2 Professional Rescue
 Dispatched from the **nearest rescue-capable source** (Earth, Ceres Station, Ganymede Port, Mars Colony, Lunar Base, Europa Lab).

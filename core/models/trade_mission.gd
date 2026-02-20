@@ -1,7 +1,12 @@
 class_name TradeMission
 extends Resource
 
-enum Status { TRANSIT_TO_COLONY, SELLING, IDLE_AT_COLONY, TRANSIT_BACK, COMPLETED }
+enum Status { TRANSIT_TO_COLONY, REFUELING, SELLING, IDLE_AT_COLONY, TRANSIT_BACK, COMPLETED }
+
+enum WaypointType {
+	GRAVITY_ASSIST,  # Existing - flyby planet
+	REFUEL_STOP,     # New - stop at colony to refuel
+}
 
 enum TransitMode {
 	BRACHISTOCHRONE,  # Fast, expensive fuel
@@ -31,7 +36,18 @@ enum TransitMode {
 @export var return_leg_times: Array[float] = []
 @export var return_waypoint_index: int = 0
 
+# Waypoint metadata (parallel arrays to outbound_waypoints/return_waypoints)
+@export var outbound_waypoint_types: Array[int] = []
+@export var outbound_waypoint_colony_refs: Array[Colony] = []
+@export var outbound_waypoint_fuel_amounts: Array[float] = []
+@export var outbound_waypoint_fuel_costs: Array[int] = []
+@export var return_waypoint_types: Array[int] = []
+@export var return_waypoint_colony_refs: Array[Colony] = []
+@export var return_waypoint_fuel_amounts: Array[float] = []
+@export var return_waypoint_fuel_costs: Array[int] = []
+
 const SELL_DURATION: float = 5.0  # ticks spent at colony selling
+const REFUEL_DURATION: float = 5.0  # ticks spent refueling
 
 func get_current_phase_duration() -> float:
 	match status:
@@ -68,14 +84,34 @@ func get_status_text() -> String:
 		slingshot_suffix = " [Slingshot]"
 
 	match status:
+		Status.REFUELING:
+			var colony_name := "waypoint"
+			var idx := outbound_waypoint_index - 1 if outbound_waypoint_index > 0 else return_waypoint_index - 1
+			var is_outbound := outbound_waypoint_index > 0
+			var refs := outbound_waypoint_colony_refs if is_outbound else return_waypoint_colony_refs
+			if idx >= 0 and idx < refs.size():
+				var col := refs[idx]
+				if col:
+					colony_name = col.colony_name
+			return "Refueling at %s" % colony_name
 		Status.TRANSIT_TO_COLONY:
-			return "Trading: en route to %s%s%s" % [colony.colony_name, mode_suffix, slingshot_suffix]
+			var fuel_stop_suffix := ""
+			if outbound_waypoint_types.size() > 0:
+				var refuel_count := outbound_waypoint_types.count(WaypointType.REFUEL_STOP)
+				if refuel_count > 0:
+					fuel_stop_suffix = " [%d fuel stop%s]" % [refuel_count, "s" if refuel_count > 1 else ""]
+			return "Trading: en route to %s%s%s%s" % [colony.colony_name, mode_suffix, slingshot_suffix, fuel_stop_suffix]
 		Status.SELLING:
 			return "Selling at %s" % colony.colony_name
 		Status.IDLE_AT_COLONY:
 			return "Idle at %s" % colony.colony_name
 		Status.TRANSIT_BACK:
-			return "Returning from %s%s%s" % [colony.colony_name, mode_suffix, slingshot_suffix]
+			var fuel_stop_suffix := ""
+			if return_waypoint_types.size() > 0:
+				var refuel_count := return_waypoint_types.count(WaypointType.REFUEL_STOP)
+				if refuel_count > 0:
+					fuel_stop_suffix = " [%d fuel stop%s]" % [refuel_count, "s" if refuel_count > 1 else ""]
+			return "Returning from %s%s%s%s" % [colony.colony_name, mode_suffix, slingshot_suffix, fuel_stop_suffix]
 		Status.COMPLETED:
 			return "Trade complete at %s" % colony.colony_name
 	return "Unknown"
@@ -84,30 +120,34 @@ func get_current_leg_start_pos() -> Vector2:
 	match status:
 		Status.TRANSIT_TO_COLONY:
 			if outbound_waypoint_index == 0:
-				return origin_position_au
+				return origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO
 			elif outbound_waypoint_index > 0 and outbound_waypoint_index <= outbound_waypoints.size():
-				return outbound_waypoints[outbound_waypoint_index - 1]
-			return origin_position_au
+				var waypoint: Vector2 = outbound_waypoints[outbound_waypoint_index - 1]
+				return waypoint if waypoint != null else origin_position_au
+			return origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO
 		Status.TRANSIT_BACK:
 			if return_waypoint_index == 0:
-				return colony.get_position_au() if colony else origin_position_au
+				return colony.get_position_au() if colony else (origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO)
 			elif return_waypoint_index > 0 and return_waypoint_index <= return_waypoints.size():
-				return return_waypoints[return_waypoint_index - 1]
-			return colony.get_position_au() if colony else origin_position_au
+				var waypoint: Vector2 = return_waypoints[return_waypoint_index - 1]
+				return waypoint if waypoint != null else (colony.get_position_au() if colony else origin_position_au)
+			return colony.get_position_au() if colony else (origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO)
 		_:
-			return origin_position_au
+			return origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO
 
 func get_current_leg_end_pos() -> Vector2:
 	match status:
 		Status.TRANSIT_TO_COLONY:
 			if outbound_waypoint_index < outbound_waypoints.size():
-				return outbound_waypoints[outbound_waypoint_index]
+				var waypoint: Vector2 = outbound_waypoints[outbound_waypoint_index]
+				return waypoint if waypoint != null else (colony.get_position_au() if colony else origin_position_au)
 			else:
-				return colony.get_position_au() if colony else origin_position_au
+				return colony.get_position_au() if colony else (origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO)
 		Status.TRANSIT_BACK:
 			if return_waypoint_index < return_waypoints.size():
-				return return_waypoints[return_waypoint_index]
+				var waypoint: Vector2 = return_waypoints[return_waypoint_index]
+				return waypoint if waypoint != null else return_position_au
 			else:
-				return return_position_au
+				return return_position_au if return_position_au != Vector2.ZERO else Vector2.ZERO
 		_:
-			return origin_position_au
+			return origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO

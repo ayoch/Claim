@@ -85,6 +85,7 @@ func _process_tick(dt: float, emit_event: bool = true) -> void:
 	_check_breakdowns(dt)
 	_process_rescues(dt)
 	_process_refuels(dt)
+	_process_life_support(dt)
 	_process_fabrication(dt)
 	_process_stranger_rescue(dt)
 	_process_payroll(dt)
@@ -141,6 +142,10 @@ func _process_missions(dt: float) -> void:
 							mission.elapsed_ticks = 0.0
 						EventBus.mission_phase_changed.emit(mission)
 
+			Mission.Status.REFUELING:
+				if mission.elapsed_ticks >= Mission.REFUEL_DURATION:
+					_complete_refuel_stop(mission, true)  # true = outbound
+
 			Mission.Status.MINING:
 				_mine_tick(mission, dt)
 				# Check if cargo is full (mining complete early)
@@ -173,29 +178,139 @@ func _process_missions(dt: float) -> void:
 						GameState.complete_mission(mission)
 
 func _process_waypoint_transition(mission: Mission, is_outbound: bool) -> void:
-	# Handle transition to next leg of slingshot journey
+	# Handle transition to next leg of multi-waypoint journey
 	if is_outbound:
-		# Update ship position to waypoint
-		mission.ship.position_au = mission.outbound_waypoints[mission.outbound_waypoint_index]
+		# Get waypoint type
+		var waypoint_type := Mission.WaypointType.GRAVITY_ASSIST
+		if mission.outbound_waypoint_types.size() > mission.outbound_waypoint_index:
+			waypoint_type = mission.outbound_waypoint_types[mission.outbound_waypoint_index]
 
-		# Increment to next leg
-		mission.outbound_waypoint_index += 1
+		# Get waypoint position (may be updated colony position)
+		var waypoint_pos := mission.outbound_waypoints[mission.outbound_waypoint_index]
+
+		# If refuel stop, update to colony's CURRENT position (handles drift)
+		if waypoint_type == Mission.WaypointType.REFUEL_STOP:
+			var colony := mission.outbound_waypoint_colony_refs[mission.outbound_waypoint_index]
+			if colony:
+				waypoint_pos = colony.get_position_au()
+
+		mission.ship.position_au = waypoint_pos
+
+		# Handle based on type
+		match waypoint_type:
+			Mission.WaypointType.REFUEL_STOP:
+				# Transition to REFUELING status
+				mission.status = Mission.Status.REFUELING
+				mission.elapsed_ticks = 0.0
+				mission.outbound_waypoint_index += 1  # Advance now
+				EventBus.mission_phase_changed.emit(mission)
+				return  # Don't set transit_time yet
+
+			Mission.WaypointType.GRAVITY_ASSIST:
+				# Existing gravity assist behavior
+				mission.outbound_waypoint_index += 1
+				mission.elapsed_ticks = 0.0
+
+				# Set transit time for next leg
+				if mission.outbound_waypoint_index < mission.outbound_leg_times.size():
+					mission.transit_time = mission.outbound_leg_times[mission.outbound_waypoint_index]
+				else:
+					# Last leg to destination
+					var dist := mission.ship.position_au.distance_to(mission.asteroid.get_position_au())
+					mission.transit_time = Brachistochrone.transit_time(dist, mission.ship.get_effective_thrust())
+	else:
+		# Return journey
+		var waypoint_type := Mission.WaypointType.GRAVITY_ASSIST
+		if mission.return_waypoint_types.size() > mission.return_waypoint_index:
+			waypoint_type = mission.return_waypoint_types[mission.return_waypoint_index]
+
+		var waypoint_pos := mission.return_waypoints[mission.return_waypoint_index]
+
+		if waypoint_type == Mission.WaypointType.REFUEL_STOP:
+			var colony := mission.return_waypoint_colony_refs[mission.return_waypoint_index]
+			if colony:
+				waypoint_pos = colony.get_position_au()
+
+		mission.ship.position_au = waypoint_pos
+
+		match waypoint_type:
+			Mission.WaypointType.REFUEL_STOP:
+				mission.status = Mission.Status.REFUELING
+				mission.elapsed_ticks = 0.0
+				mission.return_waypoint_index += 1
+				EventBus.mission_phase_changed.emit(mission)
+				return
+
+			Mission.WaypointType.GRAVITY_ASSIST:
+				mission.return_waypoint_index += 1
+				mission.elapsed_ticks = 0.0
+
+				if mission.return_waypoint_index < mission.return_leg_times.size():
+					mission.transit_time = mission.return_leg_times[mission.return_waypoint_index]
+				else:
+					# Last leg to destination
+					var dist := mission.ship.position_au.distance_to(mission.return_position_au)
+					mission.transit_time = Brachistochrone.transit_time(dist, mission.ship.get_effective_thrust())
+
+	EventBus.mission_phase_changed.emit(mission)
+
+func _complete_refuel_stop(mission: Mission, is_outbound: bool) -> void:
+	# Complete refueling at a waypoint and resume transit
+	var waypoint_idx := mission.outbound_waypoint_index - 1 if is_outbound else mission.return_waypoint_index - 1
+
+	# Add fuel to ship
+	var fuel_amount: float = 0.0
+	if is_outbound and waypoint_idx >= 0 and waypoint_idx < mission.outbound_waypoint_fuel_amounts.size():
+		fuel_amount = mission.outbound_waypoint_fuel_amounts[waypoint_idx]
+	elif not is_outbound and waypoint_idx >= 0 and waypoint_idx < mission.return_waypoint_fuel_amounts.size():
+		fuel_amount = mission.return_waypoint_fuel_amounts[waypoint_idx]
+
+	mission.ship.fuel = minf(mission.ship.fuel + fuel_amount, mission.ship.get_effective_fuel_capacity())
+
+	# Check if NEXT leg is reachable (only validate immediate next destination)
+	var next_dest_pos: Vector2
+	if is_outbound:
+		if mission.outbound_waypoint_index < mission.outbound_waypoints.size():
+			# More waypoints ahead - check if we can reach the next one
+			next_dest_pos = mission.outbound_waypoints[mission.outbound_waypoint_index]
+		else:
+			# No more waypoints - check if we can reach final destination
+			next_dest_pos = mission.asteroid.get_position_au()
+	else:
+		if mission.return_waypoint_index < mission.return_waypoints.size():
+			next_dest_pos = mission.return_waypoints[mission.return_waypoint_index]
+		else:
+			next_dest_pos = mission.return_position_au
+
+	var cargo_mass := mission.ship.get_cargo_total()
+	var dist_to_next := mission.ship.position_au.distance_to(next_dest_pos)
+	var fuel_needed := mission.ship.calc_fuel_for_distance(dist_to_next, cargo_mass)
+
+	if fuel_needed > mission.ship.fuel:
+		# Next leg unreachable - abort mission at this fuel stop
+		mission.status = Mission.Status.IDLE_AT_DESTINATION
 		mission.elapsed_ticks = 0.0
+		# Free workers
+		for w in mission.workers:
+			w.assigned_mission = null
+		EventBus.mission_phase_changed.emit(mission)
+		# Notify player (could add a specific event for this)
+		print("Mission aborted: next waypoint unreachable from fuel stop (orbital drift)")
+		return
 
-		# Set transit time for next leg
+	# Resume transit
+	mission.elapsed_ticks = 0.0
+	mission.status = Mission.Status.TRANSIT_OUT if is_outbound else Mission.Status.TRANSIT_BACK
+
+	# Set next leg transit time
+	if is_outbound:
 		if mission.outbound_waypoint_index < mission.outbound_leg_times.size():
 			mission.transit_time = mission.outbound_leg_times[mission.outbound_waypoint_index]
 		else:
-			# Last leg to destination - use brachistochrone
+			# Last leg to destination
 			var dist := mission.ship.position_au.distance_to(mission.asteroid.get_position_au())
 			mission.transit_time = Brachistochrone.transit_time(dist, mission.ship.get_effective_thrust())
 	else:
-		# Return journey
-		mission.ship.position_au = mission.return_waypoints[mission.return_waypoint_index]
-
-		mission.return_waypoint_index += 1
-		mission.elapsed_ticks = 0.0
-
 		if mission.return_waypoint_index < mission.return_leg_times.size():
 			mission.transit_time = mission.return_leg_times[mission.return_waypoint_index]
 		else:
@@ -204,6 +319,131 @@ func _process_waypoint_transition(mission: Mission, is_outbound: bool) -> void:
 			mission.transit_time = Brachistochrone.transit_time(dist, mission.ship.get_effective_thrust())
 
 	EventBus.mission_phase_changed.emit(mission)
+
+func _process_trade_waypoint_transition(tm: TradeMission, is_outbound: bool) -> void:
+	# Handle transition to next leg of multi-waypoint trade journey
+	if is_outbound:
+		var waypoint_type := TradeMission.WaypointType.GRAVITY_ASSIST
+		if tm.outbound_waypoint_types.size() > tm.outbound_waypoint_index:
+			waypoint_type = tm.outbound_waypoint_types[tm.outbound_waypoint_index]
+
+		var waypoint_pos := tm.outbound_waypoints[tm.outbound_waypoint_index]
+
+		if waypoint_type == TradeMission.WaypointType.REFUEL_STOP:
+			var colony := tm.outbound_waypoint_colony_refs[tm.outbound_waypoint_index]
+			if colony:
+				waypoint_pos = colony.get_position_au()
+
+		tm.ship.position_au = waypoint_pos
+
+		match waypoint_type:
+			TradeMission.WaypointType.REFUEL_STOP:
+				tm.status = TradeMission.Status.REFUELING
+				tm.elapsed_ticks = 0.0
+				tm.outbound_waypoint_index += 1
+				EventBus.trade_mission_phase_changed.emit(tm)
+				return
+
+			TradeMission.WaypointType.GRAVITY_ASSIST:
+				tm.outbound_waypoint_index += 1
+				tm.elapsed_ticks = 0.0
+
+				if tm.outbound_waypoint_index < tm.outbound_leg_times.size():
+					tm.transit_time = tm.outbound_leg_times[tm.outbound_waypoint_index]
+				else:
+					var dist := tm.ship.position_au.distance_to(tm.colony.get_position_au())
+					tm.transit_time = Brachistochrone.transit_time(dist, tm.ship.get_effective_thrust())
+	else:
+		var waypoint_type := TradeMission.WaypointType.GRAVITY_ASSIST
+		if tm.return_waypoint_types.size() > tm.return_waypoint_index:
+			waypoint_type = tm.return_waypoint_types[tm.return_waypoint_index]
+
+		var waypoint_pos := tm.return_waypoints[tm.return_waypoint_index]
+
+		if waypoint_type == TradeMission.WaypointType.REFUEL_STOP:
+			var colony := tm.return_waypoint_colony_refs[tm.return_waypoint_index]
+			if colony:
+				waypoint_pos = colony.get_position_au()
+
+		tm.ship.position_au = waypoint_pos
+
+		match waypoint_type:
+			TradeMission.WaypointType.REFUEL_STOP:
+				tm.status = TradeMission.Status.REFUELING
+				tm.elapsed_ticks = 0.0
+				tm.return_waypoint_index += 1
+				EventBus.trade_mission_phase_changed.emit(tm)
+				return
+
+			TradeMission.WaypointType.GRAVITY_ASSIST:
+				tm.return_waypoint_index += 1
+				tm.elapsed_ticks = 0.0
+
+				if tm.return_waypoint_index < tm.return_leg_times.size():
+					tm.transit_time = tm.return_leg_times[tm.return_waypoint_index]
+				else:
+					var dist := tm.ship.position_au.distance_to(tm.return_position_au)
+					tm.transit_time = Brachistochrone.transit_time(dist, tm.ship.get_effective_thrust())
+
+	EventBus.trade_mission_phase_changed.emit(tm)
+
+func _complete_trade_refuel_stop(tm: TradeMission, is_outbound: bool) -> void:
+	# Complete refueling at a waypoint and resume transit
+	var waypoint_idx := tm.outbound_waypoint_index - 1 if is_outbound else tm.return_waypoint_index - 1
+
+	# Add fuel to ship
+	var fuel_amount: float = 0.0
+	if is_outbound and waypoint_idx >= 0 and waypoint_idx < tm.outbound_waypoint_fuel_amounts.size():
+		fuel_amount = tm.outbound_waypoint_fuel_amounts[waypoint_idx]
+	elif not is_outbound and waypoint_idx >= 0 and waypoint_idx < tm.return_waypoint_fuel_amounts.size():
+		fuel_amount = tm.return_waypoint_fuel_amounts[waypoint_idx]
+
+	tm.ship.fuel = minf(tm.ship.fuel + fuel_amount, tm.ship.get_effective_fuel_capacity())
+
+	# Check if NEXT leg is reachable
+	var next_dest_pos: Vector2
+	if is_outbound:
+		if tm.outbound_waypoint_index < tm.outbound_waypoints.size():
+			next_dest_pos = tm.outbound_waypoints[tm.outbound_waypoint_index]
+		else:
+			next_dest_pos = tm.colony.get_position_au()
+	else:
+		if tm.return_waypoint_index < tm.return_waypoints.size():
+			next_dest_pos = tm.return_waypoints[tm.return_waypoint_index]
+		else:
+			next_dest_pos = tm.return_position_au
+
+	var cargo_mass := tm.ship.get_cargo_total()
+	var dist_to_next := tm.ship.position_au.distance_to(next_dest_pos)
+	var fuel_needed := tm.ship.calc_fuel_for_distance(dist_to_next, cargo_mass)
+
+	if fuel_needed > tm.ship.fuel:
+		# Next leg unreachable - abort mission at this fuel stop
+		tm.status = TradeMission.Status.IDLE_AT_COLONY
+		tm.elapsed_ticks = 0.0
+		EventBus.trade_mission_phase_changed.emit(tm)
+		print("Trade mission aborted: next waypoint unreachable from fuel stop (orbital drift)")
+		return
+
+	# Resume transit
+	tm.elapsed_ticks = 0.0
+	tm.status = TradeMission.Status.TRANSIT_TO_COLONY if is_outbound else TradeMission.Status.TRANSIT_BACK
+
+	# Set next leg transit time
+	if is_outbound:
+		if tm.outbound_waypoint_index < tm.outbound_leg_times.size():
+			tm.transit_time = tm.outbound_leg_times[tm.outbound_waypoint_index]
+		else:
+			var dist := tm.ship.position_au.distance_to(tm.colony.get_position_au())
+			tm.transit_time = Brachistochrone.transit_time(dist, tm.ship.get_effective_thrust())
+	else:
+		if tm.return_waypoint_index < tm.return_leg_times.size():
+			tm.transit_time = tm.return_leg_times[tm.return_waypoint_index]
+		else:
+			var dist := tm.ship.position_au.distance_to(tm.return_position_au)
+			tm.transit_time = Brachistochrone.transit_time(dist, tm.ship.get_effective_thrust())
+
+	EventBus.trade_mission_phase_changed.emit(tm)
 
 func _burn_fuel(mission: Mission, dt: float) -> void:
 	var ship := mission.ship
@@ -282,34 +522,44 @@ func _process_trade_missions(dt: float) -> void:
 				if tm.ship.fuel <= 0 and not tm.ship.is_derelict:
 					_trigger_fuel_depletion(tm.ship)
 				if tm.elapsed_ticks >= tm.transit_time:
-					# Check if auto-sell is enabled
-					if GameState.settings.get("auto_sell_at_markets", false):
-						tm.status = TradeMission.Status.SELLING
-						tm.elapsed_ticks = 0.0
-						# Auto-sell cargo at colony prices
-						var revenue := 0
-						for ore_type in tm.cargo:
-							var amount: float = tm.cargo[ore_type]
-							var price: float = tm.colony.get_ore_price(ore_type, GameState.market)
-							revenue += int(amount * price)
-						tm.revenue = revenue
-						GameState.money += revenue
-						# Clear cargo after selling
-						tm.cargo.clear()
-						tm.ship.current_cargo.clear()
-						EventBus.trade_mission_phase_changed.emit(tm)
+					# Check if using waypoints with more stops
+					if tm.outbound_waypoint_index < tm.outbound_waypoints.size():
+						# Reached waypoint - transition to next leg
+						_process_trade_waypoint_transition(tm, true)  # true = outbound
 					else:
-						# Manual selling: go directly to idle at colony
-						tm.status = TradeMission.Status.IDLE_AT_COLONY
-						tm.elapsed_ticks = 0.0
-						# Dock ship at colony
-						tm.ship.position_au = tm.colony.get_position_au()
-						if tm.colony.has_rescue_ops:
-							tm.ship.docked_at_colony = tm.colony
-						# Auto-refuel at colony
-						_auto_refuel_at_colony(tm.ship)
-						EventBus.trade_mission_phase_changed.emit(tm)
-						EventBus.ship_idle_at_colony.emit(tm.ship, tm)
+						# Reached final destination (colony)
+						# Check if auto-sell is enabled
+						if GameState.settings.get("auto_sell_at_markets", false):
+							tm.status = TradeMission.Status.SELLING
+							tm.elapsed_ticks = 0.0
+							# Auto-sell cargo at colony prices
+							var revenue := 0
+							for ore_type in tm.cargo:
+								var amount: float = tm.cargo[ore_type]
+								var price: float = tm.colony.get_ore_price(ore_type, GameState.market)
+								revenue += int(amount * price)
+							tm.revenue = revenue
+							GameState.money += revenue
+							# Clear cargo after selling
+							tm.cargo.clear()
+							tm.ship.current_cargo.clear()
+							EventBus.trade_mission_phase_changed.emit(tm)
+						else:
+							# Manual selling: go directly to idle at colony
+							tm.status = TradeMission.Status.IDLE_AT_COLONY
+							tm.elapsed_ticks = 0.0
+							# Dock ship at colony
+							tm.ship.position_au = tm.colony.get_position_au()
+							if tm.colony.has_rescue_ops:
+								tm.ship.docked_at_colony = tm.colony
+							# Auto-refuel at colony
+							_auto_refuel_at_colony(tm.ship)
+							EventBus.trade_mission_phase_changed.emit(tm)
+							EventBus.ship_idle_at_colony.emit(tm.ship, tm)
+
+			TradeMission.Status.REFUELING:
+				if tm.elapsed_ticks >= TradeMission.REFUEL_DURATION:
+					_complete_trade_refuel_stop(tm, tm.status == TradeMission.Status.REFUELING and tm.outbound_waypoint_index > 0)
 
 			TradeMission.Status.SELLING:
 				if tm.elapsed_ticks >= TradeMission.SELL_DURATION:
@@ -335,9 +585,14 @@ func _process_trade_missions(dt: float) -> void:
 				if tm.ship.fuel <= 0 and not tm.ship.is_derelict:
 					_trigger_fuel_depletion(tm.ship)
 				if tm.elapsed_ticks >= tm.transit_time:
-					# Set ship position to return destination
-					tm.ship.position_au = tm.return_position_au
-					GameState.complete_trade_mission(tm)
+					# Check if using waypoints with more stops
+					if tm.return_waypoint_index < tm.return_waypoints.size():
+						# Reached waypoint - transition to next leg
+						_process_trade_waypoint_transition(tm, false)  # false = return
+					else:
+						# Reached final destination
+						tm.ship.position_au = tm.return_position_au
+						GameState.complete_trade_mission(tm)
 
 func _update_ship_positions(dt: float) -> void:
 	# Real-time throttle - only update 10 times per second for mobile performance
@@ -553,6 +808,29 @@ func _check_breakdowns(dt: float) -> void:
 				_trigger_breakdown(ship, "Engine failure during transit")
 
 func _trigger_breakdown(ship: Ship, reason: String) -> void:
+	# Check for engineer self-repair before declaring breakdown
+	var crew: Array[Worker] = []
+	if ship.current_mission:
+		crew = ship.current_mission.workers
+	elif ship.current_trade_mission:
+		crew = ship.current_trade_mission.workers
+
+	# Find best engineer
+	var best_engineer := 0.0
+	for w in crew:
+		if w.engineer_skill > best_engineer:
+			best_engineer = w.engineer_skill
+
+	# Self-repair chance: 0% at 0.0 skill, 30% at 1.0 skill, 50% at 1.5 skill
+	var repair_chance := best_engineer * 0.3 + (maxf(best_engineer - 1.0, 0.0) * 0.2)
+	if repair_chance > 0 and randf() < repair_chance:
+		# Engineer patched it! Reduce engine condition but continue mission
+		ship.engine_condition = maxf(ship.engine_condition * 0.5, 20.0)
+		print("Ship %s: Engineer patched breakdown in-situ (skill %.1f)" % [ship.ship_name, best_engineer])
+		EventBus.ship_breakdown.emit(ship, "Minor failure (repaired)")
+		return
+
+	# No repair - full breakdown
 	ship.is_derelict = true
 	ship.derelict_reason = "breakdown"
 
@@ -623,8 +901,11 @@ func _process_rescues(dt: float) -> void:
 		ship.engine_condition = 50.0
 		ship.fuel = ship.get_effective_fuel_capacity() * 0.5
 
-		# 10% worker loss chance per worker
+		# Reset life support (rescue brings supplies)
 		var workers_to_check: Array = data.get("workers", [])
+		ship.reset_life_support(workers_to_check.size())
+
+		# 10% worker loss chance per worker
 		for w in workers_to_check:
 			if w is Worker and randf() < 0.1:
 				GameState.workers.erase(w)
@@ -652,10 +933,48 @@ func _process_refuels(dt: float) -> void:
 		if ship.is_derelict and ship.derelict_reason == "out_of_fuel":
 			ship.is_derelict = false
 			ship.derelict_reason = ""
-			ship.velocity_au_per_tick = Vector2.ZERO
-			ship.speed_au_per_tick = 0.0
+			# Ship keeps drifting velocity - refuel doesn't magically stop momentum
 
 		EventBus.refuel_mission_completed.emit(ship, fuel_delivered)
+
+func _process_life_support(dt: float) -> void:
+	# Derelict ships consume life support (food, water, O2)
+	# When life support runs out, crew dies and ship is total loss
+	var ships_to_destroy: Array[Ship] = []
+
+	for ship in GameState.ships:
+		if not ship.is_derelict:
+			continue
+
+		# Consume life support
+		ship.life_support_remaining -= dt
+
+		# Check if crew has died
+		if ship.life_support_remaining <= 0:
+			ships_to_destroy.append(ship)
+
+	# Destroy ships with dead crews
+	for ship in ships_to_destroy:
+		var crew_count := ship.last_crew.size()
+		print("Ship %s: crew of %d died from life support failure" % [ship.ship_name, crew_count])
+
+		# Clean up mission tracking
+		if ship.current_mission:
+			GameState.missions.erase(ship.current_mission)
+			ship.current_mission = null
+		if ship.current_trade_mission:
+			GameState.trade_missions.erase(ship.current_trade_mission)
+			ship.current_trade_mission = null
+		# Clean up any pending rescue/refuel
+		GameState.rescue_missions.erase(ship)
+		GameState.refuel_missions.erase(ship)
+		GameState.stranger_offers.erase(ship)
+
+		# Emit event before removing ship
+		EventBus.ship_destroyed.emit(ship, "Life support failure")
+
+		# Remove the ship
+		GameState.ships.erase(ship)
 
 const STRANGER_NAMES: Array[String] = [
 	"ISV Wanderer", "MV Perseverance", "ISV Nomad", "FV Mercy",
