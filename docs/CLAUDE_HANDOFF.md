@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-20 07:44:36 EST
-**Updated By:** Instance on Machine 1 (Windows desktop)
-**Session Context:** Testing session - critical bug fixes for life support and engineer repairs
-**Next Session Priority:** Continue testing fuel stop routing, verify engineer self-repair
+**Last Updated:** 2026-02-20 (afternoon) EST
+**Updated By:** Instance on Machine 2 (Mac laptop - HK-47)
+**Session Context:** Worker skill progression system implementation
+**Next Session Priority:** Test XP accumulation and level-ups, verify balance
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -11,6 +11,48 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-20 (afternoon) EST - Worker Skill Progression Implementation
+- **Machine:** Mac laptop (HK-47)
+- **Work Completed:**
+  - **Worker Skill Progression System** (COMPLETE):
+    - Added XP fields to Worker model (pilot_xp, engineer_xp, mining_xp)
+    - Implemented XP accumulation, level-up system, and skill caps (0.0-2.0)
+    - XP grants: Pilot XP to best pilot during transit, Mining XP to all workers during mining, Engineer XP bonuses for repairs
+    - Automatic wage scaling as skills improve (formula: 80 + total_skill * 40)
+    - Small loyalty bonus (+2, max 100) on each level-up
+    - XP requirements scale quadratically: BASE_XP * (skill + 1)^2, where BASE_XP = 86,400 (1 game-day)
+    - Skills increase by 0.05 per level, starting workers need ~1-2 game-days per level, veterans need ~3-5 days
+  - **UI Integration:**
+    - Color-coded XP progress bars in Workers tab (blue=pilot, orange=engineer, green=mining)
+    - Shows current skill value and progress to next level (0-100%)
+    - Dashboard activity feed notifications for level-ups: "[Worker] Name's Skill increased to X.XX!"
+    - Auto-refresh on worker_skill_leveled signal
+  - **Save/Load Integration:**
+    - All XP values persist across saves
+    - Backward compatible (old saves default to 0.0 XP)
+  - **Design Correction:**
+    - Initial implementation granted pilot XP to all crew (unrealistic)
+    - Fixed: Only best pilot gains pilot XP (they're flying the ship)
+    - Future: Crew rotation based on fatigue planned but not yet implemented
+  - **Testing Resources:**
+    - Created test_xp_system.gd - unit test script validating XP calculations
+    - Created SKILL_PROGRESSION_VERIFICATION.md - complete testing checklist with 8 verification scenarios
+- **Files Modified:**
+  - core/models/worker.gd (XP fields, constants, add_xp/get_xp_for_next_level/get_xp_progress methods)
+  - core/autoloads/event_bus.gd (worker_skill_leveled signal)
+  - core/autoloads/game_state.gd (save/load XP, engineer XP for mining unit repairs)
+  - core/autoloads/simulation.gd (pilot XP during transit, mining XP during extraction/mining units, engineer XP for self-repair)
+  - ui/tabs/workers_tab.gd (XP progress bars, signal connection)
+  - ui/tabs/dashboard_tab.gd (level-up notifications, _on_worker_skill_leveled handler)
+- **Files Created:**
+  - test_xp_system.gd (XP system unit tests)
+  - SKILL_PROGRESSION_VERIFICATION.md (testing guide)
+- **Documentation Updated:**
+  - docs/GDD.md Section 8.5 (Crew) - added skill progression description, updated status
+  - docs/GDD.md Phase 5 Roadmap - marked worker skill progression as DONE
+  - MEMORY.md - updated "Recently Implemented" and "Not Yet Implemented" sections
+- **Status:** Ready for testing. System creates long-term crew investment - veteran workers become more skilled and expensive over time.
 
 ### 2026-02-20 07:44 EST - Testing Session & Critical Bug Fixes
 - **Machine:** Windows desktop

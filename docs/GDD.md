@@ -426,6 +426,8 @@ Named individuals with skills, personalities, and pay expectations.
 
 **Skills:** pilot (transit time), engineer (maintenance), mining (extraction rate).
 
+**Skill Progression:** Workers gain experience (XP) while performing relevant work and level up over time. Skills start at 0.0-1.5 at hire and can grow to 2.0 through experience. Pilot XP accumulates during transit (only the best pilot gains XP), mining XP during extraction (all workers gain XP), engineer XP during repairs and maintenance. XP requirements increase quadratically (~1-5 game-days per level depending on current skill). Wages automatically scale upward with skill improvements, and workers receive small loyalty boosts when leveling up. This creates long-term crew investment — veteran workers become valuable assets worth retaining.
+
 **Personalities** determine autonomous field behavior:
 - **Aggressive** — confront rivals, defend forcefully, may start unnecessary fights
 - **Cautious** — avoid conflict, may yield claims, keeps workers alive
@@ -435,9 +437,9 @@ Named individuals with skills, personalities, and pay expectations.
 
 Workers consume **food** (carried as cargo, resupplied at remote sites). Running out is a serious logistics failure.
 
-> **STATUS: PARTIALLY IMPLEMENTED.** Workers have random names (40 first x 40 last), skill levels (0.7-1.5), and daily wages ($80-200). Workers are hired/fired and assigned to missions. Payroll deducts wages every game-day.
+> **STATUS: PARTIALLY IMPLEMENTED.** Workers have random names (40 first x 40 last), specialized skills (pilot/engineer/mining 0.0-2.0), and daily wages ($80-240). Skill progression is functional: XP accumulation, level-ups, wage scaling, loyalty bonuses, UI progress bars, and dashboard notifications. Workers are hired/fired and assigned to missions. Payroll deducts wages every game-day.
 >
-> **NOT YET IMPLEMENTED:** Personality traits, autonomous decision-making, distinct roles, skill progression, food consumption, waste management.
+> **NOT YET IMPLEMENTED:** Personality traits, autonomous decision-making, distinct roles, food consumption, waste management.
 
 ### 8.6 Fuel & Logistics
 Fuel consumption scales with distance, mass, and thrust. Fuel has weight that affects acceleration. Running out mid-transit = derelict.
@@ -779,7 +781,7 @@ Add deferred systems and refine the experience.
 
 | Feature | Status |
 |---|---|
-| Worker skill progression | NOT STARTED |
+| Worker skill progression | **DONE** |
 | Additional propulsion systems (solar sail, ion, advanced fusion) | NOT STARTED |
 | Fuel processor equipment (extract from ice) | NOT STARTED |
 | Player fuel depots | NOT STARTED |
