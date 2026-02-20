@@ -6,10 +6,8 @@
 **Multiplayer Idle Strategy Simulation**
 **Platform:** Mobile (iOS / Android)
 **Engine:** Godot 4.6
-**Version:** 0.4 -- Added Servers, Leaderboards, Unions, Mining Unit Generations
+**Version:** 0.5 — Consortia, Policies, Colony Tiers, Design Pillars
 **February 2026**
-
-> **PENDING:** A comprehensive design conversation about "what the game is supposed to do and why" is scheduled for the next session on a different machine. The results of that conversation should be integrated into this GDD or stored in a separate architectural reference document. See Section 16.5 for context.
 
 ---
 
@@ -19,7 +17,7 @@
 Build a deep-space mining empire across the real solar system. Stake claims on asteroids by deploying automated mining units, manage supply lines to keep remote workers fed and equipment running, and haul ore back to market — all while competing with rival corporations (AI or human) for finite resources. The player who contributes the most materials to a collective endgame project earns a reward that carries into the next epoch.
 
 ### 1.2 Genre & Tone
-The game sits at the intersection of idle/incremental management and hard science fiction simulation. It draws from the economic arbitrage loop of classic games like Dope Wars, the long-horizon strategy of idle tycoon games, and the grounded realism of hard sci-fi. Combat exists but is rare, costly, and desperate — especially early on. The real conflicts are economic, logistical, and informational. Violence becomes more common as scarcity intensifies and territorial disputes escalate.
+Idle/incremental management meets hard science fiction simulation. Draws from Dope Wars (economic arbitrage), idle tycoons (long-horizon strategy), and hard sci-fi (grounded realism). Combat exists but is rare, costly, and desperate — especially early on. The real conflicts are economic, logistical, and informational. Violence becomes more common as scarcity intensifies and territorial disputes escalate.
 
 ### 1.3 Design Pillars
 - **Grounded realism:** All physics, distances, travel times, and resource quantities are based on real or plausible extrapolated numbers. If a ship accelerates at 0.3g, we calculate real transit times.
@@ -27,6 +25,8 @@ The game sits at the intersection of idle/incremental management and hard scienc
 - **Incomplete information:** You never know exactly what competitors are doing. Intelligence is partial, sometimes unreliable, and interpreting it is a core skill.
 - **Economic depth over action:** This is a numbers game with a beautiful skin, not an action game. Strategy emerges from resource allocation, market timing, and logistics planning.
 - **Worker autonomy:** You are the CEO, not the foreman. Workers make their own decisions in the field based on their personalities. You set direction; they execute — sometimes not the way you'd prefer.
+- **Narrative consequence over numerical feedback:** The game communicates the effects of player actions through the world, not through UI meters. A rescue operator is curt because your reputation is low. Workers decline your offers with "I've heard things." Colony traders quietly show you their worst prices. The player who pays attention connects the dots. The player who doesn't may never understand why things aren't going well — and that's fine.
+- **Playstyle ecosystem, not morality system:** The game does not judge aggressive or peaceful play. It simulates consequences. An aggressive player pays different costs (worse prices, rougher crew, becoming a target) and reaps different rewards (seized claims, salvaged equipment, intimidated rivals). A peaceful player builds compounding advantages (colony relationships, skilled crew, reliable rescue) but risks losing developed claims they won't defend. The interesting space is in between — and the game supports every arc. The tutorial warns that "actions have consequences" without prescribing which actions are right.
 
 ### 1.4 Player Experience
 The player opens the app and is greeted with a summary of events since their last session: ships that arrived at destinations, mining output from deployed units across the belt, market price changes, contract opportunities, territorial disputes between workers, rumors, and observed activity from competitors. They make a series of quick decisions — accept a contract, redirect a ship, hire a worker, deploy mining units to a new asteroid — each requiring a tap or two. Then they close the app. The simulation continues. Next time they check in, they see the results.
@@ -53,10 +53,10 @@ Humanity has expanded into the solar system. Colonies exist on Mars, orbital sta
 ### 2.2 Technology Level
 Technology has advanced significantly but remains grounded. Fusion power is mature and provides the primary propulsion for serious mining operations. Solar sails exist as a cheap, slow alternative. Fabrication is faster than today but still requires time and raw materials. Stasis or inertial dampening technology exists to allow human survival during sustained high-acceleration burns.
 
-An in-lore explanation exists for why AI does not run these operations autonomously. The specifics are to be determined, but plausible options include regulatory restrictions following a historical incident, AI limitations in strategic judgment, or economic and legal structures that evolved around human decision-making. This explanation should feel natural to the setting rather than contrived.
+An in-lore explanation exists for why AI does not run these operations autonomously. Plausible options include regulatory restrictions following a historical incident, AI limitations in strategic judgment, or economic structures that evolved around human decision-making.
 
 ### 2.3 The Solar System
-The game world is the actual solar system with real distances, real asteroid belt parameters, and real orbital mechanics. Players operate primarily in the asteroid belt, roughly 2 to 3.5 AU from the Sun, with trade routes extending to colonies throughout the inner and outer system. The Kuiper Belt may become relevant in late-game play.
+The actual solar system with real distances, asteroid belt parameters, and orbital mechanics. Players operate primarily in the asteroid belt (2–3.5 AU), with trade routes extending to colonies throughout the inner and outer system. The Kuiper Belt may become relevant in late-game play.
 
 > **STATUS: IMPLEMENTED.** The solar system uses **Keplerian orbital mechanics** based on JPL orbital elements for all 8 planets. Positions are computed from the game's Julian Date using Kepler's equation (Newton-Raphson solver). An automated **Ephemeris Verification** service periodically compares computed positions against JPL Horizons API data to confirm accuracy. 200+ named asteroids are tracked with proper orbital positions. The solar map renders the full system with a procedural starfield background, planet glow effects, ship trajectories, and colony markers.
 
@@ -65,7 +65,7 @@ The game world is the actual solar system with real distances, real asteroid bel
 ## 3. Core Gameplay Loop
 
 ### 3.1 Overview
-The player manages a mining corporation that stakes claims on asteroids by deploying automated mining units. Ships are logistics vessels — they haul mining equipment out, deliver food and supplies to remote workers, collect accumulated ore, and bring it to market. The game runs in real time, with the simulation progressing whether the player is actively engaged or not.
+The player manages a mining corporation that stakes claims on asteroids by deploying automated mining units. Ships are logistics vessels — they haul equipment out, deliver food and supplies, collect accumulated ore, and bring it to market. The simulation runs continuously whether the player is engaged or not.
 
 The core loop is:
 1. **Scout** — Identify promising asteroids based on composition, distance, orbital position, and competition.
@@ -78,23 +78,71 @@ The core loop is:
 > **STATUS: PARTIALLY IMPLEMENTED.** The mine-haul-sell loop is functional but uses the older model where ships stay at the asteroid during mining. The transition to deployable autonomous mining units, supply logistics, and claim staking is a major upcoming refactor (see Section 8.3).
 
 ### 3.2 The Decision Cycle
-Every interaction with the game involves reviewing new information and making decisions based on it. The key decisions are:
-- **Where to stake claims:** Which asteroids to target, based on composition, distance, fuel cost, available mining slots, and competitive risk.
-- **How to equip:** How many mining units to deploy (mass and volume constraints), what ship to use, how much fuel and food to load.
-- **How to sustain:** Planning supply routes to keep remote workers fed and equipment maintained.
-- **When to sell:** Whether to lock in a contract at a guaranteed price or gamble on the open market.
-- **What to sell vs. contribute:** Balancing the need for operating cash against contributing materials to the endgame project.
-- **Who to hire and how to pay:** Managing a named crew with varying skills, personalities, and pay expectations. Personality determines how workers handle encounters with rivals in the field.
-- **Where to trade:** Which colonies to build relationships with for equipment, fuel, and manufactured goods.
-- **Whether to arm:** Mounting weapons on ships costs cargo capacity and money. Using them damages reputation. But sometimes you need to defend what's yours.
+Key decisions:
+- **Where to stake claims:** Which asteroids to target — composition, distance, fuel cost, available slots, competitive risk.
+- **How to equip:** Mining units to deploy (mass/volume constraints), ship selection, fuel and food loading.
+- **How to sustain:** Supply route planning to keep remote workers fed and equipment maintained.
+- **When to sell:** Lock in a contract at guaranteed price or gamble on the open market.
+- **What to sell vs. contribute:** Operating cash vs. endgame project contributions.
+- **Who to hire:** Named crew with varying skills, personalities, and pay expectations. Personality determines field encounters.
+- **Where to trade:** Colony relationships for equipment, fuel, and manufactured goods.
+- **Whether to arm:** Weapons cost cargo capacity and money. Using them damages reputation. But sometimes you need to defend what's yours.
 
 ### 3.3 Time & The Simulation Tick
-**1 tick = 1 game-second** at 1x speed. The simulation advances in real time, scaled by `TimeScale.speed_multiplier`. Ships travel at speeds determined by their drive type and acceleration profile. Deployed mining units produce output continuously. Market prices shift based on supply, demand, and events.
+**1 tick = 1 game-second** at 1x speed, scaled by `TimeScale.speed_multiplier`. Transit times from Brachistochrone physics (1 AU at 0.3g ≈ 5.2 game-days). Mining units produce continuously. Market prices shift on supply, demand, and events.
 
-> **STATUS: IMPLEMENTED.** The simulation processes up to 30 batched steps per frame, each up to 500 ticks, allowing speeds up to 200,000x without framerate issues. Transit times are computed from real Brachistochrone physics: 1 AU at 0.3g takes ~450,000 seconds (~5.2 game-days). Speed presets: 1x, 5x, 20x, 50x, 100x, with a maximum of 200,000x for testing.
+> **STATUS: IMPLEMENTED.** Up to 30 batched steps/frame × 500 ticks/step = 200,000x without framerate issues. Speed presets: 1x, 5x, 20x, 50x, 100x (200,000x for testing).
 
 ### 3.4 Communication Delay
-Light-speed communication delay is real at solar system distances. An order sent to workers at 2 AU takes ~17 minutes to arrive. At 5 AU, nearly an hour. This physically prevents micromanagement and reinforces worker autonomy — by the time you learn about a situation and respond, your workers have already handled it their way.
+Light-speed delay is real. An order at 2 AU takes ~17 minutes; at 5 AU, nearly an hour. This physically prevents micromanagement — by the time you learn about a situation and respond, your workers have already handled it their way.
+
+> **STATUS: NOT YET IMPLEMENTED.**
+
+### 3.5 Policy System
+**Policies** are broad strategic directives governing crew behavior across the operation, set in the HQ tab. This is the core idle mechanism: set policy, check in occasionally, handle the rare situation that needs a personal decision.
+
+**Company-wide policies** apply as defaults to all operations:
+- **Supply policy** — how aggressively to resupply remote sites (frequency, stockpile targets)
+- **Collection policy** — when to send ore pickup runs (threshold, scheduled, opportunistic)
+- **Encounter policy** — how workers handle rival crews (avoid, coexist, confront)
+- **Thrust policy** — transit speed vs fuel efficiency tradeoff (already implemented: Conservative/Balanced/Aggressive/Economical)
+
+**Per-site overrides** allow the player to set different policies for specific claims. A high-value platinum site might get aggressive defense and frequent resupply, while a low-yield carbon site runs on minimal support.
+
+Per-site overrides surface naturally: the HQ tab shows **advisory alerts** when site conditions conflict with company-wide policy — "Rival crew spotted at Psyche, your encounter policy is set to Coexist" — with quick action to override or dismiss.
+
+**Play style progression:**
+- **Early game (manual):** The player dispatches every mission by hand. Policies exist but there's not much to automate with one ship. The player learns the mechanics.
+- **Mid game (mixed):** The player has enough sites that manual management becomes tedious. They start relying on policies and auto-routes. Manual dispatch is still available for special situations.
+- **Late game (strategic):** The operation runs on policy. The player's role is strategic — where to expand, how to respond to rivals, when to upgrade. The phone buzzes with strategic alerts, not routine logistics.
+
+Both manual and auto play styles are always available from the start. A player who wants a fully passive experience can set policies immediately. This won't be competitive in multiplayer, but it's allowed.
+
+> **STATUS: NOT YET IMPLEMENTED.** Company thrust policy exists. All other policies, per-site overrides, and the advisory alert system are not yet built.
+
+### 3.6 Alert System
+The HQ tab divides incoming information into two tiers:
+
+**Strategic alerts** — situations that require or strongly suggest a player decision. These persist until resolved or dismissed. They are visually distinct (pinned, different color, badge count). Examples:
+- Rival crew arrived at your claim
+- Supply critically low at a site
+- Equipment failing, mining unit going offline
+- Ship breakdown
+- Worker conflict escalating
+
+**News feed** — informational events that require no action. These scroll by and age out naturally. Examples:
+- Contract available
+- Market price shift
+- Survey results
+- Mission completed
+- Worker hired
+
+Strategic alerts interact with **worker personality** and **communication delay**. When a situation arises at a remote site:
+- A crew led by a **cautious leader** buys time — the alert arrives as "this is happening, you have a window to respond."
+- A crew led by a **hotheaded leader** acts immediately — the alert arrives as "this already happened, here's what your crew did."
+- **Light-speed delay** further constrains the window. A site at 5 AU has ~45 minutes of one-way delay. By the time you hear about a situation and send a response, 90 minutes have passed. Your workers may have already acted.
+
+The player influences which type of alert they get by **who they hire and where they assign them** — but can never fully predict outcomes. Hiring decisions have consequences.
 
 > **STATUS: NOT YET IMPLEMENTED.**
 
@@ -103,12 +151,12 @@ Light-speed communication delay is real at solar system distances. An order sent
 ## 4. Physics & Realism
 
 ### 4.1 Core Principle
-All distances, travel times, fuel consumption, and resource quantities are derived from real or plausible values. Where the game assumes future technology, it proposes specific performance characteristics and uses those consistently. The numbers should be internally coherent even if the technology is speculative.
+All distances, travel times, fuel consumption, and resource quantities derive from real or plausible values. Future technology proposes specific performance characteristics and uses those consistently.
 
-> **STATUS: IMPLEMENTED.** All physics use consistent AU-based coordinate system. Planet positions from JPL Keplerian elements. Transit times from Brachistochrone or Hohmann calculations. Fuel consumption scales with distance, mass, and thrust setting.
+> **STATUS: IMPLEMENTED.** AU-based coordinates. JPL Keplerian elements. Brachistochrone/Hohmann transit. Mass-aware fuel consumption.
 
 ### 4.2 Propulsion Systems
-Ships use one of several drive types, each representing a different cost/speed tradeoff. Travel follows a brachistochrone trajectory: constant acceleration to the midpoint, then flip and decelerate. Transit time is calculated from distance and acceleration rate.
+Ships use one of several drive types (cost/speed tradeoff). Travel follows brachistochrone trajectory: constant acceleration to midpoint, flip and decelerate.
 
 | Drive Type | Acceleration | Fuel Cost | Use Case |
 |---|---|---|---|
@@ -133,46 +181,61 @@ Each asteroid has a finite number of **mining slots** determined by its size and
 > **STATUS: PARTIALLY IMPLEMENTED.** 200+ named asteroids with body types (ASTEROID, COMET, NEO, TROJAN, CENTAUR, KBO) and ore yields per type. Five ore types: Iron ($50 base), Nickel ($120), Platinum ($800), Water/Ice ($200), Carbon/Organics ($150). Survey events periodically shift individual asteroid yields by -30% to +50%. **Mining slot limits are not yet implemented.**
 
 ### 4.4 Orbital Mechanics
-Asteroids follow orbits, meaning distances between objects change over time. An asteroid that is 0.5 AU away today might be 2 AU away in six months. This creates a dynamic geography where strategic opportunities shift continuously.
+Distances between objects change over time — an asteroid 0.5 AU away today might be 2 AU away in six months. Strategic opportunities shift continuously.
 
-> **STATUS: IMPLEMENTED.** All celestial bodies orbit using Kepler's third law. Planet positions use full Keplerian orbital elements with JPL data. Asteroid and colony orbital positions advance each tick. The solar map reflects all orbital motion in real time. Transit calculations use current orbital positions for accurate distance computation.
+> **STATUS: IMPLEMENTED.** Full Keplerian elements with JPL data. All bodies orbit each tick. Solar map reflects orbital motion in real time. Transit calculations use current positions.
 
 ### 4.5 Gravity Assist Routes
-Ships can use planetary gravity assists (slingshot maneuvers) to reduce fuel consumption at the cost of longer travel time.
+Planetary gravity assists reduce fuel at the cost of longer travel time.
 
-> **STATUS: IMPLEMENTED.** The `gravity_assist.gd` system checks all 8 planets as potential flyby waypoints. A slingshot must save at least 15% fuel and add no more than 60% extra travel time. Planet gravitational parameters are calibrated for game units. Multi-leg trajectories are rendered on the solar map as dashed waypoint lines. Company thrust policy (Conservative/Balanced/Aggressive/Economical) determines whether the AI prefers direct or slingshot routes.
+> **STATUS: IMPLEMENTED.** Checks all 8 planets as flyby waypoints. Must save ≥15% fuel, add ≤60% time. Multi-leg trajectories rendered as dashed lines. Thrust policy determines direct vs. slingshot preference.
 
 ---
 
 ## 5. Economy & Market
 
 ### 5.1 Dual Currency System
-The game has two forms of value, and the tension between them drives strategy.
+Two forms of value, and the tension between them drives strategy:
 
-**Money** is earned by selling ore and materials to colonies or on the open market. Money is spent on payroll, fuel, equipment purchases, food, repairs, and other operational costs. Money keeps your corporation alive but does not directly win the game.
+**Money** — earned by selling ore, spent on payroll, fuel, equipment, food, repairs. Keeps your corporation alive but doesn't win the game.
 
-**Materials** are what you mine. They can be sold for money or contributed to the endgame project. Materials contributed are what determine who benefits from the project's completion. The central strategic tension is between selling materials to fund operations and contributing them to advance your position.
+**Materials** — mined ore that can be sold for money or contributed to the endgame project. Contributions determine who benefits from project completion. The central tension: sell to fund operations, or contribute to advance your position.
 
-> **STATUS: PARTIALLY IMPLEMENTED.** Money is fully functional as the primary currency. Material contribution to the endgame project is **not yet implemented** (see Section 7).
+> **STATUS: PARTIALLY IMPLEMENTED.** Money is functional. Material contribution to endgame project **not yet implemented** (see Section 7).
 
 ### 5.2 The Open Market
-Material prices fluctuate based on supply and demand across the solar system. Prices are influenced by events — a construction boom on a Mars colony drives up structural metal prices; a new refining technology announcement crashes rare earth values (which may later recover if the announcement proves false). In multiplayer, the market responds to what all players collectively do: if everyone floods the market with iron, the price drops.
+Prices fluctuate on supply and demand. Events drive shifts — construction booms raise metal prices, tech announcements crash rare earths (which may recover if the announcement proves false). In multiplayer, the market responds to all players collectively.
 
-> **STATUS: IMPLEMENTED.** Market prices use a random walk (±3% per tick) with 1% mean reversion toward base prices, clamped between 0.3x and 3.0x base price. Eight scripted event types generate dynamic market conditions: SHORTAGE, SURPLUS, DISASTER, BOOM, RECESSION, DISCOVERY, STRIKE, TECH_ADVANCE. Events apply multipliers ranging from 0.5x to 3.5x on affected ore types. Events can be system-wide or colony-specific. Up to 3 concurrent market events. **Player-driven market effects are not yet implemented** (multiplayer feature).
+> **STATUS: IMPLEMENTED.** Random walk (±3%/tick) with 1% mean reversion, clamped 0.3x–3.0x base. Eight event types (SHORTAGE, SURPLUS, DISASTER, BOOM, RECESSION, DISCOVERY, STRIKE, TECH_ADVANCE) with 0.5x–3.5x multipliers. System-wide or colony-specific. Up to 3 concurrent events. **Player-driven market effects not yet implemented** (multiplayer).
 
 ### 5.3 Contracts
-Players can enter into contracts that guarantee a sale price for a specific material over a defined period. Contracts provide income stability but lock you into commitments. If market prices spike above your contract rate, you lose potential profit. If prices crash, you're protected.
+Guaranteed sale price for a specific material over a defined period. Income stability at the cost of flexibility — if market spikes above your rate, you lose potential profit.
 
-> **STATUS: IMPLEMENTED.** Contracts are generated with random ore types, quantities, deadlines, and fictional issuer names (12 companies). Premium pricing: 1.3x-2.0x over spot price. 60% of contracts specify a delivery colony (with 20% bonus). 80% allow partial fulfillment. Up to 5 available contracts and unlimited active contracts. Contracts expire if not accepted, and fail if deadlines pass unfulfilled. Players can fulfill contracts from ship cargo or from stockpile.
+> **STATUS: IMPLEMENTED.** Random generation with ore types, quantities, deadlines, fictional issuers (12 companies). 1.3x–2.0x premium. 60% specify delivery colony (+20% bonus). 80% allow partial fulfillment. Up to 5 available, unlimited active. Fulfillable from cargo or stockpile.
 
 ### 5.4 Colony Trade
-Colonies throughout the solar system have specific needs and specific products. A Mars colony might need water ice and volatiles but can manufacture mining equipment. An orbital station might need structural metals but produces refined fuel. Players trade with colonies, selling them what they need and purchasing what the corporation cannot produce internally.
+Colonies have specific needs and products. Players trade with them, selling what they need and purchasing what the corporation can't produce internally. A player who is a colony's primary supplier may receive priority pricing or early access to manufactured goods.
 
-These relationships have strategic value beyond individual transactions. A player who is a colony's primary supplier may receive priority pricing or early access to manufactured goods.
+Colonies also serve as **supply chain hubs** — sources of food, fuel, and replacement parts. A well-positioned colony relationship dramatically reduces supply line costs.
 
-Colonies also serve as **supply chain hubs** — sources of food, fuel, and replacement parts for remote mining operations. A well-positioned colony relationship can dramatically reduce supply line costs.
+### 5.5 Colony Tiers
+Colonies are divided into two tiers:
 
-> **STATUS: IMPLEMENTED.** 9 colonies with unique price multipliers per ore type:
+**Major colonies** (HQ-capable, 5-6 total) — full repair facilities, large markets, deep worker hiring pools, equipment fabrication. These are the only locations where a player can establish their headquarters.
+- **Earth orbit** — most connected, most competitive, best markets
+- **Mars** — gateway to the inner belt
+- **Ceres** — heart of the asteroid belt, closest to the action
+- **Callisto** (Jupiter) — access to Trojans, outer belt, Hildas
+- **Titan** (Saturn) — frontier outpost, access to Centaurs and outer system
+
+**Minor colonies** — can trade there, buy fuel, hire a worker or two. Limited repair facilities — they can do the work, but part availability is a problem and repairs take longer. There are only so many hands. Smaller markets with more volatile prices. Good targets for supply contracts — they need materials and will pay for deliveries.
+
+**Colony growth and decline:**
+- Heavy trade traffic grows a colony — population, facilities, market depth. Minor colonies can eventually become major.
+- Lost traffic causes stagnation — longer repairs, thinner market, workers leaving. They don't disappear, but slide back.
+- **Players can invest directly** in minor colony facilities (repair bay, warehouse, fuel depot, worker housing). Accelerates growth but is a semi-public good in multiplayer.
+
+> **STATUS: PARTIALLY IMPLEMENTED.** 9 colonies exist with unique pricing. Colony tier system, growth/decline, player investment, and expanded colony count are **not yet implemented.** Current colonies:
 > - **Lunar Base** (Moon) — needs Water/Ice (1.8x), Iron (1.2x)
 > - **Mars Colony** (Mars) — needs Iron (1.3x), Carbon (1.4x)
 > - **Ceres Station** (asteroid belt) — balanced pricing, Water premium (1.5x)
@@ -183,57 +246,45 @@ Colonies also serve as **supply chain hubs** — sources of food, fuel, and repl
 > - **Callisto Base** (Jupiter) — balanced, mild premiums
 > - **Triton Station** (Neptune) — remote, highest premiums across the board
 >
-> Colony prices also scale with distance from Earth (+20%/AU scarcity premium) and are modified by active market events. Fuel pricing is location-aware: Earth base $5/unit, colony base $6.50/unit, +$1.20/unit/AU shipping. **Colony relationship mechanics (priority pricing, supplier status) are not yet implemented.**
+> Colony prices also scale with distance from Earth (+20%/AU scarcity premium) and are modified by active market events. Fuel pricing is location-aware: Earth base $5/unit, colony base $6.50/unit, +$1.20/unit/AU shipping. **Colony relationship mechanics (priority pricing, supplier status) are not yet implemented.** Colony count should expand to 15-20 total.
 
-### 5.5 The Information Layer
-Not all market information is reliable. Events, rumors, and announcements enter the game's information feed, and the player must judge what is trustworthy. A report that a competitor has developed a new synthesis process might crash material prices — but the report might be false.
+### 5.6 The Information Layer
+Not all market information is reliable. A report that a competitor developed a new synthesis process might crash prices — but the report might be false. Players may spread misinformation deliberately. Evaluating information under uncertainty is a core skill.
 
-Players may be able to spread misinformation deliberately. Evaluating information and maintaining composure under uncertainty is a core skill.
-
-> **STATUS: NOT YET IMPLEMENTED.** The information/intelligence layer, fog of war on market data, and misinformation mechanics are deferred to Phase 4.
+> **STATUS: NOT YET IMPLEMENTED.** Deferred to Phase 4.
 
 ---
 
 ## 6. Claims, Competition & Combat
 
 ### 6.1 Staking a Claim
-The game's title refers to its central mechanic: **claiming mineable bodies**. When a player's ship arrives at an asteroid and deploys mining units, those units occupy mining slots on the body's surface. Each asteroid has a finite number of slots based on its size. Deploying a unit on an open slot stakes a claim to that slot — it belongs to that player's corporation until the unit is removed, destroyed, or abandoned.
+The game's title: **claiming mineable bodies**. Deploy mining units on asteroid surface slots (finite, based on size). A unit on a slot = your claim until removed, destroyed, or abandoned.
 
-Claims are not registered or protected by any authority. They are defended by presence, reputation, and — when necessary — force.
+Claims are not registered or protected by authority. They are defended by presence, reputation, and — when necessary — force.
 
 > **STATUS: NOT YET IMPLEMENTED.** Currently mining uses a ship-present model. The claim staking system is a core upcoming feature.
 
 ### 6.2 Asteroid Contention
-When workers from two corporations arrive at the same asteroid simultaneously, there is no automated resolution. The **workers themselves** decide what happens based on their personalities.
+When rival workers meet at the same asteroid, the **workers themselves** decide what happens based on personality. The player cannot directly intervene due to communication delay — they set policy and hire accordingly.
 
-- **Cautious workers** may yield the best slots or leave entirely.
-- **Aggressive workers** may attempt to seize occupied slots or intimidate rivals.
-- **Loyal workers** follow corporate policy more closely but still exercise judgment.
-- **Leaders** influence the behavior of other workers at the same site.
+Worker personality types affect outcomes:
+- **Cautious** — yield slots or leave to avoid confrontation
+- **Aggressive** — seize slots, intimidate rivals, may start unnecessary fights
+- **Loyal** — follow corporate policy closely, predictable
+- **Leaders** — influence other workers at the same site
 
-The player/CEO cannot directly intervene in these encounters due to communication delay. They set policy and hire the kind of people who will execute it — but the details play out autonomously.
-
-Possible outcomes when workers from rival corporations encounter each other:
-- **Peaceful coexistence** — Both parties claim different slots and mine separately.
-- **Intimidation** — One crew's presence (numbers, equipment, personality) causes the other to relocate.
-- **Negotiation** — Workers may agree to share a body or establish informal boundaries.
-- **Sabotage** — A desperate or aggressive worker might damage rival equipment.
-- **Violence** — Rare, especially early game. Injures or kills workers. Severe reputation consequences.
+Possible outcomes: peaceful coexistence, intimidation, negotiation, sabotage, or violence (rare, severe reputation consequences).
 
 > **STATUS: NOT YET IMPLEMENTED.** Worker personality traits and autonomous decision-making are deferred to Phase 2b.
 
 ### 6.3 Combat
-Combat is possible but carries heavy costs:
+Combat is possible but carries heavy costs.
 
-**Early game:** Violence is rare and risky. Weapons are expensive, heavy, and consume cargo space that could carry ore. Most workers won't fight unless cornered. Starting a fight over an asteroid when dozens of others are unclaimed is irrational — and the game's systems should make this feel obviously wasteful.
+**Early game:** Weapons are expensive, heavy, consume cargo space. Fighting over an asteroid when dozens are unclaimed is obviously wasteful.
 
-**Late game:** As the belt is carved up and rich asteroids become scarce, the calculus changes. Corporations with established territories invest in defense. Raiders attempt to seize productive claims. Armed escorts protect ore haulers. Combat becomes a calculated business decision — costly, but sometimes cheaper than finding a new source.
+**Late game:** Rich asteroids become scarce. Defense investments, raids on productive claims, armed escorts — combat becomes a calculated business decision.
 
-**Consequences of aggression:**
-- Workers can be injured or killed (permanent loss, expensive to replace)
-- Equipment can be damaged or destroyed
-- Reputation damage: colonies may raise prices or refuse trade, workers may demand higher pay or refuse to work for aggressive corporations, other players may form alliances against the aggressor
-- In multiplayer, aggression makes you a target
+**Consequences:** Worker injury/death (permanent loss), equipment damage/destruction, reputation damage (worse colony pricing, higher worker pay demands, becoming a multiplayer target).
 
 ### 6.4 Ship Weapons
 Weapons are ship upgrades with mass and volume. Every weapon mounted is cargo capacity sacrificed. A ship loaded with weapons is a poor hauler. A ship loaded with cargo is a poor fighter. This creates meaningful fleet composition decisions:
@@ -250,19 +301,17 @@ Weapon types (to be designed in detail):
 > **STATUS: NOT YET IMPLEMENTED.** Ship upgrades exist (fuel tanks, engines, cargo bays, hull) but weapon upgrades are not yet defined.
 
 ### 6.5 AI Corporations
-In single-player mode, AI-controlled corporations provide competition. They follow all the same rules as the player: they stake claims, deploy mining units, trade with colonies, hire workers, and may contest asteroids. Their behavior should feel like competing with real opponents — they make strategic decisions, react to the player's expansion, and occasionally make mistakes.
-
-In multiplayer, AI corporations may still fill the competitive landscape when player counts are low.
+AI corporations follow all the same rules: stake claims, deploy units, trade, hire, and contest. They make strategic decisions, react to expansion, and occasionally make mistakes. Present in single player; fill gaps in low-population multiplayer servers.
 
 > **STATUS: NOT YET IMPLEMENTED.**
 
 ### 6.6 Fog of War
-Players have limited visibility into what competitors are doing:
-- **Engine flares:** A fusion burn is visible across great distances. You might see that someone is heading toward a body you're interested in.
-- **Activity signatures:** Energy output from mining operations on an asteroid might be detectable, indicating that a rock is already being worked, but not by whom or at what scale.
-- **Market signals:** A sudden change in supply or pricing can indicate that a competitor has made a major sale or shifted strategy.
+Limited visibility into competitor activity:
+- **Engine flares** — fusion burns visible across great distances
+- **Activity signatures** — mining energy output detectable, but not who or at what scale
+- **Market signals** — supply/pricing shifts hint at competitor actions
 
-Better sensor equipment could extend observation range. Stealth technology could reduce visibility.
+Better sensors extend range. Stealth technology reduces visibility.
 
 > **STATUS: NOT YET IMPLEMENTED.**
 
@@ -271,32 +320,31 @@ Better sensor equipment could extend observation range. Stealth technology could
 ## 7. The Endgame Project
 
 ### 7.1 Overview
-Each game epoch has a large-scale collective project that all corporations can contribute materials toward. The nature of this project may vary — it could be an interstellar ship, a massive space station, a terraforming initiative, or something else. The project provides the game's win condition and drives late-game scarcity as materials are diverted from the economy.
+Each epoch has a large-scale collective project (interstellar ship, space station, terraforming, etc.) that all corporations contribute materials toward. Provides the win condition and drives late-game scarcity as materials leave the economy.
 
 ### 7.2 Material Requirements
-The project requires massive quantities of diverse materials. Its construction phases demand different materials at different times, shifting demand and creating market waves. As materials are diverted to the project, the broader economy tightens — prices rise, scarcity intensifies, and competition for remaining resources heats up.
+Massive quantities of diverse materials. Construction phases demand different materials at different times, creating market waves. Diverted materials tighten the economy — prices rise, scarcity intensifies, competition heats up.
 
 ### 7.3 Rewards
-Multiple players can benefit from the project's completion, not just the single top contributor. The reward structure is flexible:
-- Top contributors may receive the greatest benefit (e.g., a head start in a new system, exclusive access to advanced technology, bonus starting capital for the next epoch).
-- Mid-tier contributors receive lesser but still meaningful rewards.
-- Non-contributors are left behind but can continue operating in the current system.
-
-The exact reward structure is an open design question that should be tuned based on playtesting.
+Multiple players benefit, not just the top contributor. Top contributors get the greatest benefit (head start, technology, capital). Mid-tier contributors receive lesser but meaningful rewards. Non-contributors are left behind. Exact structure is an open design question.
 
 ### 7.4 Epochs
-When the project completes, a new epoch begins. The specifics of epoch transitions — what carries over, what resets, how the new environment differs — are to be designed. The goal is a seasonal structure where each epoch has a clear arc: early expansion, mid-game competition, late-game scarcity and desperation, then transition.
+Project completion starts a new epoch. Seasonal structure: early expansion → mid-game competition → late-game scarcity → transition. What carries over between epochs is to be designed.
 
-> **STATUS: NOT YET IMPLEMENTED.** The endgame project, contribution system, rewards, and epochs are all deferred to Phase 4-5.
+> **STATUS: NOT YET IMPLEMENTED.** Deferred to Phase 4-5.
 
 ---
 
 ## 8. Player Operations & Management
 
 ### 8.1 Home Base
-Each player operates from a home facility, likely an orbital station. The base serves as the hub for storage, fabrication, crew housing, and ship docking. Its location relative to the belt affects transit times and strategic positioning.
+Each player operates from a **major colony**, chosen at game start. The base serves as the hub for storage, fabrication, crew housing, and ship docking. Its location relative to the belt affects transit times, light-speed communication delay, and strategic positioning.
 
-> **STATUS: IMPLICIT.** Earth serves as the implicit home base. Ships dock at Earth, workers are hired there, equipment is purchased/fabricated there. No explicit base facility, upgrade system, or relocation mechanic exists yet.
+**Starting location matters.** Earth is central and well-connected but competitive. Mars gives better access to the inner belt. Ceres is the heart of the belt. Callisto puts you near the Trojans and outer belt but far from inner system markets.
+
+**Relocation is possible** but expensive and disruptive. Moving HQ means rebasing all ships, recalculating all light-delay windows, and potentially losing colony relationships. Supply lines must be rebuilt. You'd only do it if the strategic landscape shifted enough to justify it — a region dominated by a rival consortium, or a new opportunity opening up elsewhere.
+
+> **STATUS: IMPLICIT.** Earth serves as the implicit home base. Ships dock at Earth, workers are hired there, equipment is purchased/fabricated there. No explicit base selection, relocation mechanic, or colony tier system exists yet.
 
 ### 8.2 Fleet
 Players own ships of varying size and capability. Ships are defined by their drive type, cargo capacity (mass and volume), fuel capacity, and upgrade slots. Fleet composition is a strategic choice:
@@ -321,10 +369,10 @@ Ships require maintenance and fuel, representing ongoing operational costs. Flee
 | Crew | 2 | 3 | 5 | 2 |
 | Upgrade slots | 3 | 4 | 5 | 4 |
 
-**Fuel has mass.** A fully loaded Prospector (214.8t dry + 118t fuel + 107t cargo) masses 439.8t. An empty one returning with depleted tanks is far lighter and accelerates faster. This means outbound trips (heavy with fuel, cargo, mining units, food) are slower than return trips.
+**Fuel has mass.** A fully loaded Prospector masses 439.8t (214.8t dry + 118t fuel + 107t cargo). An empty return is far lighter and faster. Outbound trips are always slower than returns.
 
 #### Per-Ship Variation
-No two ships are identical. Each generated ship varies from its class baseline, reflecting manufacturing tolerances, aftermarket modifications, and wear history:
+Each generated ship varies from its class baseline:
 
 | Stat | Variation | Justification |
 |---|---|---|
@@ -335,24 +383,14 @@ No two ships are identical. Each generated ship varies from its class baseline, 
 | Max thrust | ±5% | Engine tuning, wear history |
 | Upgrade slots | ±1 slot | Hardpoints welded on or sealed off |
 
-A generated Prospector might come out at 208.1t dry mass, 0.29g thrust, 112t cargo, 136 m³ volume, 122t fuel, 3 upgrade slots — a slightly lighter ship with more cargo room but weaker engines. Every ship has its own personality in the numbers.
+Example: a generated Prospector at 208.1t dry, 0.29g thrust, 112t cargo, 136 m³, 122t fuel, 3 slots — lighter with more cargo but weaker engines.
 
 > **STATUS: NEEDS UPDATE.** Four ship classes exist in code but use old placeholder values (round numbers, no volume, no variation). Ship data needs to be updated to these specifications. Ship purchasing UI is not yet implemented.
 
 ### 8.3 Mining Equipment (Autonomous Mining Units)
-Mining is performed by **autonomous mining units** deployed on asteroid surfaces. These are not ship components — they are cargo items with mass and volume that ships transport and deploy. **Mining units require workers to operate and maintain them.** A unit without workers is inert. Workers stationed at a mining site consume food, produce waste, and handle encounters with rival crews autonomously.
+**Autonomous mining units** are cargo items deployed on asteroid surfaces. They require workers to operate — a unit without workers is inert. Once deployed and staffed, they extract ore continuously without a ship present. Ships periodically collect stockpiled ore and deliver food/supplies/parts.
 
-Once deployed on an asteroid's mining slot with assigned workers, a unit operates continuously without a ship present. It extracts ore and stockpiles it at the mining site. Ships periodically visit to collect accumulated ore and deliver food, supplies, and replacement parts.
-
-Mining units:
-- Have mass and volume (constrain how many a ship can carry)
-- Require a mining slot on the asteroid's surface
-- **Require assigned workers to operate** (more skilled workers = higher output)
-- Operate continuously once deployed and staffed
-- Require periodic maintenance (repair parts delivered by supply ships)
-- Degrade over time; neglected units eventually go offline
-- Can be retrieved, relocated, or abandoned
-- Can be upgraded (see Section 8.8)
+Mining units have mass/volume (constrain transport capacity), require a mining slot, degrade over time (need maintenance parts), and can be retrieved, relocated, upgraded, or abandoned.
 
 #### Mining Unit Specifications (Generation 1)
 
@@ -367,9 +405,7 @@ A Prospector (107t / 143 m³ cargo) can carry roughly 8 Basic Mining Units by vo
 > **STATUS: NOT YET IMPLEMENTED.** Current system uses ship-mounted equipment that provides mining bonuses while the ship is present. Three equipment types exist (Basic Processor, Advanced Processor, Refinery) but function as ship buffs, not deployable units. This is a fundamental architectural change.
 
 ### 8.4 Cargo: Mass and Volume
-Ship cargo holds are constrained by both **mass** (tonnes) and **volume** (cubic meters). Some items are heavy but compact (platinum ore, weapons). Others are light but bulky (food supplies, carbon organics, mining units). A ship might fill its volume before reaching its mass limit, or vice versa.
-
-This creates packing optimization decisions: a supply run carrying food and mining units is volume-constrained; an ore hauling run is mass-constrained. Ship upgrades can expand mass capacity, volume capacity, or both.
+Cargo holds are constrained by both **mass** (tonnes) and **volume** (m³). Heavy-but-compact items (platinum, weapons) vs. light-but-bulky items (food, organics, mining units). Supply runs are volume-constrained; ore hauling is mass-constrained.
 
 #### Supply & Weapon Specs
 
@@ -381,107 +417,116 @@ This creates packing optimization decisions: a supply run carrying food and mini
 | Laser turret | 4.3t | 2.6 m³ | Moderate offense, effective vs equipment and small ships |
 | Kinetic launcher | 11.8t | 7.4 m³ | Heavy, serious threat to large ships |
 
-**Example supply run:** A Prospector resupplying a site with 5 workers for 60 days needs 840 kg of food (0.264 m³) plus repair parts. That's lightweight and compact — leaving most cargo space for collecting stockpiled ore on the return trip. But a deployment run carrying 4 mining units (30.4t / 45.6 m³) plus food plus repair parts fills the hold quickly.
+**Example:** Resupplying 5 workers for 60 days = 840 kg food (0.264 m³) plus repair parts — lightweight, leaving room for ore pickup. But deploying 4 mining units (30.4t / 45.6 m³) plus supplies fills the hold quickly.
 
 > **STATUS: NOT YET IMPLEMENTED.** Currently only mass (tonnes) is tracked for cargo. Volume constraints, food, and supply items do not yet exist.
 
 ### 8.5 Crew
-Workers are named individuals with skills, personalities, and pay expectations.
+Named individuals with skills, personalities, and pay expectations.
 
-**Skills** determine productivity: better miners extract more ore, better pilots reduce transit time, better engineers maintain equipment more effectively.
+**Skills:** pilot (transit time), engineer (maintenance), mining (extraction rate).
 
-**Personalities** determine autonomous behavior in the field:
-- **Aggressive** — Will confront rivals, defend claims forcefully, but may start fights unnecessarily.
-- **Cautious** — Avoids conflict, may yield claims to avoid confrontation, but keeps workers alive.
-- **Loyal** — Follows corporate policy closely, predictable behavior.
-- **Greedy** — Motivated by bonuses, may cut corners or take risks for personal gain.
-- **Leader** — Influences other workers at the same site. A strong leader shapes the group's response to encounters.
+**Personalities** determine autonomous field behavior:
+- **Aggressive** — confront rivals, defend forcefully, may start unnecessary fights
+- **Cautious** — avoid conflict, may yield claims, keeps workers alive
+- **Loyal** — follow corporate policy closely, predictable
+- **Greedy** — motivated by bonuses, may cut corners for personal gain
+- **Leader** — influences other workers at the same site
 
-Workers consume **food** and produce **waste**. Food must be carried as cargo on every mission and resupplied at remote mining sites. Waste is jettisoned in space or at mining sites. Food consumption is calculated based on crew size and mission duration. Running out of food is a serious logistics failure.
+Workers consume **food** (carried as cargo, resupplied at remote sites). Running out is a serious logistics failure.
 
 > **STATUS: PARTIALLY IMPLEMENTED.** Workers have random names (40 first x 40 last), skill levels (0.7-1.5), and daily wages ($80-200). Workers are hired/fired and assigned to missions. Payroll deducts wages every game-day.
 >
 > **NOT YET IMPLEMENTED:** Personality traits, autonomous decision-making, distinct roles, skill progression, food consumption, waste management.
 
 ### 8.6 Fuel & Logistics
-Fuel is a critical constraint. Every mission requires fuel calculated from distance, ship mass (including cargo weight), and thrust setting. Fuel has weight that affects acceleration. Running out of fuel in transit is a serious operational failure.
+Fuel consumption scales with distance, mass, and thrust. Fuel has weight that affects acceleration. Running out mid-transit = derelict.
 
-With autonomous mining units deployed across the belt, logistics becomes the core challenge: planning supply routes, managing fuel budgets, balancing cargo space between food, repair parts, and ore, and deciding how often to resupply versus how much food to send each time.
+With units deployed across the belt, logistics is the core challenge: supply route planning, fuel budgets, cargo allocation between food/parts/ore, and resupply frequency.
 
 > **STATUS: IMPLEMENTED (basic).** Fuel consumption scales with distance, mass, and thrust. Derelict state on fuel depletion. Location-aware fuel pricing from nearest source.
 >
 > **NOT YET IMPLEMENTED:** Supply route planning, food as cargo, fuel processor equipment (extracting fuel from water-ice asteroids), player-owned fuel depots.
 
 ### 8.7 Ship Upgrades
-Ships can be upgraded with modules that improve their capabilities. Each upgrade has mass and occupies an upgrade slot. Upgrade categories:
+Modules with mass, occupying upgrade slots. Categories: speed, efficiency, capacity, weapons (see Section 6.4).
 
-- **Speed:** Improved engines, thrust nozzles — faster transit, higher fuel consumption.
-- **Efficiency:** High-efficiency engines, lightweight hull — less fuel per trip, more net cargo.
-- **Capacity:** Extended fuel tanks, expanded cargo bays — carry more per trip.
-- **Weapons:** Point defense, laser turrets, kinetic launchers — combat capability at the cost of cargo capacity (see Section 6.4).
-
-> **STATUS: PARTIALLY IMPLEMENTED.** 9 upgrade types across fuel, engine, cargo, and hull categories. **Weapon upgrades are not yet implemented.**
+> **STATUS: PARTIALLY IMPLEMENTED.** 9 types across fuel, engine, cargo, and hull. **Weapon upgrades not yet implemented.**
 
 ### 8.8 Mining Unit Generations
-Mining units are not static technology. New, more capable models are released periodically — not frequently, but as meaningful technological milestones within an epoch. Each generation offers greater extraction rates, better durability, or lower maintenance requirements, but at significantly higher cost.
+New models release periodically within an epoch — better extraction, durability, or maintenance at higher cost.
 
-This creates upgrade decisions:
-- **Replace** working units with newer models (expensive up front, better long-term output)
-- **Keep** older units running and invest in expansion instead (more claims, lower per-unit output)
-- **Mix** generations across sites based on asteroid value (best units on the richest bodies)
-
-Older units continue to function but become increasingly outclassed. A corporation running first-generation units in the late game is at a competitive disadvantage — but they're not worthless.
-
-Mining units can also be upgraded in place (workers install improvement kits delivered by supply ships) rather than fully replaced, offering a cheaper but less effective middle path.
+Upgrade decisions: replace working units (expensive, better output), keep old and expand instead (more claims, lower per-unit), or mix generations by asteroid value. Units can also be upgraded in place via improvement kits (cheaper but less effective than replacement).
 
 > **STATUS: NOT YET IMPLEMENTED.**
 
 ---
 
-## 9. Unions & Alliances
+## 9. Consortia & Alliances
 
-Corporations can form **unions** — formal alliances of mining firms that coordinate operations and present a unified front.
+Corporations can form **consortia** — goal-oriented alliances with explicit shared objectives. A consortium is defined by what its members are cooperating TO DO, not just who they are. Players can join or leave freely. A player can belong to multiple consortia simultaneously.
 
-### 9.1 Union Mechanics
-- **Formation:** Any corporation can propose a union. Others accept or decline. A union needs at least 2 members.
-- **Shared claim visibility:** Union members can see each other's claims, supply status, and ore stockpiles.
-- **Non-aggression:** Union members' workers will not initiate conflict with each other at contested sites.
-- **Mutual defense:** If a non-union corporation's workers threaten a union member's claim, nearby union workers may respond.
-- **Coordinated territory:** Unions can informally divide the belt — "you take that region, we'll take this one" — reducing wasteful competition.
-- **Shared supply routes:** Union members may share supply infrastructure, reducing logistics costs for all members.
+### 9.1 What Consortia Are For
+Consortia are flexible. Some examples:
+- A **mining cooperative** that shares supply routes and defends a region of the belt
+- A **trade cartel** that coordinates pricing to control a commodity market
+- A **defense pact** against a specific aggressor or pirate group
+- An **endgame push** pooling contributions toward the collective project
+- A **raider syndicate** sharing intel on vulnerable targets and coordinating attacks
+- A **colony development group** jointly investing in a minor colony's infrastructure
+- A **protection racket** that "offers security services" to independents in their territory
 
-### 9.2 Union Risks
-- **Betrayal:** A union member could defect, seizing shared intelligence about claim locations and supply schedules.
-- **Free riding:** A weak member benefits from the union's protection without contributing proportionally.
-- **Reputation by association:** If one union member behaves aggressively, it may taint the reputation of the entire union.
-- **Power imbalance:** A dominant member may effectively control the union, turning allies into dependents.
+The mechanics don't care about intent. Shared supply routes work the same whether you're hauling ore or weapons. Pooled intelligence is useful whether you're scouting mining targets or raid targets.
 
-### 9.3 Union vs. Union
-As the game progresses and territory becomes scarce, conflicts may escalate from individual corporation disputes to union-level territorial wars. These large-scale conflicts are the most dramatic events in the game — and the most costly.
+### 9.2 Mechanical Benefits
+Cooperation comes with real in-game advantages, not just social convenience:
+- **Shared claim visibility:** Members can see each other's claims, supply status, and ore stockpiles.
+- **Shared supply routes:** Members can share supply infrastructure, reducing logistics costs for all.
+- **Pooled ore stockpiles:** Collective storage and coordinated selling for market leverage.
+- **Joint colony investment:** Pool funds to develop colony facilities faster.
+- **Coordinated contract fulfillment:** Multiple members contribute to large contracts no single player could fill.
+- **Non-aggression:** Members' workers will not initiate conflict with each other at contested sites.
+- **Mutual defense:** When a non-member threatens a member's claim, nearby member workers may respond.
+- **Coordinated territory:** Divide a region — "you take that sector, we'll take this one" — reducing wasteful competition.
 
-> **STATUS: NOT YET IMPLEMENTED.** Unions are a Phase 4 multiplayer feature but should also be available in single-player against AI corporations.
+### 9.3 Agreements & Governance
+Consortia can set shared agreements that the game makes visible but does not enforce. Enforcement is social — members see who's complying and deal with violators themselves.
+
+**Agreement types:**
+- **Price floors:** Set a minimum sale price per commodity. Members are warned when selling below the floor. The consortium log shows who violated it.
+- **Territory claims:** Mark asteroids or regions on the map as consortium territory. No mechanical enforcement — just visibility. Everyone sees if someone's mining where they shouldn't be.
+- **Quotas:** Set a target tonnage per member per period. Dashboard shows who's hitting it and who's not.
+- **Protected zones:** Flag a region as defended. Members in the area get alerts when non-members enter.
+
+**Governance is minimal:**
+- **Founder** — whoever created the consortium. Can unilaterally kick members. If members don't like how the founder runs things, they leave and form a new one.
+- **Removal** — any member can propose a kick. It goes to all other members as a strategic alert ("Remove PlayerX? Reason: undercutting platinum floor"). Majority vote wins.
+- **Joining** — any player can request to join. Founder approves or denies.
+- **Leaving** — any member can leave at any time, no penalty.
+
+The game provides transparency (shared dashboards, compliance logs). Players provide consequences.
+
+### 9.4 Consortium Risks
+- **Betrayal:** A member could defect, taking shared intelligence about claim locations and supply schedules.
+- **Free riding:** A weak member benefits from the consortium's resources without contributing proportionally.
+- **Reputation by association:** If one member behaves aggressively, it may taint the reputation of the group.
+- **Power imbalance:** A dominant member may effectively control the consortium, turning allies into dependents.
+- **Conflicting memberships:** A player in two consortia with opposing goals creates tension.
+
+### 9.5 Consortium vs. Consortium
+As the game progresses and territory becomes scarce, conflicts may escalate from individual disputes to consortium-level territorial wars. A mining cooperative defending their claims against a raider syndicate. Two trade cartels competing to control the platinum market. These large-scale conflicts are the most dramatic events in the game — and the most costly. Cooperation is likely more decisive than firepower.
+
+> **STATUS: NOT YET IMPLEMENTED.** Consortia are a Phase 4 multiplayer feature but should also be available in single-player against AI corporations.
 
 ---
 
 ## 10. Leaderboards
 
-### 10.1 Single Player Leaderboards
-Track the player's performance against AI corporations:
-- **Total Revenue** — Lifetime earnings from ore sales and contracts
-- **Claims Held** — Number of active mining operations across the belt
-- **Ore Extracted** — Total tonnes mined across all sites
-- **Project Contributions** — Materials contributed to the endgame project
-- **Net Worth** — Money + estimated value of assets (ships, mining units, stockpiled ore)
-- **Reputation** — Current reputation score and tier
+Categories: total revenue, claims held, ore extracted, project contributions, net worth, reputation.
 
-### 10.2 Multiplayer Leaderboards
-Per-server leaderboards visible to all players on that server:
-- Same categories as single player
-- Updated in real time
-- Historical rankings (how positions changed over time)
-- Union leaderboards (aggregate scores for allied corporations)
+**Single player:** tracked against AI corporations.
 
-Leaderboards create strategic information: a player climbing the rankings signals success but also paints a target. A player who stays off the top of the board attracts less attention.
+**Multiplayer:** per-server, real-time, with historical rankings and consortium aggregates. Climbing the rankings signals success but paints a target.
 
 > **STATUS: NOT YET IMPLEMENTED.**
 
@@ -492,28 +537,23 @@ Leaderboards create strategic information: a player climbing the rankings signal
 > **STATUS: IMPLEMENTED.** A full ship hazard and rescue system has been built:
 
 ### 11.1 Engine Wear & Breakdowns
-Ship engines degrade during transit at a rate of 0.00003 condition per tick (~6% loss per 200,000-tick trip). When condition drops below 50%, breakdown probability increases. Even well-maintained ships have a tiny baseline breakdown chance (manufacturing defects, worker misuse). Typical breakdown frequency: once every 2-30 trips depending on maintenance.
-
-Breakdowns cause engine failure and trigger a derelict state. Fuel depletion also causes derelict status.
+Engines degrade at 0.00003/tick (~6% per 200,000-tick trip). Below 50% condition, breakdown probability increases. Baseline chance exists even on well-maintained ships. Typical frequency: once every 2-30 trips. Breakdowns and fuel depletion both trigger derelict state.
 
 ### 11.2 Professional Rescue
-When a ship becomes derelict, the player can dispatch a rescue mission. The system finds the **nearest rescue-capable source** — Earth or any colony with `has_rescue_ops` (Ceres Station, Ganymede Port, Mars Colony, Lunar Base, Europa Lab). Rescue from the nearest source minimizes transit time and cost.
+Dispatched from the **nearest rescue-capable source** (Earth, Ceres Station, Ganymede Port, Mars Colony, Lunar Base, Europa Lab).
 
-- **Base rescue cost:** $15,000 (crew, equipment, opportunity cost) + $8,000/AU from source
-- **Base refuel cost:** $5,000 + $4,000/AU from source
-- Rescued ships are returned to the source colony at 50% engine condition with a 10% chance of losing a worker
+- **Rescue:** $15,000 base + $8,000/AU. Ship returned at 50% condition, 10% worker loss chance.
+- **Refuel:** $5,000 base + $4,000/AU.
 
 ### 11.3 Benevolent Stranger Rescue
-There is a very rare chance (~1 in 500,000 per tick, ~once per 6 game-days) that a passing ship offers to help a derelict vessel. Ships near populated areas (within 1 AU of Earth or colonies) have 3x the chance; deep space ships have 0.5x.
+~1/500,000 chance per tick (~once per 6 game-days). 3x near populated areas, 0.5x deep space.
 
-- Stranger rescue is **immediate** (no transit wait — they're already there)
-- Restores fuel to 25%, engine to 40%, preserves cargo, no worker loss risk
-- Offers expire after 12 game-hours (43,200 ticks)
-- The player can accept free, accept and tip ($2,000-5,000 suggested), or decline
-- **Not tipping severely damages reputation** (-10). Tipping improves it (+5)
+- **Immediate** (no transit). Restores 25% fuel, 40% engine. Preserves cargo, no worker loss.
+- Offers expire after 12 game-hours. Accept free, tip ($2,000-5,000), or decline.
+- Not tipping: -10 reputation. Tipping: +5.
 
 ### 11.4 Breakdown Alerts
-Ship breakdowns, rescues, refuels, and stranger offers are logged as color-coded events in the HQ dashboard tab. On desktop, breakdowns trigger a window attention request.
+Breakdowns, rescues, refuels, and stranger offers are logged as color-coded events in the HQ dashboard. Desktop breakdowns trigger window attention request.
 
 ---
 
@@ -522,7 +562,7 @@ Ship breakdowns, rescues, refuels, and stranger offers are logged as color-coded
 > **STATUS: PARTIALLY IMPLEMENTED.** A foundation reputation system tracks the player's standing.
 
 ### 12.1 Score & Tiers
-Reputation is a numeric score from -100 to +100, starting at 0. Five tiers:
+Score: -100 to +100, starting at 0. Five tiers:
 - **Notorious** (< -50) — red
 - **Shady** (< -15) — red
 - **Unknown** (< 15) — white
@@ -542,28 +582,27 @@ Reputation is a numeric score from -100 to +100, starting at 0. Five tiers:
 | Sustained peaceful coexistence at shared bodies | +1 (periodic) |
 
 ### 12.3 Consequences
-Reputation affects the game world's response to the player:
-- **Colony trade pricing:** Notorious corporations pay more, renowned ones get discounts.
-- **Contract availability:** Better contracts offered to reputable corporations.
-- **Worker hiring:** Skilled workers refuse to work for notorious employers. Aggressive workers gravitate toward shady corporations.
-- **Stranger assistance:** Strangers are more likely to help reputable corporations.
-- **Multiplayer diplomacy:** Other players can see your reputation tier (not exact score).
-- **AI corporation behavior:** AI rivals are more likely to contest claims of notorious corporations and more likely to coexist peacefully with respected ones.
+- **Colony pricing:** notorious pay more, renowned get discounts
+- **Contracts:** better offers for reputable corporations
+- **Worker hiring:** skilled workers refuse notorious employers; aggressive workers gravitate to shady ones
+- **Stranger rescue:** more likely for reputable corporations
+- **Multiplayer:** others see your tier (not exact score)
+- **AI behavior:** more likely to contest notorious, coexist with respected
 
-> **STATUS: PARTIALLY IMPLEMENTED.** Score and tiers exist. Stranger rescue modifiers work. **All other consequences are not yet implemented.**
+> **STATUS: PARTIALLY IMPLEMENTED.** Score, tiers, and stranger rescue modifiers work. **All other consequences not yet implemented.**
 
 ---
 
 ## 13. User Interface
 
 ### 13.1 Dashboard, Not Game Screen
-The interface should feel like a corporate command dashboard, not a traditional game UI. Information density is high. Navigation is fast.
+Corporate command dashboard, not traditional game UI. High information density, fast navigation.
 
-> **STATUS: IMPLEMENTED.** The UI is a tabbed dashboard (720x1280 viewport, portrait orientation, canvas_items stretch).
+> **STATUS: IMPLEMENTED.** Tabbed dashboard, 720x1280 portrait, canvas_items stretch.
 
 ### 13.2 UI Tabs
 
-**HQ Dashboard** — Event log with color-coded entries (breakdowns, rescues, market events, missions, territorial encounters), reputation display, mission summaries, claim overview.
+**HQ Dashboard** — The player's primary interface. Two-tier alert system: **strategic alerts** (pinned, persistent, require decisions) and **news feed** (informational, scrolling, ages out). Policy controls for company-wide directives (supply, collection, encounter, thrust). Reputation display, mission summaries, claim overview. Per-site policy overrides accessible from strategic alerts.
 
 **Fleet & Market** — Combined fleet management and market view. Ship cards showing status, fuel, engine condition, cargo (mass and volume). Dispatch controls with destination picker, transit mode selection (Brachistochrone/Hohmann), cargo loading (mining units, food, supplies, ore). Market prices and contract management.
 
@@ -575,7 +614,7 @@ The interface should feel like a corporate command dashboard, not a traditional 
 
 **Solar Map** — Interactive 2D map of the solar system. Procedural starfield. Planet and asteroid markers. Colony markers. Ship positions with trajectory lines. Claim indicators on asteroids. Rival activity signatures (fog of war permitting).
 
-**Leaderboards** — Rankings across multiple categories (revenue, claims, ore extracted, project contributions, net worth). In single player, tracks the player against AI corporations. In multiplayer, shows per-server rankings. Union aggregate scores when applicable.
+**Leaderboards** — Rankings across multiple categories (revenue, claims, ore extracted, project contributions, net worth). In single player, tracks the player against AI corporations. In multiplayer, shows per-server rankings. Consortium aggregate scores when applicable.
 
 ### 13.3 Speed Controls
 Speed bar with preset buttons (1x, 5x, 20x, 50x, 100x) plus keyboard shortcuts (1/2/3/0). Maximum speed 200,000x for testing. Game date displayed in the speed bar with configurable format (US/UK/EU/ISO).
@@ -588,10 +627,10 @@ All UI uses `HFlowContainer` for button rows and `autowrap_mode` on text labels 
 ## 14. Technical Architecture
 
 ### 14.1 Overview
-The game consists of a Godot client (mobile) that will eventually communicate with a cloud backend. The current build runs entirely client-side as a single-player prototype.
+Godot client (mobile) communicating with a cloud backend. Currently runs entirely client-side as a single-player prototype.
 
 ### 14.2 Client Architecture (Current)
-Four autoload singletons form the backbone:
+Four autoload singletons:
 - **EventBus** — 33+ signals for decoupled communication between all systems
 - **GameState** — Central data store for all game state (money, ships, missions, workers, claims, etc.)
 - **Simulation** — Tick-based game loop processing all subsystems per tick
@@ -627,29 +666,18 @@ The simulation processes these systems each tick:
 At high simulation speeds, ticks are processed in batches: up to 30 steps per frame, each advancing up to 500 ticks. This allows 15,000 ticks per frame at 60fps, supporting speeds up to 200,000x without framerate degradation.
 
 ### 14.5 Server Architecture (Multiplayer)
-Each multiplayer game world runs on a **named server**. Servers are independent — separate economies, claims, markets, leaderboards, and endgame projects.
+**Named servers** — independent worlds (separate economies, claims, markets, leaderboards, endgame projects). First server: **Euterpe**. Players cannot transfer between servers.
 
-- **First server:** Euterpe
-- **Scaling:** Additional servers are spun up when an existing server becomes too crowded. The threshold for "too crowded" is an open design question — it may relate to player count, asteroid contention density, or server performance.
-- **Server names** are chosen by the operator (not auto-generated).
-- Each server runs the full simulation loop authoritatively. Clients send decisions and receive state updates.
-- Players cannot transfer between servers (their progress is server-specific).
+**Stack:** Python + PostgreSQL on Linux. Godot client is a thin display layer — sends decisions, receives state. All simulation/RNG/state mutation runs server-side.
 
-The recommended starting backend is a Backend-as-a-Service platform such as Firebase or Supabase. A server-side reference document identifies all systems requiring server authority:
-- The entire simulation loop (all subsystems)
-- All RNG calls (currently unseeded)
-- All state mutations (money, resources, positions, fuel, engine condition, claims)
-- Market price generation and event creation
-- Contract generation and validation
-- Worker encounter resolution
-- Union membership and coordination
-- Leaderboard computation
-- Key anti-cheat surfaces: TimeScale, ship positions, money, fuel, engine condition, mining multipliers, claim ownership
+**Development:** Local server (`localhost`) first, then deploy to remote Linux. Catches client-server issues without deployment complexity.
+
+**Server authority required for:** simulation loop, all RNG, all state mutations, market/contract generation, worker encounter resolution, consortium coordination, leaderboards, anti-cheat (TimeScale, positions, money, fuel, engine condition, mining, claims).
 
 ### 14.6 Save System
-Current save persistence: money, resources, workers, equipment inventory, upgrade inventory, ships (basic properties), settings, date format.
+**Saved:** money, resources, workers, equipment, upgrades, ships (basic), settings, date format.
 
-**Not yet saved (gaps):** Active missions, trade missions, contracts, market events, market state, fabrication queue, game clock (total_ticks), reputation score, stranger offers, rescue/refuel missions, asteroid yield mutations, claims, deployed mining units, food/supply state.
+**Not yet saved:** missions, trade missions, contracts, market events/state, fabrication queue, game clock, reputation, stranger offers, rescue/refuel missions, yield mutations, claims, mining units, food/supply.
 
 ---
 
@@ -701,7 +729,14 @@ Refactor the mining system from ship-present to deployable autonomous units.
 | Mining unit generations (periodic tech upgrades) | NOT STARTED |
 | Worker personality traits | NOT STARTED |
 | Worker autonomous encounter resolution | NOT STARTED |
-| Communication delay | NOT STARTED |
+| Communication delay (light-speed) | NOT STARTED |
+| Policy system (company-wide + per-site overrides) | NOT STARTED |
+| Two-tier alert system (strategic + news feed) | NOT STARTED |
+| Colony tier system (major/minor) | NOT STARTED |
+| Colony growth/decline from trade activity | NOT STARTED |
+| Player investment in colony facilities | NOT STARTED |
+| HQ location selection and relocation | NOT STARTED |
+| Manual/auto play style toggle (per-ship) | NOT STARTED |
 | Ship weapons (upgrade category) | NOT STARTED |
 | Claim map UI tab | NOT STARTED |
 | Single-player leaderboards | NOT STARTED |
@@ -714,7 +749,8 @@ Move the simulation to a cloud backend and connect the Godot client to it.
 | Feature | Status |
 |---|---|
 | Named server infrastructure (first: Euterpe) | NOT STARTED |
-| Backend setup (Firebase/Supabase) | NOT STARTED |
+| Python/PostgreSQL server on Linux | NOT STARTED |
+| Local server testing (localhost) before remote deployment | NOT STARTED |
 | Player authentication and accounts | NOT STARTED |
 | Server-side simulation tick | NOT STARTED (reference doc prepared) |
 | Client-server communication (HTTP requests) | NOT STARTED |
@@ -733,8 +769,8 @@ Add the systems that make multiplayer competitive and engaging.
 | Information layer with events and misinformation | NOT STARTED |
 | Endgame project and contribution system | NOT STARTED |
 | Reputation consequences (colony pricing, contracts, hiring) | NOT STARTED |
-| Unions and alliances (formation, coordination, betrayal) | NOT STARTED |
-| Union leaderboards | NOT STARTED |
+| Consortia and alliances (formation, coordination, betrayal) | NOT STARTED |
+| Consortium leaderboards | NOT STARTED |
 
 ### Phase 5: Polish & Depth
 Add deferred systems and refine the experience.
@@ -756,45 +792,26 @@ Add deferred systems and refine the experience.
 
 ## 16. Performance & Architectural Patterns
 
-### 16.1 Performance Optimization Principles
+### 16.1 Performance Principles
 
-**Real-time throttling for expensive operations:** Not all simulation subsystems need to run at full tick rate. Visual updates and O(N²) operations should be throttled to wall-clock intervals (e.g., label overlap detection at 2x/sec, orbital updates at 2x/sec, dashboard updates at 5x/sec) to maintain framerate at high simulation speeds.
-
-**Analytical over numerical:** Where possible, use closed-form analytical solutions rather than iterative numerical simulation. Example: patched conics trajectory visualization (30 lines, 1-second update interval) replaced 180 lines of forward simulation (30x/sec update) with 10-100x performance improvement.
-
-**Sun-only gravity for drifting ships:** Full N-body gravity is computationally expensive. For ships in transit or idle (not under active thrust), Sun-only gravity provides visually correct orbital behavior at a fraction of the cost.
-
-**Mobile-first performance:** Target sustained 60fps on mid-range phones. Profile CPU bottlenecks early. Assume single-threaded execution.
+- **Throttle expensive operations** to wall-clock intervals (label overlap 2x/sec, orbitals 2x/sec, dashboard 5x/sec). Not everything runs at full tick rate.
+- **Analytical over numerical.** Patched conics (30 lines, 1/sec) replaced forward simulation (180 lines, 30/sec) with 10-100x improvement.
+- **Sun-only gravity** for drifting ships. Full N-body is unnecessary for visually correct orbital behavior.
+- **Mobile-first.** Target 60fps on mid-range phones. Single-threaded. Profile early.
 
 ### 16.2 Industry-Standard Solutions
 
-**Prefer proven approaches over custom implementations:** When a problem domain has well-established solutions (e.g., patched conics for orbital trajectory visualization in space games), default to the industry standard rather than building custom systems from scratch. Custom solutions should only be used when standard approaches don't fit the specific requirements.
+Prefer proven approaches (KSP-style patched conics, Keplerian elements) over custom implementations. Custom solutions only when standard approaches don't fit.
 
-**KSP-style patched conics:** Ships entering planetary Sphere of Influence (SOI) switch reference frames. Trajectories are computed analytically from state vectors converted to Keplerian orbital elements, then rendered as conic sections (ellipse/hyperbola/parabola). This is the standard approach used by Kerbal Space Program and similar games.
+### 16.3 Technical Debt
 
-### 16.3 Technical Debt Identified
-
-The following areas were identified during performance optimization work and may need architectural review:
-
-- **Label overlap detection:** Currently O(N²) on all visible labels. Consider spatial partitioning or limiting overlap checks to nearby labels only.
-- **Simulation subsystem organization:** Some systems (contracts, surveys, ship positions) were added ad-hoc. Consider formalizing subsystem registration and throttling configuration.
-- **Save system gaps:** Many active game state elements (missions, contracts, market events, fabrication queue) are not persisted. This needs comprehensive audit and incremental implementation.
+- **Label overlap:** O(N²) on all visible labels. Consider spatial partitioning.
+- **Subsystem organization:** Ad-hoc addition of simulation systems. Consider formalizing registration and throttling.
+- **Save gaps:** Many active state elements not persisted (see Section 14.6).
 
 ### 16.4 Collaborative Pattern
 
-**User describes WHAT and WHY; assistant determines HOW:** The user's role is to articulate the desired game experience, feature requirements, and design constraints. The assistant's role is to research the codebase, identify architectural approaches, and propose implementation strategies. When unclear, ask clarifying questions about requirements rather than implementation details.
-
-**Proactive suggestion of alternatives:** When the user proposes a specific implementation approach, consider whether there are industry-standard or more efficient alternatives and suggest them proactively rather than only optimizing the proposed approach.
-
-### 16.5 Pending Architectural Discussions
-
-**NOTE:** A comprehensive conversation about game design vision and architectural patterns is scheduled for the next session. Topics include:
-- Core gameplay loop clarification (what the game is supposed to do and why)
-- Feature prioritization and roadmap alignment
-- Architectural patterns for new features
-- Technical debt remediation strategy
-
-This conversation should be documented and integrated into this GDD or stored in a separate architectural reference document.
+User describes WHAT/WHY; assistant determines HOW. Proactively suggest industry-standard alternatives rather than only optimizing the proposed approach.
 
 ---
 
@@ -802,24 +819,25 @@ This conversation should be documented and integrated into this GDD or stored in
 
 The following questions are identified but not yet resolved:
 
-- **Home base specifics:** What does the player's base look like? What facilities does it contain? Can it be upgraded or relocated?
-- **AI lore:** What is the in-universe explanation for human-driven corporate management rather than AI automation?
-- **Combat resolution:** How is combat mechanically resolved? Based on equipment, crew numbers, worker personalities, or some combination? Is there any player input, or is it fully autonomous?
-- **Endgame project variety:** What projects besides an interstellar ship could serve as epoch goals? How does the project type affect gameplay?
-- **Reward structure:** How many players benefit from project completion? What do rewards look like concretely (head start, technology, capital)?
-- **Epoch transitions:** What carries over between epochs? What resets? How different is the new environment?
-- **Monetization:** Premium purchase, optional in-app purchases, or another model?
-- **Player communication:** Can players communicate in-game? Diplomacy, alliances, trade negotiation?
-- **Balancing scarcity:** How quickly should the asteroid belt deplete? This determines epoch length and when combat escalation begins.
-- **Scouting and surveying:** How detailed is pre-mission intelligence? Can players invest in surveys before committing equipment?
-- **Misinformation mechanics:** If players can spread false information, what are the limits and costs?
-- **Ship purchasing:** Price points relative to mining income? Available from the start or unlocked?
-- **Mining unit scale:** How many units per ship? How productive is one unit? How many units make a profitable claim?
-- **Mining unit generations:** How often do new models release? What's the power curve between generations? Can old units be retrofit?
-- **Food logistics:** How much food per worker per day? How bulky is it? How long can a remote site last between resupply?
-- **Worker autonomy granularity:** How much detail does the player see about autonomous encounters? Full replay, summary report, or just outcomes?
-- **Server capacity:** What defines "too crowded" for a server? Player count, asteroid contention, performance metrics?
-- **Cross-server features:** Can players on different servers see each other's leaderboards? Any interaction between servers?
-- **Union mechanics:** How formal are unions? Can they enforce agreements? What prevents a union from becoming a single dominant entity?
-- **Offline catch-up:** How should the simulation handle hours/days of offline time? Process all ticks on reconnect, or use a summary approximation?
-- **Save system priority:** What order should unsaved state be addressed in?
+- **AI lore:** In-universe explanation for human-driven corporate management rather than AI automation?
+- **Combat resolution:** Equipment, crew, personalities, or combination? Any player input, or fully autonomous?
+- **Endgame project variety:** What projects besides an interstellar ship? How does project type affect gameplay?
+- **Reward structure:** How many players benefit? Concrete rewards (head start, technology, capital)?
+- **Epoch transitions:** What carries over? What resets?
+- **Monetization:** Premium purchase, IAP, or other?
+- **Player communication:** In-game diplomacy, trade negotiation?
+- **Balancing scarcity:** Belt depletion rate → epoch length and combat escalation timing.
+- **Scouting:** Pre-mission intelligence detail? Investment in surveys before committing equipment?
+- **Misinformation:** Limits and costs of spreading false information?
+- **Ship purchasing:** Price points relative to income? Available from start or unlocked?
+- **Mining unit scale:** Units per ship, productivity per unit, units for profitable claim?
+- **Mining unit generations:** Release frequency, power curve, retrofit capability?
+- **Food logistics:** Consumption rate, bulk, resupply interval?
+- **Server capacity:** What defines "too crowded"? Player count, contention density, performance?
+- **Cross-server:** Shared leaderboards? Any inter-server interaction?
+- **Consortium stability:** Kicking balance (too easy = unstable, too hard = freeloaders). Founder + majority vote as starting point, needs playtesting.
+- **Consortium monopoly:** Natural limits: internal disagreements at scale, coordination overhead, member poaching, being a giant target.
+- **Offline catch-up:** Process all ticks on reconnect, or summary approximation?
+- **Save system priority:** Order of addressing unsaved state?
+- **Piracy balance:** If raiding is more profitable than mining, economy collapses. Natural checks: armed ships haul less, pirates depend on producers, colonies refuse trade, consortia form against raiders. Needs playtesting.
+- **Black market & bombs:** Unexplored. Who sells, what's available, how it differs from legitimate trade, what bombs do, consequences of use. Needs design conversation.

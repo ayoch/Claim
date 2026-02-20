@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-19 19:37:44 EST
-**Updated By:** Instance on Machine 1 (Windows desktop)
-**Session Context:** Performance optimization work completed, design conversation pending
-**Next Session Priority:** Design conversation about game vision before further implementation
+**Last Updated:** 2026-02-19 22:13:49 EST
+**Updated By:** Instance on Machine 2 (Mac laptop)
+**Session Context:** Design conversation complete, GDD cleaned up
+**Next Session Priority:** Review GDD changes, then begin implementation (crew roles plan is ready)
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -11,6 +11,35 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-19 22:13 EST - Design Conversation Complete + GDD Cleanup
+- **Machine:** Mac laptop
+- **Design Decisions Made:**
+  - **Server stack:** Python + PostgreSQL on Linux. Local-first development (localhost before remote).
+  - **Policy system:** Company-wide directives (supply, collection, encounter, thrust) with per-site overrides. Core idle mechanism.
+  - **Alert system:** Two tiers — strategic (persistent, actionable) and news feed (informational, scrolling). Worker personality + light-speed delay determine intervention windows.
+  - **Colony tiers:** Major (5-6, HQ-capable) and minor. Growth/decline from trade activity. Player investment in facilities.
+  - **HQ location:** Player chooses major colony at start. Relocation possible but expensive.
+  - **Consortia:** Goal-oriented alliances replacing unions. Minimal governance (founder + majority vote kick). Mechanical benefits (shared supply, pooled stockpiles, non-aggression). Available to all playstyles.
+  - **Design pillars added:** "Narrative consequence over numerical feedback" and "Playstyle ecosystem, not morality system."
+  - **Communication delay:** Light-speed is real. Physically prevents micromanagement. Interacts with worker personality.
+  - **Piracy balance:** Flagged as critical open question — if raiding is more profitable than mining, economy collapses.
+- **GDD Changes:**
+  - Version bumped to 0.5
+  - Sections added: 1.3 design pillars, 3.4 communication delay, 3.5 policy system, 3.6 alert system, 5.5 colony tiers
+  - Section 8.1 rewritten (HQ mechanics)
+  - Section 9 rewritten (unions → consortia, 9.1-9.5)
+  - Phase 2b/3/4 roadmap updated
+  - Open questions updated (2 resolved, 4 new)
+  - Section 16.5 removed (design conversation completed)
+  - **Prose tightened throughout** — removed unnecessary wording across all sections
+- **Plan file exists:** `reactive-squishing-shannon.md` — Crew roles, derelict drift, velocity-based rescue, auto-slowdown. Ready for implementation.
+- **Status:** Design conversation complete. GDD cleaned up. Ready for implementation work.
+
+### 2026-02-19 21:17 EST - Design Conversation (Started)
+- **Machine:** Mac laptop
+- **Work Started:** Design conversation about game vision and architecture
+- **Status:** Continued in session above
 
 ### 2026-02-19 19:37 EST - Performance Optimization & Documentation
 - **Machine:** Windows desktop
@@ -24,10 +53,12 @@
 ## User Working Preferences
 
 ### Communication Style
-- **Prefers action over discussion:** Don't explain hardware limitations or theoretical problems - fix the code
-- **Trusts your judgment on implementation:** User describes WHAT they want and WHY they want it. You determine HOW to implement it
-- **Values proactive suggestions:** When user proposes a specific implementation approach, consider if there are better industry-standard alternatives and suggest them proactively
-- **Hates retrofitting:** User acknowledges they may lead you down suboptimal paths. It's better to suggest course corrections early than to build the wrong thing and retrofit later
+- **Tone:** Casual but sharp. Short sentences when they work, longer ones when they need to be. Plain language, no dumbing things down. Skip bullet points and lists unless asked. No filler ("Great question!", "Absolutely!"). Don't over-explain. Match the user's energy.
+- **Prefers action over discussion:** Don't explain hardware limitations or theoretical problems — fix the code.
+- **Trusts your judgment on implementation:** User describes WHAT and WHY. You determine HOW.
+- **Values proactive suggestions:** Suggest better industry-standard alternatives when you see them.
+- **Hates retrofitting:** Suggest course corrections early rather than building the wrong thing.
+- **Push back when something seems wrong:** Raise concerns about problematic decisions — design conflicts, balance issues, scalability problems, anything that seems like a bad idea. User will sometimes make poor decisions and wants them flagged early. Be direct — you cannot offend this user.
 
 ### Collaboration Pattern Established
 > "I think I have been bad about describing what and why and instead describing how. YOU know the how."
@@ -108,47 +139,39 @@ Multiple files have staged changes:
 
 These changes represent performance optimization work and are ready to commit.
 
-### Pending Plan (DO NOT START YET)
-A plan file exists at `C:\Users\Jonat\.claude\plans\compressed-knitting-hammock.md`:
-- **Topic:** Position-Aware Ship Dispatch with Realistic Physics
-- **Includes:** Mass-based fuel consumption, position-aware distance calculations, colony scarcity pricing, fuel cost increases
-- **Status:** Plan is complete but implementation should WAIT for design conversation
+### Ready Plans
+1. **Crew Roles Plan** (`reactive-squishing-shannon.md`) — crew specialties, derelict drift, velocity rescue, auto-slowdown. Ready to implement.
+2. **Position-Aware Dispatch** (`C:\Users\Jonat\.claude\plans\compressed-knitting-hammock.md`) — mass-based fuel, position-aware distances, colony scarcity pricing. Ready to implement.
 
-**IMPORTANT:** User wants a design conversation BEFORE continuing with this or any other major implementation work.
-
-### GDD Updates Made
-Added Section 16: Performance & Architectural Patterns to GDD.md documenting:
-- Performance optimization principles learned
-- Preference for industry-standard solutions
-- Technical debt identified
-- Collaborative pattern (user describes WHAT/WHY, you determine HOW)
-- Note about pending architectural discussion
+### GDD State
+- Version 0.5 — comprehensive design conversation integrated
+- Prose tightened throughout (reduced ~150 lines of unnecessary wording)
+- User wants to review before further implementation
 
 ---
 
 ## What the Next Instance Should Do
 
-### 1. Design Conversation (FIRST PRIORITY)
-User wants a comprehensive conversation about:
-- What the game is supposed to do and why
-- Feature prioritization and roadmap alignment
-- Architectural patterns for new features
-- Technical debt remediation strategy
+### 1. Review GDD Changes (FIRST)
+The user asked to review the GDD before proceeding. Let them look it over and discuss any needed changes.
 
-**Output from this conversation should be:**
-- Integrated into GDD.md, OR
-- Stored in a separate architectural reference document (your choice based on scope)
+### 2. Implementation: Crew Roles Plan
+A complete plan exists at `reactive-squishing-shannon.md`:
+- **Crew skills:** Replace single `skill` with pilot/engineer/mining specialties
+- **Derelict drift:** Broken ships maintain velocity instead of freezing
+- **Velocity-based rescue:** Cost scales with derelict speed + intercept calculation
+- **Auto-slowdown:** Time drops to 1x on critical events (breakdown, stranger offer)
+- All files identified, verification criteria defined
 
-### 2. After Design Conversation
-- Review the pending plan (position-aware dispatch, mass-based fuel)
-- Determine if it aligns with the clarified design vision
-- Proceed with implementation if aligned, or revise based on new understanding
+### 3. Implementation: Position-Aware Dispatch (Windows plan)
+A plan exists at `C:\Users\Jonat\.claude\plans\compressed-knitting-hammock.md`:
+- Mass-based fuel consumption, position-aware distances, colony scarcity pricing
+- Should align with design conversation outcomes
 
-### 3. Working Pattern
-- Ask clarifying questions about requirements and desired outcomes
-- Propose implementation strategies based on your research
-- Suggest industry-standard approaches proactively
-- Be honest when a proposed approach has better alternatives
+### 4. Working Pattern
+- Ask about WHAT/WHY, not implementation details
+- Suggest industry-standard alternatives proactively
+- Push back on decisions that seem problematic
 
 ---
 
@@ -193,7 +216,7 @@ User wants a comprehensive conversation about:
 ## Files You'll Want to Read
 
 ### Essential
-- `GDD.md` - Complete game design document (780 lines, now includes Section 16 on performance patterns)
+- `GDD.md` - Complete game design document (~870 lines, v0.5 with consortia, policies, colony tiers, design pillars)
 - `core/autoloads/simulation.gd` - Main simulation loop
 - `core/autoloads/game_state.gd` - Central state management
 - `core/data/celestial_data.gd` - Orbital mechanics, patched conics implementation
@@ -215,6 +238,7 @@ User wants a comprehensive conversation about:
 - Proactive suggestions of better approaches
 - Admitting when you don't know and researching
 - Asking clarifying questions about requirements, not implementation
+- **Raising concerns about bad decisions** — design conflicts, balance problems, scalability issues, anything that seems wrong. User wants to be challenged, not just obeyed.
 
 ### What User Dislikes
 - Blaming performance issues on hardware
@@ -272,12 +296,11 @@ When major architectural decisions are made during the design conversation, docu
 
 ## Quick Start Checklist for Next Instance
 
-- [ ] **READ THIS FILE FIRST** - Check "Last Updated" timestamp to see if other instances have been working
+- [ ] **READ THIS FILE FIRST** — check "Last Updated" timestamp for updates from other instances
 - [ ] If timestamp is newer than expected, read Session Log to catch up
-- [ ] Skim GDD.md (especially Section 16: Performance & Architectural Patterns)
+- [ ] Skim GDD.md (v0.5 — design conversation already completed)
 - [ ] Check git status to see current work
-- [ ] Initiate design conversation with user about game vision
-- [ ] Document results of design conversation (update this file with new timestamp!)
-- [ ] Review pending plan in context of design conversation outcomes
-- [ ] Proceed with aligned implementation work
+- [ ] Ask user if they've reviewed GDD and are ready to proceed with implementation
+- [ ] Review crew roles plan (`reactive-squishing-shannon.md`) — ready to implement
+- [ ] Review position-aware dispatch plan (Windows machine plan file) — ready to implement
 - [ ] **UPDATE TIMESTAMP** whenever you modify this handoff document
