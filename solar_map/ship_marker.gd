@@ -22,6 +22,12 @@ var _cached_trajectory_points: PackedVector2Array = PackedVector2Array()
 var _trajectory_update_timer: float = 0.0
 const TRAJECTORY_UPDATE_INTERVAL: float = 1.0  # Update trajectory every second (patched conics is cheap!)
 
+# Cached draw geometry (avoid per-frame allocations in _draw)
+var _rescue_tri := PackedVector2Array([Vector2(0, -8), Vector2(8, 4.8), Vector2(-8, 4.8)])
+var _rescue_outline := PackedVector2Array([Vector2(0, -8), Vector2(8, 4.8), Vector2(-8, 4.8), Vector2(0, -8)])
+var _transit_poly := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
+var _transit_outline := PackedVector2Array([Vector2.ZERO, Vector2.ZERO, Vector2.ZERO, Vector2.ZERO])
+
 func _ready() -> void:
 	if mission:
 		$Label.text = mission.ship.ship_name
@@ -375,13 +381,9 @@ func _draw() -> void:
 			var target_px := rescue_target_ship.position_au * AU_PIXELS - position
 			draw_line(source_px, target_px, Color(color.r, color.g, color.b, 0.3), 1.5)
 
-		# Draw amber triangle
-		var s := 8.0
-		var pts := PackedVector2Array([
-			Vector2(0, -s), Vector2(s, s * 0.6), Vector2(-s, s * 0.6)
-		])
-		draw_colored_polygon(pts, color)
-		draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[0]]), Color(1.0, 0.8, 0.4), 1.5)
+		# Draw amber triangle (using cached geometry)
+		draw_colored_polygon(_rescue_tri, color)
+		draw_polyline(_rescue_outline, Color(1.0, 0.8, 0.4), 1.5)
 		return
 
 	# Derelict ships: red with X marker and pulsing glow
@@ -424,9 +426,15 @@ func _draw() -> void:
 		var back_left := -forward * 6.0 + right * 5.0
 		var back_right := -forward * 6.0 - right * 5.0
 
-		draw_colored_polygon(PackedVector2Array([tip, back_left, back_right]), color)
-		# Outline for visibility
-		draw_polyline(PackedVector2Array([tip, back_left, back_right, tip]), Color(color.r * 0.7, color.g * 0.7, color.b * 0.7), 1.5)
+		_transit_poly[0] = tip
+		_transit_poly[1] = back_left
+		_transit_poly[2] = back_right
+		draw_colored_polygon(_transit_poly, color)
+		_transit_outline[0] = tip
+		_transit_outline[1] = back_left
+		_transit_outline[2] = back_right
+		_transit_outline[3] = tip
+		draw_polyline(_transit_outline, Color(color.r * 0.7, color.g * 0.7, color.b * 0.7), 1.5)
 	else:
 		# Stationary or mining: draw as circle
 		draw_circle(Vector2.ZERO, 6, color)

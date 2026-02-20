@@ -26,6 +26,15 @@ const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at co
 @export var derelict_reason: String = ""  # "out_of_fuel" or "breakdown"
 @export var base_mass: float = 0.0  # tons, auto-calculated if zero
 
+# Station properties
+@export var is_stationed: bool = false
+@export var station_colony: Colony = null
+@export var station_jobs: Array[String] = []     # Priority-ordered: ["mining", "trading", "repair", ...]
+@export var station_log: Array[Dictionary] = []  # [{time, message, type}] capped at 50
+
+# Supply cargo (shared cargo capacity with ore)
+@export var supplies: Dictionary = {}            # "repair_parts": float, "food": float
+
 # Life support tracking (in game-seconds remaining)
 @export var life_support_remaining: float = 2592000.0  # 30 days default
 
@@ -45,6 +54,10 @@ var queued_slingshot_route = null  # GravityAssist.SlingshotRoute or null
 var is_at_earth: bool:
 	get:
 		return position_au.distance_to(CelestialData.get_earth_position_au()) < EARTH_PROXIMITY_AU
+
+var is_stationed_idle: bool:
+	get:
+		return is_stationed and not is_derelict and current_mission == null and current_trade_mission == null
 
 var _has_active_mission: bool:
 	get:
@@ -79,6 +92,9 @@ func can_access_services() -> bool:
 
 var is_idle_remote: bool:
 	get:
+		# Stationed ships are never "idle remote" — they have their own management
+		if is_stationed:
+			return false
 		# Ship is idle remote if it has a mission but in idle state, or no mission and not at Earth
 		if current_mission and current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
 			return true
@@ -201,6 +217,21 @@ func calculate_life_support_duration(crew_count: int) -> float:
 ## Reset life support to full based on current crew
 func reset_life_support(crew_count: int) -> void:
 	life_support_remaining = calculate_life_support_duration(crew_count)
+
+func get_supplies_mass() -> float:
+	var total := 0.0
+	for amount in supplies.values():
+		total += amount
+	return total
+
+func add_station_log(message: String, type: String = "info") -> void:
+	station_log.push_front({
+		"time": GameState.total_ticks,
+		"message": message,
+		"type": type,
+	})
+	if station_log.size() > 50:
+		station_log.resize(50)
 
 func queue_mission(destination: Variant, workers: Array[Worker], transit_mode: int, mining_dur: float = 86400.0, slingshot_route = null) -> void:
 	queued_destination = destination

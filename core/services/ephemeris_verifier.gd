@@ -4,7 +4,7 @@ extends Node
 # Runs on startup and then every VERIFY_INTERVAL_HOURS real hours.
 # All output goes to user://ephemeris_verification.log instead of the console.
 
-const LOG_PATH := "user://ephemeris_verification.log"
+const LOG_PATH := "res://ephemeris_verification.log"
 const VERIFY_INTERVAL_HOURS: float = 24.0  # Verify once per real day
 const WARN_THRESHOLD_AU: float = 0.05      # Log warning if error exceeds this
 const ERROR_THRESHOLD_AU: float = 0.2      # Log error if error exceeds this

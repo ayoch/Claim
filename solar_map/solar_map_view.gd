@@ -1,5 +1,9 @@
 extends Node2D
 
+static func _free_children(container: Node) -> void:
+	for i in range(container.get_child_count() - 1, -1, -1):
+		container.get_child(i).free()
+
 const AU_PIXELS: float = 200.0  # 1 AU = 200 pixels
 const BELT_INNER_AU: float = 1.5
 const BELT_OUTER_AU: float = 3.5
@@ -7,7 +11,8 @@ const BELT_OUTER_AU: float = 3.5
 @onready var camera: Camera2D = $Camera2D
 @onready var asteroid_markers: Node2D = $AsteroidMarkers
 @onready var ship_markers: Node2D = $ShipMarkers
-@onready var ship_selector_panel: HBoxContainer = %ShipSelectorPanel
+@onready var ship_selector_panel: VBoxContainer = %ShipSelectorPanel
+@onready var zoom_buttons: HBoxContainer = $UI/ZoomButtons
 
 var _drag_start: Vector2 = Vector2.ZERO
 var _dragging: bool = false
@@ -41,10 +46,13 @@ const PREVIEW_BLINK_PERIOD: float = 1.0  # seconds for full blink cycle
 
 var asteroid_marker_scene: PackedScene = preload("res://solar_map/asteroid_marker.tscn")
 var ship_marker_scene: PackedScene = preload("res://solar_map/ship_marker.tscn")
+var _ships_need_refresh: bool = false  # Debounce marker rebuilds to once per frame
+var _last_tick_msec: int = 0
+const TICK_THROTTLE_MSEC: int = 200  # Only process ticks every 200ms real-time
 
 # Starfield background
-const STAR_TILE_SIZE: float = 800.0  # Each tile is 800x800 pixels
-const STARS_PER_TILE: int = 80
+const STAR_TILE_SIZE: float = 1200.0  # Larger tiles = fewer tiles visible = fewer draw calls
+const STARS_PER_TILE: int = 30  # Reduced from 80 for performance
 var _star_cache: Dictionary = {}  # Vector2i tile coord -> Array of star dicts
 var _starfield_time: float = 0.0
 const STAR_TWINKLE_SPEED: float = 1.2
@@ -59,6 +67,7 @@ var _label_overlap_timer: float = 0.0
 const LABEL_OVERLAP_INTERVAL: float = 0.5  # Check label overlaps twice per second, not every frame
 
 func _ready() -> void:
+	_setup_zoom_buttons()
 	_spawn_planet_labels()
 	_spawn_asteroid_markers()
 	_spawn_colony_markers()
@@ -66,10 +75,8 @@ func _ready() -> void:
 	_refresh_ship_selector()
 	EventBus.mission_started.connect(func(_m: Mission) -> void: _refresh_ships())
 	EventBus.mission_completed.connect(func(_m: Mission) -> void: _refresh_ships())
-	EventBus.mission_phase_changed.connect(func(_m: Mission) -> void: _refresh_ships())
 	EventBus.trade_mission_started.connect(func(_tm: TradeMission) -> void: _refresh_ships())
 	EventBus.trade_mission_completed.connect(func(_tm: TradeMission) -> void: _refresh_ships())
-	EventBus.trade_mission_phase_changed.connect(func(_tm: TradeMission) -> void: _refresh_ships())
 	EventBus.ship_derelict.connect(func(_s: Ship) -> void: _refresh_ships())
 	EventBus.rescue_mission_started.connect(func(_s: Ship, _c: int) -> void: _refresh_ships())
 	EventBus.rescue_mission_completed.connect(func(_s: Ship) -> void: _refresh_ships())
@@ -80,8 +87,8 @@ func _ready() -> void:
 	EventBus.mission_preview_cancelled.connect(_on_preview_cancelled)
 
 func _refresh_ships() -> void:
-	_refresh_ship_markers()
-	_refresh_ship_selector()
+	# Debounce: at high speed, many signals fire per frame. Only rebuild once.
+	_ships_need_refresh = true
 
 func _get_star_tile(tile_coord: Vector2i) -> Array:
 	if tile_coord in _star_cache:
@@ -138,13 +145,10 @@ func _draw_starfield() -> void:
 					1: color = Color(0.85, 0.9, 1.0, bright)    # cool white
 					_: color = Color(0.6, 0.65, 0.75, bright)   # dim blue-grey
 
-				if star_size > 1.6:
-					draw_circle(pos, star_size * 2.0, Color(color.r, color.g, color.b, bright * 0.12))
 				draw_circle(pos, star_size, color)
 
 func _draw() -> void:
-	# Starfield background - DISABLED FOR PERFORMANCE
-	# _draw_starfield()
+	_draw_starfield()
 
 	# Draw sun
 	draw_circle(Vector2.ZERO, 15, Color(1.0, 0.9, 0.3))
@@ -268,6 +272,27 @@ func _draw_orbit_ellipse(el: Dictionary, color: Color, width: float) -> void:
 
 		draw_line(from, to, color, width)
 
+func _setup_zoom_buttons() -> void:
+	var btn_out := Button.new()
+	btn_out.text = "-"
+	btn_out.custom_minimum_size = Vector2(48, 36)
+	btn_out.pressed.connect(_zoom_out)
+	zoom_buttons.add_child(btn_out)
+
+	var btn_in := Button.new()
+	btn_in.text = "+"
+	btn_in.custom_minimum_size = Vector2(48, 36)
+	btn_in.pressed.connect(_zoom_in)
+	zoom_buttons.add_child(btn_in)
+
+func _zoom_in() -> void:
+	_zoom_level = clampf(_zoom_level + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
+	camera.zoom = Vector2(_zoom_level, _zoom_level)
+
+func _zoom_out() -> void:
+	_zoom_level = clampf(_zoom_level - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
+	camera.zoom = Vector2(_zoom_level, _zoom_level)
+
 func _spawn_planet_labels() -> void:
 	for i in range(CelestialData.PLANETS.size()):
 		var planet: Dictionary = CelestialData.PLANETS[i]
@@ -327,8 +352,7 @@ class _ColonyMarkerNode extends Node2D:
 		draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]), Color(0.5, 1.0, 1.0), 1.0)
 
 func _refresh_ship_markers() -> void:
-	for child in ship_markers.get_children():
-		child.queue_free()
+	_free_children(ship_markers)
 
 	# Track which ships already have markers to prevent duplicates
 	var ships_with_markers: Dictionary = {}
@@ -377,6 +401,12 @@ func _refresh_ship_markers() -> void:
 		ship_markers.add_child(marker)
 
 func _process(delta: float) -> void:
+	# Debounced ship marker rebuild (signals may fire many times per frame at high speed)
+	if _ships_need_refresh:
+		_ships_need_refresh = false
+		_refresh_ship_markers()
+		_refresh_ship_selector()
+
 	_starfield_time += delta * STAR_TWINKLE_SPEED
 
 	# Throttle orbital position updates - don't need to recalculate 60x/second
@@ -535,6 +565,10 @@ func _adjust_labels_to_prevent_overlap() -> void:
 			label_control_a.position = new_offset
 
 func _on_tick(_dt: float) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _last_tick_msec < TICK_THROTTLE_MSEC:
+		return
+	_last_tick_msec = now
 	_update_planet_targets()
 	_update_asteroid_targets()
 	_update_colony_targets()
@@ -614,14 +648,14 @@ func _refresh_ship_selector() -> void:
 		return
 
 	# Clear existing buttons
-	for child in ship_selector_panel.get_children():
-		child.queue_free()
+	_free_children(ship_selector_panel)
 
 	# Add button for each ship
 	for ship in GameState.ships:
 		var btn := Button.new()
 		btn.text = ship.ship_name
-		btn.custom_minimum_size = Vector2(120, 36)
+		btn.custom_minimum_size = Vector2(120, 30)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 		# Color code by status
 		if ship.is_derelict:
@@ -638,11 +672,7 @@ func _refresh_ship_selector() -> void:
 
 func _center_on_ship(ship: Ship) -> void:
 	_following_ship = ship
-	var target_pos := ship.position_au * AU_PIXELS
-	camera.position = target_pos
-	# Optionally zoom in a bit
-	_zoom_level = 1.5
-	camera.zoom = Vector2(_zoom_level, _zoom_level)
+	camera.position = ship.position_au * AU_PIXELS
 
 func _try_select_ship_at(screen_pos: Vector2) -> void:
 	# Convert screen position to world position

@@ -38,8 +38,8 @@ static func generate_random() -> Contract:
 	var premium := randf_range(PREMIUM_MIN, PREMIUM_MAX)
 	c.reward = int(c.quantity * base_price * premium)
 
-	# Deadline: 200-600 ticks
-	c.deadline_ticks = randf_range(200.0, 600.0)
+	# Deadline: 3-10 game-days (1 game-day = 86400 ticks)
+	c.deadline_ticks = randf_range(3.0, 10.0) * 86400.0
 
 	c.issuer_name = _issuer_names[randi() % _issuer_names.size()]
 	c.status = Status.AVAILABLE
@@ -110,9 +110,10 @@ func get_display_text() -> String:
 	var progress_text := ""
 	if quantity_delivered > 0:
 		progress_text = " (%.1ft/%.1ft)" % [quantity_delivered, quantity]
-	return "%s: %s %.1ft%s to %s - $%s - %.0f ticks" % [
+	var days_left := deadline_ticks / 86400.0
+	return "%s: %s %.1ft%s to %s - $%s - %.1f days" % [
 		issuer_name, ore_name, quantity, progress_text, location,
-		_format_number(reward), deadline_ticks
+		_format_number(reward), days_left
 	]
 
 func _format_number(n: int) -> String:

@@ -1,5 +1,9 @@
 extends MarginContainer
 
+static func _free_children(container: Node) -> void:
+	for i in range(container.get_child_count() - 1, -1, -1):
+		container.get_child(i).free()
+
 @onready var ships_list: VBoxContainer = %ShipsList
 @onready var dispatch_popup: PanelContainer = %DispatchPopup
 @onready var dispatch_content: VBoxContainer = %DispatchContent
@@ -18,8 +22,8 @@ var _location_labels: Dictionary = {}  # Ship -> Label for location display
 const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catch up
 var _dispatch_refresh_timer: float = 0.0
 const DISPATCH_REFRESH_INTERVAL: float = 2.0  # Refresh dispatch popup every 2 seconds
-var _tick_throttle_timer: float = 0.0
-const TICK_THROTTLE_INTERVAL: float = 0.1  # Only process ticks every 0.1 seconds
+var _last_tick_msec: int = 0
+const TICK_THROTTLE_MSEC: int = 100  # Only process ticks every 100ms real-time
 var _on_selection_screen: bool = false  # Track if we're on the initial destination selection screen
 var _on_estimate_screen: bool = false  # Track if we're on the worker selection / estimate screen
 var _saved_colonies_scroll: float = 0.0  # Preserve scroll position across refreshes
@@ -66,16 +70,16 @@ func _process(delta: float) -> void:
 				target_progress = ship.current_trade_mission.get_progress() * 100.0
 			bar.value = lerp(bar.value, target_progress, PROGRESS_LERP_SPEED * delta)
 
-func _on_tick(dt: float) -> void:
-	# Throttle tick processing to avoid performance issues at high simulation speeds
-	_tick_throttle_timer += dt
-	if _tick_throttle_timer < TICK_THROTTLE_INTERVAL:
-		return  # Early exit - don't process this tick
-	_tick_throttle_timer = 0.0
+func _on_tick(_dt: float) -> void:
+	# Throttle tick processing to real-time (not game-time, which explodes at high speed)
+	var now := Time.get_ticks_msec()
+	if now - _last_tick_msec < TICK_THROTTLE_MSEC:
+		return
+	_last_tick_msec = now
 
 	# Refresh dispatch popup periodically to update orbital positions and fuel estimates
 	if dispatch_popup.visible:
-		_dispatch_refresh_timer += dt
+		_dispatch_refresh_timer += 0.1  # Real-time increment (this block fires every 100ms)
 		if _dispatch_refresh_timer >= DISPATCH_REFRESH_INTERVAL:
 			_dispatch_refresh_timer = 0.0
 			# Only refresh estimate screen, not selection screen (causes layout shifts)
@@ -123,8 +127,7 @@ func _rebuild_ships() -> void:
 	_detail_labels.clear()
 	_cargo_labels.clear()
 	_location_labels.clear()
-	for child in ships_list.get_children():
-		child.queue_free()
+	_free_children(ships_list)
 
 	for ship: Ship in GameState.ships:
 		var panel := PanelContainer.new()
@@ -1380,8 +1383,7 @@ func _calculate_fuel_route_to_position(dest_pos: Vector2, cargo_mass: float) -> 
 	return []  # Couldn't find route within MAX_HOPS
 
 func _clear_dispatch_content() -> void:
-	for child in dispatch_content.get_children():
-		child.queue_free()
+	_free_children(dispatch_content)
 
 func _format_time(ticks: float) -> String:
 	return TimeScale.format_time(ticks)

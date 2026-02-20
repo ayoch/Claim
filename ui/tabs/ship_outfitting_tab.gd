@@ -1,18 +1,39 @@
 extends MarginContainer
 
+static func _free_children(container: Node) -> void:
+	for i in range(container.get_child_count() - 1, -1, -1):
+		container.get_child(i).queue_free()
+
 @onready var ships_list: VBoxContainer = %ShipsList
 
+var _dirty: bool = false
+var _last_refresh_msec: int = 0
+const REFRESH_INTERVAL_MSEC: int = 200
+
 func _ready() -> void:
-	EventBus.upgrade_purchased.connect(func(_u: ShipUpgrade) -> void: _refresh_all())
-	EventBus.upgrade_installed.connect(func(_s: Ship, _u: ShipUpgrade) -> void: _refresh_all())
-	EventBus.mission_started.connect(func(_m: Mission) -> void: _refresh_all())
-	EventBus.mission_completed.connect(func(_m: Mission) -> void: _refresh_all())
-	EventBus.money_changed.connect(func(_m: int) -> void: _refresh_all())
+	EventBus.upgrade_purchased.connect(func(_u: ShipUpgrade) -> void: _dirty = true)
+	EventBus.upgrade_installed.connect(func(_s: Ship, _u: ShipUpgrade) -> void: _dirty = true)
+	EventBus.mission_started.connect(func(_m: Mission) -> void: _dirty = true)
+	EventBus.mission_completed.connect(func(_m: Mission) -> void: _dirty = true)
+	EventBus.money_changed.connect(func(_m: int) -> void: _dirty = true)
+	EventBus.mining_unit_purchased.connect(func(_u: MiningUnit) -> void: _dirty = true)
+	EventBus.mining_unit_deployed.connect(func(_u: MiningUnit, _a: AsteroidData) -> void: _dirty = true)
+	EventBus.mining_unit_recalled.connect(func(_u: MiningUnit) -> void: _dirty = true)
+	EventBus.tick.connect(_on_tick)
+	_refresh_all()
+
+func _on_tick(_dt: float) -> void:
+	if not _dirty:
+		return
+	var now := Time.get_ticks_msec()
+	if now - _last_refresh_msec < REFRESH_INTERVAL_MSEC:
+		return
+	_last_refresh_msec = now
+	_dirty = false
 	_refresh_all()
 
 func _refresh_all() -> void:
-	for child in ships_list.get_children():
-		child.queue_free()
+	_free_children(ships_list)
 
 	var title := Label.new()
 	title.text = "SHIP OUTFITTING"
@@ -49,7 +70,7 @@ func _refresh_all() -> void:
 				install_btn.custom_minimum_size = Vector2(0, 40)
 				install_btn.pressed.connect(func() -> void:
 					GameState.install_upgrade(ship, upgrade)
-					_refresh_all()
+					call_deferred("_refresh_all")
 				)
 				upgrade_row.add_child(install_btn)
 
@@ -166,10 +187,96 @@ func _refresh_all() -> void:
 		btn.disabled = GameState.money < entry["cost"]
 		btn.pressed.connect(func() -> void:
 			if GameState.purchase_upgrade(entry):
-				_refresh_all()
+				call_deferred("_refresh_all")
 		)
 		buy_row.add_child(btn)
 		ships_list.add_child(buy_row)
+
+	# Mining units section
+	var mu_sep := HSeparator.new()
+	ships_list.add_child(mu_sep)
+
+	var mu_header := Label.new()
+	mu_header.text = "MINING UNITS"
+	mu_header.add_theme_font_size_override("font_size", 20)
+	mu_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
+	ships_list.add_child(mu_header)
+
+	# Show inventory
+	if not GameState.mining_unit_inventory.is_empty():
+		var inv_label := Label.new()
+		inv_label.text = "In Inventory: %d unit(s)" % GameState.mining_unit_inventory.size()
+		inv_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+		ships_list.add_child(inv_label)
+		for unit in GameState.mining_unit_inventory:
+			var unit_row := HBoxContainer.new()
+			unit_row.add_theme_constant_override("separation", 8)
+			var unit_info := Label.new()
+			unit_info.text = "  • %s (%.1ft, %.1fx, %.0f/%.0f%% dur)" % [
+				unit.unit_name, unit.mass, unit.mining_multiplier, unit.durability, unit.max_durability
+			]
+			unit_info.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+			unit_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			unit_row.add_child(unit_info)
+			if unit.max_durability < 100.0:
+				var rebuild_btn := Button.new()
+				rebuild_btn.text = "Rebuild $%s" % _format_number(unit.rebuild_cost())
+				rebuild_btn.custom_minimum_size = Vector2(0, 32)
+				rebuild_btn.disabled = GameState.money < unit.rebuild_cost()
+				rebuild_btn.pressed.connect(func() -> void:
+					GameState.rebuild_mining_unit(unit)
+					call_deferred("_refresh_all")
+				)
+				unit_row.add_child(rebuild_btn)
+			ships_list.add_child(unit_row)
+
+	# Show deployed
+	if not GameState.deployed_mining_units.is_empty():
+		var dep_label := Label.new()
+		dep_label.text = "Deployed: %d unit(s)" % GameState.deployed_mining_units.size()
+		dep_label.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
+		ships_list.add_child(dep_label)
+		for unit in GameState.deployed_mining_units:
+			var worker_names: Array[String] = []
+			for w in unit.assigned_workers:
+				worker_names.append(w.worker_name)
+			var unit_info := Label.new()
+			unit_info.text = "  • %s at %s (%.0f%% durability, crew: %s)" % [
+				unit.unit_name, unit.deployed_at_asteroid, unit.durability,
+				", ".join(worker_names) if not worker_names.is_empty() else "none"
+			]
+			unit_info.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+			ships_list.add_child(unit_info)
+
+	# Purchase catalog
+	var mu_buy_header := Label.new()
+	mu_buy_header.text = "Available to Purchase:"
+	mu_buy_header.add_theme_font_size_override("font_size", 16)
+	mu_buy_header.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+	ships_list.add_child(mu_buy_header)
+
+	for mu_entry in MiningUnitCatalog.get_available_units():
+		var mu_row := HBoxContainer.new()
+		mu_row.add_theme_constant_override("separation", 8)
+		var mu_info := Label.new()
+		mu_info.text = "%s - %s ($%s, %.1ft, %d workers)" % [
+			mu_entry["name"], mu_entry["description"],
+			_format_number(mu_entry["cost"]), mu_entry["mass"], mu_entry["workers_required"]
+		]
+		mu_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		mu_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		mu_row.add_child(mu_info)
+
+		var mu_btn := Button.new()
+		mu_btn.text = "Buy $%s" % _format_number(mu_entry["cost"])
+		mu_btn.custom_minimum_size = Vector2(0, 44)
+		mu_btn.disabled = GameState.money < mu_entry["cost"]
+		mu_btn.pressed.connect(func() -> void:
+			if GameState.purchase_mining_unit(mu_entry):
+				call_deferred("_refresh_all")
+		)
+		mu_row.add_child(mu_btn)
+		ships_list.add_child(mu_row)
 
 func _add_stat_row(grid: GridContainer, label_text: String, base_value: String, effective_value: float) -> void:
 	var label := Label.new()

@@ -5,24 +5,47 @@ extends MarginContainer
 @onready var crew_count: Label = %CrewCount
 @onready var refresh_btn: Button = %RefreshBtn
 
+static func _free_children(container: Node) -> void:
+	for i in range(container.get_child_count() - 1, -1, -1):
+		container.get_child(i).free()
+
 var _candidates: Array[Worker] = []
+var _dirty_crew: bool = false
+var _dirty_all: bool = false
+var _last_refresh_msec: int = 0
+const REFRESH_INTERVAL_MSEC: int = 200
 
 func _ready() -> void:
 	refresh_btn.pressed.connect(_generate_candidates)
-	EventBus.worker_hired.connect(func(_w: Worker) -> void: _refresh_all())
-	EventBus.worker_fired.connect(func(_w: Worker) -> void: _refresh_all())
-	EventBus.mission_started.connect(func(_m: Mission) -> void: _refresh_crew())
-	EventBus.mission_completed.connect(func(_m: Mission) -> void: _refresh_crew())
+	EventBus.worker_hired.connect(func(_w: Worker) -> void: _dirty_all = true)
+	EventBus.worker_fired.connect(func(_w: Worker) -> void: _dirty_all = true)
+	EventBus.mission_started.connect(func(_m: Mission) -> void: _dirty_crew = true)
+	EventBus.mission_completed.connect(func(_m: Mission) -> void: _dirty_crew = true)
+	EventBus.tick.connect(_on_tick)
 	_generate_candidates()
 	_refresh_crew()
+
+func _on_tick(_dt: float) -> void:
+	if not _dirty_crew and not _dirty_all:
+		return
+	var now := Time.get_ticks_msec()
+	if now - _last_refresh_msec < REFRESH_INTERVAL_MSEC:
+		return
+	_last_refresh_msec = now
+	if _dirty_all:
+		_dirty_all = false
+		_dirty_crew = false
+		_refresh_all()
+	elif _dirty_crew:
+		_dirty_crew = false
+		_refresh_crew()
 
 func _refresh_all() -> void:
 	_refresh_crew()
 	_refresh_candidates()
 
 func _refresh_crew() -> void:
-	for child in workers_list.get_children():
-		child.queue_free()
+	_free_children(workers_list)
 
 	var total := GameState.workers.size()
 	var available := GameState.get_available_workers().size()
@@ -51,20 +74,37 @@ func _refresh_crew() -> void:
 
 		var details := Label.new()
 		var status_text: String
-		if worker.is_available:
-			status_text = "Available"
-		elif worker.assigned_mission:
-			status_text = "On mission to %s" % worker.assigned_mission.asteroid.asteroid_name
-		else:
-			status_text = "On Mission"
-		details.text = "%s  |  $%d/pay  |  %s" % [
-			worker.get_specialties_text(), worker.wage, status_text
+		var status_color: Color
+		match worker.leave_status:
+			1:
+				status_text = "On Leave (home: %s)" % worker.home_colony
+				status_color = Color(0.5, 0.5, 0.8)
+			2:
+				status_text = "Waiting for Ride (%s)" % worker.home_colony
+				status_color = Color(0.7, 0.7, 0.3)
+			3:
+				status_text = "TARDY"
+				status_color = Color(0.9, 0.3, 0.3)
+			_:
+				if worker.is_available:
+					status_text = "Available"
+					status_color = Color(0.3, 0.8, 0.3)
+				elif worker.assigned_mission:
+					var dest_name := ""
+					if worker.assigned_mission.asteroid:
+						dest_name = worker.assigned_mission.asteroid.asteroid_name
+					else:
+						dest_name = "remote location"
+					status_text = "On mission to %s" % dest_name
+					status_color = Color(0.8, 0.7, 0.2)
+				else:
+					status_text = "On Mission"
+					status_color = Color(0.8, 0.7, 0.2)
+		details.text = "%s  |  $%d/pay  |  Loyalty: %d  |  Home: %s  |  %s" % [
+			worker.get_specialties_text(), worker.wage, int(worker.loyalty), worker.home_colony, status_text
 		]
 		details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		if worker.is_available:
-			details.add_theme_color_override("font_color", Color(0.3, 0.8, 0.3))
-		else:
-			details.add_theme_color_override("font_color", Color(0.8, 0.7, 0.2))
+		details.add_theme_color_override("font_color", status_color)
 		info_vbox.add_child(details)
 
 		hbox.add_child(info_vbox)
@@ -86,8 +126,7 @@ func _generate_candidates() -> void:
 	_refresh_candidates()
 
 func _refresh_candidates() -> void:
-	for child in candidates_list.get_children():
-		child.queue_free()
+	_free_children(candidates_list)
 
 	for candidate in _candidates:
 		# Skip candidates that were already hired

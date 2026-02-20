@@ -28,6 +28,16 @@ const BODY_TYPE_NAMES: Dictionary = {
 func get_type_name() -> String:
 	return BODY_TYPE_NAMES.get(body_type, "Unknown")
 
+func get_max_mining_slots() -> int:
+	match body_type:
+		BodyType.NEO: return 3
+		BodyType.ASTEROID: return 6
+		BodyType.COMET: return 2
+		BodyType.TROJAN: return 8
+		BodyType.CENTAUR: return 5
+		BodyType.KBO: return 10
+	return 4
+
 ## Kepler's third law: orbital period in real seconds
 ## T = a^1.5 years for bodies orbiting the Sun
 func get_orbital_period() -> float:

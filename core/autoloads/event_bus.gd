@@ -65,6 +65,7 @@ signal ship_idle_at_colony(ship: Ship, trade_mission: TradeMission)
 signal ship_breakdown(ship: Ship, reason: String)
 signal ship_derelict(ship: Ship)
 signal ship_destroyed(ship: Ship, body_name: String)
+signal life_support_warning(ship: Ship, percent_remaining: float)
 signal rescue_mission_started(ship: Ship, cost: int)
 signal rescue_mission_completed(ship: Ship)
 signal rescue_impossible(ship: Ship, reason: String)
@@ -78,3 +79,26 @@ signal stranger_rescue_declined(ship: Ship, stranger_name: String)
 
 # Reputation
 signal reputation_changed(new_score: float, tier: int)
+
+# Station system
+signal ship_stationed(ship: Ship, colony: Colony)
+signal ship_unstationed(ship: Ship)
+signal station_job_started(ship: Ship, job: String, destination: String)
+signal station_job_completed(ship: Ship, job: String, summary: String)
+signal crew_deployed(asteroid: AsteroidData, workers: Array)
+signal crew_recalled(asteroid: AsteroidData, workers: Array)
+signal worker_fatigued(worker: Worker)
+signal worker_injured(worker: Worker)
+
+# Hitchhiking & tardiness
+signal worker_waiting_for_ride(worker: Worker, location: String)
+signal worker_hitched_ride(worker: Worker, ship: Ship)
+signal worker_tardy(worker: Worker, reason: String)
+signal worker_tardiness_resolved(worker: Worker, action: String)
+
+# Mining units
+signal mining_unit_purchased(unit: MiningUnit)
+signal mining_unit_deployed(unit: MiningUnit, asteroid: AsteroidData)
+signal mining_unit_recalled(unit: MiningUnit)
+signal mining_unit_broken(unit: MiningUnit)
+signal stockpile_collected(asteroid: AsteroidData, tons: float)

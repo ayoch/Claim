@@ -5,6 +5,7 @@ extends MarginContainer
 @onready var ships_list: VBoxContainer = %ShipsList
 @onready var dispatch_popup: PanelContainer = %DispatchPopup
 @onready var dispatch_content: VBoxContainer = %DispatchContent
+@onready var dispatch_buttons: HBoxContainer = %DispatchButtons
 @onready var buy_ship_popup: PanelContainer = %BuyShipPopup
 @onready var buy_ship_content: VBoxContainer = %BuyShipContent
 @onready var _ships_scroll: ScrollContainer = %ShipsList.get_parent()
@@ -14,7 +15,10 @@ var _selected_ship: Ship = null
 var _selected_asteroid: AsteroidData = null
 var _selected_workers: Array[Worker] = []
 var _selected_transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE
-var _sell_at_destination_markets: bool = false  # Toggle: return with ore vs sell at nearby markets
+var _selected_mission_type: int = Mission.MissionType.MINING
+var _selected_deploy_units: Array[MiningUnit] = []
+var _selected_deploy_workers: Array[Worker] = []
+var _sell_at_destination_markets: bool = true  # Toggle: return with ore vs sell at nearby markets
 var _sort_by: String = "profit"
 var _filter_type: int = -1
 var _available_slingshot_routes: Array = []  # Array of GravityAssist.SlingshotRoute
@@ -28,8 +32,8 @@ var _cargo_labels: Dictionary = {}  # Ship -> Label for cargo display
 const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catch up
 var _dispatch_refresh_timer: float = 0.0
 const DISPATCH_REFRESH_INTERVAL: float = 2.0  # Refresh dispatch popup every 2 seconds
-var _tick_throttle_timer: float = 0.0
-const TICK_THROTTLE_INTERVAL: float = 0.1  # Only process ticks every 0.1 seconds
+var _last_tick_msec: int = 0
+const TICK_THROTTLE_MSEC: int = 100  # Only process ticks every 100ms real-time
 var _on_selection_screen: bool = false  # Track if we're on the initial destination selection screen
 var _on_estimate_screen: bool = false  # Track if we're on the worker selection / estimate screen
 var _saved_colonies_scroll: float = 0.0  # Preserve scroll position across refreshes
@@ -39,6 +43,18 @@ var _colony_dest_buttons: Dictionary = {}  # Colony -> Button
 var _mining_dest_buttons: Dictionary = {}  # AsteroidData -> Button
 var _colony_dest_data: Array = []  # Ordered list of Colony for current view
 var _mining_dest_data: Array = []  # Ordered list of AsteroidData for current view
+var _mining_scroll: ScrollContainer = null  # Reference for collapsible toggle
+var _colonies_scroll: ScrollContainer = null  # Reference for collapsible toggle
+var _mining_header_label: Label = null  # Clickable toggle header
+var _colonies_header_label: Label = null  # Clickable toggle header
+var _mining_controls: HFlowContainer = null  # Filter/sort controls for mining section
+var _worker_checkboxes: Dictionary = {}  # Worker -> CheckBox for programmatic toggling
+var _colonies_section_expanded: int = -1  # -1 = use default (cargo-based), 0 = collapsed, 1 = expanded
+var _mining_section_expanded: int = -1  # -1 = use default (cargo-based), 0 = collapsed, 1 = expanded
+
+static func _free_children(container: Node) -> void:
+	for i in range(container.get_child_count() - 1, -1, -1):
+		container.get_child(i).queue_free()
 
 func _ready() -> void:
 	_cancel_preview()
@@ -68,6 +84,10 @@ func _ready() -> void:
 	EventBus.stranger_rescue_declined.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
 	EventBus.resource_changed.connect(func(_o: ResourceTypes.OreType, _a: float) -> void: _mark_dirty())
 	EventBus.money_changed.connect(func(_m: int) -> void: _mark_dirty())
+	EventBus.ship_stationed.connect(func(_s: Ship, _c: Colony) -> void: _mark_dirty())
+	EventBus.ship_unstationed.connect(func(_s: Ship) -> void: _mark_dirty())
+	EventBus.station_job_started.connect(func(_s: Ship, _j: String, _d: String) -> void: _mark_dirty())
+	EventBus.station_job_completed.connect(func(_s: Ship, _j: String, _su: String) -> void: _mark_dirty())
 	EventBus.worker_hired.connect(_on_worker_hired)
 	EventBus.tick.connect(_on_tick)
 	_rebuild_ships()
@@ -85,6 +105,22 @@ func _hide_dispatch() -> void:
 	dispatch_popup.visible = false
 	_ships_scroll.visible = true
 	_tab_title.visible = true
+	_clear_dispatch_buttons()
+
+func _set_dispatch_buttons(buttons: Array) -> void:
+	_clear_dispatch_buttons()
+	for entry in buttons:
+		var btn := Button.new()
+		btn.text = entry["text"]
+		btn.custom_minimum_size = Vector2(0, 44)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if entry.has("color"):
+			btn.add_theme_color_override("font_color", entry["color"])
+		btn.pressed.connect(entry["callback"])
+		dispatch_buttons.add_child(btn)
+
+func _clear_dispatch_buttons() -> void:
+	_free_children(dispatch_buttons)
 
 func _show_buy_ship() -> void:
 	buy_ship_popup.visible = true
@@ -127,16 +163,16 @@ func _on_worker_hired(_worker: Worker) -> void:
 	if dispatch_popup.visible and _on_estimate_screen:
 		_show_worker_selection()
 
-func _on_tick(dt: float) -> void:
-	# Throttle tick processing to avoid performance issues at high simulation speeds
-	_tick_throttle_timer += dt
-	if _tick_throttle_timer < TICK_THROTTLE_INTERVAL:
-		return  # Early exit - don't process this tick
-	_tick_throttle_timer = 0.0
+func _on_tick(_dt: float) -> void:
+	# Throttle tick processing to real-time (not game-time, which explodes at high speed)
+	var now := Time.get_ticks_msec()
+	if now - _last_tick_msec < TICK_THROTTLE_MSEC:
+		return
+	_last_tick_msec = now
 
 	# Refresh dispatch popup periodically to update orbital positions and fuel estimates
 	if dispatch_popup.visible:
-		_dispatch_refresh_timer += dt
+		_dispatch_refresh_timer += 0.1  # Real-time increment (this block fires every 100ms)
 		if _dispatch_refresh_timer >= DISPATCH_REFRESH_INTERVAL:
 			_dispatch_refresh_timer = 0.0
 			if _on_estimate_screen:
@@ -185,8 +221,7 @@ func _rebuild_ships() -> void:
 	_detail_labels.clear()
 	_cargo_labels.clear()
 	_location_labels.clear()
-	for child in ships_list.get_children():
-		child.queue_free()
+	_free_children(ships_list)
 
 	for ship: Ship in GameState.ships:
 		var panel := PanelContainer.new()
@@ -307,9 +342,25 @@ func _rebuild_ships() -> void:
 						_mark_dirty()
 					)
 					_derelict_actions.add_child(rescue_btn)
+		elif ship.is_stationed:
+			var status := Label.new()
+			if ship.is_stationed_idle:
+				status.text = "STATIONED @ %s (idle)" % ship.station_colony.colony_name
+			elif ship.current_mission:
+				status.text = "STATIONED @ %s — %s" % [ship.station_colony.colony_name, ship.current_mission.get_status_text()]
+			elif ship.current_trade_mission:
+				status.text = "STATIONED @ %s — %s" % [ship.station_colony.colony_name, ship.current_trade_mission.get_status_text()]
+			else:
+				status.text = "STATIONED @ %s" % ship.station_colony.colony_name
+			status.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
+			header.add_child(status)
+			_status_labels[ship] = status
 		elif ship.is_docked:
 			var status := Label.new()
-			status.text = "Docked at Earth"
+			if ship.docked_at_colony:
+				status.text = "Docked at %s" % ship.docked_at_colony.colony_name
+			else:
+				status.text = "Docked at Earth"
 			status.add_theme_color_override("font_color", Color(0.3, 0.8, 0.3))
 			header.add_child(status)
 		elif ship.is_idle_remote:
@@ -376,8 +427,74 @@ func _rebuild_ships() -> void:
 
 		# === ACTION BUTTONS ===
 
-		# Docked ships: Dispatch and Unload
-		if ship.is_docked:
+		# Stationed ships: Edit Jobs and Unstation
+		if ship.is_stationed:
+			# Show active jobs list
+			var jobs_label := Label.new()
+			var jobs_text := "Jobs: " + ", ".join(ship.station_jobs) if not ship.station_jobs.is_empty() else "Jobs: None"
+			jobs_label.text = jobs_text
+			jobs_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
+			jobs_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			vbox.add_child(jobs_label)
+
+			# Show recent station log
+			if not ship.station_log.is_empty():
+				var log_label := Label.new()
+				var recent := ship.station_log[0]
+				var elapsed := GameState.total_ticks - float(recent["time"])
+				var time_ago := TimeScale.format_time(elapsed) + " ago" if elapsed > 0 else "just now"
+				log_label.text = "Last: %s (%s)" % [recent["message"], time_ago]
+				log_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+				log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				vbox.add_child(log_label)
+
+			var station_btn_row := HBoxContainer.new()
+			station_btn_row.add_theme_constant_override("separation", 8)
+
+			var edit_jobs_btn := Button.new()
+			edit_jobs_btn.text = "Edit Jobs"
+			edit_jobs_btn.custom_minimum_size = Vector2(0, 44)
+			edit_jobs_btn.pressed.connect(_show_station_jobs.bind(ship))
+			station_btn_row.add_child(edit_jobs_btn)
+
+			var unstation_btn := Button.new()
+			unstation_btn.text = "Unstation"
+			unstation_btn.custom_minimum_size = Vector2(0, 44)
+			unstation_btn.add_theme_color_override("font_color", Color(0.9, 0.6, 0.3))
+			unstation_btn.pressed.connect(func() -> void:
+				GameState.unstation_ship(ship)
+				_mark_dirty()
+			)
+			station_btn_row.add_child(unstation_btn)
+
+			vbox.add_child(station_btn_row)
+
+			# Buy Supplies button (only when docked at station colony)
+			if ship.is_stationed_idle and ship.station_colony != null:
+				var supply_btn := Button.new()
+				supply_btn.text = "Buy Supplies"
+				supply_btn.custom_minimum_size = Vector2(0, 44)
+				supply_btn.add_theme_color_override("font_color", Color(0.4, 0.9, 0.5))
+				supply_btn.pressed.connect(_show_supply_shop.bind(ship))
+				vbox.add_child(supply_btn)
+
+				# Show current supplies if any
+				if not ship.supplies.is_empty():
+					var supply_text := "Supplies: "
+					var parts: Array[String] = []
+					for key in ship.supplies:
+						if ship.supplies[key] > 0:
+							parts.append("%s: %.0f" % [key.replace("_", " ").capitalize(), ship.supplies[key]])
+					if not parts.is_empty():
+						supply_text += ", ".join(parts)
+						var supply_label := Label.new()
+						supply_label.text = supply_text
+						supply_label.add_theme_color_override("font_color", Color(0.4, 0.8, 0.5))
+						supply_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+						vbox.add_child(supply_label)
+
+		# Docked ships: Dispatch, Unload, and Station
+		if ship.is_docked and not ship.is_stationed:
 			var btn_row := HBoxContainer.new()
 			btn_row.add_theme_constant_override("separation", 8)
 
@@ -399,6 +516,15 @@ func _rebuild_ships() -> void:
 					_mark_dirty()
 				)
 				btn_row.add_child(unload_btn)
+
+			# Station Here button (only at colonies, not at Earth)
+			if ship.docked_at_colony != null:
+				var station_btn := Button.new()
+				station_btn.text = "Station Here"
+				station_btn.custom_minimum_size = Vector2(0, 44)
+				station_btn.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
+				station_btn.pressed.connect(_show_station_jobs.bind(ship))
+				btn_row.add_child(station_btn)
 
 			vbox.add_child(btn_row)
 
@@ -512,7 +638,7 @@ func _rebuild_ships() -> void:
 				vbox.add_child(equip_row)
 
 		# === PROGRESS BAR ===
-		if not ship.is_docked and not ship.is_idle_remote and not ship.is_derelict:
+		if not ship.is_docked and not ship.is_idle_remote and not ship.is_derelict and not ship.is_stationed_idle:
 			var progress := ProgressBar.new()
 			if ship in GameState.refuel_missions:
 				var refuel_data: Dictionary = GameState.refuel_missions[ship]
@@ -581,8 +707,12 @@ func _rebuild_ships() -> void:
 
 # Include all the helper functions from fleet_tab.gd
 func _get_location_text(ship: Ship) -> String:
+	if ship.is_stationed and ship.station_colony:
+		return "Location: %s (stationed)" % ship.station_colony.colony_name
 	if ship.is_at_earth:
 		return "Location: Earth"
+	if ship.docked_at_colony:
+		return "Location: %s" % ship.docked_at_colony.colony_name
 	if ship.current_mission:
 		match ship.current_mission.status:
 			Mission.Status.IDLE_AT_DESTINATION:
@@ -608,9 +738,14 @@ func _start_dispatch(ship: Ship, planning_mode: bool = false) -> void:
 	_selected_ship = ship
 	_selected_asteroid = null
 	_selected_workers.clear()
+	_selected_mission_type = Mission.MissionType.MINING
+	_selected_deploy_units.clear()
+	_selected_deploy_workers.clear()
 	_sort_by = "profit"
 	_filter_type = -1
 	_is_planning_mode = planning_mode
+	_colonies_section_expanded = -1  # Reset to cargo-based default
+	_mining_section_expanded = -1
 
 	# Show popup immediately for responsiveness
 	dispatch_popup.visible = true
@@ -653,251 +788,277 @@ func _show_asteroid_selection() -> void:
 	origin_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dispatch_content.add_child(origin_label)
 
-	# If ship has cargo, show colonies first
-	if cargo_total > 0:
-		# Fixed header for market destinations
-		var colonies_header := Label.new()
-		colonies_header.text = "MARKET DESTINATIONS (Best Profit First)"
-		colonies_header.add_theme_font_size_override("font_size", 18)
-		colonies_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
-		dispatch_content.add_child(colonies_header)
+	# Determine layout priority: use persisted toggle state, or default from cargo
+	var has_cargo_for_selling := cargo_total > 0
+	var colonies_expanded: bool
+	var mining_expanded: bool
+	if _colonies_section_expanded >= 0:
+		colonies_expanded = _colonies_section_expanded == 1
+	else:
+		colonies_expanded = has_cargo_for_selling
+	if _mining_section_expanded >= 0:
+		mining_expanded = _mining_section_expanded == 1
+	else:
+		mining_expanded = not has_cargo_for_selling
 
-		# Scrollable list for colonies
-		var colonies_scroll := ScrollContainer.new()
-		colonies_scroll.name = "ColoniesScroll"
-		colonies_scroll.size_flags_vertical = Control.SIZE_FILL
-		colonies_scroll.custom_minimum_size = Vector2(0, 250)
-		colonies_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# --- MARKET DESTINATIONS SECTION (always present) ---
+	var colonies_header := Label.new()
+	_colonies_header_label = colonies_header
+	colonies_header.text = "MARKET DESTINATIONS %s" % ("▾" if colonies_expanded else "▸")
+	colonies_header.add_theme_font_size_override("font_size", 18)
+	colonies_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
+	colonies_header.mouse_filter = Control.MOUSE_FILTER_STOP
+	colonies_header.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_toggle_colonies_section()
+	)
+	dispatch_content.add_child(colonies_header)
 
-		var colonies_vbox := VBoxContainer.new()
-		colonies_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		colonies_vbox.add_theme_constant_override("separation", 6)
+	var colonies_scroll := ScrollContainer.new()
+	_colonies_scroll = colonies_scroll
+	colonies_scroll.name = "ColoniesScroll"
+	colonies_scroll.size_flags_vertical = Control.SIZE_FILL
+	colonies_scroll.custom_minimum_size = Vector2(0, 400 if colonies_expanded else 0)
+	colonies_scroll.visible = colonies_expanded
+	colonies_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 
-		# Sort colonies by profit (revenue - fuel cost)
-		var sorted_colonies := GameState.colonies.duplicate()
-		sorted_colonies.sort_custom(func(a: Colony, b: Colony) -> bool:
-			var profit_a := _calculate_colony_profit(a)
-			var profit_b := _calculate_colony_profit(b)
-			return profit_a > profit_b  # Highest profit first
-		)
+	var colonies_vbox := VBoxContainer.new()
+	colonies_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	colonies_vbox.add_theme_constant_override("separation", 6)
 
-		# Filter out current location to prevent exploit (within 0.1 AU proximity)
-		const PROXIMITY_THRESHOLD := 0.1
-		var filtered_colonies: Array[Colony] = []
-		for colony in sorted_colonies:
-			var dist_to_colony := _selected_ship.position_au.distance_to(colony.get_position_au())
-			if dist_to_colony > PROXIMITY_THRESHOLD:
-				filtered_colonies.append(colony)
+	# Sort colonies by profit (revenue - fuel cost)
+	var sorted_colonies := GameState.colonies.duplicate()
+	sorted_colonies.sort_custom(func(a: Colony, b: Colony) -> bool:
+		var profit_a := _calculate_colony_profit(a)
+		var profit_b := _calculate_colony_profit(b)
+		return profit_a > profit_b  # Highest profit first
+	)
 
-		for colony in filtered_colonies:
-			var colony_pos: Vector2 = colony.get_position_au()
-			var dist := _selected_ship.position_au.distance_to(colony_pos)
-			var transit := Brachistochrone.transit_time(dist, _selected_ship.get_effective_thrust())
+	# Filter out current location to prevent exploit (within 0.1 AU proximity)
+	const PROXIMITY_THRESHOLD := 0.1
+	var filtered_colonies: Array[Colony] = []
+	for colony in sorted_colonies:
+		var dist_to_colony := _selected_ship.position_au.distance_to(colony.get_position_au())
+		if dist_to_colony > PROXIMITY_THRESHOLD:
+			filtered_colonies.append(colony)
 
-			# Calculate WORST-CASE round-trip fuel (loaded outbound, empty return)
-			var cargo_mass := _selected_ship.get_cargo_total()
-			var fuel_outbound := _selected_ship.calc_fuel_for_distance(dist, cargo_mass)
-			var fuel_return := _selected_ship.calc_fuel_for_distance(dist, 0.0)
-			var fuel_needed := fuel_outbound + fuel_return
+	for colony in filtered_colonies:
+		var colony_pos: Vector2 = colony.get_position_au()
+		var dist := _selected_ship.position_au.distance_to(colony_pos)
+		var transit := Brachistochrone.transit_time(dist, _selected_ship.get_effective_thrust())
 
-			# Calculate potential revenue from cargo
-			var revenue := 0
-			var cargo_breakdown := ""
-			for ore_type in _selected_ship.current_cargo:
-				var amount: float = _selected_ship.current_cargo[ore_type]
-				var price: float = colony.get_ore_price(ore_type, GameState.market)
-				revenue += int(amount * price)
-				if cargo_breakdown != "":
-					cargo_breakdown += ", "
-				cargo_breakdown += "%s: $%s" % [ResourceTypes.get_ore_name(ore_type), _format_number(int(amount * price))]
+		# Calculate WORST-CASE round-trip fuel (loaded outbound, empty return)
+		var cargo_mass := _selected_ship.get_cargo_total()
+		var fuel_outbound := _selected_ship.calc_fuel_for_distance(dist, cargo_mass)
+		var fuel_return := _selected_ship.calc_fuel_for_distance(dist, 0.0)
+		var fuel_needed := fuel_outbound + fuel_return
 
-			var fuel_status := ""
-			# If ship is at a colony, assume it can refuel before departing
-			var available_fuel := _selected_ship.get_effective_fuel_capacity() if _selected_ship.is_idle_remote else _selected_ship.fuel
-			var has_insufficient_fuel := fuel_needed > available_fuel
-			var has_cargo := cargo_mass > 0
-
-			# Calculate fuel route if needed
-			var fuel_route: Array[String] = []
-			var is_unreachable := false
-			if has_insufficient_fuel:
-				fuel_route = _calculate_fuel_route(colony)
-				if fuel_route.is_empty():
-					# Completely unreachable
-					is_unreachable = true
-					# Skip if setting is disabled
-					if not GameState.settings.get("show_unreachable_destinations", false):
-						continue
-					fuel_status = " [UNREACHABLE - insufficient fuel capacity]"
-				else:
-					fuel_status = " [NEEDS REFUEL]"
-			elif fuel_needed > available_fuel * 0.9:
-				fuel_status = " [CRITICAL - %.0f/%.0f fuel]" % [available_fuel, fuel_needed]
-
-			# Create row container for destination + jettison buttons
-			var colony_row := VBoxContainer.new()
-			colony_row.add_theme_constant_override("separation", 4)
-
-			# Name label
-			var name_label := Label.new()
-			name_label.text = "%s (MARKET)" % colony.colony_name
-			name_label.add_theme_color_override("font_color", Color(0.9, 0.85, 0.6))
-			colony_row.add_child(name_label)
-
-			# Fixed-width data fields
-			var data_row := HBoxContainer.new()
-			data_row.add_theme_constant_override("separation", 8)
-
-			var col_dist_label := Label.new()
-			col_dist_label.custom_minimum_size = Vector2(120, 0)
-			col_dist_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
-			var col_dv := Brachistochrone.delta_v_km_s(dist, _selected_ship.get_effective_thrust())
-			col_dist_label.text = "%.0f km/s Δv" % col_dv
-			data_row.add_child(col_dist_label)
-
-			var col_time_label := Label.new()
-			col_time_label.custom_minimum_size = Vector2(100, 0)
-			col_time_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
-			col_time_label.text = _format_time(transit)
-			data_row.add_child(col_time_label)
-
-			var col_revenue_label := Label.new()
-			col_revenue_label.custom_minimum_size = Vector2(120, 0)
-			col_revenue_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-			col_revenue_label.text = "$%s" % _format_number(revenue)
-			col_revenue_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
-			data_row.add_child(col_revenue_label)
-
-			var col_warning_label := Label.new()
-			col_warning_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			col_warning_label.add_theme_font_size_override("font_size", 12)
-			col_warning_label.text = fuel_status
-			if "CRITICAL" in fuel_status or "UNREACHABLE" in fuel_status:
-				col_warning_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
-			elif fuel_status != "":
-				col_warning_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
-			data_row.add_child(col_warning_label)
-
-			colony_row.add_child(data_row)
-
-			# Cargo breakdown row
+		# Calculate potential revenue from cargo
+		var revenue := 0
+		var cargo_breakdown := ""
+		for ore_type in _selected_ship.current_cargo:
+			var amount: float = _selected_ship.current_cargo[ore_type]
+			var price: float = colony.get_ore_price(ore_type, GameState.market)
+			revenue += int(amount * price)
 			if cargo_breakdown != "":
-				var cargo_label := Label.new()
-				cargo_label.text = cargo_breakdown
-				cargo_label.add_theme_font_size_override("font_size", 12)
-				cargo_label.add_theme_color_override("font_color", Color(0.5, 0.7, 0.5))
-				cargo_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-				colony_row.add_child(cargo_label)
+				cargo_breakdown += ", "
+			cargo_breakdown += "%s: $%s" % [ResourceTypes.get_ore_name(ore_type), _format_number(int(amount * price))]
 
-			# Dispatch button
-			var btn := Button.new()
-			btn.text = "Sell Here"
-			btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-			btn.custom_minimum_size = Vector2(0, 36)
-			btn.focus_mode = Control.FOCUS_NONE
-			btn.disabled = is_unreachable
-			btn.pressed.connect(func() -> void:
-				_confirm_colony_dispatch(colony)
+		var fuel_status := ""
+		# If ship is at a colony, assume it can refuel before departing
+		var available_fuel := _selected_ship.get_effective_fuel_capacity() if _selected_ship.is_idle_remote else _selected_ship.fuel
+		var has_insufficient_fuel := fuel_needed > available_fuel
+		var has_cargo := cargo_mass > 0
+
+		# Calculate fuel route if needed
+		var fuel_route: Array[String] = []
+		var is_unreachable := false
+		if has_insufficient_fuel:
+			fuel_route = _calculate_fuel_route(colony)
+			if fuel_route.is_empty():
+				# Completely unreachable
+				is_unreachable = true
+				# Skip if setting is disabled
+				if not GameState.settings.get("show_unreachable_destinations", false):
+					continue
+				fuel_status = " [UNREACHABLE - insufficient fuel capacity]"
+			else:
+				fuel_status = " [NEEDS REFUEL]"
+		elif fuel_needed > available_fuel * 0.9:
+			fuel_status = " [CRITICAL - %.0f/%.0f fuel]" % [available_fuel, fuel_needed]
+
+		# Create row container for destination + jettison buttons
+		var colony_row := VBoxContainer.new()
+		colony_row.add_theme_constant_override("separation", 4)
+
+		# Name label
+		var name_label := Label.new()
+		name_label.text = "%s (MARKET)" % colony.colony_name
+		name_label.add_theme_color_override("font_color", Color(0.9, 0.85, 0.6))
+		colony_row.add_child(name_label)
+
+		# Fixed-width data fields
+		var data_row := HBoxContainer.new()
+		data_row.add_theme_constant_override("separation", 8)
+
+		var col_dist_label := Label.new()
+		col_dist_label.custom_minimum_size = Vector2(120, 0)
+		col_dist_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+		var col_dv := Brachistochrone.delta_v_km_s(dist, _selected_ship.get_effective_thrust())
+		col_dist_label.text = "%.0f km/s Δv" % col_dv
+		data_row.add_child(col_dist_label)
+
+		var col_time_label := Label.new()
+		col_time_label.custom_minimum_size = Vector2(100, 0)
+		col_time_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+		col_time_label.text = _format_time(transit)
+		data_row.add_child(col_time_label)
+
+		var col_revenue_label := Label.new()
+		col_revenue_label.custom_minimum_size = Vector2(120, 0)
+		col_revenue_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		col_revenue_label.text = "$%s" % _format_number(revenue)
+		col_revenue_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+		data_row.add_child(col_revenue_label)
+
+		var col_warning_label := Label.new()
+		col_warning_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		col_warning_label.add_theme_font_size_override("font_size", 12)
+		col_warning_label.text = fuel_status
+		if "CRITICAL" in fuel_status or "UNREACHABLE" in fuel_status:
+			col_warning_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		elif fuel_status != "":
+			col_warning_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+		data_row.add_child(col_warning_label)
+
+		colony_row.add_child(data_row)
+
+		# Cargo breakdown row
+		if cargo_breakdown != "":
+			var cargo_label := Label.new()
+			cargo_label.text = cargo_breakdown
+			cargo_label.add_theme_font_size_override("font_size", 12)
+			cargo_label.add_theme_color_override("font_color", Color(0.5, 0.7, 0.5))
+			cargo_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			colony_row.add_child(cargo_label)
+
+		# Dispatch button
+		var btn := Button.new()
+		btn.text = "Sell Here"
+		btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+		btn.custom_minimum_size = Vector2(0, 36)
+		btn.focus_mode = Control.FOCUS_NONE
+		btn.disabled = is_unreachable
+		btn.pressed.connect(func() -> void:
+			_confirm_colony_dispatch(colony)
+		)
+		colony_row.add_child(btn)
+
+		# Show fuel stop route as clickable buttons
+		if not fuel_route.is_empty():
+			var route_label := Label.new()
+			route_label.text = "  Fuel stops needed:"
+			route_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
+			colony_row.add_child(route_label)
+
+			var stops_hbox := HFlowContainer.new()
+			stops_hbox.add_theme_constant_override("h_separation", 8)
+			for stop_name in fuel_route:
+				# Find the colony by name
+				var stop_colony: Colony = null
+				for c in GameState.colonies:
+					if c.colony_name == stop_name:
+						stop_colony = c
+						break
+
+				if stop_colony:
+					var stop_btn := Button.new()
+					stop_btn.text = stop_name
+					stop_btn.custom_minimum_size = Vector2(0, 36)
+					stop_btn.focus_mode = Control.FOCUS_NONE
+					stop_btn.pressed.connect(func() -> void:
+						_confirm_colony_dispatch(stop_colony)
+					)
+					stops_hbox.add_child(stop_btn)
+
+			colony_row.add_child(stops_hbox)
+
+		# ALWAYS show action buttons if ship has cargo
+		if has_cargo:
+			var jettison_row := HFlowContainer.new()
+			jettison_row.add_theme_constant_override("h_separation", 8)
+
+			var jettison_label := Label.new()
+			jettison_label.text = "  Jettison cargo:"
+			jettison_label.add_theme_color_override("font_color", Color(0.9, 0.6, 0.3))
+			jettison_row.add_child(jettison_label)
+
+			# Smart jettison button (minimum needed)
+			var smart_btn := Button.new()
+			smart_btn.text = "Dump to Fit"
+			smart_btn.custom_minimum_size = Vector2(0, 36)
+			smart_btn.tooltip_text = "Jettison minimum cargo needed to make this trip"
+			smart_btn.focus_mode = Control.FOCUS_NONE
+			smart_btn.flat = true
+			smart_btn.pressed.connect(func() -> void:
+				var jettisoned := GameState.jettison_cargo_for_trip(_selected_ship, dist, 0.0)  # Empty on return
+				_show_asteroid_selection()  # Refresh the list
+				print("Jettisoned %.1f tons to make trip viable" % jettisoned)
 			)
-			colony_row.add_child(btn)
+			jettison_row.add_child(smart_btn)
 
-			# Show fuel stop route as clickable buttons
-			if not fuel_route.is_empty():
-				var route_label := Label.new()
-				route_label.text = "  Fuel stops needed:"
-				route_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
-				colony_row.add_child(route_label)
+			# Dump all button
+			var dump_all_btn := Button.new()
+			dump_all_btn.text = "Dump All (%.0ft)" % cargo_mass
+			dump_all_btn.custom_minimum_size = Vector2(0, 36)
+			dump_all_btn.tooltip_text = "Jettison all cargo (lost forever)"
+			dump_all_btn.focus_mode = Control.FOCUS_NONE
+			dump_all_btn.flat = true
+			dump_all_btn.pressed.connect(func() -> void:
+				GameState.jettison_all_cargo(_selected_ship)
+				_show_asteroid_selection()  # Refresh the list
+			)
+			jettison_row.add_child(dump_all_btn)
 
-				var stops_hbox := HFlowContainer.new()
-				stops_hbox.add_theme_constant_override("h_separation", 8)
-				for stop_name in fuel_route:
-					# Find the colony by name
-					var stop_colony: Colony = null
-					for c in GameState.colonies:
-						if c.colony_name == stop_name:
-							stop_colony = c
-							break
+			colony_row.add_child(jettison_row)
 
-					if stop_colony:
-						var stop_btn := Button.new()
-						stop_btn.text = stop_name
-						stop_btn.custom_minimum_size = Vector2(0, 36)
-						stop_btn.focus_mode = Control.FOCUS_NONE
-						stop_btn.pressed.connect(func() -> void:
-							_confirm_colony_dispatch(stop_colony)
-						)
-						stops_hbox.add_child(stop_btn)
+		_colony_dest_buttons[colony] = {
+			"dist": col_dist_label, "time": col_time_label,
+			"revenue": col_revenue_label, "warning": col_warning_label,
+			"btn": btn,
+		}
+		_colony_dest_data.append(colony)
+		colonies_vbox.add_child(colony_row)
+		colonies_vbox.add_child(HSeparator.new())
 
-				colony_row.add_child(stops_hbox)
+	colonies_scroll.add_child(colonies_vbox)
+	dispatch_content.add_child(colonies_scroll)
 
-			# ALWAYS show action buttons if ship has cargo
-			if has_cargo:
-				var jettison_row := HFlowContainer.new()
-				jettison_row.add_theme_constant_override("h_separation", 8)
+	# Restore scroll position after UI has been laid out
+	if _saved_colonies_scroll > 0:
+		var saved_pos := _saved_colonies_scroll
+		colonies_scroll.call_deferred("set", "scroll_vertical", int(saved_pos))
 
-				var jettison_label := Label.new()
-				jettison_label.text = "  Jettison cargo:"
-				jettison_label.add_theme_color_override("font_color", Color(0.9, 0.6, 0.3))
-				jettison_row.add_child(jettison_label)
+	var sep0 := HSeparator.new()
+	dispatch_content.add_child(sep0)
 
-				# Smart jettison button (minimum needed)
-				var smart_btn := Button.new()
-				smart_btn.text = "Dump to Fit"
-				smart_btn.custom_minimum_size = Vector2(0, 36)
-				smart_btn.tooltip_text = "Jettison minimum cargo needed to make this trip"
-				smart_btn.focus_mode = Control.FOCUS_NONE
-				smart_btn.flat = true
-				smart_btn.pressed.connect(func() -> void:
-					var jettisoned := GameState.jettison_cargo_for_trip(_selected_ship, dist, 0.0)  # Empty on return
-					_show_asteroid_selection()  # Refresh the list
-					print("Jettisoned %.1f tons to make trip viable" % jettisoned)
-				)
-				jettison_row.add_child(smart_btn)
-
-				# Dump all button
-				var dump_all_btn := Button.new()
-				dump_all_btn.text = "Dump All (%.0ft)" % cargo_mass
-				dump_all_btn.custom_minimum_size = Vector2(0, 36)
-				dump_all_btn.tooltip_text = "Jettison all cargo (lost forever)"
-				dump_all_btn.focus_mode = Control.FOCUS_NONE
-				dump_all_btn.flat = true
-				dump_all_btn.pressed.connect(func() -> void:
-					GameState.jettison_all_cargo(_selected_ship)
-					_show_asteroid_selection()  # Refresh the list
-				)
-				jettison_row.add_child(dump_all_btn)
-
-				colony_row.add_child(jettison_row)
-
-			_colony_dest_buttons[colony] = {
-				"dist": col_dist_label, "time": col_time_label,
-				"revenue": col_revenue_label, "warning": col_warning_label,
-				"btn": btn,
-			}
-			_colony_dest_data.append(colony)
-			colonies_vbox.add_child(colony_row)
-			colonies_vbox.add_child(HSeparator.new())
-
-		colonies_scroll.add_child(colonies_vbox)
-		dispatch_content.add_child(colonies_scroll)
-
-		# Restore scroll position after UI has been laid out
-		if _saved_colonies_scroll > 0:
-			var saved_pos := _saved_colonies_scroll
-			colonies_scroll.call_deferred("set", "scroll_vertical", int(saved_pos))
-
-		var sep := HSeparator.new()
-		dispatch_content.add_child(sep)
-
-	# Fixed header for mining destinations
+	# --- MINING DESTINATIONS SECTION (always present, collapsible) ---
 	var mining_header := Label.new()
-	mining_header.text = "MINING DESTINATIONS"
+	_mining_header_label = mining_header
+	mining_header.text = "MINING DESTINATIONS %s" % ("▾" if mining_expanded else "▸")
 	mining_header.add_theme_font_size_override("font_size", 18)
 	mining_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
+	mining_header.mouse_filter = Control.MOUSE_FILTER_STOP
+	mining_header.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_toggle_mining_section()
+	)
 	dispatch_content.add_child(mining_header)
 
 	# Fixed filter/sort controls
 	var controls := HFlowContainer.new()
+	_mining_controls = controls
+	controls.visible = mining_expanded
 	controls.add_theme_constant_override("h_separation", 8)
 
 	var sort_btn := OptionButton.new()
@@ -948,9 +1109,11 @@ func _show_asteroid_selection() -> void:
 
 	# Scrollable list for mining destinations
 	var mining_scroll := ScrollContainer.new()
+	_mining_scroll = mining_scroll
 	mining_scroll.name = "MiningScroll"
 	mining_scroll.size_flags_vertical = Control.SIZE_FILL
-	mining_scroll.custom_minimum_size = Vector2(0, 400)
+	mining_scroll.custom_minimum_size = Vector2(0, 400 if mining_expanded else 0)
+	mining_scroll.visible = mining_expanded
 	mining_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 
 	var mining_vbox := VBoxContainer.new()
@@ -1241,16 +1404,36 @@ func _show_asteroid_selection() -> void:
 		var saved_pos := _saved_mining_scroll
 		mining_scroll.call_deferred("set", "scroll_vertical", int(saved_pos))
 
-	var cancel := Button.new()
-	cancel.text = "Cancel"
-	cancel.custom_minimum_size = Vector2(0, 44)
-	cancel.pressed.connect(func() -> void:
+	var _cancel_cb := func() -> void:
 		_cancel_preview()
 		_hide_dispatch()
-	)
-	dispatch_content.add_child(cancel)
+	_set_dispatch_buttons([{"text": "Cancel", "callback": _cancel_cb}])
 
 	_show_dispatch()
+
+func _toggle_colonies_section() -> void:
+	if not is_instance_valid(_colonies_scroll):
+		return
+	var expanding := not _colonies_scroll.visible
+	_colonies_section_expanded = 1 if expanding else 0
+	_colonies_scroll.visible = expanding
+	_colonies_scroll.custom_minimum_size = Vector2(0, 400 if expanding else 0)
+	if is_instance_valid(_colonies_header_label):
+		var base_text := _colonies_header_label.text.split(" ▾")[0].split(" ▸")[0]
+		_colonies_header_label.text = "%s %s" % [base_text, "▾" if expanding else "▸"]
+
+func _toggle_mining_section() -> void:
+	if not is_instance_valid(_mining_scroll):
+		return
+	var expanding := not _mining_scroll.visible
+	_mining_section_expanded = 1 if expanding else 0
+	_mining_scroll.visible = expanding
+	_mining_scroll.custom_minimum_size = Vector2(0, 400 if expanding else 0)
+	if is_instance_valid(_mining_controls):
+		_mining_controls.visible = expanding
+	if is_instance_valid(_mining_header_label):
+		var base_text := _mining_header_label.text.split(" ▾")[0].split(" ▸")[0]
+		_mining_header_label.text = "%s %s" % [base_text, "▾" if expanding else "▸"]
 
 func _update_destination_labels() -> void:
 	# Update existing destination buttons in place without rebuilding layout
@@ -1514,6 +1697,7 @@ func _select_colony_trade(colony: Colony) -> void:
 func _show_worker_selection() -> void:
 	_on_selection_screen = false  # Left the main selection screen
 	_on_estimate_screen = true  # Now on the estimate screen
+	_worker_checkboxes.clear()
 	_clear_dispatch_content()
 
 	# AI-calculate optimal thrust based on company policy
@@ -1566,6 +1750,137 @@ func _show_worker_selection() -> void:
 	dist_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 	dispatch_content.add_child(dist_label)
 
+	# Mission type selection (only show options when relevant)
+	var has_deploy_units := not GameState.mining_unit_inventory.is_empty()
+	var has_stockpile := not GameState.get_ore_stockpile(_selected_asteroid.asteroid_name).is_empty()
+	if has_deploy_units or has_stockpile:
+		var type_sep := HSeparator.new()
+		dispatch_content.add_child(type_sep)
+		var type_label := Label.new()
+		type_label.text = "Mission Type:"
+		type_label.add_theme_font_size_override("font_size", 16)
+		type_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
+		dispatch_content.add_child(type_label)
+		var type_row := HFlowContainer.new()
+		type_row.add_theme_constant_override("h_separation", 8)
+
+		var mine_btn := Button.new()
+		mine_btn.text = "Mine"
+		mine_btn.toggle_mode = true
+		mine_btn.button_pressed = (_selected_mission_type == Mission.MissionType.MINING)
+		mine_btn.custom_minimum_size = Vector2(0, 36)
+		mine_btn.pressed.connect(func() -> void:
+			_selected_mission_type = Mission.MissionType.MINING
+			_show_worker_selection()
+		)
+		type_row.add_child(mine_btn)
+
+		if has_deploy_units:
+			var slots := _selected_asteroid.get_max_mining_slots()
+			var occupied := GameState.get_occupied_slots(_selected_asteroid.asteroid_name)
+			var deploy_btn := Button.new()
+			deploy_btn.text = "Deploy Units (%d/%d slots)" % [occupied, slots]
+			deploy_btn.toggle_mode = true
+			deploy_btn.button_pressed = (_selected_mission_type == Mission.MissionType.DEPLOY_UNIT)
+			deploy_btn.custom_minimum_size = Vector2(0, 36)
+			deploy_btn.disabled = occupied >= slots
+			deploy_btn.pressed.connect(func() -> void:
+				_selected_mission_type = Mission.MissionType.DEPLOY_UNIT
+				_show_worker_selection()
+			)
+			type_row.add_child(deploy_btn)
+
+		if has_stockpile:
+			var pile := GameState.get_ore_stockpile(_selected_asteroid.asteroid_name)
+			var total_stockpile := 0.0
+			for _ot in pile:
+				total_stockpile += pile[_ot]
+			var collect_btn := Button.new()
+			collect_btn.text = "Collect Ore (%.1ft)" % total_stockpile
+			collect_btn.toggle_mode = true
+			collect_btn.button_pressed = (_selected_mission_type == Mission.MissionType.COLLECT_ORE)
+			collect_btn.custom_minimum_size = Vector2(0, 36)
+			collect_btn.pressed.connect(func() -> void:
+				_selected_mission_type = Mission.MissionType.COLLECT_ORE
+				_show_worker_selection()
+			)
+			type_row.add_child(collect_btn)
+
+		dispatch_content.add_child(type_row)
+
+	# Deploy unit selection (when Deploy Units is selected)
+	if _selected_mission_type == Mission.MissionType.DEPLOY_UNIT:
+		var du_sep := HSeparator.new()
+		dispatch_content.add_child(du_sep)
+		var du_label := Label.new()
+		du_label.text = "Select Units to Deploy:"
+		du_label.add_theme_font_size_override("font_size", 14)
+		du_label.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
+		dispatch_content.add_child(du_label)
+
+		var slots_avail := _selected_asteroid.get_max_mining_slots() - GameState.get_occupied_slots(_selected_asteroid.asteroid_name)
+		var cargo_space := _selected_ship.cargo_capacity - _selected_ship.get_cargo_total()
+		var total_unit_mass := 0.0
+		for u in _selected_deploy_units:
+			total_unit_mass += u.mass
+
+		for unit in GameState.mining_unit_inventory:
+			var already_selected := unit in _selected_deploy_units
+			var unit_btn := Button.new()
+			unit_btn.flat = not already_selected
+			unit_btn.custom_minimum_size = Vector2(0, 36)
+			unit_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			unit_btn.text = "%s (%.1ft, %d workers, %.1fx)" % [
+				unit.unit_name, unit.mass, unit.workers_required, unit.mining_multiplier
+			]
+			_apply_selection_style(unit_btn, already_selected)
+			var can_add := not already_selected and _selected_deploy_units.size() < slots_avail and (total_unit_mass + unit.mass) <= cargo_space
+			if not already_selected and not can_add:
+				unit_btn.disabled = true
+			unit_btn.pressed.connect(func() -> void:
+				if unit in _selected_deploy_units:
+					_selected_deploy_units.erase(unit)
+				else:
+					_selected_deploy_units.append(unit)
+				_show_worker_selection()
+			)
+			dispatch_content.add_child(unit_btn)
+
+		# Show workers to assign to units
+		if not _selected_deploy_units.is_empty():
+			var dw_label := Label.new()
+			var total_workers_needed := 0
+			for u in _selected_deploy_units:
+				total_workers_needed += u.workers_required
+			dw_label.text = "Workers to leave at asteroid: %d/%d" % [_selected_deploy_workers.size(), total_workers_needed]
+			dw_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+			dispatch_content.add_child(dw_label)
+
+			var available_for_deploy := GameState.get_available_workers()
+			# Remove already-selected transit crew
+			for w in _selected_workers:
+				available_for_deploy.erase(w)
+			for w in available_for_deploy:
+				var is_deploy_selected := w in _selected_deploy_workers
+				var dw_btn := Button.new()
+				dw_btn.flat = not is_deploy_selected
+				dw_btn.custom_minimum_size = Vector2(0, 36)
+				dw_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+				dw_btn.text = "%s  |  %s  |  $%d/pay" % [
+					w.worker_name, w.get_specialties_text(), w.wage
+				]
+				_apply_selection_style(dw_btn, is_deploy_selected)
+				if not is_deploy_selected and _selected_deploy_workers.size() >= total_workers_needed:
+					dw_btn.disabled = true
+				dw_btn.pressed.connect(func() -> void:
+					if w in _selected_deploy_workers:
+						_selected_deploy_workers.erase(w)
+					else:
+						_selected_deploy_workers.append(w)
+					_show_worker_selection()
+				)
+				dispatch_content.add_child(dw_btn)
+
 	var sep := HSeparator.new()
 	dispatch_content.add_child(sep)
 
@@ -1574,11 +1889,17 @@ func _show_worker_selection() -> void:
 	crew_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	dispatch_content.add_child(crew_label)
 
-	# When planning a queued mission, allow using the ship's current crew
+	# Determine available crew based on ship location
 	var available := GameState.get_available_workers()
-	if _is_planning_mode and _selected_ship.last_crew.size() >= _selected_ship.min_crew:
+	var crew_locked := false  # True when crew can't be changed (ship is remote)
+	if _selected_ship.is_idle_remote and _selected_ship.last_crew.size() > 0:
+		# Ship is at a remote location — can only use crew that's aboard
+		available = _selected_ship.last_crew.duplicate()
+		crew_locked = true
+	elif _is_planning_mode and _selected_ship.last_crew.size() >= _selected_ship.min_crew:
 		# Ship is underway - allow selecting current crew for queued mission
 		available = _selected_ship.last_crew.duplicate()
+		crew_locked = true
 
 	if available.size() < _selected_ship.min_crew:
 		var label := Label.new()
@@ -1593,8 +1914,93 @@ func _show_worker_selection() -> void:
 		label.add_theme_color_override("font_color", Color(0.8, 0.3, 0.3))
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		dispatch_content.add_child(label)
+	elif crew_locked:
+		# Crew is locked — ship is remote or underway, use whoever is aboard
+		_selected_workers = available.duplicate()
+
+		var locked_label := Label.new()
+		locked_label.text = "Crew aboard (%d):" % available.size()
+		locked_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		dispatch_content.add_child(locked_label)
+
+		for worker in available:
+			var wlabel := Label.new()
+			wlabel.text = "  %s  |  %s  |  $%d/pay" % [
+				worker.worker_name, worker.get_specialties_text(), worker.wage
+			]
+			wlabel.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+			dispatch_content.add_child(wlabel)
+
+		call_deferred("_update_estimate_display")
 	else:
+		# Optimize crew buttons row
+		var opt_row := HFlowContainer.new()
+		opt_row.add_theme_constant_override("h_separation", 8)
+
+		var auto_btn := Button.new()
+		auto_btn.text = "Auto"
+		auto_btn.flat = true
+		auto_btn.focus_mode = Control.FOCUS_NONE
+		auto_btn.custom_minimum_size = Vector2(0, 32)
+		auto_btn.pressed.connect(func() -> void:
+			_optimize_crew(available, "auto")
+		)
+		opt_row.add_child(auto_btn)
+
+		var miners_btn := Button.new()
+		miners_btn.text = "Best Miners"
+		miners_btn.flat = true
+		miners_btn.focus_mode = Control.FOCUS_NONE
+		miners_btn.custom_minimum_size = Vector2(0, 32)
+		miners_btn.pressed.connect(func() -> void:
+			_optimize_crew(available, "mining")
+		)
+		opt_row.add_child(miners_btn)
+
+		var pilots_btn := Button.new()
+		pilots_btn.text = "Best Pilots"
+		pilots_btn.flat = true
+		pilots_btn.focus_mode = Control.FOCUS_NONE
+		pilots_btn.custom_minimum_size = Vector2(0, 32)
+		pilots_btn.pressed.connect(func() -> void:
+			_optimize_crew(available, "pilot")
+		)
+		opt_row.add_child(pilots_btn)
+
+		var engineers_btn := Button.new()
+		engineers_btn.text = "Best Engineers"
+		engineers_btn.flat = true
+		engineers_btn.focus_mode = Control.FOCUS_NONE
+		engineers_btn.custom_minimum_size = Vector2(0, 32)
+		engineers_btn.pressed.connect(func() -> void:
+			_optimize_crew(available, "engineer")
+		)
+		opt_row.add_child(engineers_btn)
+
+		var clear_btn := Button.new()
+		clear_btn.text = "Clear"
+		clear_btn.flat = true
+		clear_btn.focus_mode = Control.FOCUS_NONE
+		clear_btn.custom_minimum_size = Vector2(0, 32)
+		clear_btn.pressed.connect(func() -> void:
+			_optimize_crew(available, "clear")
+		)
+		opt_row.add_child(clear_btn)
+
+		dispatch_content.add_child(opt_row)
+
+		# Scrollable crew list
+		var crew_scroll := ScrollContainer.new()
+		crew_scroll.custom_minimum_size = Vector2(0, 200)
+		crew_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		crew_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		var crew_vbox := VBoxContainer.new()
+		crew_vbox.add_theme_constant_override("separation", 4)
+		crew_scroll.add_child(crew_vbox)
+		dispatch_content.add_child(crew_scroll)
+
 		# Auto-select: pre-select last crew, or first min_crew workers
+		_worker_checkboxes.clear()
 		var should_preselect := func(worker: Worker) -> bool:
 			if _selected_ship.last_crew.size() > 0:
 				return worker in _selected_ship.last_crew
@@ -1607,20 +2013,27 @@ func _show_worker_selection() -> void:
 			if preselect and worker not in _selected_workers:
 				_selected_workers.append(worker)
 
-			var check := CheckBox.new()
-			check.custom_minimum_size = Vector2(0, 44)
-			check.text = "%s  |  %s  |  $%d/pay" % [
+			var crew_btn := Button.new()
+			crew_btn.flat = true
+			crew_btn.custom_minimum_size = Vector2(0, 40)
+			crew_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			crew_btn.focus_mode = Control.FOCUS_NONE
+			crew_btn.text = "%s  |  %s  |  $%d/pay" % [
 				worker.worker_name, worker.get_specialties_text(), worker.wage
 			]
-			check.button_pressed = preselect
-			check.toggled.connect(func(on: bool) -> void:
-				if on and worker not in _selected_workers:
-					_selected_workers.append(worker)
-				elif not on:
+			_apply_crew_style(crew_btn, preselect)
+			crew_btn.pressed.connect(func() -> void:
+				if worker in _selected_workers:
 					_selected_workers.erase(worker)
+					_apply_crew_style(crew_btn, false)
+				else:
+					_selected_workers.append(worker)
+					_apply_crew_style(crew_btn, true)
 				_update_estimate_display()
 			)
-			dispatch_content.add_child(check)
+			crew_vbox.add_child(crew_btn)
+			_worker_checkboxes[worker] = crew_btn
+
 		# Show initial estimate if workers were pre-selected
 		if not _selected_workers.is_empty():
 			call_deferred("_update_estimate_display")
@@ -1788,34 +2201,17 @@ func _show_worker_selection() -> void:
 	est_panel.add_child(est_vbox)
 	dispatch_content.add_child(est_panel)
 
-	var btn_row := HBoxContainer.new()
-	btn_row.add_theme_constant_override("separation", 8)
-
-	var back_btn := Button.new()
-	back_btn.text = "Back"
-	back_btn.custom_minimum_size = Vector2(0, 44)
-	back_btn.pressed.connect(func() -> void:
+	var _back_cb := func() -> void:
 		_cancel_preview()
 		_show_asteroid_selection()
-	)
-	btn_row.add_child(back_btn)
-
-	var confirm := Button.new()
-	confirm.text = "Confirm Dispatch"
-	confirm.custom_minimum_size = Vector2(0, 44)
-	confirm.pressed.connect(_execute_dispatch)
-	btn_row.add_child(confirm)
-
-	var cancel := Button.new()
-	cancel.text = "Cancel"
-	cancel.custom_minimum_size = Vector2(0, 44)
-	cancel.pressed.connect(func() -> void:
+	var _cancel_cb := func() -> void:
 		_cancel_preview()
 		_hide_dispatch()
-	)
-	btn_row.add_child(cancel)
-
-	dispatch_content.add_child(btn_row)
+	_set_dispatch_buttons([
+		{"text": "Back", "callback": _back_cb},
+		{"text": "Confirm Dispatch", "callback": _execute_dispatch},
+		{"text": "Cancel", "callback": _cancel_cb},
+	])
 
 func _update_route_button_states() -> void:
 	# Toggle route buttons to reflect selection
@@ -1833,6 +2229,66 @@ func _update_route_button_states() -> void:
 		var slingshot_btn: Button = est_panel.find_child("SlingshotButton_%d" % route.planet_index, true, false)
 		if slingshot_btn:
 			slingshot_btn.button_pressed = (_selected_slingshot_route == route)
+
+func _optimize_crew(available: Array, mode: String) -> void:
+	_selected_workers.clear()
+	if mode != "clear":
+		var sorted_workers := available.duplicate()
+		match mode:
+			"mining":
+				sorted_workers.sort_custom(func(a: Worker, b: Worker) -> bool:
+					return a.mining_skill > b.mining_skill
+				)
+			"pilot":
+				sorted_workers.sort_custom(func(a: Worker, b: Worker) -> bool:
+					return a.pilot_skill > b.pilot_skill
+				)
+			"engineer":
+				sorted_workers.sort_custom(func(a: Worker, b: Worker) -> bool:
+					return a.engineer_skill > b.engineer_skill
+				)
+			"auto":
+				sorted_workers.sort_custom(func(a: Worker, b: Worker) -> bool:
+					var avg_a := (a.pilot_skill + a.engineer_skill + a.mining_skill) / 3.0
+					var avg_b := (b.pilot_skill + b.engineer_skill + b.mining_skill) / 3.0
+					return avg_a > avg_b
+				)
+		var count := mini(sorted_workers.size(), _selected_ship.min_crew)
+		for i in count:
+			_selected_workers.append(sorted_workers[i])
+
+	# Update all crew button styles to match selection
+	for worker: Worker in _worker_checkboxes:
+		var btn: Button = _worker_checkboxes[worker]
+		if is_instance_valid(btn):
+			_apply_crew_style(btn, worker in _selected_workers)
+	_update_estimate_display()
+
+func _apply_selection_style(btn: Button, selected: bool) -> void:
+	if selected:
+		btn.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95))
+		var style := StyleBoxFlat.new()
+		style.border_color = Color(0.5, 0.7, 0.9, 0.6)
+		style.border_width_left = 1
+		style.border_width_right = 1
+		style.border_width_top = 1
+		style.border_width_bottom = 1
+		style.bg_color = Color(0.2, 0.25, 0.35, 0.3)
+		style.content_margin_left = 8.0
+		style.content_margin_right = 8.0
+		style.content_margin_top = 4.0
+		style.content_margin_bottom = 4.0
+		btn.add_theme_stylebox_override("normal", style)
+	else:
+		btn.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
+
+func _apply_crew_style(btn: Button, selected: bool) -> void:
+	if selected:
+		# Selected = assigned, dim down (they're "in the crew", settled)
+		btn.add_theme_color_override("font_color", Color(0.5, 0.5, 0.55))
+	else:
+		# Unselected = available, bright (they stand out, waiting to be picked)
+		btn.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95))
 
 func _update_estimate_display() -> void:
 	var est_panel := dispatch_content.find_child("EstimatePanel", true, false)
@@ -2042,48 +2498,18 @@ func _show_dispatch_confirmation(message: String) -> void:
 	msg_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	dispatch_content.add_child(msg_label)
 
-	var btn_row := HBoxContainer.new()
-	btn_row.add_theme_constant_override("separation", 8)
-
-	# Show different buttons based on whether we're planning or immediately dispatching
+	var buttons: Array[Dictionary] = []
 	if _is_planning_mode:
-		# Queue mission button
-		var queue_btn := Button.new()
-		queue_btn.text = "Queue for After Current Task"
-		queue_btn.custom_minimum_size = Vector2(0, 44)
-		queue_btn.pressed.connect(func() -> void:
-			_queue_mission()
-		)
-		btn_row.add_child(queue_btn)
-
-		# Dispatch now (abort current) button
-		var abort_btn := Button.new()
-		abort_btn.text = "Dispatch Now (Abort Current)"
-		abort_btn.custom_minimum_size = Vector2(0, 44)
-		abort_btn.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
-		abort_btn.pressed.connect(func() -> void:
-			_abort_and_dispatch()
-		)
-		btn_row.add_child(abort_btn)
+		var _queue_cb := func() -> void: _queue_mission()
+		var _abort_cb := func() -> void: _abort_and_dispatch()
+		buttons.append({"text": "Queue for After Current Task", "callback": _queue_cb})
+		buttons.append({"text": "Dispatch Now (Abort Current)", "callback": _abort_cb, "color": Color(0.9, 0.3, 0.3)})
 	else:
-		# Normal immediate dispatch
-		var confirm_btn := Button.new()
-		confirm_btn.text = "Confirm Dispatch"
-		confirm_btn.custom_minimum_size = Vector2(0, 44)
-		confirm_btn.pressed.connect(func() -> void:
-			_execute_dispatch()
-		)
-		btn_row.add_child(confirm_btn)
-
-	var cancel_btn := Button.new()
-	cancel_btn.text = "Cancel"
-	cancel_btn.custom_minimum_size = Vector2(0, 44)
-	cancel_btn.pressed.connect(func() -> void:
-		_show_worker_selection()  # Go back to worker selection
-	)
-	btn_row.add_child(cancel_btn)
-
-	dispatch_content.add_child(btn_row)
+		var _confirm_cb := func() -> void: _execute_dispatch()
+		buttons.append({"text": "Confirm Dispatch", "callback": _confirm_cb})
+	var _cancel_cb := func() -> void: _show_worker_selection()
+	buttons.append({"text": "Cancel", "callback": _cancel_cb})
+	_set_dispatch_buttons(buttons)
 
 	_show_dispatch()
 
@@ -2143,10 +2569,16 @@ func _execute_dispatch() -> void:
 	# Remember crew for next dispatch
 	_selected_ship.last_crew = _selected_workers.duplicate()
 
-	if _selected_ship.is_idle_remote:
-		GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode, _selected_slingshot_route)
-	else:
-		GameState.start_mission(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode, _selected_slingshot_route)
+	match _selected_mission_type:
+		Mission.MissionType.DEPLOY_UNIT:
+			GameState.start_deploy_mission(_selected_ship, _selected_asteroid, _selected_workers, _selected_deploy_units, _selected_deploy_workers, _selected_transit_mode, _selected_slingshot_route)
+		Mission.MissionType.COLLECT_ORE:
+			GameState.start_collect_mission(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode, _selected_slingshot_route)
+		_:
+			if _selected_ship.is_idle_remote:
+				GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode, _selected_slingshot_route)
+			else:
+				GameState.start_mission(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode, _selected_slingshot_route)
 	_cancel_preview()
 	_hide_dispatch()
 	_mark_dirty()
@@ -2189,11 +2621,296 @@ func _calculate_jettison_for_asymmetric_trip(dist_outbound: float, dist_return: 
 	return needed_jettison
 
 func _clear_dispatch_content() -> void:
-	for child in dispatch_content.get_children():
-		child.queue_free()
+	_free_children(dispatch_content)
 
 func _format_time(ticks: float) -> String:
 	return TimeScale.format_time(ticks)
+
+var _station_job_checks: Dictionary = {}  # job_name -> CheckBox
+var _station_job_order: Array[String] = []  # Current ordering
+
+const STATION_JOBS: Array[Dictionary] = [
+	{"key": "mining", "label": "Mining", "desc": "Mine nearby asteroids"},
+	{"key": "trading", "label": "Trading", "desc": "Sell ore at local market"},
+	{"key": "repair", "label": "Repair Assist", "desc": "Repair nearby damaged ships"},
+	{"key": "parts_delivery", "label": "Parts Delivery", "desc": "Deliver repair parts to remote ships"},
+	{"key": "provisioning", "label": "Provisioning", "desc": "Supply deployed crews with food"},
+	{"key": "crew_ferry", "label": "Crew Rotation", "desc": "Rotate fatigued workers"},
+	{"key": "patrol", "label": "Patrol", "desc": "Patrol nearby rocks"},
+]
+
+func _show_station_jobs(ship: Ship) -> void:
+	_selected_ship = ship
+	_show_dispatch()
+	_clear_dispatch_content()
+	_on_selection_screen = false
+	_on_estimate_screen = false
+
+	var colony: Colony = ship.docked_at_colony if ship.docked_at_colony else ship.station_colony
+	var colony_name := colony.colony_name if colony else "Unknown"
+
+	var title := Label.new()
+	title.text = "STATION AT %s" % colony_name.to_upper()
+	title.add_theme_font_size_override("font_size", 20)
+	dispatch_content.add_child(title)
+
+	var desc := Label.new()
+	desc.text = "Select jobs and priority order. Ship will autonomously perform the highest-priority actionable job."
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+	dispatch_content.add_child(desc)
+
+	# Initialize job order from existing or defaults
+	_station_job_order.clear()
+	_station_job_checks.clear()
+
+	# Use existing jobs if editing, otherwise start with mining + trading
+	var existing_jobs: Array[String] = ship.station_jobs if ship.is_stationed else []
+	var all_job_keys: Array[String] = []
+	for job_def in STATION_JOBS:
+		all_job_keys.append(job_def["key"])
+
+	# Order: existing enabled jobs first, then remaining in default order
+	for job_key in existing_jobs:
+		if job_key in all_job_keys:
+			_station_job_order.append(job_key)
+	for job_key in all_job_keys:
+		if job_key not in _station_job_order:
+			_station_job_order.append(job_key)
+
+	# Build job list UI
+	var jobs_container := VBoxContainer.new()
+	jobs_container.name = "JobsContainer"
+	jobs_container.add_theme_constant_override("separation", 4)
+	dispatch_content.add_child(jobs_container)
+
+	_rebuild_station_job_list(jobs_container, existing_jobs)
+
+	# Buttons
+	_set_dispatch_buttons([
+		{
+			"text": "Confirm Station" if not ship.is_stationed else "Update Jobs",
+			"callback": func() -> void:
+				var selected_jobs: Array[String] = []
+				for job_key in _station_job_order:
+					if _station_job_checks.has(job_key):
+						var cb: CheckBox = _station_job_checks[job_key]
+						if cb.button_pressed:
+							selected_jobs.append(job_key)
+				if selected_jobs.is_empty():
+					return  # Must select at least one job
+				if ship.is_stationed:
+					GameState.update_station_jobs(ship, selected_jobs)
+				else:
+					GameState.station_ship(ship, colony, selected_jobs)
+				_hide_dispatch()
+				_mark_dirty(),
+		},
+		{
+			"text": "Cancel",
+			"callback": func() -> void:
+				_hide_dispatch()
+				_cancel_preview(),
+			"color": Color(0.7, 0.7, 0.7),
+		},
+	])
+
+func _rebuild_station_job_list(container: VBoxContainer, enabled_jobs: Array[String]) -> void:
+	_free_children(container)
+
+	var priority_label := Label.new()
+	priority_label.text = "Priority (top = highest):"
+	priority_label.add_theme_font_size_override("font_size", 14)
+	container.add_child(priority_label)
+
+	for i in range(_station_job_order.size()):
+		var job_key: String = _station_job_order[i]
+		var job_def: Dictionary = {}
+		for jd in STATION_JOBS:
+			if jd["key"] == job_key:
+				job_def = jd
+				break
+
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+
+		# Priority number
+		var num_label := Label.new()
+		num_label.text = "%d." % (i + 1)
+		num_label.custom_minimum_size = Vector2(24, 0)
+		num_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+		row.add_child(num_label)
+
+		# Checkbox
+		var cb := CheckBox.new()
+		cb.text = "%s — %s" % [job_def.get("label", job_key), job_def.get("desc", "")]
+		cb.button_pressed = job_key in enabled_jobs or (enabled_jobs.is_empty() and job_key in ["mining", "trading"])
+		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(cb)
+		_station_job_checks[job_key] = cb
+
+		# Move up button
+		if i > 0:
+			var up_btn := Button.new()
+			up_btn.text = "^"
+			up_btn.custom_minimum_size = Vector2(36, 36)
+			var idx := i
+			up_btn.pressed.connect(func() -> void:
+				_station_move_job(idx, -1, container, enabled_jobs)
+			)
+			row.add_child(up_btn)
+		else:
+			var spacer := Control.new()
+			spacer.custom_minimum_size = Vector2(36, 36)
+			row.add_child(spacer)
+
+		# Move down button
+		if i < _station_job_order.size() - 1:
+			var down_btn := Button.new()
+			down_btn.text = "v"
+			down_btn.custom_minimum_size = Vector2(36, 36)
+			var idx := i
+			down_btn.pressed.connect(func() -> void:
+				_station_move_job(idx, 1, container, enabled_jobs)
+			)
+			row.add_child(down_btn)
+		else:
+			var spacer := Control.new()
+			spacer.custom_minimum_size = Vector2(36, 36)
+			row.add_child(spacer)
+
+		container.add_child(row)
+
+func _station_move_job(idx: int, direction: int, container: VBoxContainer, enabled_jobs: Array[String]) -> void:
+	var new_idx := idx + direction
+	if new_idx < 0 or new_idx >= _station_job_order.size():
+		return
+	# Capture current check states before rebuild
+	var current_enabled: Array[String] = []
+	for job_key in _station_job_order:
+		if _station_job_checks.has(job_key):
+			var cb: CheckBox = _station_job_checks[job_key]
+			if cb.button_pressed:
+				current_enabled.append(job_key)
+	# Swap
+	var tmp: String = _station_job_order[idx]
+	_station_job_order[idx] = _station_job_order[new_idx]
+	_station_job_order[new_idx] = tmp
+	_station_job_checks.clear()
+	_rebuild_station_job_list(container, current_enabled)
+
+func _show_supply_shop(ship: Ship) -> void:
+	_selected_ship = ship
+	_show_dispatch()
+	_clear_dispatch_content()
+	_on_selection_screen = false
+	_on_estimate_screen = false
+
+	var title := Label.new()
+	title.text = "BUY SUPPLIES"
+	title.add_theme_font_size_override("font_size", 20)
+	dispatch_content.add_child(title)
+
+	var desc := Label.new()
+	desc.text = "Purchase supplies for %s. Supplies share cargo capacity with ore." % ship.ship_name
+	desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+	dispatch_content.add_child(desc)
+
+	var capacity_label := Label.new()
+	var cargo_used := ship.get_cargo_total() + ship.get_supplies_mass()
+	capacity_label.text = "Cargo: %.1f / %.1f tons" % [cargo_used, ship.cargo_capacity]
+	capacity_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.5))
+	dispatch_content.add_child(capacity_label)
+
+	var money_label := Label.new()
+	money_label.text = "Funds: $%s" % _format_number(GameState.money)
+	money_label.add_theme_color_override("font_color", Color(0.5, 0.9, 0.5))
+	dispatch_content.add_child(money_label)
+
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 8)
+	dispatch_content.add_child(spacer)
+
+	# Supply spinboxes
+	var spinboxes: Dictionary = {}
+	for supply_type in SupplyData.SUPPLY_INFO:
+		var info: Dictionary = SupplyData.SUPPLY_INFO[supply_type]
+		var key: String = info["key"]
+		var supply_name: String = info["name"]
+		var cost: int = info["cost_per_unit"]
+		var mass: float = info["mass_per_unit"]
+		var current: float = ship.supplies.get(key, 0.0)
+
+		var row := VBoxContainer.new()
+		row.add_theme_constant_override("separation", 2)
+
+		var header := Label.new()
+		header.text = "%s — $%s/unit, %.2ft/unit" % [supply_name, _format_number(cost), mass]
+		header.add_theme_font_size_override("font_size", 14)
+		row.add_child(header)
+
+		if current > 0:
+			var cur_label := Label.new()
+			cur_label.text = "  On board: %.0f units" % current
+			cur_label.add_theme_color_override("font_color", Color(0.5, 0.7, 0.5))
+			cur_label.add_theme_font_size_override("font_size", 13)
+			row.add_child(cur_label)
+
+		var spin_row := HBoxContainer.new()
+		spin_row.add_theme_constant_override("separation", 8)
+
+		var qty_label := Label.new()
+		qty_label.text = "Buy:"
+		spin_row.add_child(qty_label)
+
+		var spinbox := SpinBox.new()
+		spinbox.min_value = 0
+		spinbox.max_value = 999
+		spinbox.step = 1
+		spinbox.value = 0
+		spinbox.custom_minimum_size = Vector2(120, 40)
+		spin_row.add_child(spinbox)
+		spinboxes[key] = spinbox
+
+		var cost_preview := Label.new()
+		cost_preview.text = "= $0"
+		cost_preview.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		spin_row.add_child(cost_preview)
+
+		spinbox.value_changed.connect(func(val: float) -> void:
+			cost_preview.text = "= $%s" % _format_number(int(val * cost))
+		)
+
+		row.add_child(spin_row)
+		dispatch_content.add_child(row)
+
+	_set_dispatch_buttons([
+		{
+			"text": "Purchase",
+			"callback": func() -> void:
+				var any_bought := false
+				for key in spinboxes:
+					var sb: SpinBox = spinboxes[key]
+					var qty := int(sb.value)
+					if qty > 0:
+						if GameState.buy_supplies(ship, key, float(qty)):
+							any_bought = true
+						else:
+							ship.add_station_log("Failed to buy %s" % key.replace("_", " "), "warning")
+				if any_bought:
+					ship.add_station_log("Purchased supplies", "system")
+				_hide_dispatch()
+				_mark_dirty(),
+		},
+		{
+			"text": "Cancel",
+			"callback": func() -> void:
+				_hide_dispatch()
+				_cancel_preview(),
+			"color": Color(0.7, 0.7, 0.7),
+		},
+	])
 
 func _format_number(n: int) -> String:
 	var s := str(abs(n))
@@ -2427,26 +3144,12 @@ func _show_confirmation_dialog(message: String, on_confirm: Callable) -> void:
 	msg_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	dispatch_content.add_child(msg_label)
 
-	var btn_row := HBoxContainer.new()
-	btn_row.add_theme_constant_override("separation", 8)
-
-	var confirm_btn := Button.new()
-	confirm_btn.text = "Confirm"
-	confirm_btn.custom_minimum_size = Vector2(0, 44)
-	confirm_btn.pressed.connect(func() -> void:
-		on_confirm.call()
-	)
-	btn_row.add_child(confirm_btn)
-
-	var cancel_btn := Button.new()
-	cancel_btn.text = "Cancel"
-	cancel_btn.custom_minimum_size = Vector2(0, 44)
-	cancel_btn.pressed.connect(func() -> void:
-		_show_asteroid_selection()  # Go back to selection
-	)
-	btn_row.add_child(cancel_btn)
-
-	dispatch_content.add_child(btn_row)
+	var _confirm_cb := func() -> void: on_confirm.call()
+	var _cancel_cb := func() -> void: _show_asteroid_selection()
+	_set_dispatch_buttons([
+		{"text": "Confirm", "callback": _confirm_cb},
+		{"text": "Cancel", "callback": _cancel_cb},
+	])
 
 	_show_dispatch()
 
@@ -2534,8 +3237,7 @@ func _add_contract_fulfillment_ui(container: VBoxContainer, ship: Ship, contract
 
 func _build_buy_ship_ui() -> void:
 	# Clear existing content
-	for child in buy_ship_content.get_children():
-		child.queue_free()
+	_free_children(buy_ship_content)
 
 	# Header with title and close button
 	var header := HBoxContainer.new()

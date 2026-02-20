@@ -5,37 +5,68 @@ extends MarginContainer
 @onready var contracts_list: VBoxContainer = %ContractsList
 @onready var colony_list: VBoxContainer = %ColonyList
 
+static func _free_children(container: Node) -> void:
+	for i in range(container.get_child_count() - 1, -1, -1):
+		container.get_child(i).free()
+
+var _dirty_sell: bool = false
+var _dirty_equip: bool = false
+var _dirty_contracts: bool = false
+var _dirty_colony: bool = false
+var _last_refresh_msec: int = 0
+const REFRESH_INTERVAL_MSEC: int = 200
+
 func _ready() -> void:
-	EventBus.resource_changed.connect(func(_o: ResourceTypes.OreType, _a: float) -> void: _refresh_sell())
-	EventBus.money_changed.connect(func(_m: int) -> void: _refresh_equip())
-	EventBus.equipment_installed.connect(func(_s: Ship, _e: Equipment) -> void: _refresh_equip())
-	EventBus.equipment_repaired.connect(func(_s: Ship, _e: Equipment) -> void: _refresh_equip())
-	EventBus.equipment_fabricated.connect(func(_e: Equipment) -> void: _refresh_equip())
-	EventBus.mission_started.connect(func(_m: Mission) -> void: _refresh_equip(); _refresh_colony())
-	EventBus.mission_completed.connect(func(_m: Mission) -> void: _refresh_equip(); _refresh_colony())
-	EventBus.market_event.connect(func(_o: ResourceTypes.OreType, _op: float, _np: float, _msg: String) -> void: _refresh_sell())
-	EventBus.market_event_started.connect(func(_e: MarketEvent) -> void: _refresh_sell())
-	EventBus.market_event_ended.connect(func(_e: MarketEvent) -> void: _refresh_sell())
-	EventBus.contract_offered.connect(func(_c: Contract) -> void: _refresh_contracts())
-	EventBus.contract_accepted.connect(func(_c: Contract) -> void: _refresh_contracts())
-	EventBus.contract_completed.connect(func(_c: Contract) -> void: _refresh_contracts())
-	EventBus.contract_expired.connect(func(_c: Contract) -> void: _refresh_contracts())
-	EventBus.contract_failed.connect(func(_c: Contract) -> void: _refresh_contracts())
-	EventBus.contract_progress.connect(func(_c: Contract, _a: float) -> void: _refresh_contracts())
-	EventBus.trade_mission_started.connect(func(_tm: TradeMission) -> void: _refresh_colony())
-	EventBus.trade_mission_completed.connect(func(_tm: TradeMission) -> void: _refresh_colony())
+	EventBus.resource_changed.connect(func(_o: ResourceTypes.OreType, _a: float) -> void: _dirty_sell = true)
+	EventBus.money_changed.connect(func(_m: int) -> void: _dirty_equip = true)
+	EventBus.equipment_installed.connect(func(_s: Ship, _e: Equipment) -> void: _dirty_equip = true)
+	EventBus.equipment_repaired.connect(func(_s: Ship, _e: Equipment) -> void: _dirty_equip = true)
+	EventBus.equipment_fabricated.connect(func(_e: Equipment) -> void: _dirty_equip = true)
+	EventBus.mission_started.connect(func(_m: Mission) -> void: _dirty_equip = true; _dirty_colony = true)
+	EventBus.mission_completed.connect(func(_m: Mission) -> void: _dirty_equip = true; _dirty_colony = true)
+	EventBus.market_event.connect(func(_o: ResourceTypes.OreType, _op: float, _np: float, _msg: String) -> void: _dirty_sell = true)
+	EventBus.market_event_started.connect(func(_e: MarketEvent) -> void: _dirty_sell = true)
+	EventBus.market_event_ended.connect(func(_e: MarketEvent) -> void: _dirty_sell = true)
+	EventBus.contract_offered.connect(func(_c: Contract) -> void: _dirty_contracts = true)
+	EventBus.contract_accepted.connect(func(_c: Contract) -> void: _dirty_contracts = true)
+	EventBus.contract_completed.connect(func(_c: Contract) -> void: _dirty_contracts = true)
+	EventBus.contract_expired.connect(func(_c: Contract) -> void: _dirty_contracts = true)
+	EventBus.contract_failed.connect(func(_c: Contract) -> void: _dirty_contracts = true)
+	EventBus.contract_progress.connect(func(_c: Contract, _a: float) -> void: _dirty_contracts = true)
+	EventBus.trade_mission_started.connect(func(_tm: TradeMission) -> void: _dirty_colony = true)
+	EventBus.trade_mission_completed.connect(func(_tm: TradeMission) -> void: _dirty_colony = true)
+	EventBus.tick.connect(_on_tick)
 	_refresh_sell()
 	_refresh_equip()
 	_refresh_contracts()
 	_refresh_colony()
+
+func _on_tick(_dt: float) -> void:
+	if not _dirty_sell and not _dirty_equip and not _dirty_contracts and not _dirty_colony:
+		return
+	var now := Time.get_ticks_msec()
+	if now - _last_refresh_msec < REFRESH_INTERVAL_MSEC:
+		return
+	_last_refresh_msec = now
+	if _dirty_sell:
+		_dirty_sell = false
+		_refresh_sell()
+	if _dirty_equip:
+		_dirty_equip = false
+		_refresh_equip()
+	if _dirty_contracts:
+		_dirty_contracts = false
+		_refresh_contracts()
+	if _dirty_colony:
+		_dirty_colony = false
+		_refresh_colony()
 
 # ═══════════════════════════════════════════════════
 #  SELL ORE SECTION
 # ═══════════════════════════════════════════════════
 
 func _refresh_sell() -> void:
-	for child in sell_list.get_children():
-		child.queue_free()
+	_free_children(sell_list)
 
 	# Active Market Events
 	if not GameState.active_market_events.is_empty():
@@ -134,8 +165,7 @@ func _refresh_sell() -> void:
 # ═══════════════════════════════════════════════════
 
 func _refresh_equip() -> void:
-	for child in equip_list.get_children():
-		child.queue_free()
+	_free_children(equip_list)
 
 	# Show fabrication queue
 	if not GameState.fabrication_queue.is_empty():
@@ -390,8 +420,7 @@ func _refresh_equip() -> void:
 func _refresh_contracts() -> void:
 	if not contracts_list:
 		return
-	for child in contracts_list.get_children():
-		child.queue_free()
+	_free_children(contracts_list)
 
 	# Active contracts
 	if not GameState.active_contracts.is_empty():
@@ -502,8 +531,7 @@ func _refresh_contracts() -> void:
 func _refresh_colony() -> void:
 	if not colony_list:
 		return
-	for child in colony_list.get_children():
-		child.queue_free()
+	_free_children(colony_list)
 
 	# Check if player has any ore to trade (stockpile)
 	var has_ore := false

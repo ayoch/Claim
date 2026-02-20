@@ -46,6 +46,8 @@ func set_speed(new_speed: float) -> void:
 
 ## Auto-slow to 1x on critical events (breakdown, stranger rescue offer, etc.)
 func slow_for_critical_event() -> void:
+	if TestHarness and TestHarness.enabled:
+		return
 	if speed_multiplier > SPEED_REALTIME:
 		speed_multiplier = SPEED_REALTIME
 		print("Auto-slowed to 1x for critical event")

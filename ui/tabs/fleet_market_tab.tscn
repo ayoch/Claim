@@ -39,15 +39,24 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="DispatchScroll" type="ScrollContainer" parent="VBox/DispatchPopup"]
+[node name="DispatchVBox" type="VBoxContainer" parent="VBox/DispatchPopup"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="DispatchScroll" type="ScrollContainer" parent="VBox/DispatchPopup/DispatchVBox"]
 layout_mode = 2
 size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="DispatchContent" type="VBoxContainer" parent="VBox/DispatchPopup/DispatchScroll"]
+[node name="DispatchContent" type="VBoxContainer" parent="VBox/DispatchPopup/DispatchVBox/DispatchScroll"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="DispatchButtons" type="HBoxContainer" parent="VBox/DispatchPopup/DispatchVBox"]
+unique_name_in_owner = true
+layout_mode = 2
 theme_override_constants/separation = 8
 
 [node name="BuyShipPopup" type="PanelContainer" parent="VBox"]

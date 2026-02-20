@@ -34,9 +34,49 @@ const SURVEY_CHANCE: float = 0.15
 const MAX_STEPS_PER_FRAME: int = 30  # Max simulation steps per frame
 const MAX_DT_PER_STEP: float = 500.0  # Max ticks batched into one step (random events stay accurate at this scale)
 
+# Life support warning thresholds (percentage) — only fire once per threshold per ship
+const LIFE_SUPPORT_WARN_THRESHOLDS: Array[float] = [0.75, 0.50, 0.25, 0.10]
+var _life_support_warnings_fired: Dictionary = {}  # Ship -> Array of thresholds already fired
+
+# Reusable buffers to avoid per-tick allocations
+var _missions_buf: Array = []
+var _trade_missions_buf: Array = []
+var _prev_positions: Dictionary = {}
+var _destroyed_ships_buf: Array[Ship] = []
+var _ships_to_destroy_buf: Array[Ship] = []
+var _expired_ships_buf: Array[Ship] = []
+
+# Station ship autonomy
+var _station_accumulator: float = 0.0
+const STATION_CHECK_INTERVAL: float = 3600.0  # Check every game-hour
+const STATION_RADIUS_AU: float = 1.0  # Ships consider targets within this radius of their station
+
+# Worker fatigue (piggybacks on payroll accumulator interval)
+
+# Worker leave processing
+var _leave_accumulator: float = 0.0
+const LEAVE_CHECK_INTERVAL: float = 86400.0  # Check once per game-day
+
+const TARDINESS_REASONS: Array[String] = [
+	"Got drunk at a station bar and missed the shuttle",
+	"Family emergency back home — needed extra time",
+	"Missed the transport connection at %s",
+	"Came down with Martian flu, quarantined for 3 days",
+	"Got into a fistfight at %s, detained by station security",
+	"Legal trouble — unpaid docking fines at %s",
+	"Transport from %s delayed due to solar storm",
+	"Took a mental health break — wasn't ready to come back",
+	"Lost all their money gambling at %s, couldn't afford transport",
+	"Got romantically entangled with someone at %s",
+	"Lost their crew ID, took days to get a replacement",
+	"Recreational zero-g injury — sprained ankle on shore leave",
+]
+
 # Real-time throttling for expensive operations (wall-clock time, not game time)
 var _contracts_realtime_timer: float = 0.0
+var _contracts_dt_accum: float = 0.0  # Accumulated game-time between throttled contract runs
 var _survey_realtime_timer: float = 0.0
+var _survey_dt_accum: float = 0.0  # Accumulated game-time between throttled survey runs
 var _ship_positions_realtime_timer: float = 0.0
 const CONTRACTS_REALTIME_INTERVAL: float = 0.5  # Process contracts twice per second max
 const SURVEY_REALTIME_INTERVAL: float = 1.0  # Process surveys once per second max
@@ -89,6 +129,12 @@ func _process_tick(dt: float, emit_event: bool = true) -> void:
 	_process_fabrication(dt)
 	_process_stranger_rescue(dt)
 	_process_payroll(dt)
+	_process_worker_fatigue(dt)
+	_process_deployed_crews(dt)
+	_process_mining_units(dt)
+	_process_hitchhike_pool(dt)
+	_process_worker_leave(dt)
+	_process_stationed_ships(dt)
 	_process_survey_events(dt)
 	_process_market_events(dt)
 	_process_contracts(dt)
@@ -116,8 +162,8 @@ func _process_orbits(dt: float) -> void:
 			_check_auto_dock_colony(ship)
 
 func _process_missions(dt: float) -> void:
-	var missions := GameState.missions.duplicate()
-	for mission: Mission in missions:
+	_missions_buf.assign(GameState.missions)
+	for mission: Mission in _missions_buf:
 		mission.elapsed_ticks += dt
 
 		match mission.status:
@@ -129,17 +175,50 @@ func _process_missions(dt: float) -> void:
 						# Reached waypoint - transition to next leg
 						_process_waypoint_transition(mission, true)  # true = outbound
 					else:
-						# Reached final destination
-						if mission.ship.get_cargo_total() >= mission.ship.cargo_capacity:
-							# Ship is full, skip mining phase
-							mission.status = Mission.Status.IDLE_AT_DESTINATION
-							mission.ship.position_au = mission.asteroid.get_position_au()
-							for w in mission.workers:
-								w.assigned_mission = null
-							EventBus.ship_idle_at_destination.emit(mission.ship, mission)
-						else:
-							mission.status = Mission.Status.MINING
-							mission.elapsed_ticks = 0.0
+						# Reached final destination — branch on mission type
+						match mission.mission_type:
+							Mission.MissionType.MINING:
+								if mission.ship.get_cargo_total() >= mission.ship.cargo_capacity:
+									# Ship is full, skip mining phase
+									if mission.ship.is_stationed:
+										_start_station_return(mission)
+									else:
+										mission.status = Mission.Status.IDLE_AT_DESTINATION
+										mission.ship.position_au = mission.asteroid.get_position_au()
+										for w in mission.workers:
+											w.assigned_mission = null
+										EventBus.ship_idle_at_destination.emit(mission.ship, mission)
+								else:
+									mission.status = Mission.Status.MINING
+									mission.elapsed_ticks = 0.0
+							Mission.MissionType.REPAIR:
+								mission.status = Mission.Status.REPAIRING
+								mission.elapsed_ticks = 0.0
+								if mission.destination_position_au != Vector2.ZERO:
+									mission.ship.position_au = mission.destination_position_au
+							Mission.MissionType.SUPPLY_RUN:
+								mission.status = Mission.Status.DELIVERING
+								mission.elapsed_ticks = 0.0
+							Mission.MissionType.CREW_FERRY:
+								mission.status = Mission.Status.BOARDING
+								mission.elapsed_ticks = 0.0
+							Mission.MissionType.PATROL:
+								mission.status = Mission.Status.PATROLLING
+								mission.elapsed_ticks = 0.0
+								if mission.asteroid:
+									mission.ship.position_au = mission.asteroid.get_position_au()
+								# Create security zone
+								_create_security_zone(mission.ship, mission.station_job_duration)
+							Mission.MissionType.DEPLOY_UNIT:
+								mission.status = Mission.Status.DEPLOYING
+								mission.elapsed_ticks = 0.0
+								if mission.asteroid:
+									mission.ship.position_au = mission.asteroid.get_position_au()
+							Mission.MissionType.COLLECT_ORE:
+								mission.status = Mission.Status.COLLECTING
+								mission.elapsed_ticks = 0.0
+								if mission.asteroid:
+									mission.ship.position_au = mission.asteroid.get_position_au()
 						EventBus.mission_phase_changed.emit(mission)
 
 			Mission.Status.REFUELING:
@@ -148,18 +227,47 @@ func _process_missions(dt: float) -> void:
 
 			Mission.Status.MINING:
 				_mine_tick(mission, dt)
-				# Check if cargo is full (mining complete early)
-				var cargo_full := mission.ship.get_cargo_total() >= mission.ship.cargo_capacity
-				if mission.elapsed_ticks >= mission.mining_duration or cargo_full:
-					mission.status = Mission.Status.IDLE_AT_DESTINATION
-					mission.elapsed_ticks = 0.0
-					# Set ship position to asteroid location
-					mission.ship.position_au = mission.asteroid.get_position_au()
-					# Free workers so they're available for next dispatch
-					for w in mission.workers:
-						w.assigned_mission = null
-					EventBus.mission_phase_changed.emit(mission)
-					EventBus.ship_idle_at_destination.emit(mission.ship, mission)
+				# Stay until hold is full; safety timeout at 2x estimated duration
+				var cargo_full := mission.ship.get_cargo_total() >= mission.ship.get_effective_cargo_capacity() * 0.99
+				if cargo_full or mission.elapsed_ticks >= mission.mining_duration * 2.0:
+					# Stationed ships auto-return instead of idling
+					if mission.ship.is_stationed:
+						_start_station_return(mission)
+					else:
+						mission.status = Mission.Status.IDLE_AT_DESTINATION
+						mission.elapsed_ticks = 0.0
+						# Set ship position to asteroid location
+						mission.ship.position_au = mission.asteroid.get_position_au()
+						# Free workers so they're available for next dispatch
+						for w in mission.workers:
+							w.assigned_mission = null
+						EventBus.mission_phase_changed.emit(mission)
+						EventBus.ship_idle_at_destination.emit(mission.ship, mission)
+
+			Mission.Status.REPAIRING:
+				if mission.elapsed_ticks >= mission.station_job_duration:
+					_complete_repair_job(mission)
+
+			Mission.Status.DELIVERING:
+				if mission.elapsed_ticks >= mission.station_job_duration:
+					_complete_delivery_job(mission)
+
+			Mission.Status.BOARDING:
+				if mission.elapsed_ticks >= mission.station_job_duration:
+					_complete_boarding_job(mission)
+
+			Mission.Status.PATROLLING:
+				if mission.elapsed_ticks >= mission.station_job_duration:
+					_expire_security_zone(mission.ship)
+					_start_station_return(mission)
+
+			Mission.Status.DEPLOYING:
+				if mission.elapsed_ticks >= mission.deploy_duration:
+					_complete_deploy(mission)
+
+			Mission.Status.COLLECTING:
+				if mission.elapsed_ticks >= 1800.0:  # 30 minutes to load ore
+					_complete_collection(mission)
 
 			Mission.Status.IDLE_AT_DESTINATION:
 				# Ship idles here until player orders return or new dispatch
@@ -173,8 +281,27 @@ func _process_missions(dt: float) -> void:
 						# Reached waypoint - transition to next leg
 						_process_waypoint_transition(mission, false)  # false = return
 					else:
-						# Reached final destination
-						mission.ship.position_au = mission.return_position_au
+						# Reached final destination — use current Earth position (Earth orbits!)
+						if mission.ship.is_stationed and mission.ship.station_colony:
+							mission.ship.position_au = mission.ship.station_colony.get_position_au()
+						elif not mission.return_to_station:
+							mission.ship.position_au = CelestialData.get_earth_position_au()
+						else:
+							mission.ship.position_au = mission.return_position_au
+						# Stationed ships: dock at colony and refuel
+						if mission.ship.is_stationed and mission.ship.station_colony:
+							mission.ship.docked_at_colony = mission.ship.station_colony
+							_auto_refuel_at_colony(mission.ship)
+							var cargo := mission.ship.get_cargo_total()
+							if cargo > 0.1:
+								mission.ship.add_station_log("Returned with %.0ft cargo" % cargo, "mining")
+							# Crew ferry: fatigued passengers enter hitchhike pool at station
+							if mission.mission_type == Mission.MissionType.CREW_FERRY:
+								var station_name: String = mission.ship.station_colony.colony_name
+								var station_pos: Vector2 = mission.ship.station_colony.get_position_au()
+								for w in mission.workers:
+									if w not in mission.ship.last_crew and w.needs_rotation:
+										GameState.add_to_hitchhike_pool(w, station_name, station_pos)
 						GameState.complete_mission(mission)
 
 func _process_waypoint_transition(mission: Mission, is_outbound: bool) -> void:
@@ -458,7 +585,7 @@ func _mine_tick(mission: Mission, dt: float) -> void:
 
 	# Don't mine if cargo is already full
 	var cargo_total := ship.get_cargo_total()
-	if cargo_total >= ship.cargo_capacity:
+	if cargo_total >= ship.get_effective_cargo_capacity():
 		return  # Skip mining this tick
 
 	if ship.get_cargo_remaining() <= 0:
@@ -479,9 +606,16 @@ func _mine_tick(mission: Mission, dt: float) -> void:
 	# Random variance on this tick's output
 	var luck := randf_range(MINING_VARIANCE_MIN, MINING_VARIANCE_MAX)
 
+	# Loyalty modifier: average across mission workers (0.9x to 1.0x range)
+	var loyalty_total := 0.0
+	var worker_count := mission.workers.size()
+	for w in mission.workers:
+		loyalty_total += w.loyalty_modifier
+	var avg_loyalty_mod := loyalty_total / float(worker_count) if worker_count > 0 else 1.0
+
 	for ore_type in mission.asteroid.ore_yields:
 		var base_yield: float = mission.asteroid.ore_yields[ore_type]
-		var mined: float = base_yield * mining_skill_total * equip_mult * luck * BASE_MINING_RATE * dt
+		var mined: float = base_yield * mining_skill_total * equip_mult * luck * avg_loyalty_mod * BASE_MINING_RATE * dt
 		var remaining := ship.get_cargo_remaining()
 		mined = minf(mined, remaining)
 		if mined > 0:
@@ -511,8 +645,8 @@ func _process_fabrication(dt: float) -> void:
 		EventBus.equipment_fabricated.emit(equip)
 
 func _process_trade_missions(dt: float) -> void:
-	var trade_missions := GameState.trade_missions.duplicate()
-	for tm: TradeMission in trade_missions:
+	_trade_missions_buf.assign(GameState.trade_missions)
+	for tm: TradeMission in _trade_missions_buf:
 		tm.elapsed_ticks += dt
 
 		match tm.status:
@@ -528,8 +662,8 @@ func _process_trade_missions(dt: float) -> void:
 						_process_trade_waypoint_transition(tm, true)  # true = outbound
 					else:
 						# Reached final destination (colony)
-						# Check if auto-sell is enabled
-						if GameState.settings.get("auto_sell_at_markets", false):
+						# Auto-sell for stationed ships or when auto-sell setting is on
+						if tm.ship.is_stationed or GameState.settings.get("auto_sell_at_markets", false):
 							tm.status = TradeMission.Status.SELLING
 							tm.elapsed_ticks = 0.0
 							# Auto-sell cargo at colony prices
@@ -563,17 +697,26 @@ func _process_trade_missions(dt: float) -> void:
 
 			TradeMission.Status.SELLING:
 				if tm.elapsed_ticks >= TradeMission.SELL_DURATION:
-					tm.status = TradeMission.Status.IDLE_AT_COLONY
-					tm.elapsed_ticks = 0.0
-					# Dock ship at colony
-					tm.ship.position_au = tm.colony.get_position_au()
-					if tm.colony.has_rescue_ops:
-						tm.ship.docked_at_colony = tm.colony
-					# Auto-refuel at colony
-					_auto_refuel_at_colony(tm.ship)
-					# Workers are already freed (trade missions don't lock them)
-					EventBus.trade_mission_phase_changed.emit(tm)
-					EventBus.ship_idle_at_colony.emit(tm.ship, tm)
+					# Stationed ships: complete immediately (no idle), log the revenue
+					if tm.ship.is_stationed:
+						tm.ship.position_au = tm.colony.get_position_au()
+						if tm.colony.has_rescue_ops:
+							tm.ship.docked_at_colony = tm.colony
+						_auto_refuel_at_colony(tm.ship)
+						tm.ship.add_station_log("Sold ore at %s — $%s" % [tm.colony.colony_name, tm.revenue], "trading")
+						EventBus.station_job_completed.emit(tm.ship, "trading", "Sold ore for $%d" % tm.revenue)
+						GameState.complete_trade_mission(tm)
+					else:
+						tm.status = TradeMission.Status.IDLE_AT_COLONY
+						tm.elapsed_ticks = 0.0
+						# Dock ship at colony
+						tm.ship.position_au = tm.colony.get_position_au()
+						if tm.colony.has_rescue_ops:
+							tm.ship.docked_at_colony = tm.colony
+						# Auto-refuel at colony
+						_auto_refuel_at_colony(tm.ship)
+						EventBus.trade_mission_phase_changed.emit(tm)
+						EventBus.ship_idle_at_colony.emit(tm.ship, tm)
 
 			TradeMission.Status.IDLE_AT_COLONY:
 				# Ship idles here until player orders return or new dispatch
@@ -590,8 +733,11 @@ func _process_trade_missions(dt: float) -> void:
 						# Reached waypoint - transition to next leg
 						_process_trade_waypoint_transition(tm, false)  # false = return
 					else:
-						# Reached final destination
-						tm.ship.position_au = tm.return_position_au
+						# Reached final destination — use current position (bodies orbit!)
+						if tm.ship.is_stationed and tm.ship.station_colony:
+							tm.ship.position_au = tm.ship.station_colony.get_position_au()
+						else:
+							tm.ship.position_au = CelestialData.get_earth_position_au()
 						GameState.complete_trade_mission(tm)
 
 func _update_ship_positions(dt: float) -> void:
@@ -602,9 +748,9 @@ func _update_ship_positions(dt: float) -> void:
 	_ship_positions_realtime_timer = 0.0
 
 	# Save previous positions for collision detection (enter-radius check)
-	var prev_positions: Dictionary = {}  # Ship -> Vector2
+	_prev_positions.clear()
 	for ship in GameState.ships:
-		prev_positions[ship] = ship.position_au
+		_prev_positions[ship] = ship.position_au
 
 	# Update ship positions and velocities during transit based on mission progress
 	for mission: Mission in GameState.missions:
@@ -617,7 +763,7 @@ func _update_ship_positions(dt: float) -> void:
 				var start_pos := mission.get_current_leg_start_pos()
 				var end_pos := mission.get_current_leg_end_pos()
 				_update_ship_transit_physics(ship, start_pos, end_pos, progress, mission.transit_mode, mission.transit_time, dt)
-			Mission.Status.MINING, Mission.Status.IDLE_AT_DESTINATION:
+			Mission.Status.MINING, Mission.Status.IDLE_AT_DESTINATION, Mission.Status.DEPLOYING, Mission.Status.COLLECTING:
 				ship.position_au = mission.asteroid.get_position_au()
 				ship.velocity_au_per_tick = Vector2.ZERO
 				ship.speed_au_per_tick = 0.0
@@ -654,10 +800,10 @@ func _update_ship_positions(dt: float) -> void:
 			ship.position_au += ship.velocity_au_per_tick * dt
 
 	# Check all moving ships for collisions with Sun or planets
-	_check_ship_collisions(prev_positions)
+	_check_ship_collisions(_prev_positions)
 
 func _check_ship_collisions(prev_positions: Dictionary) -> void:
-	var destroyed_ships: Array[Ship] = []
+	_destroyed_ships_buf.clear()
 	for ship in GameState.ships:
 		# Only check collisions for derelict ships (no power/control)
 		# Ships with working engines can navigate around obstacles
@@ -668,11 +814,11 @@ func _check_ship_collisions(prev_positions: Dictionary) -> void:
 		var prev_pos: Vector2 = prev_positions.get(ship, ship.position_au)
 		var collision := CelestialData.check_collision(prev_pos, ship.position_au)
 		if collision["hit"]:
-			destroyed_ships.append(ship)
+			_destroyed_ships_buf.append(ship)
 			var body_name: String = collision["body"]
 			EventBus.ship_destroyed.emit(ship, body_name)
 
-	for ship in destroyed_ships:
+	for ship in _destroyed_ships_buf:
 		# Remove all crew
 		for w in ship.last_crew:
 			if w is Worker:
@@ -843,6 +989,8 @@ func _trigger_breakdown(ship: Ship, reason: String) -> void:
 			w.assigned_mission = null
 		ship.current_mission = null
 	if ship.current_trade_mission:
+		for w in ship.current_trade_mission.workers:
+			w.assigned_trade_mission = null
 		ship.current_trade_mission.status = TradeMission.Status.COMPLETED
 		GameState.trade_missions.erase(ship.current_trade_mission)
 		ship.current_trade_mission = null
@@ -862,6 +1010,8 @@ func _trigger_fuel_depletion(ship: Ship) -> void:
 			w.assigned_mission = null
 		ship.current_mission = null
 	if ship.current_trade_mission:
+		for w in ship.current_trade_mission.workers:
+			w.assigned_trade_mission = null
 		ship.current_trade_mission.status = TradeMission.Status.COMPLETED
 		GameState.trade_missions.erase(ship.current_trade_mission)
 		ship.current_trade_mission = null
@@ -940,21 +1090,39 @@ func _process_refuels(dt: float) -> void:
 func _process_life_support(dt: float) -> void:
 	# Derelict ships consume life support (food, water, O2)
 	# When life support runs out, crew dies and ship is total loss
-	var ships_to_destroy: Array[Ship] = []
+	_ships_to_destroy_buf.clear()
 
 	for ship in GameState.ships:
 		if not ship.is_derelict:
+			# Clean up warning tracking if ship was rescued
+			_life_support_warnings_fired.erase(ship)
 			continue
+
+		# Initialize warning tracking for this ship
+		if ship not in _life_support_warnings_fired:
+			_life_support_warnings_fired[ship] = []
 
 		# Consume life support
 		ship.life_support_remaining -= dt
 
+		# Check warning thresholds
+		var max_life_support := ship.calculate_life_support_duration(maxi(ship.last_crew.size(), 1))
+		var pct := ship.life_support_remaining / max_life_support
+		var fired: Array = _life_support_warnings_fired[ship]
+		for threshold in LIFE_SUPPORT_WARN_THRESHOLDS:
+			if pct <= threshold and threshold not in fired:
+				fired.append(threshold)
+				EventBus.life_support_warning.emit(ship, pct)
+				# Auto-pause at 10% to give player time to react
+				if threshold <= 0.10:
+					TimeScale.slow_for_critical_event()
+
 		# Check if crew has died
 		if ship.life_support_remaining <= 0:
-			ships_to_destroy.append(ship)
+			_ships_to_destroy_buf.append(ship)
 
 	# Destroy ships with dead crews
-	for ship in ships_to_destroy:
+	for ship in _ships_to_destroy_buf:
 		var crew_count := ship.last_crew.size()
 		print("Ship %s: crew of %d died from life support failure" % [ship.ship_name, crew_count])
 
@@ -969,6 +1137,7 @@ func _process_life_support(dt: float) -> void:
 		GameState.rescue_missions.erase(ship)
 		GameState.refuel_missions.erase(ship)
 		GameState.stranger_offers.erase(ship)
+		_life_support_warnings_fired.erase(ship)
 
 		# Emit event before removing ship
 		EventBus.ship_destroyed.emit(ship, "Life support failure")
@@ -984,14 +1153,14 @@ const STRANGER_NAMES: Array[String] = [
 
 func _process_stranger_rescue(dt: float) -> void:
 	# Expire old offers
-	var expired_ships: Array[Ship] = []
+	_expired_ships_buf.clear()
 	for ship: Ship in GameState.stranger_offers:
 		var offer: Dictionary = GameState.stranger_offers[ship]
 		offer["expires_ticks"] -= dt
 		if offer["expires_ticks"] <= 0:
-			expired_ships.append(ship)
+			_expired_ships_buf.append(ship)
 
-	for ship in expired_ships:
+	for ship in _expired_ships_buf:
 		var offer: Dictionary = GameState.stranger_offers[ship]
 		GameState.stranger_offers.erase(ship)
 		EventBus.stranger_rescue_declined.emit(ship, offer["stranger_name"])
@@ -1033,6 +1202,788 @@ func _process_stranger_rescue(dt: float) -> void:
 			}
 			EventBus.stranger_rescue_offered.emit(ship, stranger_name)
 
+func _process_stationed_ships(dt: float) -> void:
+	_station_accumulator += dt
+	if _station_accumulator < STATION_CHECK_INTERVAL:
+		return
+	_station_accumulator -= STATION_CHECK_INTERVAL
+	_cleanup_expired_security_zones()
+
+	for ship in GameState.ships:
+		if not ship.is_stationed_idle:
+			continue
+		# Validate crew — check that last_crew workers are still in the company
+		var valid_crew: Array[Worker] = []
+		for w in ship.last_crew:
+			if w in GameState.workers and (w.assigned_station_ship == ship or w.is_available):
+				valid_crew.append(w)
+			elif w.assigned_station_ship == ship:
+				w.assigned_station_ship = null  # Worker left company, clean up
+		ship.last_crew = valid_crew
+		if ship.last_crew.size() < ship.min_crew:
+			continue  # Not enough crew to do anything
+
+		# Walk station_jobs in priority order, take first actionable job
+		for job in ship.station_jobs:
+			var took_job := false
+			match job:
+				"mining":
+					took_job = _station_try_mining(ship)
+				"trading":
+					took_job = _station_try_trading(ship)
+				"repair":
+					took_job = _station_try_repair(ship)
+				"parts_delivery":
+					took_job = _station_try_parts_delivery(ship)
+				"provisioning":
+					took_job = _station_try_provisioning(ship)
+				"crew_ferry":
+					took_job = _station_try_crew_ferry(ship)
+				"patrol":
+					took_job = _station_try_patrol(ship)
+			if took_job:
+				break  # Only do one job at a time
+
+func _station_try_mining(ship: Ship) -> bool:
+	# Actionable if: cargo space > 10%, fuel sufficient, crew aboard
+	if ship.get_cargo_remaining() < ship.get_effective_cargo_capacity() * 0.1:
+		return false
+
+	var station_pos: Vector2 = ship.station_colony.get_position_au()
+
+	# Find nearest mineable asteroid within station radius
+	var best_asteroid: AsteroidData = null
+	var best_dist: float = INF
+	for asteroid in GameState.asteroids:
+		if asteroid.ore_yields.is_empty():
+			continue
+		var dist := station_pos.distance_to(asteroid.get_position_au())
+		if dist < STATION_RADIUS_AU and dist < best_dist:
+			# Check if we have fuel for round-trip
+			var fuel_needed := ship.calc_fuel_for_distance(dist, ship.get_cargo_total()) + ship.calc_fuel_for_distance(dist, ship.get_effective_cargo_capacity())
+			if fuel_needed <= ship.fuel:
+				best_asteroid = asteroid
+				best_dist = dist
+
+	if best_asteroid == null:
+		return false
+
+	# Dispatch mining mission that returns to station
+	var workers: Array[Worker] = ship.last_crew.duplicate()
+	var mission := GameState.start_mission(ship, best_asteroid, workers)
+	if mission:
+		mission.return_to_station = true
+		mission.return_position_au = station_pos
+		ship.add_station_log("Mining %s" % best_asteroid.asteroid_name, "mining")
+		EventBus.station_job_started.emit(ship, "mining", best_asteroid.asteroid_name)
+	return mission != null
+
+func _station_try_trading(ship: Ship) -> bool:
+	# Actionable if: ship has ore cargo to sell
+	if ship.get_cargo_total() < 0.1:
+		return false
+
+	var colony: Colony = ship.station_colony
+	# Build cargo dict from ship's current cargo
+	var cargo_to_sell: Dictionary = ship.current_cargo.duplicate()
+
+	# Create trade mission to the station colony itself (local sale)
+	var workers: Array[Worker] = ship.last_crew.duplicate()
+	var tm := GameState.start_trade_mission(ship, colony, workers, cargo_to_sell)
+	if tm:
+		var cargo_total := ship.get_cargo_total()
+		ship.add_station_log("Trading %.0ft ore at %s" % [cargo_total, colony.colony_name], "trading")
+		EventBus.station_job_started.emit(ship, "trading", colony.colony_name)
+	return tm != null
+
+func _station_try_repair(ship: Ship) -> bool:
+	# Find nearby derelict ships that need repair
+	var station_pos: Vector2 = ship.station_colony.get_position_au()
+	var best_target: Ship = null
+	var best_dist: float = INF
+
+	for other_ship in GameState.ships:
+		if other_ship == ship:
+			continue
+		if not other_ship.is_derelict:
+			continue
+		if other_ship in GameState.rescue_missions:
+			continue  # Already being rescued
+		var dist := station_pos.distance_to(other_ship.position_au)
+		if dist < STATION_RADIUS_AU and dist < best_dist:
+			var fuel_needed := ship.calc_fuel_for_distance(dist, 0.0) * 2.0  # Round trip
+			if fuel_needed <= ship.fuel:
+				best_target = other_ship
+				best_dist = dist
+
+	if best_target == null:
+		return false
+
+	# Create repair mission
+	var workers: Array[Worker] = ship.last_crew.duplicate()
+	var mission := Mission.new()
+	mission.mission_type = Mission.MissionType.REPAIR
+	mission.ship = ship
+	mission.workers = workers
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.origin_position_au = ship.position_au
+	mission.origin_is_earth = false
+	mission.return_position_au = ship.station_colony.get_position_au()
+	mission.return_to_station = true
+	mission.destination_position_au = best_target.position_au
+	mission.transit_time = Brachistochrone.transit_time(best_dist, ship.get_effective_thrust())
+	mission.station_job_duration = 3600.0  # 1 hour to repair
+	mission.elapsed_ticks = 0.0
+
+	var fuel_needed := ship.calc_fuel_for_distance(best_dist, 0.0) * 2.0
+	mission.fuel_per_tick = fuel_needed / (mission.transit_time * 2.0) if mission.transit_time > 0 else 0.0
+
+	ship.current_mission = mission
+	ship.reset_life_support(workers.size())
+	for w in workers:
+		w.assigned_mission = mission
+	GameState.missions.append(mission)
+	EventBus.mission_started.emit(mission)
+
+	ship.add_station_log("Repairing %s" % best_target.ship_name, "repair")
+	EventBus.station_job_started.emit(ship, "repair", best_target.ship_name)
+	return true
+
+func _station_try_parts_delivery(ship: Ship) -> bool:
+	# Deliver repair parts to damaged (but not derelict) ships with broken equipment
+	var repair_parts: float = ship.supplies.get("repair_parts", 0.0)
+	if repair_parts < 1.0:
+		return false  # No parts to deliver
+
+	var station_pos: Vector2 = ship.station_colony.get_position_au()
+	var best_target: Ship = null
+	var best_dist: float = INF
+
+	for other_ship in GameState.ships:
+		if other_ship == ship:
+			continue
+		if other_ship.is_derelict:
+			continue  # Derelicts need full repair, not parts
+		# Check for broken equipment
+		var has_broken := false
+		for equip in other_ship.equipment:
+			if equip.durability <= 0:
+				has_broken = true
+				break
+		if not has_broken:
+			continue
+
+		var dist := station_pos.distance_to(other_ship.position_au)
+		if dist < STATION_RADIUS_AU and dist > 0.01 and dist < best_dist:
+			var fuel_needed := ship.calc_fuel_for_distance(dist, ship.get_supplies_mass()) * 2.0
+			if fuel_needed <= ship.fuel:
+				best_target = other_ship
+				best_dist = dist
+
+	if best_target == null:
+		return false
+
+	var workers: Array[Worker] = ship.last_crew.duplicate()
+	var mission := Mission.new()
+	mission.mission_type = Mission.MissionType.SUPPLY_RUN
+	mission.ship = ship
+	mission.workers = workers
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.origin_position_au = ship.position_au
+	mission.origin_is_earth = false
+	mission.return_position_au = ship.station_colony.get_position_au()
+	mission.return_to_station = true
+	mission.destination_position_au = best_target.position_au
+	mission.transit_time = Brachistochrone.transit_time(best_dist, ship.get_effective_thrust())
+	mission.station_job_duration = 1800.0  # 30 min to transfer parts
+	mission.elapsed_ticks = 0.0
+
+	var fuel_needed := ship.calc_fuel_for_distance(best_dist, ship.get_supplies_mass()) * 2.0
+	mission.fuel_per_tick = fuel_needed / (mission.transit_time * 2.0) if mission.transit_time > 0 else 0.0
+
+	ship.current_mission = mission
+	ship.docked_at_colony = null
+	ship.reset_life_support(workers.size())
+	for w in workers:
+		w.assigned_mission = mission
+	GameState.missions.append(mission)
+	EventBus.mission_started.emit(mission)
+
+	ship.add_station_log("Delivering parts to %s" % best_target.ship_name, "supply")
+	EventBus.station_job_started.emit(ship, "parts_delivery", best_target.ship_name)
+	return true
+
+func _station_try_provisioning(ship: Ship) -> bool:
+	# Find deployed crews in radius running low on food
+	var station_pos: Vector2 = ship.station_colony.get_position_au()
+	var food_on_ship: float = ship.supplies.get("food", 0.0)
+
+	if food_on_ship < 1.0:
+		return false  # No food to deliver
+
+	var best_target: Dictionary = {}
+	var best_dist: float = INF
+
+	for crew_entry in GameState.deployed_crews:
+		var asteroid: AsteroidData = crew_entry["asteroid"]
+		var supplies: Dictionary = crew_entry["supplies"]
+		var food_remaining: float = supplies.get("food", 0.0)
+		var worker_count: int = crew_entry["workers"].size()
+
+		# Need provisioning if food is below 50% of a 10-day supply
+		var days_of_food := food_remaining / (worker_count * 0.5) if worker_count > 0 else 999.0
+		if days_of_food >= 5.0:
+			continue  # Still has enough
+
+		var asteroid_pos := asteroid.get_position_au()
+		var dist := station_pos.distance_to(asteroid_pos)
+		if dist < STATION_RADIUS_AU and dist < best_dist:
+			var fuel_needed := ship.calc_fuel_for_distance(dist, 0.0) * 2.0
+			if fuel_needed <= ship.fuel:
+				best_target = crew_entry
+				best_dist = dist
+
+	if best_target.is_empty():
+		return false
+
+	var target_asteroid: AsteroidData = best_target["asteroid"]
+
+	# Create supply run mission with food
+	var crew: Array[Worker] = ship.last_crew.duplicate()
+	var mission := Mission.new()
+	mission.mission_type = Mission.MissionType.SUPPLY_RUN
+	mission.ship = ship
+	mission.workers = crew
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.origin_position_au = ship.position_au
+	mission.origin_is_earth = false
+	mission.return_position_au = ship.station_colony.get_position_au()
+	mission.return_to_station = true
+	mission.destination_position_au = target_asteroid.get_position_au()
+	mission.transit_time = Brachistochrone.transit_time(best_dist, ship.get_effective_thrust())
+	mission.station_job_duration = 1800.0  # 30 min to offload supplies
+	mission.elapsed_ticks = 0.0
+
+	var fuel_needed := ship.calc_fuel_for_distance(best_dist, 0.0) * 2.0
+	mission.fuel_per_tick = fuel_needed / (mission.transit_time * 2.0) if mission.transit_time > 0 else 0.0
+
+	ship.current_mission = mission
+	ship.reset_life_support(crew.size())
+	for w in crew:
+		w.assigned_mission = mission
+	GameState.missions.append(mission)
+	EventBus.mission_started.emit(mission)
+
+	ship.add_station_log("Provisioning crew at %s" % target_asteroid.asteroid_name, "provisioning")
+	EventBus.station_job_started.emit(ship, "provisioning", target_asteroid.asteroid_name)
+	return true
+
+func _station_try_crew_ferry(ship: Ship) -> bool:
+	# Find nearby ships on missions with fatigued workers
+	var station_pos: Vector2 = ship.station_colony.get_position_au()
+
+	# Find fresh workers at station to swap in
+	var fresh_workers: Array[Worker] = []
+	for w in GameState.workers:
+		if w.is_available and not w.needs_rotation:
+			fresh_workers.append(w)
+
+	if fresh_workers.is_empty():
+		return false
+
+	# Find target ship with fatigued crew
+	var best_target: Ship = null
+	var best_dist: float = INF
+	var fatigued_count: int = 0
+
+	for other_ship in GameState.ships:
+		if other_ship == ship:
+			continue
+		if other_ship.current_mission == null:
+			continue
+		# Check if any crew need rotation
+		var tired: int = 0
+		for w in other_ship.current_mission.workers:
+			if w.needs_rotation:
+				tired += 1
+		if tired == 0:
+			continue
+		var dist := station_pos.distance_to(other_ship.position_au)
+		if dist < STATION_RADIUS_AU and dist < best_dist:
+			var fuel_needed := ship.calc_fuel_for_distance(dist, 0.0) * 2.0
+			if fuel_needed <= ship.fuel:
+				best_target = other_ship
+				best_dist = dist
+				fatigued_count = tired
+
+	if best_target == null:
+		return false
+
+	# Bring fresh replacements (up to fatigued count)
+	var replacements: Array[Worker] = []
+	for i in range(mini(fatigued_count, fresh_workers.size())):
+		replacements.append(fresh_workers[i])
+
+	if replacements.is_empty():
+		return false
+
+	# Create crew ferry mission
+	var crew: Array[Worker] = ship.last_crew.duplicate()
+	# Add replacement workers as passengers
+	for w in replacements:
+		if w not in crew:
+			crew.append(w)
+
+	var mission := Mission.new()
+	mission.mission_type = Mission.MissionType.CREW_FERRY
+	mission.ship = ship
+	mission.workers = crew
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.origin_position_au = ship.position_au
+	mission.origin_is_earth = false
+	mission.return_position_au = ship.station_colony.get_position_au()
+	mission.return_to_station = true
+	mission.destination_position_au = best_target.position_au
+	mission.transit_time = Brachistochrone.transit_time(best_dist, ship.get_effective_thrust())
+	mission.station_job_duration = 1800.0  # 30 min for boarding
+	mission.elapsed_ticks = 0.0
+
+	var fuel_needed := ship.calc_fuel_for_distance(best_dist, 0.0) * 2.0
+	mission.fuel_per_tick = fuel_needed / (mission.transit_time * 2.0) if mission.transit_time > 0 else 0.0
+
+	ship.current_mission = mission
+	ship.reset_life_support(crew.size())
+	for w in crew:
+		w.assigned_mission = mission
+	GameState.missions.append(mission)
+	EventBus.mission_started.emit(mission)
+
+	ship.add_station_log("Crew ferry to %s (%d fatigued)" % [best_target.ship_name, fatigued_count], "crew_ferry")
+	EventBus.station_job_started.emit(ship, "crew_ferry", best_target.ship_name)
+	return true
+
+func _station_try_patrol(ship: Ship) -> bool:
+	# Minimal patrol: orbit nearby rocks for 1 game-day then return
+	var station_pos: Vector2 = ship.station_colony.get_position_au()
+
+	# Find a nearby asteroid to patrol around
+	var best_asteroid: AsteroidData = null
+	var best_dist: float = INF
+	for asteroid in GameState.asteroids:
+		var dist := station_pos.distance_to(asteroid.get_position_au())
+		if dist < STATION_RADIUS_AU * 0.5 and dist > 0.01 and dist < best_dist:
+			var fuel_needed := ship.calc_fuel_for_distance(dist, 0.0) * 2.0
+			if fuel_needed <= ship.fuel:
+				best_asteroid = asteroid
+				best_dist = dist
+
+	if best_asteroid == null:
+		return false
+
+	var workers: Array[Worker] = ship.last_crew.duplicate()
+	var mission := Mission.new()
+	mission.mission_type = Mission.MissionType.PATROL
+	mission.ship = ship
+	mission.asteroid = best_asteroid  # Use asteroid for position tracking
+	mission.workers = workers
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.origin_position_au = ship.position_au
+	mission.origin_is_earth = false
+	mission.return_position_au = ship.station_colony.get_position_au()
+	mission.return_to_station = true
+	mission.transit_time = Brachistochrone.transit_time(best_dist, ship.get_effective_thrust())
+	mission.station_job_duration = 86400.0  # 1 game-day patrol
+	mission.elapsed_ticks = 0.0
+
+	var fuel_needed := ship.calc_fuel_for_distance(best_dist, 0.0) * 2.0
+	mission.fuel_per_tick = fuel_needed / (mission.transit_time * 2.0) if mission.transit_time > 0 else 0.0
+
+	ship.current_mission = mission
+	ship.reset_life_support(workers.size())
+	for w in workers:
+		w.assigned_mission = mission
+	GameState.missions.append(mission)
+	EventBus.mission_started.emit(mission)
+
+	ship.add_station_log("Patrolling near %s" % best_asteroid.asteroid_name, "patrol")
+	EventBus.station_job_started.emit(ship, "patrol", best_asteroid.asteroid_name)
+	return true
+
+func _create_security_zone(ship: Ship, duration: float) -> void:
+	GameState.security_zones.append({
+		"center_au": ship.position_au,
+		"radius_au": STATION_RADIUS_AU * 0.3,
+		"ship_name": ship.ship_name,
+		"expires_at": GameState.total_ticks + duration,
+	})
+
+func _expire_security_zone(ship: Ship) -> void:
+	for i in range(GameState.security_zones.size() - 1, -1, -1):
+		if GameState.security_zones[i]["ship_name"] == ship.ship_name:
+			GameState.security_zones.remove_at(i)
+
+func _cleanup_expired_security_zones() -> void:
+	for i in range(GameState.security_zones.size() - 1, -1, -1):
+		if GameState.security_zones[i]["expires_at"] <= GameState.total_ticks:
+			GameState.security_zones.remove_at(i)
+
+func _process_deployed_crews(dt: float) -> void:
+	var days := dt / 86400.0
+	if days < 0.001:
+		return
+
+	for i in range(GameState.deployed_crews.size() - 1, -1, -1):
+		var entry: Dictionary = GameState.deployed_crews[i]
+		var crew_workers: Array = entry["workers"]
+		var supplies: Dictionary = entry["supplies"]
+		var worker_count := crew_workers.size()
+
+		if worker_count == 0:
+			continue
+
+		# Consume food: 0.5 units per worker per game-day
+		var food_consumed := worker_count * 0.5 * days
+		var food_remaining: float = supplies.get("food", 0.0)
+		food_remaining = maxf(food_remaining - food_consumed, 0.0)
+		supplies["food"] = food_remaining
+
+		# Accumulate fatigue for deployed workers
+		for w in crew_workers:
+			w.fatigue = minf(w.fatigue + days, 100.0)
+			w.days_deployed += days
+			if w.fatigue >= 80.0 and w.fatigue - days < 80.0:
+				EventBus.worker_fatigued.emit(w)
+
+func _process_worker_fatigue(dt: float) -> void:
+	# Piggyback on payroll interval (every game-day)
+	# We use payroll accumulator which already tracks this
+	# So this is called every tick but only acts when payroll fires
+	# Actually, let's just track per-tick since dt can be large
+	var days := dt / 86400.0
+	if days < 0.001:
+		return  # Skip tiny increments
+
+	for w in GameState.workers:
+		if w.assigned_mission != null:
+			# On mission: fatigue increases
+			w.fatigue = minf(w.fatigue + days, 100.0)
+			w.days_deployed += days
+			if w.fatigue >= 80.0 and w.fatigue - days < 80.0:
+				EventBus.worker_fatigued.emit(w)
+		else:
+			# Idle: fatigue decreases (3x faster recovery)
+			if w.fatigue > 0.0:
+				w.fatigue = maxf(w.fatigue - days * 3.0, 0.0)
+			# Injury heals after 5 days idle
+			if w.is_injured and w.days_deployed <= 0.0:
+				w.days_deployed = maxf(w.days_deployed - days, -5.0)
+				if w.days_deployed <= -5.0:
+					w.is_injured = false
+					w.days_deployed = 0.0
+
+func _start_station_return(mission: Mission) -> void:
+	# Transition a stationed ship's mission to TRANSIT_BACK to station
+	var ship := mission.ship
+	var return_pos: Vector2 = mission.return_position_au
+	if ship.station_colony:
+		return_pos = ship.station_colony.get_position_au()
+		mission.return_position_au = return_pos
+
+	var current_pos := ship.position_au
+	if mission.asteroid:
+		current_pos = mission.asteroid.get_position_au()
+		ship.position_au = current_pos
+
+	var dist := current_pos.distance_to(return_pos)
+	mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+	mission.elapsed_ticks = 0.0
+	mission.status = Mission.Status.TRANSIT_BACK
+
+	var cargo_mass := ship.get_cargo_total()
+	var fuel_needed := ship.calc_fuel_for_distance(dist, cargo_mass)
+	mission.fuel_per_tick = fuel_needed / mission.transit_time if mission.transit_time > 0 else 0.0
+
+	EventBus.mission_phase_changed.emit(mission)
+
+func _complete_repair_job(mission: Mission) -> void:
+	# Find the derelict ship near the destination and repair it
+	var repair_pos := mission.destination_position_au
+	for other_ship in GameState.ships:
+		if other_ship == mission.ship:
+			continue
+		if not other_ship.is_derelict:
+			continue
+		if other_ship.position_au.distance_to(repair_pos) < 0.05:
+			other_ship.is_derelict = false
+			other_ship.derelict_reason = ""
+			other_ship.engine_condition = maxf(other_ship.engine_condition, 50.0)
+			other_ship.fuel = minf(other_ship.fuel + other_ship.get_effective_fuel_capacity() * 0.25, other_ship.get_effective_fuel_capacity())
+			var crew_count := maxi(other_ship.last_crew.size(), 1)
+			other_ship.reset_life_support(crew_count)
+
+			mission.ship.add_station_log("Repaired %s" % other_ship.ship_name, "repair")
+			EventBus.station_job_completed.emit(mission.ship, "repair", "Repaired %s" % other_ship.ship_name)
+			break
+
+	_start_station_return(mission)
+
+func _complete_delivery_job(mission: Mission) -> void:
+	# Transfer supplies to the target ship/crew at destination
+	var delivery_pos := mission.destination_position_au
+	var ship := mission.ship
+
+	# Find target ship near delivery position and repair its equipment
+	for other_ship in GameState.ships:
+		if other_ship == ship:
+			continue
+		if other_ship.position_au.distance_to(delivery_pos) > 0.05:
+			continue
+		# Repair broken equipment using parts
+		var parts: float = ship.supplies.get("repair_parts", 0.0)
+		for equip in other_ship.equipment:
+			if equip.durability <= 0 and parts >= 1.0:
+				equip.durability = equip.max_durability
+				parts -= 1.0
+				EventBus.equipment_repaired.emit(other_ship, equip)
+		ship.supplies["repair_parts"] = maxf(parts, 0.0)
+		ship.add_station_log("Delivered parts to %s" % other_ship.ship_name, "supply")
+		EventBus.station_job_completed.emit(ship, "parts_delivery", "Parts delivered to %s" % other_ship.ship_name)
+		break
+
+	# Also deliver food to deployed crews nearby
+	for crew_data in GameState.deployed_crews:
+		var asteroid: AsteroidData = crew_data["asteroid"]
+		if asteroid.get_position_au().distance_to(delivery_pos) > 0.05:
+			continue
+		var food: float = ship.supplies.get("food", 0.0)
+		if food > 0:
+			crew_data["supplies"]["food"] = crew_data["supplies"].get("food", 0.0) + food
+			ship.supplies["food"] = 0.0
+			ship.add_station_log("Delivered food to crew at %s" % asteroid.asteroid_name, "supply")
+			EventBus.station_job_completed.emit(ship, "provisioning", "Food delivered to %s" % asteroid.asteroid_name)
+		break
+
+	_start_station_return(mission)
+
+func _complete_boarding_job(mission: Mission) -> void:
+	# Find the target ship at this location
+	var ferry_ship := mission.ship
+	var target_pos := mission.destination_position_au
+	var target_ship: Ship = null
+
+	for other in GameState.ships:
+		if other == ferry_ship:
+			continue
+		if other.position_au.distance_to(target_pos) < 0.01:
+			if other.current_mission != null:
+				target_ship = other
+				break
+
+	var swapped := 0
+	if target_ship != null and target_ship.current_mission != null:
+		var target_mission := target_ship.current_mission
+		# Find fatigued workers on target
+		var fatigued: Array[Worker] = []
+		for w in target_mission.workers:
+			if w.needs_rotation:
+				fatigued.append(w)
+
+		# Find fresh workers on ferry (not part of ferry's own crew)
+		var fresh: Array[Worker] = []
+		for w in mission.workers:
+			if w not in ferry_ship.last_crew and not w.needs_rotation:
+				fresh.append(w)
+
+		# Swap: remove fatigued from target, add fresh; fatigued board ferry
+		for i in range(mini(fatigued.size(), fresh.size())):
+			var tired_w: Worker = fatigued[i]
+			var fresh_w: Worker = fresh[i]
+
+			# Remove tired from target mission
+			target_mission.workers.erase(tired_w)
+			tired_w.assigned_mission = null
+
+			# Add fresh to target mission
+			target_mission.workers.append(fresh_w)
+			fresh_w.assigned_mission = target_mission
+
+			# Tired worker joins ferry for return trip
+			if tired_w not in mission.workers:
+				mission.workers.append(tired_w)
+			tired_w.assigned_mission = mission
+
+			# Remove fresh from ferry passenger list (they stay on target)
+			mission.workers.erase(fresh_w)
+
+			swapped += 1
+
+	ferry_ship.add_station_log("Crew transfer: %d swapped" % swapped, "crew_ferry")
+	EventBus.station_job_completed.emit(ferry_ship, "crew_ferry", "Rotated %d crew" % swapped)
+	_start_station_return(mission)
+
+func _complete_deploy(mission: Mission) -> void:
+	# Transfer mining units from ship to asteroid
+	if not mission.asteroid:
+		_start_station_return(mission)
+		return
+	for unit in mission.mining_units_to_deploy:
+		# Find workers to assign from deploy_workers list
+		var unit_crew: Array[Worker] = []
+		for w in mission.workers_to_deploy:
+			if w.assigned_mining_unit == null and unit_crew.size() < unit.workers_required:
+				unit_crew.append(w)
+		GameState.deploy_mining_unit(unit, mission.asteroid, unit_crew)
+	# Remove deployed workers from mission crew (they stay at the asteroid)
+	for w in mission.workers_to_deploy:
+		if w.assigned_mining_unit != null:
+			mission.workers.erase(w)
+			w.assigned_mission = null
+	mission.mining_units_to_deploy.clear()
+	mission.workers_to_deploy.clear()
+	# Transition to idle at destination
+	if mission.ship.is_stationed:
+		_start_station_return(mission)
+	else:
+		mission.status = Mission.Status.IDLE_AT_DESTINATION
+		mission.elapsed_ticks = 0.0
+		for w in mission.workers:
+			w.assigned_mission = null
+		EventBus.mission_phase_changed.emit(mission)
+		EventBus.ship_idle_at_destination.emit(mission.ship, mission)
+
+func _complete_collection(mission: Mission) -> void:
+	# Load stockpiled ore into ship
+	if mission.asteroid:
+		var tons := GameState.collect_from_stockpile(mission.asteroid.asteroid_name, mission.ship)
+		if tons > 0.0:
+			EventBus.stockpile_collected.emit(mission.asteroid, tons)
+	# Transition to idle or return
+	if mission.ship.is_stationed:
+		_start_station_return(mission)
+	else:
+		mission.status = Mission.Status.IDLE_AT_DESTINATION
+		mission.elapsed_ticks = 0.0
+		for w in mission.workers:
+			w.assigned_mission = null
+		EventBus.mission_phase_changed.emit(mission)
+		EventBus.ship_idle_at_destination.emit(mission.ship, mission)
+
+func _process_mining_units(dt: float) -> void:
+	var days := dt / 86400.0
+	for unit in GameState.deployed_mining_units:
+		if not unit.is_functional():
+			continue
+		if unit.assigned_workers.is_empty():
+			continue
+		# Find asteroid data
+		var asteroid: AsteroidData = null
+		for a in GameState.asteroids:
+			if a.asteroid_name == unit.deployed_at_asteroid:
+				asteroid = a
+				break
+		if asteroid == null:
+			continue
+		# Calculate crew skills from assigned workers
+		var skill_total := 0.0
+		var best_eng := 0.0
+		var loyalty_avg := 0.0
+		for w in unit.assigned_workers:
+			skill_total += w.mining_skill
+			if w.engineer_skill > best_eng:
+				best_eng = w.engineer_skill
+			loyalty_avg += w.loyalty_modifier
+		if unit.assigned_workers.size() > 0:
+			loyalty_avg /= unit.assigned_workers.size()
+		else:
+			loyalty_avg = 1.0
+		if skill_total < 0.1:
+			skill_total = 0.1
+		var luck := randf_range(MINING_VARIANCE_MIN, MINING_VARIANCE_MAX)
+		var unit_mult := unit.get_effective_multiplier()
+		# Mine each ore type and add to stockpile
+		for ore_type in asteroid.ore_yields:
+			var base_yield: float = asteroid.ore_yields[ore_type]
+			var ore_per_tick := base_yield * skill_total * unit_mult * luck * loyalty_avg * BASE_MINING_RATE * dt
+			if ore_per_tick > 0.0:
+				GameState.add_to_stockpile(asteroid.asteroid_name, ore_type, ore_per_tick)
+		# Degrade durability — better engineers slow wear
+		# 0.0 eng = full wear, 1.5 eng = 70% wear
+		var eng_wear_factor := 1.0 - (best_eng * 0.2)
+		unit.durability -= unit.wear_per_day * eng_wear_factor * days
+		unit.max_durability -= unit.wear_per_day * MiningUnit.MAX_DURABILITY_DECAY_RATIO * eng_wear_factor * days
+		if unit.max_durability < 0.0:
+			unit.max_durability = 0.0
+		if unit.durability <= 0.0:
+			unit.durability = 0.0
+			EventBus.mining_unit_broken.emit(unit)
+		# Accidents — heavy equipment is dangerous
+		# Base chance: ~0.2% per game-day per unit. Better engineers reduce risk.
+		# 0.0 eng = full risk, 1.5 eng = 25% risk
+		var accident_chance_per_day := 0.002 * (1.0 - best_eng * 0.5)
+		if days > 0.0 and randf() < accident_chance_per_day * days:
+			# Pick a random worker on this unit
+			var victim: Worker = unit.assigned_workers[randi() % unit.assigned_workers.size()]
+			if not victim.is_injured:
+				victim.is_injured = true
+				# Accident also damages the unit
+				unit.durability = maxf(0.0, unit.durability - randf_range(5.0, 15.0))
+				EventBus.worker_injured.emit(victim)
+
+func _process_hitchhike_pool(dt: float) -> void:
+	# Expire pool entries where elapsed >= max_wait
+	var expired: Array[Dictionary] = []
+	for entry in GameState.hitchhike_pool:
+		var elapsed: float = GameState.total_ticks - float(entry["entered_at"])
+		if elapsed >= entry["max_wait"]:
+			expired.append(entry)
+	for entry in expired:
+		var worker: Worker = entry["worker"]
+		GameState.hitchhike_pool.erase(entry)
+		worker.leave_status = 1  # Found own way home
+
+func _process_worker_leave(dt: float) -> void:
+	_leave_accumulator += dt
+	if _leave_accumulator < LEAVE_CHECK_INTERVAL:
+		return
+	_leave_accumulator -= LEAVE_CHECK_INTERVAL
+
+	# Pick a random colony name for tardiness reasons with %s
+	var random_colonies: Array[String] = ["Ceres Station", "Mars Colony", "Lunar Base", "Europa Lab", "Ganymede Port"]
+	var random_colony_name: String = random_colonies[randi() % random_colonies.size()]
+
+	var workers_to_quit: Array[Worker] = []
+
+	for w in GameState.workers:
+		if w.leave_status == 1:  # On leave
+			# Leave recovery is handled by _process_worker_fatigue (idle recovery)
+			# Check if fatigue has dropped enough to return
+			if w.fatigue < 20.0:
+				# Ready to return — roll for tardiness
+				if randf() < 0.06:
+					# Tardy!
+					w.leave_status = 3
+					var reason_template: String = TARDINESS_REASONS[randi() % TARDINESS_REASONS.size()]
+					var reason: String = reason_template % random_colony_name if reason_template.contains("%s") else reason_template
+					GameState.tardy_workers.append({
+						"worker": w,
+						"reason": reason,
+						"tardy_since": GameState.total_ticks,
+					})
+					EventBus.worker_tardy.emit(w, reason)
+					TimeScale.slow_for_critical_event()
+				else:
+					# Returned on time
+					w.leave_status = 0
+					w.fatigue = 0.0
+
+		# Loyalty-based quitting: workers with very low loyalty may quit
+		if w.loyalty < 15.0 and w.is_available:
+			if randf() < 0.005:  # 0.5% daily chance
+				workers_to_quit.append(w)
+
+	for w in workers_to_quit:
+		GameState.fire_worker(w)
+
 func _process_payroll(dt: float) -> void:
 	_payroll_accumulator += dt
 	if _payroll_accumulator >= PAYROLL_INTERVAL:
@@ -1044,12 +1995,14 @@ func _process_payroll(dt: float) -> void:
 			GameState.money -= total_wages
 
 func _process_survey_events(dt: float) -> void:
-	# Real-time throttle - only process once per second max regardless of simulation speed
+	# Accumulate game-time even when throttled
+	_survey_dt_accum += dt
 	if _survey_realtime_timer < SURVEY_REALTIME_INTERVAL:
 		return
 	_survey_realtime_timer = 0.0
 
-	_survey_accumulator += dt
+	_survey_accumulator += _survey_dt_accum
+	_survey_dt_accum = 0.0
 	if _survey_accumulator < SURVEY_INTERVAL:
 		return
 	_survey_accumulator -= SURVEY_INTERVAL
@@ -1120,15 +2073,18 @@ func _trigger_market_event() -> void:
 	EventBus.market_event_started.emit(event)
 
 func _process_contracts(dt: float) -> void:
-	# Real-time throttle - only process twice per second max regardless of simulation speed
+	# Accumulate game-time even when throttled, so deadlines stay accurate at high speed
+	_contracts_dt_accum += dt
 	if _contracts_realtime_timer < CONTRACTS_REALTIME_INTERVAL:
 		return
 	_contracts_realtime_timer = 0.0
+	var accum_dt := _contracts_dt_accum
+	_contracts_dt_accum = 0.0
 
 	# Tick down active contract deadlines
 	var failed: Array[Contract] = []
 	for contract in GameState.active_contracts:
-		contract.deadline_ticks -= dt
+		contract.deadline_ticks -= accum_dt
 		if contract.deadline_ticks <= 0:
 			contract.status = Contract.Status.FAILED
 			failed.append(contract)
@@ -1140,7 +2096,7 @@ func _process_contracts(dt: float) -> void:
 	# Expire available contracts
 	var expired: Array[Contract] = []
 	for contract in GameState.available_contracts:
-		contract.deadline_ticks -= dt
+		contract.deadline_ticks -= accum_dt
 		if contract.deadline_ticks <= 0:
 			contract.status = Contract.Status.EXPIRED
 			expired.append(contract)
@@ -1150,7 +2106,7 @@ func _process_contracts(dt: float) -> void:
 		EventBus.contract_expired.emit(contract)
 
 	# Generate new contracts periodically
-	_contract_accumulator += dt
+	_contract_accumulator += accum_dt
 	if _contract_accumulator >= CONTRACT_INTERVAL:
 		_contract_accumulator -= CONTRACT_INTERVAL
 		if randf() < CONTRACT_CHANCE and GameState.available_contracts.size() < GameState.MAX_AVAILABLE_CONTRACTS:

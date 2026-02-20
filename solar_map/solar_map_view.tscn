@@ -14,13 +14,28 @@ zoom = Vector2(1, 1)
 
 [node name="UI" type="CanvasLayer" parent="."]
 
-[node name="ShipSelectorPanel" type="HBoxContainer" parent="UI"]
+[node name="ShipSelectorPanel" type="VBoxContainer" parent="UI"]
 unique_name_in_owner = true
-anchors_preset = 10
+anchors_preset = 4
+anchor_top = 0.0
+anchor_bottom = 1.0
+offset_left = 6.0
+offset_top = 6.0
+offset_right = 136.0
+offset_bottom = -50.0
+grow_vertical = 2
+theme_override_constants/separation = 4
+
+[node name="ZoomButtons" type="HBoxContainer" parent="UI"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
 anchor_right = 1.0
-offset_left = 10.0
-offset_top = 10.0
-offset_right = -10.0
-offset_bottom = 46.0
-grow_horizontal = 2
+anchor_bottom = 1.0
+offset_left = -120.0
+offset_top = -48.0
+offset_right = -8.0
+offset_bottom = -8.0
+grow_horizontal = 0
+grow_vertical = 0
 theme_override_constants/separation = 8

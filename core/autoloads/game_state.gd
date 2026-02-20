@@ -1,6 +1,6 @@
 extends Node
 
-var money: int = 100000000:
+var money: int = 14000000:
 	set(value):
 		var old_money := money
 		money = value
@@ -155,6 +155,27 @@ var refuel_missions: Dictionary = {}
 # Stranger rescue offers: ship -> {stranger_name, expires_ticks, suggested_tip}
 var stranger_offers: Dictionary = {}
 
+# Deployed crews at remote asteroids (foundation for claims system)
+var deployed_crews: Array[Dictionary] = []
+# Each: { "asteroid": AsteroidData, "workers": Array[Worker], "supplies": Dictionary, "deployed_at": float }
+
+# Mining units (deployable autonomous miners)
+var mining_unit_inventory: Array[MiningUnit] = []  # Purchased, not yet deployed
+var deployed_mining_units: Array[MiningUnit] = []  # On asteroids, mining autonomously
+var ore_stockpiles: Dictionary = {}  # asteroid_name -> { OreType -> float }
+
+# Security zones created by patrolling ships
+# Each: { "center_au": Vector2, "radius_au": float, "ship_name": String, "expires_at": float }
+var security_zones: Array[Dictionary] = []
+
+# Hitchhiking pool: workers waiting at stations for a ride home
+# Each: { "worker": Worker, "location_name": String, "location_pos": Vector2, "entered_at": float, "max_wait": float }
+var hitchhike_pool: Array[Dictionary] = []
+
+# Tardy workers awaiting player discipline decision
+# Each: { "worker": Worker, "reason": String, "tardy_since": float }
+var tardy_workers: Array[Dictionary] = []
+
 func _ready() -> void:
 	_init_resources()
 	_init_starter_ship()
@@ -302,6 +323,15 @@ func fire_worker(worker: Worker) -> void:
 	Worker.release_name(worker.worker_name)
 	workers.erase(worker)
 	worker.assigned_mission = null
+	worker.assigned_trade_mission = null
+	# Remove from any stationed ship's crew
+	if worker.assigned_station_ship:
+		worker.assigned_station_ship.last_crew.erase(worker)
+	worker.assigned_station_ship = null
+	# Remove from any mining unit
+	if worker.assigned_mining_unit:
+		worker.assigned_mining_unit.assigned_workers.erase(worker)
+		worker.assigned_mining_unit = null
 	EventBus.worker_fired.emit(worker)
 
 func get_available_workers() -> Array[Worker]:
@@ -357,6 +387,256 @@ func install_upgrade(ship: Ship, upgrade: ShipUpgrade) -> void:
 	upgrade_inventory.erase(upgrade)
 	ship.upgrades.append(upgrade)
 	EventBus.upgrade_installed.emit(ship, upgrade)
+
+## --- Mining Unit Methods ---
+
+func purchase_mining_unit(entry: Dictionary) -> bool:
+	if money < entry.get("cost", 0):
+		return false
+	var unit := MiningUnit.from_catalog(entry)
+	money -= unit.cost
+	mining_unit_inventory.append(unit)
+	EventBus.mining_unit_purchased.emit(unit)
+	return true
+
+func deploy_mining_unit(unit: MiningUnit, asteroid: AsteroidData, unit_workers: Array[Worker]) -> bool:
+	if unit.is_deployed():
+		return false
+	if unit_workers.size() < unit.workers_required:
+		return false
+	var occupied := get_occupied_slots(asteroid.asteroid_name)
+	if occupied >= asteroid.get_max_mining_slots():
+		return false
+	# Move from inventory to deployed
+	mining_unit_inventory.erase(unit)
+	deployed_mining_units.append(unit)
+	unit.deployed_at_asteroid = asteroid.asteroid_name
+	unit.deployed_at_tick = total_ticks
+	unit.assigned_workers = []
+	for w in unit_workers:
+		unit.assigned_workers.append(w)
+		w.assigned_mining_unit = unit
+	EventBus.mining_unit_deployed.emit(unit, asteroid)
+	return true
+
+func repair_mining_unit(unit: MiningUnit) -> bool:
+	var base_cost := unit.repair_cost()
+	if base_cost <= 0:
+		return false
+	# Better engineers reduce repair cost (best engineer skill among assigned workers)
+	var best_eng := 0.0
+	for w in unit.assigned_workers:
+		if w.engineer_skill > best_eng:
+			best_eng = w.engineer_skill
+	# 0.0 skill = full price, 1.5 skill = 55% price
+	var eng_discount := 1.0 - (best_eng * 0.3)
+	var cost := int(base_cost * eng_discount)
+	if cost <= 0:
+		cost = 1
+	if money < cost:
+		return false
+	money -= cost
+	unit.durability = unit.max_durability
+	return true
+
+func rebuild_mining_unit(unit: MiningUnit) -> bool:
+	# Must be in inventory (recalled), not deployed
+	if unit.is_deployed():
+		return false
+	var cost := unit.rebuild_cost()
+	if money < cost:
+		return false
+	money -= cost
+	unit.max_durability = 100.0
+	unit.durability = 100.0
+	return true
+
+func recall_mining_unit(unit: MiningUnit) -> void:
+	if not unit.is_deployed():
+		return
+	for w in unit.assigned_workers:
+		w.assigned_mining_unit = null
+	unit.assigned_workers.clear()
+	unit.deployed_at_asteroid = ""
+	deployed_mining_units.erase(unit)
+	mining_unit_inventory.append(unit)
+	EventBus.mining_unit_recalled.emit(unit)
+
+func get_mining_units_at(asteroid_name: String) -> Array[MiningUnit]:
+	var result: Array[MiningUnit] = []
+	for unit in deployed_mining_units:
+		if unit.deployed_at_asteroid == asteroid_name:
+			result.append(unit)
+	return result
+
+func get_occupied_slots(asteroid_name: String) -> int:
+	var count := 0
+	for unit in deployed_mining_units:
+		if unit.deployed_at_asteroid == asteroid_name:
+			count += 1
+	return count
+
+func get_ore_stockpile(asteroid_name: String) -> Dictionary:
+	return ore_stockpiles.get(asteroid_name, {})
+
+func add_to_stockpile(asteroid_name: String, ore_type: ResourceTypes.OreType, amount: float) -> void:
+	if not ore_stockpiles.has(asteroid_name):
+		ore_stockpiles[asteroid_name] = {}
+	var pile: Dictionary = ore_stockpiles[asteroid_name]
+	pile[ore_type] = pile.get(ore_type, 0.0) + amount
+
+func collect_from_stockpile(asteroid_name: String, ship: Ship) -> float:
+	if not ore_stockpiles.has(asteroid_name):
+		return 0.0
+	var pile: Dictionary = ore_stockpiles[asteroid_name]
+	var space_remaining := ship.cargo_capacity - ship.get_cargo_total()
+	var total_collected := 0.0
+	# Load proportionally if not enough space
+	var total_available := 0.0
+	for ore_type in pile:
+		total_available += pile[ore_type]
+	if total_available <= 0.0:
+		return 0.0
+	var scale := 1.0
+	if total_available > space_remaining:
+		scale = space_remaining / total_available
+	for ore_type in pile.keys():
+		var amount: float = pile[ore_type] * scale
+		if amount > 0.0:
+			ship.current_cargo[ore_type] = ship.current_cargo.get(ore_type, 0.0) + amount
+			pile[ore_type] -= amount
+			total_collected += amount
+	# Clean up empty entries
+	for ore_type in pile.keys():
+		if pile[ore_type] <= 0.001:
+			pile.erase(ore_type)
+	if pile.is_empty():
+		ore_stockpiles.erase(asteroid_name)
+	return total_collected
+
+func start_deploy_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worker], units: Array[MiningUnit], deploy_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+	var mission := Mission.new()
+	mission.ship = ship
+	mission.asteroid = asteroid
+	mission.workers = crew
+	mission.mission_type = Mission.MissionType.DEPLOY_UNIT
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.origin_position_au = ship.position_au
+	mission.return_position_au = ship.position_au
+	mission.transit_mode = transit_mode
+	mission.mining_units_to_deploy = units
+	mission.workers_to_deploy = deploy_workers
+	mission.deploy_duration = 3600.0 * units.size()
+
+	# Determine if departing from Earth
+	var earth_pos := CelestialData.get_earth_position_au()
+	mission.origin_is_earth = ship.position_au.distance_to(earth_pos) < 0.05
+
+	var dist := ship.position_au.distance_to(asteroid.get_position_au())
+
+	if slingshot_route:
+		mission.outbound_waypoints = [slingshot_route.waypoint_pos]
+		mission.outbound_waypoint_planet_ids = [slingshot_route.planet_index]
+		mission.outbound_leg_times = [slingshot_route.leg1_time, slingshot_route.leg2_time]
+		mission.outbound_waypoint_index = 0
+		mission.transit_time = slingshot_route.leg1_time
+		dist = slingshot_route.leg1_distance
+	else:
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			mission.transit_time = Brachistochrone.hohmann_time(dist)
+		else:
+			mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+
+	# Apply pilot skill modifier
+	var best_pilot := 0.0
+	for w in crew:
+		if w.pilot_skill > best_pilot:
+			best_pilot = w.pilot_skill
+	var pilot_factor := 1.15 - (best_pilot * 0.2)
+	mission.transit_time *= pilot_factor
+
+	mission.elapsed_ticks = 0.0
+
+	# Calculate fuel burn rate
+	var cargo_mass := ship.get_cargo_total()
+	# Add unit mass to cargo for fuel calculation
+	var unit_mass := 0.0
+	for u in units:
+		unit_mass += u.mass
+	var fuel_outbound := ship.calc_fuel_for_distance(dist, cargo_mass + unit_mass)
+	var fuel_return := ship.calc_fuel_for_distance(dist, cargo_mass)  # Return lighter (units deployed)
+	var total_fuel := fuel_outbound + fuel_return
+	if transit_mode == Mission.TransitMode.HOHMANN:
+		total_fuel *= Brachistochrone.hohmann_fuel_multiplier()
+	var total_transit_ticks := mission.transit_time * 2.0
+	mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
+
+	ship.current_mission = mission
+	ship.docked_at_colony = null
+	ship.reset_life_support(crew.size())
+	for w in crew:
+		w.assigned_mission = mission
+
+	missions.append(mission)
+	EventBus.mission_started.emit(mission)
+	return mission
+
+func start_collect_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+	var mission := Mission.new()
+	mission.ship = ship
+	mission.asteroid = asteroid
+	mission.workers = crew
+	mission.mission_type = Mission.MissionType.COLLECT_ORE
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.origin_position_au = ship.position_au
+	mission.return_position_au = ship.position_au
+	mission.transit_mode = transit_mode
+
+	var earth_pos := CelestialData.get_earth_position_au()
+	mission.origin_is_earth = ship.position_au.distance_to(earth_pos) < 0.05
+
+	var dist := ship.position_au.distance_to(asteroid.get_position_au())
+
+	if slingshot_route:
+		mission.outbound_waypoints = [slingshot_route.waypoint_pos]
+		mission.outbound_waypoint_planet_ids = [slingshot_route.planet_index]
+		mission.outbound_leg_times = [slingshot_route.leg1_time, slingshot_route.leg2_time]
+		mission.outbound_waypoint_index = 0
+		mission.transit_time = slingshot_route.leg1_time
+		dist = slingshot_route.leg1_distance
+	else:
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			mission.transit_time = Brachistochrone.hohmann_time(dist)
+		else:
+			mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+
+	var best_pilot := 0.0
+	for w in crew:
+		if w.pilot_skill > best_pilot:
+			best_pilot = w.pilot_skill
+	var pilot_factor := 1.15 - (best_pilot * 0.2)
+	mission.transit_time *= pilot_factor
+
+	mission.elapsed_ticks = 0.0
+
+	var cargo_mass := ship.get_cargo_total()
+	var fuel_outbound := ship.calc_fuel_for_distance(dist, cargo_mass)
+	var fuel_return := ship.calc_fuel_for_distance(dist, ship.cargo_capacity)  # Assume full return
+	var total_fuel := fuel_outbound + fuel_return
+	if transit_mode == Mission.TransitMode.HOHMANN:
+		total_fuel *= Brachistochrone.hohmann_fuel_multiplier()
+	var total_transit_ticks := mission.transit_time * 2.0
+	mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
+
+	ship.current_mission = mission
+	ship.docked_at_colony = null
+	ship.reset_life_support(crew.size())
+	for w in crew:
+		w.assigned_mission = mission
+
+	missions.append(mission)
+	EventBus.mission_started.emit(mission)
+	return mission
 
 func jettison_all_cargo(ship: Ship) -> float:
 	# Dump all cargo into space (lost forever)
@@ -565,18 +845,30 @@ func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[W
 		mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
 
 	ship.current_mission = mission
-	ship.current_cargo.clear()
+	# Stationed ships keep existing cargo (they accumulate over multiple mining runs)
+	if not ship.is_stationed:
+		ship.current_cargo.clear()
+	ship.docked_at_colony = null  # Ship is departing
 	ship.reset_life_support(assigned_workers.size())  # Reset life support based on crew
 	for w in assigned_workers:
 		w.assigned_mission = mission
 
 	missions.append(mission)
 	EventBus.mission_started.emit(mission)
+
+	# Check if any hitchhiking workers can catch this ride
+	var route_points: Array[Vector2] = [asteroid.get_position_au()]
+	check_hitchhike_opportunities(ship, route_points)
+
 	return mission
 
 func complete_mission(mission: Mission) -> void:
-	# Transfer cargo from ship to stockpile (only if returning to Earth)
-	if mission.ship.is_at_earth:
+	# Stationed ships keep cargo (they sell via trade mission autonomously)
+	if mission.ship.is_stationed:
+		# Don't transfer cargo, ship keeps it for trading
+		pass
+	elif mission.ship.is_at_earth:
+		# Transfer cargo from ship to stockpile (only if returning to Earth)
 		for ore_type in mission.ship.current_cargo:
 			add_resource(ore_type, mission.ship.current_cargo[ore_type])
 		mission.ship.current_cargo.clear()
@@ -590,9 +882,34 @@ func complete_mission(mission: Mission) -> void:
 	EventBus.mission_completed.emit(mission)
 	missions.erase(mission)
 
+	# Stationed ships don't use queued missions — station logic handles next job
+	if mission.ship.is_stationed:
+		return
+
 	# Check for queued mission and auto-start it
 	if mission.ship.has_queued_mission():
 		_start_queued_mission(mission.ship)
+
+func _name_for_position(pos: Vector2) -> String:
+	# Find nearest colony
+	var best_name := ""
+	var best_dist := 0.2  # Must be within 0.2 AU to count
+	for colony in colonies:
+		var d := pos.distance_to(colony.get_position_au())
+		if d < best_dist:
+			best_dist = d
+			best_name = colony.colony_name
+	if best_name != "":
+		return best_name
+	# Check near Earth
+	if pos.distance_to(CelestialData.get_earth_position_au()) < 0.1:
+		return "Earth"
+	# Check near planets
+	for i in range(CelestialData.PLANETS.size()):
+		var planet_pos := CelestialData.get_planet_position_au(i)
+		if pos.distance_to(planet_pos) < 0.3:
+			return CelestialData.PLANETS[i]["name"]
+	return "deep space"
 
 func order_return_to_earth(ship: Ship) -> void:
 	# Start a transit-back mission from current idle position to Earth
@@ -627,7 +944,9 @@ func order_return_to_earth(ship: Ship) -> void:
 		mission.ship = ship
 		mission.status = Mission.Status.TRANSIT_BACK
 		mission.origin_position_au = ship.position_au
+		mission.origin_is_earth = false  # Ship is stranded somewhere, not at Earth
 		mission.return_position_au = earth_pos
+		mission.destination_name = _name_for_position(ship.position_au)
 		mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 		mission.elapsed_ticks = 0.0
 		var cargo_mass := ship.get_cargo_total()
@@ -651,8 +970,11 @@ func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_workers: Ar
 
 	for w in ship.last_crew:
 		w.assigned_mission = null
+		w.assigned_trade_mission = null
 
-	return start_mission(ship, asteroid, assigned_workers, transit_mode, slingshot_route)
+	var mission := start_mission(ship, asteroid, assigned_workers, transit_mode, slingshot_route)
+	mission.origin_is_earth = false  # Ship is dispatched from a remote location, not Earth
+	return mission
 
 func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned_workers: Array[Worker], cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
 	# End idle state and start new trade mission from current position
@@ -667,8 +989,11 @@ func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned_worker
 
 	for w in ship.last_crew:
 		w.assigned_mission = null
+		w.assigned_trade_mission = null
 
-	return start_trade_mission(ship, colony_target, assigned_workers, cargo_to_load, transit_mode)
+	var tm := start_trade_mission(ship, colony_target, assigned_workers, cargo_to_load, transit_mode)
+	tm.origin_is_earth = false  # Ship is dispatched from a remote location, not Earth
+	return tm
 
 const RESCUE_COST_BASE: int = 20000  # Crew wages, equipment, opportunity cost — even nearby rescues are expensive
 const RESCUE_COST_PER_AU: int = 8000  # Fuel + extended crew time for distance
@@ -853,6 +1178,183 @@ func decline_stranger_rescue(ship: Ship) -> void:
 	var stranger_name: String = offer["stranger_name"]
 	stranger_offers.erase(ship)
 	EventBus.stranger_rescue_declined.emit(ship, stranger_name)
+
+# --- Station management ---
+
+func station_ship(ship: Ship, colony: Colony, jobs: Array[String]) -> void:
+	ship.is_stationed = true
+	ship.station_colony = colony
+	ship.station_jobs = jobs.duplicate()
+	ship.station_log.clear()
+	# Ensure ship has a crew assigned (use last_crew or auto-assign from available)
+	if ship.last_crew.is_empty() or ship.last_crew.size() < ship.min_crew:
+		var available := get_available_workers()
+		ship.last_crew.clear()
+		for i in range(mini(ship.min_crew, available.size())):
+			available[i].assigned_station_ship = ship
+			ship.last_crew.append(available[i])
+	else:
+		for w in ship.last_crew:
+			w.assigned_station_ship = ship
+	ship.add_station_log("Stationed at %s" % colony.colony_name, "system")
+	EventBus.ship_stationed.emit(ship, colony)
+
+func unstation_ship(ship: Ship) -> void:
+	for w in ship.last_crew:
+		w.assigned_station_ship = null
+	ship.is_stationed = false
+	ship.add_station_log("Unstationed", "system")
+	ship.station_colony = null
+	ship.station_jobs.clear()
+	EventBus.ship_unstationed.emit(ship)
+
+func update_station_jobs(ship: Ship, jobs: Array[String]) -> void:
+	ship.station_jobs = jobs.duplicate()
+	ship.add_station_log("Jobs updated: %s" % ", ".join(jobs), "system")
+
+func buy_supplies(ship: Ship, supply_key: String, amount: float) -> bool:
+	# Find supply type from key
+	var cost_per_unit := 0
+	var mass_per_unit := 0.0
+	for supply_type in SupplyData.SUPPLY_INFO:
+		var info: Dictionary = SupplyData.SUPPLY_INFO[supply_type]
+		if info["key"] == supply_key:
+			cost_per_unit = info["cost_per_unit"]
+			mass_per_unit = info["mass_per_unit"]
+			break
+
+	if cost_per_unit <= 0:
+		return false
+
+	var total_mass := amount * mass_per_unit
+	# Check cargo capacity (supplies share space with ore)
+	var available_space := ship.get_cargo_remaining() - ship.get_supplies_mass()
+	if total_mass > available_space + 0.01:
+		return false
+
+	var total_cost := int(amount * cost_per_unit)
+	if money < total_cost:
+		return false
+
+	money -= total_cost
+	ship.supplies[supply_key] = ship.supplies.get(supply_key, 0.0) + amount
+	return true
+
+# --- Deployed crew methods ---
+
+func deploy_crew(asteroid: AsteroidData, crew_workers: Array[Worker], initial_supplies: Dictionary) -> void:
+	# Remove workers from available pool
+	for w in crew_workers:
+		w.assigned_mission = null  # They're deployed, not on a mission
+	var entry: Dictionary = {
+		"asteroid": asteroid,
+		"workers": crew_workers.duplicate(),
+		"supplies": initial_supplies.duplicate(),
+		"deployed_at": total_ticks,
+	}
+	deployed_crews.append(entry)
+	EventBus.crew_deployed.emit(asteroid, crew_workers)
+
+func recall_crew(asteroid: AsteroidData) -> void:
+	for i in range(deployed_crews.size() - 1, -1, -1):
+		var entry: Dictionary = deployed_crews[i]
+		if entry["asteroid"] == asteroid:
+			var crew_workers: Array = entry["workers"]
+			EventBus.crew_recalled.emit(asteroid, crew_workers)
+			deployed_crews.remove_at(i)
+			break
+
+func get_deployed_crew_at(asteroid: AsteroidData) -> Dictionary:
+	for entry in deployed_crews:
+		if entry["asteroid"] == asteroid:
+			return entry
+	return {}
+
+# --- Hitchhike & discipline methods ---
+
+func _get_colony_position(colony_name: String) -> Vector2:
+	if colony_name == "Earth":
+		return CelestialData.get_earth_position_au()
+	for colony in colonies:
+		if colony.colony_name == colony_name:
+			return colony.get_position_au()
+	return CelestialData.get_earth_position_au()  # Fallback
+
+func add_to_hitchhike_pool(worker: Worker, location_name: String, location_pos: Vector2) -> void:
+	# 35% chance worker stays put (doesn't want to go home)
+	if randf() < 0.35:
+		worker.leave_status = 1  # Just on leave, no ride wanted
+		return
+	# Skip if worker's home IS this location
+	if worker.home_colony == location_name:
+		worker.leave_status = 1
+		return
+	# Skip duplicates
+	for entry in hitchhike_pool:
+		if entry["worker"] == worker:
+			return
+	worker.leave_status = 2
+	var max_wait := randf_range(7.0, 14.0) * 86400.0  # 7-14 game-days in ticks
+	hitchhike_pool.append({
+		"worker": worker,
+		"location_name": location_name,
+		"location_pos": location_pos,
+		"entered_at": total_ticks,
+		"max_wait": max_wait,
+	})
+	EventBus.worker_waiting_for_ride.emit(worker, location_name)
+
+func check_hitchhike_opportunities(ship: Ship, route_positions: Array[Vector2]) -> void:
+	var matched: Array[Dictionary] = []
+	for entry in hitchhike_pool:
+		var worker: Worker = entry["worker"]
+		var worker_pos: Vector2 = entry["location_pos"]
+		# Must be at ship's current location (within 0.05 AU)
+		if ship.position_au.distance_to(worker_pos) > 0.05:
+			continue
+		# Check if any route waypoint passes within 0.1 AU of worker's home colony
+		var home_pos := _get_colony_position(worker.home_colony)
+		for route_pos in route_positions:
+			if route_pos.distance_to(home_pos) < 0.1:
+				matched.append(entry)
+				break
+	for entry in matched:
+		var worker: Worker = entry["worker"]
+		hitchhike_pool.erase(entry)
+		worker.leave_status = 1  # On leave (riding home)
+		worker.loyalty = minf(worker.loyalty + 3.0, 100.0)
+		EventBus.worker_hitched_ride.emit(worker, ship)
+
+func forgive_tardy_worker(worker: Worker) -> void:
+	for i in range(tardy_workers.size() - 1, -1, -1):
+		if tardy_workers[i]["worker"] == worker:
+			tardy_workers.remove_at(i)
+			break
+	worker.leave_status = 0
+	worker.fatigue = 0.0
+	worker.loyalty = minf(worker.loyalty + 5.0, 100.0)
+	EventBus.worker_tardiness_resolved.emit(worker, "forgiven")
+
+func dock_pay_tardy_worker(worker: Worker) -> void:
+	for i in range(tardy_workers.size() - 1, -1, -1):
+		if tardy_workers[i]["worker"] == worker:
+			tardy_workers.remove_at(i)
+			break
+	worker.leave_status = 0
+	worker.fatigue = 0.0
+	worker.loyalty = maxf(worker.loyalty - 8.0, 0.0)
+	# Dock 3 days wages
+	money += worker.wage * 3
+	EventBus.worker_tardiness_resolved.emit(worker, "docked")
+
+func fire_tardy_worker(worker: Worker) -> void:
+	for i in range(tardy_workers.size() - 1, -1, -1):
+		if tardy_workers[i]["worker"] == worker:
+			tardy_workers.remove_at(i)
+			break
+	worker.leave_status = 0
+	EventBus.worker_tardiness_resolved.emit(worker, "fired")
+	fire_worker(worker)
 
 # --- Contract methods ---
 
@@ -1043,20 +1545,32 @@ func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Ar
 
 	ship.current_trade_mission = tm
 	ship.current_cargo = tm.cargo.duplicate()
+	ship.docked_at_colony = null  # Ship is departing
 	ship.reset_life_support(assigned_workers.size())  # Reset life support based on crew
 	for w in assigned_workers:
-		w.assigned_mission = null  # Trade missions don't lock workers via assigned_mission for simplicity
+		w.assigned_trade_mission = tm
 
 	trade_missions.append(tm)
 	EventBus.trade_mission_started.emit(tm)
+
+	# Check if any hitchhiking workers can catch this ride
+	var trade_route_points: Array[Vector2] = [colony_target.get_position_au()]
+	check_hitchhike_opportunities(ship, trade_route_points)
+
 	return tm
 
 func complete_trade_mission(tm: TradeMission) -> void:
 	tm.ship.current_cargo.clear()
 	tm.ship.current_trade_mission = null
+	for w in tm.workers:
+		w.assigned_trade_mission = null
 	tm.status = TradeMission.Status.COMPLETED
 	EventBus.trade_mission_completed.emit(tm)
 	trade_missions.erase(tm)
+
+	# Stationed ships don't use queued missions — station logic handles next job
+	if tm.ship.is_stationed:
+		return
 
 	# Check for queued mission and auto-start it
 	if tm.ship.has_queued_mission():
@@ -1120,6 +1634,13 @@ func save_game() -> void:
 			"engineer_skill": w.engineer_skill,
 			"mining_skill": w.mining_skill,
 			"wage": w.wage,
+			"fatigue": w.fatigue,
+			"days_deployed": w.days_deployed,
+			"is_injured": w.is_injured,
+			"home_colony": w.home_colony,
+			"loyalty": w.loyalty,
+			"hired_at": w.hired_at,
+			"leave_status": w.leave_status,
 		})
 	for s in ships:
 		var ship_data := {
@@ -1139,6 +1660,15 @@ func save_game() -> void:
 			"fuel_capacity": s.fuel_capacity,
 			"equipment": [],
 		}
+		# Station data
+		if s.is_stationed:
+			ship_data["is_stationed"] = true
+			ship_data["station_colony_name"] = s.station_colony.colony_name if s.station_colony else ""
+			ship_data["station_jobs"] = s.station_jobs.duplicate()
+			ship_data["station_log"] = s.station_log.duplicate()
+		# Supplies
+		if not s.supplies.is_empty():
+			ship_data["supplies"] = s.supplies.duplicate()
 		for e in s.equipment:
 			ship_data["equipment"].append({
 				"name": e.equipment_name,
@@ -1161,12 +1691,21 @@ func save_game() -> void:
 	for m in missions:
 		save_data["missions"].append({
 			"ship_name": m.ship.ship_name,
-			"asteroid_name": m.asteroid.asteroid_name,
+			"asteroid_name": m.asteroid.asteroid_name if m.asteroid else "",
 			"status": m.status,
+			"mission_type": m.mission_type,
+			"return_to_station": m.return_to_station,
+			"origin_is_earth": m.origin_is_earth,
 			"elapsed_ticks": m.elapsed_ticks,
 			"transit_time": m.transit_time,
 			"mining_duration": m.mining_duration,
 			"fuel_per_tick": m.fuel_per_tick,
+			"station_job_duration": m.station_job_duration,
+			"destination_position_au_x": m.destination_position_au.x,
+			"destination_position_au_y": m.destination_position_au.y,
+			"destination_name": m.destination_name,
+			"return_position_au_x": m.return_position_au.x,
+			"return_position_au_y": m.return_position_au.y,
 			"workers": m.workers.map(func(w): return w.worker_name),
 			"outbound_waypoint_types": m.outbound_waypoint_types,
 			"outbound_waypoint_fuel_amounts": m.outbound_waypoint_fuel_amounts,
@@ -1192,6 +1731,7 @@ func save_game() -> void:
 			"fuel_per_tick": tm.fuel_per_tick,
 			"cargo": cargo_data,
 			"origin_position_au": {"x": tm.origin_position_au.x, "y": tm.origin_position_au.y},
+			"origin_is_earth": tm.origin_is_earth,
 			"return_position_au": {"x": tm.return_position_au.x, "y": tm.return_position_au.y},
 			"transit_mode": tm.transit_mode,
 			"revenue": tm.revenue,
@@ -1210,21 +1750,23 @@ func save_game() -> void:
 	for c in available_contracts:
 		save_data["available_contracts"].append({
 			"ore_type": c.ore_type,
-			"amount": c.amount_tons,
-			"premium": c.premium_multiplier,
+			"quantity": c.quantity,
+			"reward": c.reward,
 			"deadline_ticks": c.deadline_ticks,
 			"issuer": c.issuer_name,
 			"colony_name": c.delivery_colony.colony_name if c.delivery_colony else "",
+			"allows_partial": c.allows_partial,
 		})
 	for c in active_contracts:
 		save_data["active_contracts"].append({
 			"ore_type": c.ore_type,
-			"amount": c.amount_tons,
-			"fulfilled": c.fulfilled_tons,
-			"premium": c.premium_multiplier,
+			"quantity": c.quantity,
+			"quantity_delivered": c.quantity_delivered,
+			"reward": c.reward,
 			"deadline_ticks": c.deadline_ticks,
 			"issuer": c.issuer_name,
 			"colony_name": c.delivery_colony.colony_name if c.delivery_colony else "",
+			"allows_partial": c.allows_partial,
 		})
 
 	# Save market events
@@ -1274,6 +1816,94 @@ func save_game() -> void:
 			"tip": so_data["suggested_tip"],
 		}
 
+	# Save deployed crews
+	var deployed_crews_data: Array[Dictionary] = []
+	for entry in deployed_crews:
+		var asteroid: AsteroidData = entry["asteroid"]
+		var worker_names: Array[String] = []
+		for w in entry["workers"]:
+			worker_names.append(w.worker_name)
+		deployed_crews_data.append({
+			"asteroid_name": asteroid.asteroid_name,
+			"worker_names": worker_names,
+			"supplies": entry["supplies"].duplicate(),
+			"deployed_at": entry["deployed_at"],
+		})
+	save_data["deployed_crews"] = deployed_crews_data
+
+	# Save mining unit inventory
+	var mu_inventory_data: Array[Dictionary] = []
+	for unit in mining_unit_inventory:
+		mu_inventory_data.append({
+			"unit_type": unit.unit_type,
+			"unit_name": unit.unit_name,
+			"mass": unit.mass,
+			"workers_required": unit.workers_required,
+			"mining_multiplier": unit.mining_multiplier,
+			"durability": unit.durability,
+			"max_durability": unit.max_durability,
+			"wear_per_day": unit.wear_per_day,
+			"cost": unit.cost,
+		})
+	save_data["mining_unit_inventory"] = mu_inventory_data
+
+	# Save deployed mining units
+	var mu_deployed_data: Array[Dictionary] = []
+	for unit in deployed_mining_units:
+		var worker_names: Array[String] = []
+		for w in unit.assigned_workers:
+			worker_names.append(w.worker_name)
+		mu_deployed_data.append({
+			"unit_type": unit.unit_type,
+			"unit_name": unit.unit_name,
+			"mass": unit.mass,
+			"workers_required": unit.workers_required,
+			"mining_multiplier": unit.mining_multiplier,
+			"durability": unit.durability,
+			"max_durability": unit.max_durability,
+			"wear_per_day": unit.wear_per_day,
+			"cost": unit.cost,
+			"deployed_at_asteroid": unit.deployed_at_asteroid,
+			"deployed_at_tick": unit.deployed_at_tick,
+			"worker_names": worker_names,
+		})
+	save_data["deployed_mining_units"] = mu_deployed_data
+
+	# Save ore stockpiles
+	var stockpile_data := {}
+	for asteroid_name in ore_stockpiles:
+		var pile: Dictionary = ore_stockpiles[asteroid_name]
+		var serialized_pile := {}
+		for ore_type in pile:
+			serialized_pile[str(ore_type)] = pile[ore_type]
+		stockpile_data[asteroid_name] = serialized_pile
+	save_data["ore_stockpiles"] = stockpile_data
+
+	# Save hitchhike pool
+	var hitchhike_data: Array[Dictionary] = []
+	for entry in hitchhike_pool:
+		var w: Worker = entry["worker"]
+		hitchhike_data.append({
+			"worker_name": w.worker_name,
+			"location_name": entry["location_name"],
+			"location_pos_x": entry["location_pos"].x,
+			"location_pos_y": entry["location_pos"].y,
+			"entered_at": entry["entered_at"],
+			"max_wait": entry["max_wait"],
+		})
+	save_data["hitchhike_pool"] = hitchhike_data
+
+	# Save tardy workers
+	var tardy_data: Array[Dictionary] = []
+	for entry in tardy_workers:
+		var w: Worker = entry["worker"]
+		tardy_data.append({
+			"worker_name": w.worker_name,
+			"reason": entry["reason"],
+			"tardy_since": entry["tardy_since"],
+		})
+	save_data["tardy_workers"] = tardy_data
+
 	var file := FileAccess.open("user://save_game.json", FileAccess.WRITE)
 	file.store_string(JSON.stringify(save_data, "\t"))
 
@@ -1314,6 +1944,13 @@ func load_game() -> bool:
 			w.pilot_skill = 0.0
 			w.engineer_skill = 0.0
 		w.wage = int(wd.get("wage", 100))
+		w.fatigue = float(wd.get("fatigue", 0.0))
+		w.days_deployed = float(wd.get("days_deployed", 0.0))
+		w.is_injured = wd.get("is_injured", false)
+		w.home_colony = wd.get("home_colony", "Earth")
+		w.loyalty = float(wd.get("loyalty", 50.0))
+		w.hired_at = float(wd.get("hired_at", 0.0))
+		w.leave_status = int(wd.get("leave_status", 0))
 		workers.append(w)
 
 	ships.clear()
@@ -1349,6 +1986,21 @@ func load_game() -> bool:
 		var cargo_data: Dictionary = sd.get("cargo", {})
 		for key in cargo_data:
 			s.current_cargo[int(key)] = float(cargo_data[key])
+		# Restore supplies
+		var supplies_data: Dictionary = sd.get("supplies", {})
+		for key in supplies_data:
+			s.supplies[key] = float(supplies_data[key])
+		# Restore station data (colony ref reconnected after colonies are loaded)
+		s.is_stationed = sd.get("is_stationed", false)
+		if s.is_stationed:
+			s.station_jobs = []
+			var saved_jobs: Array = sd.get("station_jobs", [])
+			for job in saved_jobs:
+				s.station_jobs.append(str(job))
+			s.station_log = []
+			var saved_log: Array = sd.get("station_log", [])
+			for entry in saved_log:
+				s.station_log.append(entry)
 		for ed in sd.get("equipment", []):
 			var e := Equipment.from_catalog(ed)
 			e.durability = float(ed.get("durability", 100.0))
@@ -1359,6 +2011,23 @@ func load_game() -> bool:
 
 	# Restore game clock
 	total_ticks = float(data.get("total_ticks", 0.0))
+
+	# Reconnect station colony references (colonies loaded at _ready)
+	for ship in ships:
+		if ship.is_stationed:
+			var sd_array: Array = data.get("ships", [])
+			for sd in sd_array:
+				if sd.get("name", "") == ship.ship_name:
+					var colony_name: String = sd.get("station_colony_name", "")
+					if colony_name != "":
+						for colony in colonies:
+							if colony.colony_name == colony_name:
+								ship.station_colony = colony
+								break
+					break
+			# Mark stationed crew as assigned to this ship
+			for w in ship.last_crew:
+				w.assigned_station_ship = ship
 
 	# Restore reputation
 	if data.has("reputation"):
@@ -1380,10 +2049,23 @@ func load_game() -> bool:
 				m.asteroid = asteroid
 				break
 		m.status = int(md.get("status", Mission.Status.TRANSIT_OUT))
+		m.mission_type = int(md.get("mission_type", Mission.MissionType.MINING))
+		m.return_to_station = md.get("return_to_station", false)
+		m.origin_is_earth = md.get("origin_is_earth", true)
 		m.elapsed_ticks = float(md.get("elapsed_ticks", 0.0))
 		m.transit_time = float(md.get("transit_time", 0.0))
 		m.mining_duration = float(md.get("mining_duration", 86400.0))
 		m.fuel_per_tick = float(md.get("fuel_per_tick", 0.0))
+		m.station_job_duration = float(md.get("station_job_duration", 0.0))
+		m.destination_position_au = Vector2(
+			float(md.get("destination_position_au_x", 0.0)),
+			float(md.get("destination_position_au_y", 0.0))
+		)
+		m.destination_name = str(md.get("destination_name", ""))
+		m.return_position_au = Vector2(
+			float(md.get("return_position_au_x", m.return_position_au.x)),
+			float(md.get("return_position_au_y", m.return_position_au.y))
+		)
 		# Reconnect workers
 		var worker_names: Array = md.get("workers", [])
 		for wname in worker_names:
@@ -1416,7 +2098,8 @@ func load_game() -> bool:
 					found_colony = colony
 					break
 			m.return_waypoint_colony_refs.append(found_colony)
-		if m.ship and m.asteroid:
+		# Mining missions require an asteroid; other types may not have one
+		if m.ship and (m.asteroid or m.mission_type != Mission.MissionType.MINING):
 			missions.append(m)
 
 	# Restore trade missions
@@ -1447,6 +2130,7 @@ func load_game() -> bool:
 		var origin_data: Dictionary = tmd.get("origin_position_au", {})
 		if origin_data.has("x") and origin_data.has("y"):
 			tm.origin_position_au = Vector2(float(origin_data["x"]), float(origin_data["y"]))
+		tm.origin_is_earth = tmd.get("origin_is_earth", true)
 		var return_data: Dictionary = tmd.get("return_position_au", {})
 		if return_data.has("x") and return_data.has("y"):
 			tm.return_position_au = Vector2(float(return_data["x"]), float(return_data["y"]))
@@ -1462,6 +2146,7 @@ func load_game() -> bool:
 			for w in workers:
 				if w.worker_name == worker_name:
 					tm.workers.append(w)
+					w.assigned_trade_mission = tm
 					break
 
 		# Load waypoint metadata
@@ -1497,10 +2182,11 @@ func load_game() -> bool:
 	for cd in data.get("available_contracts", []):
 		var c := Contract.new()
 		c.ore_type = int(cd.get("ore_type", 0))
-		c.amount_tons = float(cd.get("amount", 100.0))
-		c.premium_multiplier = float(cd.get("premium", 1.5))
+		c.quantity = float(cd.get("quantity", cd.get("amount", 100.0)))
+		c.reward = int(cd.get("reward", 1000))
 		c.deadline_ticks = float(cd.get("deadline_ticks", 86400.0))
 		c.issuer_name = cd.get("issuer", "Unknown")
+		c.allows_partial = cd.get("allows_partial", true)
 		var colony_name = cd.get("colony_name", "")
 		if colony_name != "":
 			for colony in colonies:
@@ -1513,11 +2199,12 @@ func load_game() -> bool:
 	for cd in data.get("active_contracts", []):
 		var c := Contract.new()
 		c.ore_type = int(cd.get("ore_type", 0))
-		c.amount_tons = float(cd.get("amount", 100.0))
-		c.fulfilled_tons = float(cd.get("fulfilled", 0.0))
-		c.premium_multiplier = float(cd.get("premium", 1.5))
+		c.quantity = float(cd.get("quantity", cd.get("amount", 100.0)))
+		c.quantity_delivered = float(cd.get("quantity_delivered", cd.get("fulfilled", 0.0)))
+		c.reward = int(cd.get("reward", 1000))
 		c.deadline_ticks = float(cd.get("deadline_ticks", 86400.0))
 		c.issuer_name = cd.get("issuer", "Unknown")
+		c.allows_partial = cd.get("allows_partial", true)
 		var colony_name = cd.get("colony_name", "")
 		if colony_name != "":
 			for colony in colonies:
@@ -1603,5 +2290,113 @@ func load_game() -> bool:
 					"suggested_tip": int(sod.get("tip", 3000)),
 				}
 				break
+
+	# Restore deployed crews
+	deployed_crews.clear()
+	for dc_data in data.get("deployed_crews", []):
+		var asteroid_name: String = dc_data.get("asteroid_name", "")
+		var asteroid: AsteroidData = null
+		for a in asteroids:
+			if a.asteroid_name == asteroid_name:
+				asteroid = a
+				break
+		if asteroid == null:
+			continue
+		var crew_workers: Array[Worker] = []
+		for wname in dc_data.get("worker_names", []):
+			for w in workers:
+				if w.worker_name == wname:
+					crew_workers.append(w)
+					break
+		deployed_crews.append({
+			"asteroid": asteroid,
+			"workers": crew_workers,
+			"supplies": dc_data.get("supplies", {}).duplicate(),
+			"deployed_at": float(dc_data.get("deployed_at", 0.0)),
+		})
+
+	# Restore hitchhike pool
+	hitchhike_pool.clear()
+	for hp_data in data.get("hitchhike_pool", []):
+		var hp_worker_name: String = hp_data.get("worker_name", "")
+		var hp_worker: Worker = null
+		for w in workers:
+			if w.worker_name == hp_worker_name:
+				hp_worker = w
+				break
+		if hp_worker:
+			hitchhike_pool.append({
+				"worker": hp_worker,
+				"location_name": hp_data.get("location_name", ""),
+				"location_pos": Vector2(float(hp_data.get("location_pos_x", 0.0)), float(hp_data.get("location_pos_y", 0.0))),
+				"entered_at": float(hp_data.get("entered_at", 0.0)),
+				"max_wait": float(hp_data.get("max_wait", 604800.0)),
+			})
+
+	# Restore tardy workers
+	tardy_workers.clear()
+	for td_data in data.get("tardy_workers", []):
+		var td_worker_name: String = td_data.get("worker_name", "")
+		var td_worker: Worker = null
+		for w in workers:
+			if w.worker_name == td_worker_name:
+				td_worker = w
+				break
+		if td_worker:
+			tardy_workers.append({
+				"worker": td_worker,
+				"reason": td_data.get("reason", "Unknown"),
+				"tardy_since": float(td_data.get("tardy_since", 0.0)),
+			})
+
+	# Restore mining unit inventory
+	mining_unit_inventory.clear()
+	for mud in data.get("mining_unit_inventory", []):
+		var unit := MiningUnit.new()
+		unit.unit_type = int(mud.get("unit_type", 0))
+		unit.unit_name = mud.get("unit_name", "")
+		unit.mass = float(mud.get("mass", 7.6))
+		unit.workers_required = int(mud.get("workers_required", 1))
+		unit.mining_multiplier = float(mud.get("mining_multiplier", 1.0))
+		unit.durability = float(mud.get("durability", 100.0))
+		unit.max_durability = float(mud.get("max_durability", 100.0))
+		unit.wear_per_day = float(mud.get("wear_per_day", 0.3))
+		unit.cost = int(mud.get("cost", 50000))
+		mining_unit_inventory.append(unit)
+
+	# Restore deployed mining units
+	deployed_mining_units.clear()
+	for mud in data.get("deployed_mining_units", []):
+		var unit := MiningUnit.new()
+		unit.unit_type = int(mud.get("unit_type", 0))
+		unit.unit_name = mud.get("unit_name", "")
+		unit.mass = float(mud.get("mass", 7.6))
+		unit.workers_required = int(mud.get("workers_required", 1))
+		unit.mining_multiplier = float(mud.get("mining_multiplier", 1.0))
+		unit.durability = float(mud.get("durability", 100.0))
+		unit.max_durability = float(mud.get("max_durability", 100.0))
+		unit.wear_per_day = float(mud.get("wear_per_day", 0.3))
+		unit.cost = int(mud.get("cost", 50000))
+		unit.deployed_at_asteroid = mud.get("deployed_at_asteroid", "")
+		unit.deployed_at_tick = float(mud.get("deployed_at_tick", 0.0))
+		# Reconnect workers
+		var mu_worker_names: Array = mud.get("worker_names", [])
+		for wname in mu_worker_names:
+			for w in workers:
+				if w.worker_name == wname:
+					unit.assigned_workers.append(w)
+					w.assigned_mining_unit = unit
+					break
+		deployed_mining_units.append(unit)
+
+	# Restore ore stockpiles
+	ore_stockpiles.clear()
+	var stockpile_data: Dictionary = data.get("ore_stockpiles", {})
+	for asteroid_name in stockpile_data:
+		var pile_data: Dictionary = stockpile_data[asteroid_name]
+		var pile := {}
+		for key in pile_data:
+			pile[int(key)] = float(pile_data[key])
+		ore_stockpiles[asteroid_name] = pile
 
 	return true

@@ -1,6 +1,16 @@
 class_name Mission
 extends Resource
 
+enum MissionType {
+	MINING,          # Existing behavior (default)
+	REPAIR,          # Dispatch to derelict ship, repair on arrival
+	SUPPLY_RUN,      # Deliver supplies/parts to remote location
+	CREW_FERRY,      # Transport workers to/from remote site
+	PATROL,          # Watch area for threats, deter rivals
+	DEPLOY_UNIT,     # Deploy mining units to an asteroid
+	COLLECT_ORE,     # Collect stockpiled ore from an asteroid
+}
+
 enum Status {
 	TRANSIT_OUT,
 	REFUELING,
@@ -8,6 +18,12 @@ enum Status {
 	IDLE_AT_DESTINATION,
 	TRANSIT_BACK,
 	COMPLETED,
+	REPAIRING,       # Repairing a remote ship
+	DELIVERING,      # Dropping off supplies
+	BOARDING,        # Crew transfer
+	PATROLLING,      # Watching area
+	DEPLOYING,       # Deploying mining units
+	COLLECTING,      # Collecting stockpiled ore
 }
 
 enum WaypointType {
@@ -20,6 +36,7 @@ enum TransitMode {
 	HOHMANN,          # Slow, economical fuel (minimal delta-v)
 }
 
+@export var mission_type: int = MissionType.MINING
 @export var status: Status = Status.TRANSIT_OUT
 @export var ship: Ship = null
 @export var workers: Array[Worker] = []
@@ -30,7 +47,17 @@ enum TransitMode {
 @export var fuel_per_tick: float = 0.0    # fuel consumed per tick during transit
 @export var origin_position_au: Vector2 = Vector2.ZERO   # where ship departed from
 @export var return_position_au: Vector2 = Vector2.ZERO    # where ship returns to
-@export var transit_mode: TransitMode = TransitMode.BRACHISTOCHRONE  # orbit type
+@export var transit_mode: TransitMode = TransitMode.BRACHISTOCHRONE
+@export var return_to_station: bool = false       # If true, return to station colony instead of Earth
+@export var destination_position_au: Vector2 = Vector2.ZERO  # For non-asteroid missions (repair, supply, patrol)
+@export var station_job_duration: float = 0.0     # Duration for timed jobs (patrol, repair, etc.)
+@export var destination_name: String = ""  # Fallback name when asteroid is null (e.g., return-only missions)
+@export var origin_is_earth: bool = true   # True if ship departed from Earth (for live position tracking)
+
+# Deploy/collect mission support
+@export var mining_units_to_deploy: Array[MiningUnit] = []
+@export var workers_to_deploy: Array[Worker] = []
+@export var deploy_duration: float = 3600.0  # 1 hour per unit being deployed
 
 # Gravity assist / multi-leg journey support
 @export var outbound_waypoints: Array[Vector2] = []      # intermediate positions (e.g., planet flyby)
@@ -67,6 +94,12 @@ func get_current_phase_duration() -> float:
 			return transit_time
 		Status.MINING:
 			return mining_duration
+		Status.REPAIRING, Status.DELIVERING, Status.BOARDING, Status.PATROLLING:
+			return station_job_duration
+		Status.DEPLOYING:
+			return deploy_duration
+		Status.COLLECTING:
+			return 1800.0  # 30 minutes to load ore
 		_:
 			return 0.0
 
@@ -80,15 +113,22 @@ func get_progress() -> float:
 		_:
 			return 0.0
 
+func _get_home_name() -> String:
+	if return_to_station and ship and ship.station_colony:
+		return ship.station_colony.colony_name
+	return "Earth"
+
 func get_status_text() -> String:
 	var mode_suffix := " (Hohmann)" if transit_mode == TransitMode.HOHMANN else ""
 	var slingshot_suffix := ""
 
-	# Add slingshot indicator if using waypoints
 	if status == Status.TRANSIT_OUT and outbound_waypoint_planet_ids.size() > 0:
 		slingshot_suffix = " [Slingshot]"
 	elif status == Status.TRANSIT_BACK and return_waypoint_planet_ids.size() > 0:
 		slingshot_suffix = " [Slingshot]"
+
+	var home := _get_home_name()
+	var dest := asteroid.asteroid_name if asteroid else (destination_name if destination_name != "" else "deep space")
 
 	match status:
 		Status.REFUELING:
@@ -100,46 +140,60 @@ func get_status_text() -> String:
 				var colony := refs[idx]
 				if colony:
 					colony_name = colony.colony_name
-			return "Refueling at %s" % colony_name
+			if is_outbound:
+				return "Refueling at %s (%s)" % [colony_name, dest]
+			return "Refueling at %s (%s)" % [colony_name, home]
 		Status.TRANSIT_OUT:
 			var fuel_stop_suffix := ""
 			if outbound_waypoint_types.size() > 0:
 				var refuel_count := outbound_waypoint_types.count(WaypointType.REFUEL_STOP)
 				if refuel_count > 0:
 					fuel_stop_suffix = " [%d fuel stop%s]" % [refuel_count, "s" if refuel_count > 1 else ""]
-			if asteroid:
-				return "In transit to " + asteroid.asteroid_name + mode_suffix + slingshot_suffix + fuel_stop_suffix
-			return "In transit" + mode_suffix + slingshot_suffix + fuel_stop_suffix
+			return "%s → %s (%s)%s%s%s" % [home, dest, home, mode_suffix, slingshot_suffix, fuel_stop_suffix]
 		Status.MINING:
-			if asteroid:
-				return "Mining at " + asteroid.asteroid_name
-			return "Mining"
+			return "Mining at %s (%s)" % [dest, home]
 		Status.IDLE_AT_DESTINATION:
-			if asteroid:
-				return "Idle at " + asteroid.asteroid_name
-			return "Idle"
+			return "Idle at %s (%s)" % [dest, home]
 		Status.TRANSIT_BACK:
 			var fuel_stop_suffix := ""
 			if return_waypoint_types.size() > 0:
 				var refuel_count := return_waypoint_types.count(WaypointType.REFUEL_STOP)
 				if refuel_count > 0:
 					fuel_stop_suffix = " [%d fuel stop%s]" % [refuel_count, "s" if refuel_count > 1 else ""]
-			if asteroid:
-				return "Returning from " + asteroid.asteroid_name + mode_suffix + slingshot_suffix + fuel_stop_suffix
-			return "Returning to Earth" + mode_suffix + slingshot_suffix + fuel_stop_suffix
+			return "%s → %s%s%s%s" % [dest, home, mode_suffix, slingshot_suffix, fuel_stop_suffix]
 		Status.COMPLETED:
 			return "Mission complete"
+		Status.REPAIRING:
+			return "Repairing ship (%s)" % home
+		Status.DELIVERING:
+			return "Delivering supplies (%s)" % home
+		Status.BOARDING:
+			return "Transferring crew (%s)" % home
+		Status.PATROLLING:
+			return "Patrolling area (%s)" % home
+		Status.DEPLOYING:
+			return "Deploying units at %s (%s)" % [dest, home]
+		Status.COLLECTING:
+			return "Collecting ore at %s (%s)" % [dest, home]
 	return "Unknown"
+
+func _get_origin_pos_live() -> Vector2:
+	# Live origin position — accounts for orbital movement since mission was created
+	if return_to_station and ship and ship.station_colony:
+		return ship.station_colony.get_position_au()
+	if origin_is_earth:
+		return CelestialData.get_earth_position_au()
+	return origin_position_au
 
 func get_current_leg_start_pos() -> Vector2:
 	# Get the starting position for the current transit leg
 	match status:
 		Status.TRANSIT_OUT:
 			if outbound_waypoint_index == 0:
-				return origin_position_au
+				return _get_origin_pos_live()
 			elif outbound_waypoint_index > 0 and outbound_waypoint_index <= outbound_waypoints.size():
 				return outbound_waypoints[outbound_waypoint_index - 1]
-			return origin_position_au
+			return _get_origin_pos_live()
 		Status.TRANSIT_BACK:
 			if return_waypoint_index == 0:
 				return asteroid.get_position_au() if asteroid else origin_position_au
@@ -147,7 +201,7 @@ func get_current_leg_start_pos() -> Vector2:
 				return return_waypoints[return_waypoint_index - 1]
 			return asteroid.get_position_au() if asteroid else origin_position_au
 		_:
-			return origin_position_au
+			return _get_origin_pos_live()
 
 func get_current_leg_end_pos() -> Vector2:
 	# Get the ending position for the current transit leg
@@ -161,6 +215,11 @@ func get_current_leg_end_pos() -> Vector2:
 			if return_waypoint_index < return_waypoints.size():
 				return return_waypoints[return_waypoint_index]
 			else:
+				# Use live position — return_position_au goes stale as bodies orbit
+				if return_to_station and ship and ship.station_colony:
+					return ship.station_colony.get_position_au()
+				elif not return_to_station:
+					return CelestialData.get_earth_position_au()
 				return return_position_au
 		_:
 			return origin_position_au

@@ -1,0 +1,1055 @@
+--- 3.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 768 (+768) | Objects: 3162 (+3162) | Orphans: 0 (+0)
+
+ 392 (+392)  ...ntainer/Map/SubViewport/SolarMapView/AsteroidMarkers
+  72 ( +72)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+  51 ( +51)  /root/MainUI/VBox/TabContainer/Ships
+  49 ( +49)  ...UI/VBox/TabContainer/Ships/ScrollContainer/ShipsList
+  12 ( +12)  ...iner/Crew/VBox/HireSection/HireScroll/CandidatesList
+  12 ( +12)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+   5 (  +5)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+   4 (  +4)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   3 (  +3)  .../TabContainer/HQ/ScrollContainer/VBox/DisciplineCard
+   3 (  +3)  ...Container/HQ/ScrollContainer/VBox/StationedShipsCard
+   3 (  +3)  ...Box/TabContainer/HQ/ScrollContainer/VBox/WorkersCard
+   2 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+   1 (  +1)  ...er/Map/SubViewport/SolarMapView/UI/ShipSelectorPanel
+   1 (  +1)  ...x/TabContainer/Fleet/VBox/BuyShipPopup/BuyShipScroll
+   1 (  +1)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+   1 (  +1)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+   1 (  +1)  ...crollContainer/VBox/ResourcesCard/VBox/ResourcesList
+
+--- 4.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 773 (+5) | Objects: 3174 (+12) | Orphans: 0 (+0)
+
+  55 (  +4)  /root/MainUI/VBox/TabContainer/Ships
+  53 (  +4)  ...UI/VBox/TabContainer/Ships/ScrollContainer/ShipsList
+   9 (  +4)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+   6 (  +4)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+   5 (  +4)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+   6 (  +2)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   3 (  +2)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+   2 (  +2)  ...abContainer/Map/SubViewport/SolarMapView/ShipMarkers
+  13 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+   1 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  63 (  -9)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 5.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 765 (-8) | Objects: 3163 (-11) | Orphans: 0 (+0)
+
+  13 (  +4)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  10 (  +4)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+   9 (  +4)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  51 ( -12)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 6.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 761 (-4) | Objects: 3145 (-18) | Orphans: 0 (+0)
+
+  21 (  +8)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  18 (  +8)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  17 (  +8)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  39 ( -12)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 7.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 756 (-5) | Objects: 3133 (-12) | Orphans: 0 (+0)
+
+  14 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+  33 (  -6)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 8.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 765 (+9) | Objects: 3153 (+20) | Orphans: 0 (+0)
+
+  29 (  +8)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  26 (  +8)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  25 (  +8)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+   2 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+
+--- 9.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 766 (+1) | Objects: 3155 (+2) | Orphans: 0 (+0)
+
+   3 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+
+--- 10.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 768 (+2) | Objects: 3160 (+5) | Orphans: 0 (+0)
+
+  31 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  28 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  27 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 11.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 779 (+11) | Objects: 3186 (+26) | Orphans: 0 (+0)
+
+  37 (  +6)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  34 (  +6)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  33 (  +6)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  36 (  +3)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+   5 (  +2)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+
+--- 12.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 779 (+0) | Objects: 3185 (-1) | Orphans: 0 (+0)
+
+
+--- 13.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 783 (+4) | Objects: 3194 (+9) | Orphans: 0 (+0)
+
+  41 (  +4)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  38 (  +4)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  37 (  +4)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 14.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 783 (+0) | Objects: 3194 (+0) | Orphans: 0 (+0)
+
+
+--- 15.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 785 (+2) | Objects: 3199 (+5) | Orphans: 0 (+0)
+
+  43 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  40 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  39 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 16.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 792 (+7) | Objects: 3215 (+16) | Orphans: 0 (+0)
+
+  51 (  +8)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  48 (  +8)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  47 (  +8)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  13 (  -1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+
+--- 17.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 798 (+6) | Objects: 3228 (+13) | Orphans: 0 (+0)
+
+  57 (  +6)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  54 (  +6)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  53 (  +6)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 18.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 798 (+0) | Objects: 3228 (+0) | Orphans: 0 (+0)
+
+
+--- 19.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 798 (+0) | Objects: 3229 (+1) | Orphans: 0 (+0)
+
+
+--- 20.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 798 (+0) | Objects: 3228 (-1) | Orphans: 0 (+0)
+
+
+--- 21.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 796 (-2) | Objects: 3220 (-8) | Orphans: 0 (+0)
+
+   6 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  33 (  -3)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 22.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 800 (+4) | Objects: 3229 (+9) | Orphans: 0 (+0)
+
+  61 (  +4)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  58 (  +4)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  57 (  +4)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 23.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 800 (+0) | Objects: 3229 (+0) | Orphans: 0 (+0)
+
+
+--- 24.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 801 (+1) | Objects: 3231 (+2) | Orphans: 0 (+0)
+
+  14 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+
+--- 25.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 809 (+8) | Objects: 3249 (+18) | Orphans: 0 (+0)
+
+  69 (  +8)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  66 (  +8)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  65 (  +8)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 26.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 811 (+2) | Objects: 3254 (+5) | Orphans: 0 (+0)
+
+  71 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  68 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  67 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 27.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 819 (+8) | Objects: 3272 (+18) | Orphans: 0 (+0)
+
+  36 (  +3)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+   9 (  +3)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  73 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  70 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  69 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 28.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 819 (+0) | Objects: 3273 (+1) | Orphans: 0 (+0)
+
+
+--- 29.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 822 (+3) | Objects: 3279 (+6) | Orphans: 0 (+0)
+
+  75 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  72 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  71 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  10 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+
+--- 30.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 828 (+6) | Objects: 3292 (+13) | Orphans: 0 (+0)
+
+  81 (  +6)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  78 (  +6)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  77 (  +6)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 31.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 830 (+2) | Objects: 3297 (+5) | Orphans: 0 (+0)
+
+  83 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  80 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  79 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 32.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 838 (+8) | Objects: 3315 (+18) | Orphans: 0 (+0)
+
+  91 (  +8)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  88 (  +8)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  87 (  +8)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 33.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 864 (+26) | Objects: 3364 (+49) | Orphans: 0 (+0)
+
+  73 ( +18)  /root/MainUI/VBox/TabContainer/Ships
+  71 ( +18)  ...UI/VBox/TabContainer/Ships/ScrollContainer/ShipsList
+  22 (  +8)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+   6 (  +4)  ...abContainer/Map/SubViewport/SolarMapView/ShipMarkers
+  93 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  90 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  89 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  11 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+   2 (  +1)  ...er/Map/SubViewport/SolarMapView/UI/ShipSelectorPanel
+   1 (  +1)  ...ntainer/VBox/AlertsCard/VBox/AlertsScroll/AlertsList
+  27 (  -9)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 34.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 869 (+5) | Objects: 3375 (+11) | Orphans: 0 (+0)
+
+  97 (  +4)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  94 (  +4)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  93 (  +4)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  23 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+
+--- 35.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 873 (+4) | Objects: 3384 (+9) | Orphans: 0 (+0)
+
+ 101 (  +4)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  98 (  +4)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  97 (  +4)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 36.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 877 (+4) | Objects: 3393 (+9) | Orphans: 0 (+0)
+
+ 104 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 101 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 100 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+   2 (  +1)  ...ntainer/VBox/AlertsCard/VBox/AlertsScroll/AlertsList
+
+--- 37.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 884 (+7) | Objects: 3410 (+17) | Orphans: 0 (+0)
+
+ 110 (  +6)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 107 (  +6)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 106 (  +6)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  24 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+
+--- 38.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 887 (+3) | Objects: 3416 (+6) | Orphans: 0 (+0)
+
+ 113 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 110 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 109 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 39.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 914 (+27) | Objects: 3483 (+67) | Orphans: 0 (+0)
+
+  48 ( +21)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+ 116 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 113 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 112 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+   9 (  +3)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   6 (  +3)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+  25 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+  12 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+   4 (  -2)  ...abContainer/Map/SubViewport/SolarMapView/ShipMarkers
+
+--- 40.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 914 (+0) | Objects: 3483 (+0) | Orphans: 0 (+0)
+
+
+--- 41.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 911 (-3) | Objects: 3475 (-8) | Orphans: 0 (+0)
+
+  15 (  +3)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+ 110 (  -6)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 107 (  -6)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 106 (  -6)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 42.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 901 (-10) | Objects: 3446 (-29) | Orphans: 0 (+0)
+
+  17 (  +2)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+   6 (  +2)  ...abContainer/Map/SubViewport/SolarMapView/ShipMarkers
+   4 (  +2)  ...ntainer/VBox/AlertsCard/VBox/AlertsScroll/AlertsList
+  24 (  -1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+  33 ( -15)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 43.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 905 (+4) | Objects: 3455 (+9) | Orphans: 0 (+0)
+
+ 113 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 110 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 109 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+   5 (  +1)  ...ntainer/VBox/AlertsCard/VBox/AlertsScroll/AlertsList
+
+--- 44.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 906 (+1) | Objects: 3458 (+3) | Orphans: 0 (+0)
+
+ 114 (  +1)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 111 (  +1)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 110 (  +1)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 45.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 908 (+2) | Objects: 3473 (+15) | Orphans: 0 (+0)
+
+ 116 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 113 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 112 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 46.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 915 (+7) | Objects: 3480 (+7) | Orphans: 0 (+0)
+
+ 122 (  +6)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 119 (  +6)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 118 (  +6)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+   6 (  +1)  ...ntainer/VBox/AlertsCard/VBox/AlertsScroll/AlertsList
+
+--- 47.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 922 (+7) | Objects: 3496 (+16) | Orphans: 0 (+0)
+
+  39 (  +6)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+ 123 (  +1)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 120 (  +1)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 119 (  +1)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  25 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+  18 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+   4 (  -2)  ...abContainer/Map/SubViewport/SolarMapView/ShipMarkers
+
+--- 48.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 932 (+10) | Objects: 3519 (+23) | Orphans: 0 (+0)
+
+  45 (  +6)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+ 128 (  +5)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 125 (  +5)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 124 (  +5)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  24 (  -1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+
+--- 49.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 932 (+0) | Objects: 3519 (+0) | Orphans: 0 (+0)
+
+
+--- 50.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 932 (+0) | Objects: 3518 (-1) | Orphans: 0 (+0)
+
+  10 (  +4)  ...ntainer/VBox/AlertsCard/VBox/AlertsScroll/AlertsList
+ 131 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 128 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 127 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  23 (  -1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+  39 (  -6)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 51.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 930 (-2) | Objects: 3518 (+0) | Orphans: 0 (+0)
+
+ 134 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 131 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 130 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  11 (  +1)  ...ntainer/VBox/AlertsCard/VBox/AlertsScroll/AlertsList
+  33 (  -6)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 52.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 901 (-29) | Objects: 3453 (-65) | Orphans: 0 (+0)
+
+  19 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  12 (  +1)  ...ntainer/VBox/AlertsCard/VBox/AlertsScroll/AlertsList
+   6 (  -3)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   3 (  -3)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+  13 ( -10)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+  55 ( -18)  /root/MainUI/VBox/TabContainer/Ships
+  53 ( -18)  ...UI/VBox/TabContainer/Ships/ScrollContainer/ShipsList
+
+--- 53.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 901 (+0) | Objects: 3453 (+0) | Orphans: 0 (+0)
+
+
+--- 54.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 906 (+5) | Objects: 3461 (+8) | Orphans: 0 (+0)
+
+ 140 (  +6)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 137 (  +6)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 136 (  +6)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  15 (  +3)  ...ntainer/VBox/AlertsCard/VBox/AlertsScroll/AlertsList
+  12 (  -1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+   1 (  -1)  ...er/Map/SubViewport/SolarMapView/UI/ShipSelectorPanel
+   4 (  -2)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   1 (  -2)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+
+--- 55.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 952 (+46) | Objects: 3560 (+99) | Orphans: 0 (+0)
+
+  73 ( +18)  /root/MainUI/VBox/TabContainer/Ships
+  71 ( +18)  ...UI/VBox/TabContainer/Ships/ScrollContainer/ShipsList
+  23 ( +11)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+ 146 (  +6)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 143 (  +6)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 142 (  +6)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+   9 (  +5)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   6 (  +5)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+  36 (  +3)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+  20 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  16 (  +1)  ...ntainer/VBox/AlertsCard/VBox/AlertsScroll/AlertsList
+   2 (  +1)  ...er/Map/SubViewport/SolarMapView/UI/ShipSelectorPanel
+
+--- 56.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 958 (+6) | Objects: 3574 (+14) | Orphans: 0 (+0)
+
+  42 (  +6)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 57.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 958 (+0) | Objects: 3574 (+0) | Orphans: 0 (+0)
+
+
+--- 58.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 963 (+5) | Objects: 3605 (+31) | Orphans: 0 (+0)
+
+ 149 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 146 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 145 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  25 (  +2)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+
+--- 59.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 963 (+0) | Objects: 3585 (-20) | Orphans: 0 (+0)
+
+
+--- 60.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 963 (+0) | Objects: 3586 (+1) | Orphans: 0 (+0)
+
+
+--- 61.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 963 (+0) | Objects: 3585 (-1) | Orphans: 0 (+0)
+
+
+--- 62.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 956 (-7) | Objects: 3568 (-17) | Orphans: 0 (+0)
+
+  23 (  +3)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  24 (  -1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+ 140 (  -9)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 137 (  -9)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 136 (  -9)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 63.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 959 (+3) | Objects: 3575 (+7) | Orphans: 0 (+0)
+
+ 143 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 140 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 139 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 64.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 959 (+0) | Objects: 3575 (+0) | Orphans: 0 (+0)
+
+
+--- 65.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 963 (+4) | Objects: 3584 (+9) | Orphans: 0 (+0)
+
+ 146 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 143 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 142 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  25 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+
+--- 66.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 966 (+3) | Objects: 3592 (+8) | Orphans: 0 (+0)
+
+ 149 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 146 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 145 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 67.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 969 (+3) | Objects: 3599 (+7) | Orphans: 0 (+0)
+
+ 152 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 149 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 148 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 68.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 972 (+3) | Objects: 3605 (+6) | Orphans: 0 (+0)
+
+ 155 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+ 152 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+ 151 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 69.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 971 (-1) | Objects: 3608 (+3) | Orphans: 0 (+0)
+
+  45 (  +3)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+  74 (  +1)  /root/MainUI/VBox/TabContainer/Ships
+  72 (  +1)  ...UI/VBox/TabContainer/Ships/ScrollContainer/ShipsList
+  24 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+   2 (  +1)  ...crollContainer/VBox/ResourcesCard/VBox/ResourcesList
+  23 (  -2)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+   2 (  -2)  ...abContainer/Map/SubViewport/SolarMapView/ShipMarkers
+   6 (  -3)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   3 (  -3)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+
+--- 2.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 768 (+768) | Objects: 3160 (+3160) | Orphans: 0 (+0)
+
+ 392 (+392)  ...ntainer/Map/SubViewport/SolarMapView/AsteroidMarkers
+  72 ( +72)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+  51 ( +51)  /root/MainUI/VBox/TabContainer/Ships
+  49 ( +49)  ...UI/VBox/TabContainer/Ships/ScrollContainer/ShipsList
+  12 ( +12)  ...iner/Crew/VBox/HireSection/HireScroll/CandidatesList
+  12 ( +12)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+   5 (  +5)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+   4 (  +4)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   3 (  +3)  .../TabContainer/HQ/ScrollContainer/VBox/DisciplineCard
+   3 (  +3)  ...Container/HQ/ScrollContainer/VBox/StationedShipsCard
+   3 (  +3)  ...Box/TabContainer/HQ/ScrollContainer/VBox/WorkersCard
+   2 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+   1 (  +1)  ...er/Map/SubViewport/SolarMapView/UI/ShipSelectorPanel
+   1 (  +1)  ...x/TabContainer/Fleet/VBox/BuyShipPopup/BuyShipScroll
+   1 (  +1)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+   1 (  +1)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+   1 (  +1)  ...crollContainer/VBox/ResourcesCard/VBox/ResourcesList
+
+--- 3.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 768 (+0) | Objects: 3162 (+2) | Orphans: 0 (+0)
+
+
+--- 4.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 757 (-11) | Objects: 3135 (-27) | Orphans: 0 (+0)
+
+  55 (  +4)  /root/MainUI/VBox/TabContainer/Ships
+  53 (  +4)  ...UI/VBox/TabContainer/Ships/ScrollContainer/ShipsList
+   6 (  +2)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   3 (  +2)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+   2 (  +2)  ...abContainer/Map/SubViewport/SolarMapView/ShipMarkers
+  13 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+   1 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  51 ( -21)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 5.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 746 (-11) | Objects: 3109 (-26) | Orphans: 0 (+0)
+
+   2 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  39 ( -12)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 6.5s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 749 (+3) | Objects: 3115 (+6) | Orphans: 0 (+0)
+
+  13 (  +8)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  10 (  +8)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+   9 (  +8)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  14 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+  33 (  -6)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 7.6s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 757 (+8) | Objects: 3140 (+25) | Orphans: 0 (+0)
+
+  21 (  +8)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  18 (  +8)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  17 (  +8)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 8.6s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 763 (+6) | Objects: 3149 (+9) | Orphans: 0 (+0)
+
+  27 (  +6)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  24 (  +6)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  23 (  +6)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 9.6s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 765 (+2) | Objects: 3153 (+4) | Orphans: 0 (+0)
+
+  29 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  26 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  25 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 10.6s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 772 (+7) | Objects: 3182 (+29) | Orphans: 0 (+0)
+
+  36 (  +3)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+  31 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  28 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  27 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+   4 (  +2)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+
+--- 11.6s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 774 (+2) | Objects: 3172 (-10) | Orphans: 0 (+0)
+
+  33 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  30 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  29 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 12.6s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 772 (-2) | Objects: 3167 (-5) | Orphans: 0 (+0)
+
+  31 (  -2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  28 (  -2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  27 (  -2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 13.7s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 778 (+6) | Objects: 3180 (+13) | Orphans: 0 (+0)
+
+  37 (  +6)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  34 (  +6)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  33 (  +6)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+   5 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  13 (  -1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+
+--- 14.7s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 772 (-6) | Objects: 3166 (-14) | Orphans: 0 (+0)
+
+  31 (  -6)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  28 (  -6)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  27 (  -6)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 15.7s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 768 (-4) | Objects: 3156 (-10) | Orphans: 0 (+0)
+
+   6 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+   4 (  -2)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   1 (  -2)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+  33 (  -3)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 16.7s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 770 (+2) | Objects: 3158 (+2) | Orphans: 0 (+0)
+
+   6 (  +2)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   3 (  +2)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+
+--- 17.7s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 767 (-3) | Objects: 3151 (-7) | Orphans: 0 (+0)
+
+  28 (  -3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  25 (  -3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  24 (  -3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 18.7s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 768 (+1) | Objects: 3153 (+2) | Orphans: 0 (+0)
+
+  14 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+
+--- 19.8s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 773 (+5) | Objects: 3164 (+11) | Orphans: 0 (+0)
+
+  33 (  +5)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  30 (  +5)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  29 (  +5)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 20.8s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 774 (+1) | Objects: 3166 (+2) | Orphans: 0 (+0)
+
+   7 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+
+--- 21.8s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 778 (+4) | Objects: 3174 (+8) | Orphans: 0 (+0)
+
+  37 (  +4)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  34 (  +4)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  33 (  +4)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 22.8s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 781 (+3) | Objects: 3182 (+8) | Orphans: 0 (+0)
+
+  36 (  +3)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+   9 (  +2)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  35 (  -2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  32 (  -2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  31 (  -2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 23.8s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 778 (-3) | Objects: 3175 (-7) | Orphans: 0 (+0)
+
+  32 (  -3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  29 (  -3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  28 (  -3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 24.8s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 783 (+5) | Objects: 3187 (+12) | Orphans: 0 (+0)
+
+  37 (  +5)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  34 (  +5)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  33 (  +5)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 25.9s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 784 (+1) | Objects: 3188 (+1) | Orphans: 0 (+0)
+
+  38 (  +1)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  35 (  +1)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  34 (  +1)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 26.9s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 784 (+0) | Objects: 3188 (+0) | Orphans: 0 (+0)
+
+
+--- 27.9s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 788 (+4) | Objects: 3197 (+9) | Orphans: 0 (+0)
+
+  41 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  38 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  37 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  10 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+
+--- 28.9s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 786 (-2) | Objects: 3193 (-4) | Orphans: 0 (+0)
+
+  39 (  -2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  36 (  -2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  35 (  -2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 29.9s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 785 (-1) | Objects: 3191 (-2) | Orphans: 0 (+0)
+
+  13 (  -1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+
+--- 30.9s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 790 (+5) | Objects: 3202 (+11) | Orphans: 0 (+0)
+
+  44 (  +5)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  41 (  +5)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  40 (  +5)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 32.0s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 791 (+1) | Objects: 3206 (+4) | Orphans: 0 (+0)
+
+  45 (  +1)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  42 (  +1)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  41 (  +1)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 33.0s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 790 (-1) | Objects: 3202 (-4) | Orphans: 0 (+0)
+
+  44 (  -1)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  41 (  -1)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  40 (  -1)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 34.0s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 780 (-10) | Objects: 3179 (-23) | Orphans: 0 (+0)
+
+  34 ( -10)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  31 ( -10)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  30 ( -10)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 35.0s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 780 (+0) | Objects: 3180 (+1) | Orphans: 0 (+0)
+
+
+--- 36.0s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 785 (+5) | Objects: 3190 (+10) | Orphans: 0 (+0)
+
+  38 (  +4)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  35 (  +4)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  34 (  +4)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+   1 (  +1)  ...ntainer/VBox/AlertsCard/VBox/AlertsScroll/AlertsList
+
+--- 37.0s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 787 (+2) | Objects: 3192 (+2) | Orphans: 0 (+0)
+
+  41 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  38 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  37 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  12 (  +2)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  33 (  -3)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+
+--- 38.1s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 787 (+0) | Objects: 3192 (+0) | Orphans: 0 (+0)
+
+
+--- 39.1s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 785 (-2) | Objects: 3187 (-5) | Orphans: 0 (+0)
+
+  13 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  38 (  -3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  35 (  -3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  34 (  -3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 40.1s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 790 (+5) | Objects: 3198 (+11) | Orphans: 0 (+0)
+
+  41 (  +3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  38 (  +3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  37 (  +3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  14 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+  14 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+
+--- 41.1s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 790 (+0) | Objects: 3198 (+0) | Orphans: 0 (+0)
+
+
+--- 42.1s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 787 (-3) | Objects: 3192 (-6) | Orphans: 0 (+0)
+
+  38 (  -3)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  35 (  -3)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  34 (  -3)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 43.1s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 790 (+3) | Objects: 3203 (+11) | Orphans: 0 (+0)
+
+  36 (  +3)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+  17 (  +3)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  56 (  +1)  /root/MainUI/VBox/TabContainer/Ships
+  54 (  +1)  ...UI/VBox/TabContainer/Ships/ScrollContainer/ShipsList
+   4 (  -2)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   1 (  -2)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+   0 (  -2)  ...abContainer/Map/SubViewport/SolarMapView/ShipMarkers
+
+--- 44.2s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 785 (-5) | Objects: 3186 (-17) | Orphans: 0 (+0)
+
+   6 (  +2)  ...ox/TabContainer/HQ/ScrollContainer/VBox/MissionsCard
+   3 (  +2)  .../ScrollContainer/VBox/MissionsCard/VBox/MissionsList
+   2 (  +2)  ...abContainer/Map/SubViewport/SolarMapView/ShipMarkers
+  55 (  -1)  /root/MainUI/VBox/TabContainer/Ships
+  53 (  -1)  ...UI/VBox/TabContainer/Ships/ScrollContainer/ShipsList
+  13 (  -1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+  33 (  -3)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+  34 (  -4)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  31 (  -4)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  30 (  -4)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 45.2s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 786 (+1) | Objects: 3188 (+2) | Orphans: 0 (+0)
+
+  18 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+
+--- 46.2s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 787 (+1) | Objects: 3190 (+2) | Orphans: 0 (+0)
+
+  14 (  +1)  ...ox/TabContainer/Fleet/VBox/ScrollContainer/ShipsList
+
+--- 47.2s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 789 (+2) | Objects: 3195 (+5) | Orphans: 0 (+0)
+
+  36 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  33 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  32 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 48.2s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 794 (+5) | Objects: 3206 (+11) | Orphans: 0 (+0)
+
+  41 (  +5)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  38 (  +5)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  37 (  +5)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 49.2s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 794 (+0) | Objects: 3206 (+0) | Orphans: 0 (+0)
+
+
+--- 50.3s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 793 (-1) | Objects: 3205 (-1) | Orphans: 0 (+0)
+
+  36 (  +3)  ...ntainer/Crew/VBox/CrewSection/CrewScroll/WorkersList
+  21 (  +3)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+  34 (  -7)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  31 (  -7)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  30 (  -7)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 51.3s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 797 (+4) | Objects: 3224 (+19) | Orphans: 0 (+0)
+
+  38 (  +4)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  35 (  +4)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  34 (  +4)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 52.3s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 798 (+1) | Objects: 3225 (+1) | Orphans: 0 (+0)
+
+  39 (  +1)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  36 (  +1)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  35 (  +1)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 53.3s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 801 (+3) | Objects: 3227 (+2) | Orphans: 0 (+0)
+
+  41 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  38 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  37 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  22 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+
+--- 54.3s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 801 (+0) | Objects: 3223 (-4) | Orphans: 0 (+0)
+
+
+--- 55.3s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 803 (+2) | Objects: 3240 (+17) | Orphans: 0 (+0)
+
+  43 (  +2)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  40 (  +2)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  39 (  +2)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 56.3s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 803 (+0) | Objects: 3230 (-10) | Orphans: 0 (+0)
+
+
+--- 57.3s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 804 (+1) | Objects: 3233 (+3) | Orphans: 0 (+0)
+
+  44 (  +1)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  41 (  +1)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  40 (  +1)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+
+--- 58.3s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 804 (+0) | Objects: 3234 (+1) | Orphans: 0 (+0)
+
+
+--- 59.3s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 804 (+0) | Objects: 3233 (-1) | Orphans: 0 (+0)
+
+
+--- 60.3s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 812 (+8) | Objects: 3256 (+23) | Orphans: 0 (+0)
+
+  51 (  +7)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  48 (  +7)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  47 (  +7)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+  23 (  +1)  ...r/VBox/ActivityCard/VBox/ActivityScroll/ActivityList
+
+--- 61.3s ---
+=== LEAK DETECTOR (1s intervals) ===
+Nodes: 813 (+1) | Objects: 3252 (-4) | Orphans: 0 (+0)
+
+  52 (  +1)  ...x/TabContainer/HQ/ScrollContainer/VBox/ContractsCard
+  49 (  +1)  ...ollContainer/VBox/ContractsCard/VBox/ContractsScroll
+  48 (  +1)  ...Box/ContractsCard/VBox/ContractsScroll/ContractsList
+

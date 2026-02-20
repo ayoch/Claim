@@ -25,6 +25,7 @@ enum TransitMode {
 @export var origin_position_au: Vector2 = Vector2.ZERO   # where ship departed from
 @export var return_position_au: Vector2 = Vector2.ZERO    # where ship returns to
 @export var transit_mode: TransitMode = TransitMode.BRACHISTOCHRONE  # orbit type
+@export var origin_is_earth: bool = true   # True if ship departed from Earth (for live position tracking)
 
 # Gravity assist / multi-leg journey support
 @export var outbound_waypoints: Array[Vector2] = []
@@ -74,6 +75,11 @@ func get_progress() -> float:
 		_:
 			return 0.0
 
+func _get_home_name() -> String:
+	if ship and ship.is_stationed and ship.station_colony:
+		return ship.station_colony.colony_name
+	return "Earth"
+
 func get_status_text() -> String:
 	var mode_suffix := " (Hohmann)" if transit_mode == TransitMode.HOHMANN else ""
 	var slingshot_suffix := ""
@@ -82,6 +88,9 @@ func get_status_text() -> String:
 		slingshot_suffix = " [Slingshot]"
 	elif status == Status.TRANSIT_BACK and return_waypoint_planet_ids.size() > 0:
 		slingshot_suffix = " [Slingshot]"
+
+	var home := _get_home_name()
+	var dest := colony.colony_name if colony else "colony"
 
 	match status:
 		Status.REFUELING:
@@ -93,38 +102,48 @@ func get_status_text() -> String:
 				var col := refs[idx]
 				if col:
 					colony_name = col.colony_name
-			return "Refueling at %s" % colony_name
+			if is_outbound:
+				return "Refueling at %s (%s)" % [colony_name, dest]
+			return "Refueling at %s (%s)" % [colony_name, home]
 		Status.TRANSIT_TO_COLONY:
 			var fuel_stop_suffix := ""
 			if outbound_waypoint_types.size() > 0:
 				var refuel_count := outbound_waypoint_types.count(WaypointType.REFUEL_STOP)
 				if refuel_count > 0:
 					fuel_stop_suffix = " [%d fuel stop%s]" % [refuel_count, "s" if refuel_count > 1 else ""]
-			return "Trading: en route to %s%s%s%s" % [colony.colony_name, mode_suffix, slingshot_suffix, fuel_stop_suffix]
+			return "%s → %s (%s)%s%s%s" % [home, dest, home, mode_suffix, slingshot_suffix, fuel_stop_suffix]
 		Status.SELLING:
-			return "Selling at %s" % colony.colony_name
+			return "Selling at %s (%s)" % [dest, home]
 		Status.IDLE_AT_COLONY:
-			return "Idle at %s" % colony.colony_name
+			return "Idle at %s (%s)" % [dest, home]
 		Status.TRANSIT_BACK:
 			var fuel_stop_suffix := ""
 			if return_waypoint_types.size() > 0:
 				var refuel_count := return_waypoint_types.count(WaypointType.REFUEL_STOP)
 				if refuel_count > 0:
 					fuel_stop_suffix = " [%d fuel stop%s]" % [refuel_count, "s" if refuel_count > 1 else ""]
-			return "Returning from %s%s%s%s" % [colony.colony_name, mode_suffix, slingshot_suffix, fuel_stop_suffix]
+			return "%s → %s%s%s%s" % [dest, home, mode_suffix, slingshot_suffix, fuel_stop_suffix]
 		Status.COMPLETED:
-			return "Trade complete at %s" % colony.colony_name
+			return "Trade complete at %s" % dest
 	return "Unknown"
+
+func _get_origin_pos_live() -> Vector2:
+	# Live origin position — accounts for orbital movement since mission was created
+	if ship and ship.is_stationed and ship.station_colony:
+		return ship.station_colony.get_position_au()
+	if origin_is_earth:
+		return CelestialData.get_earth_position_au()
+	return origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO
 
 func get_current_leg_start_pos() -> Vector2:
 	match status:
 		Status.TRANSIT_TO_COLONY:
 			if outbound_waypoint_index == 0:
-				return origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO
+				return _get_origin_pos_live()
 			elif outbound_waypoint_index > 0 and outbound_waypoint_index <= outbound_waypoints.size():
 				var waypoint: Vector2 = outbound_waypoints[outbound_waypoint_index - 1]
 				return waypoint if waypoint != null else origin_position_au
-			return origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO
+			return _get_origin_pos_live()
 		Status.TRANSIT_BACK:
 			if return_waypoint_index == 0:
 				return colony.get_position_au() if colony else (origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO)
@@ -133,7 +152,7 @@ func get_current_leg_start_pos() -> Vector2:
 				return waypoint if waypoint != null else (colony.get_position_au() if colony else origin_position_au)
 			return colony.get_position_au() if colony else (origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO)
 		_:
-			return origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO
+			return _get_origin_pos_live()
 
 func get_current_leg_end_pos() -> Vector2:
 	match status:
@@ -148,6 +167,10 @@ func get_current_leg_end_pos() -> Vector2:
 				var waypoint: Vector2 = return_waypoints[return_waypoint_index]
 				return waypoint if waypoint != null else return_position_au
 			else:
-				return return_position_au if return_position_au != Vector2.ZERO else Vector2.ZERO
+				# Use live position — return_position_au goes stale as bodies orbit
+				if ship and ship.is_stationed and ship.station_colony:
+					return ship.station_colony.get_position_au()
+				else:
+					return CelestialData.get_earth_position_au()
 		_:
 			return origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO
