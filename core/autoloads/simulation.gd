@@ -132,6 +132,7 @@ func _process_tick(dt: float, emit_event: bool = true) -> void:
 	_process_worker_fatigue(dt)
 	_process_deployed_crews(dt)
 	_process_mining_units(dt)
+	_process_food_consumption(dt)
 	_process_hitchhike_pool(dt)
 	_process_worker_leave(dt)
 	_process_stationed_ships(dt)
@@ -307,12 +308,17 @@ func _process_missions(dt: float) -> void:
 							mission.ship.position_au = mission.ship.station_colony.get_position_au()
 						elif not mission.return_to_station:
 							mission.ship.position_au = CelestialData.get_earth_position_au()
+							mission.ship.docked_at_colony = null  # Returning to Earth, not a colony
 						else:
 							mission.ship.position_au = mission.return_position_au
+							# Clear docked_at_colony for non-stationed ships (will be set below if stationed)
+							if not mission.ship.is_stationed:
+								mission.ship.docked_at_colony = null
 						# Stationed ships: dock at colony and refuel
 						if mission.ship.is_stationed and mission.ship.station_colony:
 							mission.ship.docked_at_colony = mission.ship.station_colony
 							_auto_refuel_at_colony(mission.ship)
+							_auto_provision_at_location(mission.ship)
 							var cargo := mission.ship.get_cargo_total()
 							if cargo > 0.1:
 								mission.ship.add_station_log("Returned with %.0ft cargo" % cargo, "mining")
@@ -730,9 +736,9 @@ func _process_trade_missions(dt: float) -> void:
 					# Stationed ships: complete immediately (no idle), log the revenue
 					if tm.ship.is_stationed:
 						tm.ship.position_au = tm.colony.get_position_au()
-						if tm.colony.has_rescue_ops:
-							tm.ship.docked_at_colony = tm.colony
+						tm.ship.docked_at_colony = tm.colony
 						_auto_refuel_at_colony(tm.ship)
+						_auto_provision_at_location(tm.ship)
 						tm.ship.add_station_log("Sold ore at %s — $%s" % [tm.colony.colony_name, tm.revenue], "trading")
 						EventBus.station_job_completed.emit(tm.ship, "trading", "Sold ore for $%d" % tm.revenue)
 						GameState.complete_trade_mission(tm)
@@ -741,10 +747,10 @@ func _process_trade_missions(dt: float) -> void:
 						tm.elapsed_ticks = 0.0
 						# Dock ship at colony
 						tm.ship.position_au = tm.colony.get_position_au()
-						if tm.colony.has_rescue_ops:
-							tm.ship.docked_at_colony = tm.colony
+						tm.ship.docked_at_colony = tm.colony
 						# Auto-refuel at colony
 						_auto_refuel_at_colony(tm.ship)
+						_auto_provision_at_location(tm.ship)
 						EventBus.trade_mission_phase_changed.emit(tm)
 						EventBus.ship_idle_at_colony.emit(tm.ship, tm)
 
@@ -777,6 +783,7 @@ func _process_trade_missions(dt: float) -> void:
 							tm.ship.position_au = tm.ship.station_colony.get_position_au()
 						else:
 							tm.ship.position_au = CelestialData.get_earth_position_au()
+							tm.ship.docked_at_colony = null  # Returning to Earth, not a colony
 						GameState.complete_trade_mission(tm)
 
 func _update_ship_positions(dt: float) -> void:
@@ -2041,6 +2048,88 @@ func _process_payroll(dt: float) -> void:
 		if total_wages > 0:
 			GameState.money -= total_wages
 
+func _process_food_consumption(dt: float) -> void:
+	var days := dt / 86400.0
+	var food_per_worker_per_day_kg := 2.8  # kg, from SupplyData
+	const KG_PER_FOOD_UNIT := 100.0  # SupplyData: 0.1t = 100kg per unit
+
+	# Process deployed mining units
+	for unit in GameState.deployed_mining_units:
+		if unit.assigned_workers.is_empty():
+			continue
+		# Workers at mining units don't have a ship - they need supply deliveries
+		# For now, just track this as a TODO - they'll need a separate food supply at the asteroid
+		pass  # TODO: Implement asteroid-based food stockpiles for deployed workers
+
+	# Process ships on missions
+	for mission in GameState.missions:
+		if mission.workers.is_empty():
+			continue
+		var ship := mission.ship
+		if ship.is_derelict:
+			continue
+
+		# Calculate food consumption in kg, then convert to units
+		var food_needed_kg := mission.workers.size() * food_per_worker_per_day_kg * days
+		var food_needed_units := food_needed_kg / KG_PER_FOOD_UNIT
+		var current_food_units: float = ship.supplies.get("food", 0.0)
+
+		if current_food_units >= food_needed_units:
+			ship.supplies["food"] = current_food_units - food_needed_units
+		else:
+			# Out of food - workers abandon the mission
+			_trigger_food_depletion(ship, mission)
+
+	# Process trade missions
+	for tm in GameState.trade_missions:
+		if tm.workers.is_empty():
+			continue
+		var ship := tm.ship
+		if ship.is_derelict:
+			continue
+
+		var food_needed_kg := tm.workers.size() * food_per_worker_per_day_kg * days
+		var food_needed_units := food_needed_kg / KG_PER_FOOD_UNIT
+		var current_food_units: float = ship.supplies.get("food", 0.0)
+
+		if current_food_units >= food_needed_units:
+			ship.supplies["food"] = current_food_units - food_needed_units
+		else:
+			_trigger_food_depletion(ship, null, tm)
+
+func _trigger_food_depletion(ship: Ship, mission: Mission = null, trade_mission: TradeMission = null) -> void:
+	# Workers abandon the ship when food runs out
+	ship.supplies["food"] = 0.0
+
+	# Free workers
+	var abandoned_workers: Array[Worker] = []
+	if mission:
+		abandoned_workers = mission.workers.duplicate()
+		for w in mission.workers:
+			w.assigned_mission = null
+			w.loyalty = maxf(w.loyalty - 20.0, 0.0)  # Major loyalty hit
+		mission.workers.clear()
+		mission.status = Mission.Status.COMPLETED
+		GameState.missions.erase(mission)
+		ship.current_mission = null
+	elif trade_mission:
+		abandoned_workers = trade_mission.workers.duplicate()
+		for w in trade_mission.workers:
+			w.assigned_trade_mission = null
+			w.loyalty = maxf(w.loyalty - 20.0, 0.0)
+		trade_mission.workers.clear()
+		trade_mission.status = TradeMission.Status.COMPLETED
+		GameState.trade_missions.erase(trade_mission)
+		ship.current_trade_mission = null
+
+	# Ship becomes idle at current position
+	ship.docked_at_colony = null
+
+	var worker_names := ", ".join(abandoned_workers.map(func(w: Worker) -> String: return w.worker_name))
+	EventBus.ship_breakdown.emit(ship, "Food depleted - crew abandoned ship")
+	EventBus.ship_food_depleted.emit(ship, abandoned_workers.size())
+	print("Ship %s: Food depleted, %d workers abandoned (%s)" % [ship.ship_name, abandoned_workers.size(), worker_names])
+
 func _process_survey_events(dt: float) -> void:
 	# Accumulate game-time even when throttled
 	_survey_dt_accum += dt
@@ -2175,3 +2264,29 @@ func _auto_refuel_at_colony(ship: Ship) -> void:
 		ship.fuel = ship.get_effective_fuel_capacity()
 		GameState.money -= fuel_cost
 		# Note: Could add an event here if we want to notify player
+
+func _auto_provision_at_location(ship: Ship) -> void:
+	# Automatically buy food when ship is docked (at colony or Earth)
+	const DAYS_BUFFER := 30.0  # Maintain 30 days of food
+	const KG_PER_WORKER_PER_DAY := 2.8  # From SupplyData
+	const KG_PER_FOOD_UNIT := 100.0  # SupplyData: 0.1t = 100kg per unit
+
+	# Determine crew size (use min_crew if no crew assigned)
+	var crew_size := ship.last_crew.size() if ship.last_crew.size() > 0 else ship.min_crew
+
+	# Calculate target food level (in kg, then convert to units)
+	var target_food_kg := crew_size * DAYS_BUFFER * KG_PER_WORKER_PER_DAY
+	var target_food_units := target_food_kg / KG_PER_FOOD_UNIT
+
+	# Current food (in units)
+	var current_food_units: float = ship.supplies.get("food", 0.0)
+
+	# Only buy if below target
+	if current_food_units >= target_food_units:
+		return
+
+	# Calculate amount to buy (in units)
+	var amount_to_buy := target_food_units - current_food_units
+
+	# Use GameState.buy_supplies which handles payment and cargo checks
+	GameState.buy_supplies(ship, "food", amount_to_buy)

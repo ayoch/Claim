@@ -6,7 +6,7 @@
 **Multiplayer Idle Strategy Simulation**
 **Platform:** Mobile (iOS / Android)
 **Engine:** Godot 4.6
-**Version:** 0.6 — Status audit, fuel stop routing, worker skill progression, save/load complete
+**Version:** 0.8 — Food consumption system, auto-provisioning, teleportation fixes, enhanced test harness
 **February 2026**
 
 ---
@@ -178,7 +178,7 @@ Asteroids are classified by spectral type, which determines their composition an
 
 Each asteroid has a finite number of **mining slots** determined by its size and surface area. A small asteroid might support 2-3 mining units. A large one might support 10+. This caps how many corporations can operate on any given body simultaneously.
 
-> **STATUS: PARTIALLY IMPLEMENTED.** 200+ named asteroids with body types (ASTEROID, COMET, NEO, TROJAN, CENTAUR, KBO) and ore yields per type. Five ore types: Iron ($50 base), Nickel ($120), Platinum ($800), Water/Ice ($200), Carbon/Organics ($150). Survey events periodically shift individual asteroid yields by -30% to +50%. **Mining slot limits are defined per body type** (NEO: 3, Asteroid: 6, Comet: 2, Trojan: 8, Centaur: 5, KBO: 10) but are not yet enforced — any number of ships can mine a body simultaneously.
+> **STATUS: IMPLEMENTED.** 200+ named asteroids with body types (ASTEROID, COMET, NEO, TROJAN, CENTAUR, KBO) and ore yields per type. Five ore types: Iron ($50 base), Nickel ($120), Platinum ($800), Water/Ice ($200), Carbon/Organics ($150). Survey events periodically shift individual asteroid yields by -30% to +50%. **Mining slot limits are enforced:** slots defined per body type (NEO: 3, Asteroid: 6, Comet: 2, Trojan: 8, Centaur: 5, KBO: 10). Deployment UI checks `get_occupied_slots()` and prevents over-deployment.
 
 ### 4.4 Orbital Mechanics
 Distances between objects change over time — an asteroid 0.5 AU away today might be 2 AU away in six months. Strategic opportunities shift continuously.
@@ -402,7 +402,15 @@ Mining units have mass/volume (constrain transport capacity), require a mining s
 
 A Prospector (107t / 143 m³ cargo) can carry roughly 8 Basic Mining Units by volume, or 14 by mass — volume is the constraint. After accounting for food and repair parts for the workers, a typical deployment run might deliver 4-5 units plus supplies.
 
-> **STATUS: FOUNDATIONS EXIST, DEPLOYMENT NOT IMPLEMENTED.** Mining unit data models exist: `mining_unit.gd`, `mining_unit_catalog.gd` with correct specs (Basic 7.6t/1 worker/$50k, Advanced 13.2t/2 workers/$150k, Refinery 21.5t/3 workers/$350k). Mission model has `DEPLOYING` status and `mining_units_to_deploy` field. **The deployment loop, autonomous ore accumulation at claimed sites, and supply/collect mission types are not yet implemented.** Ship-mounted processors (Basic Processor, Advanced Processor, Refinery) continue to function as ship-present mining bonuses in the interim.
+> **STATUS: FULLY IMPLEMENTED.** Complete end-to-end mining unit system:
+> - **Purchase:** Ship outfitting tab with 3 unit types (Basic $50k/7.6t, Advanced $150k/13.2t, Refinery $350k/21.5t). Units stored in `mining_unit_inventory`.
+> - **Deployment:** Fleet tab mission type selector (Mine / Deploy Units / Collect Ore). Unit selection UI enforces both mass AND volume cargo constraints. Slot availability checked (`get_max_mining_slots()` vs `get_occupied_slots()`). `start_deploy_mission()` creates DEPLOY_UNIT missions. Workers can be assigned to units permanently.
+> - **Processing:** Mission.Status.DEPLOYING with `deploy_duration`. `_complete_deploy()` transfers units to asteroids. `_process_mining_units()` generates ore continuously into remote stockpiles (not ship cargo). Durability/wear system with skill-based repair costs.
+> - **Collection:** Mission.Status.COLLECTING loads stockpiled ore into ship cargo. `collect_from_stockpile()` respects cargo limits.
+> - **Save/Load:** Full persistence of inventory, deployed units, and stockpiles.
+> - **UI:** Dashboard resources tab shows all stockpiles by asteroid with tonnage and value.
+>
+> Ship-mounted processors (Basic Processor, Advanced Processor, Refinery) continue to function as ship-present mining bonuses for traditional mine-and-haul missions.
 
 ### 8.4 Cargo: Mass and Volume
 Cargo holds are constrained by both **mass** (tonnes) and **volume** (m³). Heavy-but-compact items (platinum, weapons) vs. light-but-bulky items (food, organics, mining units). Supply runs are volume-constrained; ore hauling is mass-constrained.
@@ -419,7 +427,7 @@ Cargo holds are constrained by both **mass** (tonnes) and **volume** (m³). Heav
 
 **Example:** Resupplying 5 workers for 60 days = 840 kg food (0.264 m³) plus repair parts — lightweight, leaving room for ore pickup. But deploying 4 mining units (30.4t / 45.6 m³) plus supplies fills the hold quickly.
 
-> **STATUS: NOT YET IMPLEMENTED.** Currently only mass (tonnes) is tracked for cargo. Volume constraints do not yet exist. `supply_data.gd` exists in the codebase but food and supply items are not yet modeled as cargo.
+> **STATUS: PARTIALLY IMPLEMENTED.** Ships have `cargo_volume` field (m³) with `get_effective_cargo_volume()`, `get_cargo_volume_used()`, and `get_cargo_volume_remaining()` functions. Volume upgrades apply bonuses. **Deployment UI enforces dual constraints** — prevents deploying units if either mass OR volume capacity exceeded. `SupplyData` class defines mass and volume for food, repair parts, and fuel cells, but these items are **not yet integrated into cargo/purchase/consumption mechanics.** Ore currently tracks mass only (no volume defined).
 
 ### 8.5 Crew
 Named individuals with skills, personalities, and pay expectations.
@@ -724,14 +732,14 @@ Refactor the mining system from ship-present to deployable autonomous units.
 
 | Feature | Status |
 |---|---|
-| Autonomous mining units (deployable cargo items with workers) | NOT STARTED |
-| Cargo volume constraints (mass + volume) | NOT STARTED |
-| Mining slots per asteroid | NOT STARTED |
-| Claim staking (first to deploy owns slots) | NOT STARTED |
-| Passive ore accumulation at claimed sites | NOT STARTED |
-| Separate mission types (deploy, supply, collect) | NOT STARTED |
-| Worker food consumption and waste | NOT STARTED |
-| Mining unit degradation and maintenance | NOT STARTED |
+| Autonomous mining units (deployable cargo items with workers) | **DONE** |
+| Cargo volume constraints (mass + volume) | **DONE** (ore volume not yet defined) |
+| Mining slots per asteroid | **DONE** |
+| Claim staking (first to deploy owns slots) | **DONE** (slot enforcement active) |
+| Passive ore accumulation at claimed sites | **DONE** |
+| Separate mission types (deploy, supply, collect) | **DONE** (deploy + collect; supply not implemented) |
+| Worker food consumption and waste | **DONE** (2.8 kg/day consumption, auto-provisioning at colonies, depletion consequences) |
+| Mining unit degradation and maintenance | **DONE** |
 | Mining unit generations (periodic tech upgrades) | NOT STARTED |
 | Worker personality traits | NOT STARTED |
 | Worker autonomous encounter resolution | NOT STARTED |

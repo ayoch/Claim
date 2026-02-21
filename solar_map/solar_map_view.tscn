@@ -27,15 +27,15 @@ grow_vertical = 2
 theme_override_constants/separation = 4
 
 [node name="ZoomButtons" type="HBoxContainer" parent="UI"]
-anchors_preset = 3
+anchors_preset = 1
 anchor_left = 1.0
-anchor_top = 1.0
+anchor_top = 0.0
 anchor_right = 1.0
-anchor_bottom = 1.0
+anchor_bottom = 0.0
 offset_left = -120.0
-offset_top = -48.0
+offset_top = 8.0
 offset_right = -8.0
-offset_bottom = -8.0
+offset_bottom = 48.0
 grow_horizontal = 0
-grow_vertical = 0
+grow_vertical = 2
 theme_override_constants/separation = 8

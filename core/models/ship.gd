@@ -111,8 +111,15 @@ func get_mining_multiplier() -> float:
 
 func get_cargo_total() -> float:
 	var total := 0.0
+	# Ore cargo
 	for amount in current_cargo.values():
 		total += amount
+	# Supplies (food, repair parts, etc.)
+	for supply_key in supplies:
+		var supply_type := SupplyData.get_supply_type_from_key(supply_key)
+		if supply_type >= 0:
+			var amount: float = supplies[supply_key]
+			total += amount * SupplyData.get_mass_per_unit(supply_type)
 	return total
 
 func cleanup_cargo() -> void:
@@ -126,6 +133,15 @@ func cleanup_cargo() -> void:
 
 func get_cargo_remaining() -> float:
 	return get_effective_cargo_capacity() - get_cargo_total()
+
+func get_supplies_mass() -> float:
+	var total := 0.0
+	for supply_key in supplies:
+		var supply_type := SupplyData.get_supply_type_from_key(supply_key)
+		if supply_type >= 0:
+			var amount: float = supplies[supply_key]
+			total += amount * SupplyData.get_mass_per_unit(supply_type)
+	return total
 
 func get_base_mass() -> float:
 	# Auto-calculate if not set (backward compatibility)
@@ -242,12 +258,6 @@ func calculate_life_support_duration(crew_count: int) -> float:
 ## Reset life support to full based on current crew
 func reset_life_support(crew_count: int) -> void:
 	life_support_remaining = calculate_life_support_duration(crew_count)
-
-func get_supplies_mass() -> float:
-	var total := 0.0
-	for amount in supplies.values():
-		total += amount
-	return total
 
 func add_station_log(message: String, type: String = "info") -> void:
 	station_log.push_front({

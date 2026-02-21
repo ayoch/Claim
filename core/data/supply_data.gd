@@ -51,3 +51,9 @@ static func get_mass_per_unit(supply_type: int) -> float:
 
 static func get_volume_per_unit(supply_type: int) -> float:
 	return SUPPLY_INFO.get(supply_type, {}).get("volume_per_unit", 0.0)
+
+static func get_supply_type_from_key(key: String) -> int:
+	for supply_type in SUPPLY_INFO:
+		if SUPPLY_INFO[supply_type]["key"] == key:
+			return supply_type
+	return -1

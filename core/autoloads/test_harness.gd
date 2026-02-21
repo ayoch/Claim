@@ -36,6 +36,7 @@ var rescues_started: int = 0
 var stranger_rescues: int = 0
 var ships_destroyed: int = 0
 var life_support_warnings: int = 0
+var food_depletions: int = 0
 
 # Stats — workers
 var workers_hired: int = 0
@@ -100,6 +101,7 @@ func _ready() -> void:
 	EventBus.ship_breakdown.connect(func(_s: Ship, _r: String) -> void: breakdowns_count += 1)
 	EventBus.ship_derelict.connect(_on_ship_derelict)
 	EventBus.ship_destroyed.connect(func(_s: Ship, _b: String) -> void: ships_destroyed += 1)
+	EventBus.ship_food_depleted.connect(func(_s: Ship, _w: int) -> void: food_depletions += 1)
 	EventBus.rescue_mission_started.connect(func(_s: Ship, _c: int) -> void: rescues_started += 1)
 	EventBus.stranger_rescue_offered.connect(_on_stranger_offered)
 	EventBus.life_support_warning.connect(func(_s: Ship, _p: float) -> void: life_support_warnings += 1)
@@ -315,6 +317,7 @@ func _maintain_fleet() -> void:
 		# Refuel docked ships proactively
 		if ship.is_docked:
 			_refuel_ship(ship)
+			_provision_ship(ship)
 
 		# Recall stationed ships with badly damaged engines for proper repair
 		if ship.is_stationed and ship.is_stationed_idle and ship.engine_condition < 40.0:
@@ -347,6 +350,22 @@ func _refuel_ship(ship: Ship) -> void:
 	if GameState.money >= cost:
 		ship.fuel = ship.get_effective_fuel_capacity()
 		GameState.money -= cost
+
+func _provision_ship(ship: Ship) -> void:
+	const DAYS_BUFFER := 30.0
+	const KG_PER_WORKER_PER_DAY := 2.8
+	const KG_PER_FOOD_UNIT := 100.0
+
+	var crew_size := ship.last_crew.size() if ship.last_crew.size() > 0 else ship.min_crew
+	var target_food_units := (crew_size * DAYS_BUFFER * KG_PER_WORKER_PER_DAY) / KG_PER_FOOD_UNIT
+	var current_food: float = ship.supplies.get("food", 0.0)
+
+	if current_food >= target_food_units:
+		return
+
+	var amount_needed := target_food_units - current_food
+	if GameState.buy_supplies(ship, "food", amount_needed):
+		supplies_bought += 1
 
 func _repair_broken_equipment(ship: Ship) -> void:
 	for equip in ship.equipment:
@@ -561,10 +580,11 @@ func _handle_idle_remote(ship: Ship) -> void:
 	GameState.order_return_to_earth(ship)
 
 func _try_redirect_missions() -> void:
-	# 15% daily chance to redirect each outbound mining ship to a better target
-	# Tests the redirect_mission() mechanic and costs a small fee
-	if GameState.money < 2_000_000:
+	# Redirect ships mid-flight to exercise the redirect mechanic
+	if GameState.money < 1_000_000:
 		return  # Don't waste money on redirects when tight
+
+	# Redirect mining missions
 	for ship in GameState.ships:
 		if ship.current_mission == null:
 			continue
@@ -573,39 +593,66 @@ func _try_redirect_missions() -> void:
 			continue
 		if m.status != Mission.Status.TRANSIT_OUT:
 			continue
-		if randf() > 0.15:
-			continue  # Only redirect 15% of the time
+		if randf() > 0.3:  # 30% chance (increased from 15%)
+			continue
 		var better := _pick_good_asteroid()
 		if better == null or better == m.asteroid:
 			continue
 		GameState.redirect_mission(m, better)
 
+	# Redirect trade missions to different colonies
+	for ship in GameState.ships:
+		if ship.current_trade_mission == null or GameState.colonies.size() < 2:
+			continue
+		var tm := ship.current_trade_mission
+		if tm.status != TradeMission.Status.TRANSIT_TO_COLONY:
+			continue
+		if randf() > 0.2:  # 20% chance
+			continue
+		var other_colonies := GameState.colonies.filter(func(c): return c != tm.colony)
+		if other_colonies.is_empty():
+			continue
+		var new_colony: Colony = other_colonies[randi() % other_colonies.size()]
+		GameState.redirect_trade_mission(tm, new_colony)
+
 func _queue_next_missions() -> void:
-	# Pre-queue the next mining destination for ships heading home with ore.
-	# When complete_mission() fires, the ship auto-starts without needing player input.
+	# Pre-queue next missions for ships to keep them continuously working
 	for ship in GameState.ships:
 		if ship.is_derelict or ship.is_stationed:
 			continue
 		if ship.has_queued_mission():
 			continue  # Already planned
-		if ship.current_mission == null:
-			continue
-		var m := ship.current_mission
-		# Queue for ships returning home after mining (they'll have ore to drop off)
-		if m.mission_type == Mission.MissionType.MINING and m.status == Mission.Status.TRANSIT_BACK:
-			var next_asteroid := _pick_good_asteroid()
-			if next_asteroid == null:
-				continue
-			# Re-use the same crew that just mined
-			var crew := ship.last_crew.duplicate() if not ship.last_crew.is_empty() else []
-			if crew.is_empty():
-				# Fall back to available workers
-				var avail := GameState.get_available_workers()
-				for i in range(mini(ship.min_crew, avail.size())):
-					crew.append(avail[i])
-			if crew.size() >= ship.min_crew:
-				ship.queue_mission(next_asteroid, crew, Mission.TransitMode.BRACHISTOCHRONE)
-				missions_queued += 1
+
+		# Queue for ships returning from mining
+		if ship.current_mission != null:
+			var m := ship.current_mission
+			if m.mission_type == Mission.MissionType.MINING and m.status == Mission.Status.TRANSIT_BACK:
+				var next_asteroid := _pick_good_asteroid()
+				if next_asteroid != null:
+					var crew := ship.last_crew.duplicate() if not ship.last_crew.is_empty() else _get_crew_for_ship(ship)
+					if crew.size() >= ship.min_crew:
+						ship.queue_mission(next_asteroid, crew, Mission.TransitMode.BRACHISTOCHRONE)
+						missions_queued += 1
+
+		# Queue for ships idle at remote destinations
+		elif ship.is_idle_remote:
+			if randf() < 0.5:  # 50% chance to queue instead of immediate dispatch
+				var next_asteroid := _pick_good_asteroid()
+				if next_asteroid != null:
+					var crew := _get_crew_for_ship(ship)
+					if crew.size() >= ship.min_crew:
+						ship.queue_mission(next_asteroid, crew, Mission.TransitMode.BRACHISTOCHRONE)
+						missions_queued += 1
+
+func _get_crew_for_ship(ship: Ship) -> Array[Worker]:
+	var crew: Array[Worker] = []
+	if not ship.last_crew.is_empty():
+		crew = ship.last_crew.duplicate()
+	else:
+		var avail := GameState.get_available_workers()
+		for i in range(mini(ship.min_crew, avail.size())):
+			crew.append(avail[i])
+	return crew
 
 func _pick_good_asteroid() -> AsteroidData:
 	if GameState.asteroids.is_empty():
@@ -739,15 +786,12 @@ func _buy_and_install_upgrades() -> void:
 				upgrades_bought += 1
 
 func _buy_supplies_for_docked() -> void:
+	# Note: Food is now handled in maintenance phase via _provision_ship
 	var docked := GameState.get_docked_ships()
 	for ship in docked:
 		var parts: float = float(ship.supplies.get("repair_parts", 0.0))
 		if parts < 3.0:
 			if GameState.buy_supplies(ship, "repair_parts", 5.0):
-				supplies_bought += 1
-		var food: float = float(ship.supplies.get("food", 0.0))
-		if food < 5.0:
-			if GameState.buy_supplies(ship, "food", 10.0):
 				supplies_bought += 1
 		var fuel_cells: float = float(ship.supplies.get("fuel_cells", 0.0))
 		if fuel_cells < 2.0:
@@ -882,8 +926,8 @@ func _validate_workers() -> void:
 		if worker.fatigue < 0.0 or worker.fatigue > 100.0:
 			_error("Worker '%s' fatigue=%.1f out of range [0,100]" % [worker.worker_name, worker.fatigue])
 		for skill_val in [worker.pilot_skill, worker.engineer_skill, worker.mining_skill]:
-			if skill_val < 0.0 or skill_val > 1.5:
-				_error("Worker '%s' has skill=%.2f out of expected range [0, 1.5]" % [worker.worker_name, skill_val])
+			if skill_val < 0.0 or skill_val > 2.0:
+				_error("Worker '%s' has skill=%.2f out of expected range [0, 2.0]" % [worker.worker_name, skill_val])
 		if worker.assigned_mission != null and worker.assigned_mission not in GameState.missions:
 			_error("Worker '%s' assigned_mission not in GameState.missions" % worker.worker_name)
 
@@ -1035,7 +1079,7 @@ func _update_overlay() -> void:
 		+ "Redirected: %d | Queued: %d | Market Events: %d\n" % [missions_redirected, missions_queued, market_events_seen]
 		+ "Contracts: %d done / %d acc / %d exp / %d fail\n" % [contracts_completed, contracts_accepted, contracts_expired, contracts_failed]
 		+ "Leave: %d | Wait: %d | Tardy: %d | Rides: %d | LvlUps: %d | Inj: %d\n" % [on_leave, waiting, tardy, rides_given, worker_level_ups, worker_injuries]
-		+ "Bkdn: %d | Resc: %d | Strgr: %d | Destr: %d | LS Warn: %d\n" % [breakdowns_count, rescues_started, stranger_rescues, ships_destroyed, life_support_warnings]
+		+ "Bkdn: %d | Resc: %d | Strgr: %d | Destr: %d | LS: %d | Food: %d\n" % [breakdowns_count, rescues_started, stranger_rescues, ships_destroyed, life_support_warnings, food_depletions]
 		+ "Bought: %d ships %d equip %d upgr %d supply\n" % [ships_bought, equipment_bought, upgrades_bought, supplies_bought]
 		+ "Units: %d inv %d dep %d broken | Stockpile: %.0ft depot / %.0ft field" % [
 			GameState.mining_unit_inventory.size(), GameState.deployed_mining_units.size(),
