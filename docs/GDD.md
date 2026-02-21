@@ -680,13 +680,51 @@ The simulation processes these systems each tick:
 At high simulation speeds, ticks are processed in batches: up to 30 steps per frame, each advancing up to 500 ticks. This allows 15,000 ticks per frame at 60fps, supporting speeds up to 200,000x without framerate degradation.
 
 ### 14.5 Server Architecture (Multiplayer)
-**Named servers** — independent worlds (separate economies, claims, markets, leaderboards, endgame projects). First server: **Euterpe**. Players cannot transfer between servers.
 
-**Stack:** Python + PostgreSQL on Linux. Godot client is a thin display layer — sends decisions, receives state. All simulation/RNG/state mutation runs server-side.
+#### Named Worlds
+Each server is an independent world with its own economy, claims, market, leaderboard, and endgame project. Players belong to one world and cannot transfer between them. First world: **Euterpe**. Additional worlds spin up as population grows.
 
-**Development:** Local server (`localhost`) first, then deploy to remote Linux. Catches client-server issues without deployment complexity.
+#### Stack
+- **Simulation server:** Python on Linux VM
+- **Database:** PostgreSQL
+- **Client:** Godot (mobile) — thin display and input layer only. No authoritative state lives on the client.
 
-**Server authority required for:** simulation loop, all RNG, all state mutations, market/contract generation, worker encounter resolution, consortium coordination, leaderboards, anti-cheat (TimeScale, positions, money, fuel, engine condition, mining, claims).
+The server runs the simulation loop, all RNG, and all state mutations. The client sends player decisions (dispatch ship, hire worker, set policy, etc.) and receives state snapshots and event streams in response. The client renders and animates; it does not simulate.
+
+#### Why Python, Not Godot Headless
+Godot headless carries full engine overhead — scene tree, physics server, signal system — for a workload that at real time (1x speed) is a handful of dictionary lookups per second per player. GDScript is interpreted and single-threaded. Python is leaner, more scalable, easier to instrument, and has a mature ecosystem for server infrastructure (async I/O, ORM, task queues, monitoring).
+
+#### Performance at Real Time
+At 1x speed the simulation processes one game-second per real second. With 100 concurrent players at 3 ships each, that's ~300 mission state checks per second — trivially cheap CPU. The dominant costs are:
+- **Network I/O:** pushing state updates to connected clients
+- **PostgreSQL writes:** persisting state changes; write frequency and batching strategy matter at scale
+- **Memory:** per-player game state living in RAM between DB flushes
+
+Push state updates only on change (event-driven), not on a fixed tick, to keep network load proportional to activity rather than player count.
+
+#### Client–Server Communication
+- REST for player actions (dispatch, hire, buy, set policy) — stateless, easy to retry
+- WebSocket or SSE for server-pushed events (ship arrived, market spike, worker quit) — client subscribes on connect, server pushes as events occur
+- Client interpolates ship positions locally from last known state + physics constants — no need to stream position every frame
+
+#### PostgreSQL Schema (High Level)
+One logical database per world. Key tables:
+- `players` — account, reputation, money, HQ colony
+- `ships` — class, condition, fuel, cargo, position, current mission FK
+- `workers` — skills, loyalty, personality, assignment FK
+- `missions` / `trade_missions` — status, waypoints, ship FK, timestamps
+- `mining_units` — location, durability, assigned workers, ore stockpile
+- `claims` — asteroid FK, player FK, staked_at
+- `market_prices` — per-ore per-colony, updated by simulation events
+- `contracts` — type, colony, deadline, reward, status
+- `financial_history` — append-only transaction log per player
+- `events` — event stream for client push (type, payload, player FK, created_at)
+
+#### Scalability
+A single Python process on a modest Linux VM handles hundreds of concurrent players at 1x speed comfortably. Sharding strategy when needed: partition worlds across processes or hosts. Worlds are already fully isolated, so horizontal scaling is straightforward — each world is an independent simulation instance with its own DB schema or database.
+
+#### Development Approach
+Local server (`localhost`) first. Run Python sim and Godot client on the same machine, real HTTP/WebSocket communication, no deployment complexity. Move to remote Linux only after the client–server contract is stable.
 
 ### 14.6 Save System
 **Saved:** money, resources, workers, equipment, upgrades, ships, settings, date format, game clock, active missions (with ship/asteroid/worker reconnection), trade missions (with cargo and colony refs), contracts (available and active), market events, fabrication queue, reputation, rescue missions, refuel missions, stranger rescue offers, fuel stop waypoint metadata.

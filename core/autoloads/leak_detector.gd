@@ -1,14 +1,23 @@
 extends Node
 
-## Leak Detector — press F11 to toggle overlay.
+## Leak Detector — press F6 to toggle overlay.
 ## Shows node/object counts and child counts of every major container.
 ## Tracks deltas to pinpoint which container is growing.
+##
+## Performance log (perf_log.txt) runs always — no toggle needed.
+## CSV columns: time_s, fps, process_ms, nodes, objects, orphans, missions, ships, workers
 
 var enabled: bool = false
 var _canvas_layer: CanvasLayer = null
 var overlay_label: Label = null
 var _timer: float = 0.0
 const UPDATE_INTERVAL: float = 1.0  # Update every second
+
+# Always-on performance logger
+var _perf_timer: float = 0.0
+const PERF_INTERVAL: float = 1.0
+var _perf_log_path := "res://perf_log.txt"
+var _perf_header_written: bool = false
 
 # Snapshot for delta tracking
 var _prev_nodes: int = 0
@@ -62,6 +71,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _process(delta: float) -> void:
+	# Always-on perf log
+	_perf_timer += delta
+	if _perf_timer >= PERF_INTERVAL:
+		_perf_timer = 0.0
+		_write_perf_log()
+
+	# Overlay (F6 only)
 	if not enabled:
 		return
 	_timer += delta
@@ -74,6 +90,38 @@ func _process(delta: float) -> void:
 		_scanned = true
 
 	_update_overlay()
+
+func _write_perf_log() -> void:
+	var f := FileAccess.open(_perf_log_path, FileAccess.READ_WRITE if FileAccess.file_exists(_perf_log_path) else FileAccess.WRITE)
+	if not f:
+		return
+	if not _perf_header_written:
+		# Overwrite with fresh header each session
+		f.close()
+		f = FileAccess.open(_perf_log_path, FileAccess.WRITE)
+		f.store_line("time_s,fps,process_ms,nodes,objects,orphans,missions,trade_missions,ships,workers")
+		_perf_header_written = true
+
+	var t := Time.get_ticks_msec() / 1000.0
+	var fps := Performance.get_monitor(Performance.TIME_FPS)
+	var process_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	var nodes := int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT))
+	var objects := int(Performance.get_monitor(Performance.OBJECT_COUNT))
+	var orphans := int(Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT))
+	var missions := 0
+	var trade_missions := 0
+	var ships := 0
+	var workers := 0
+	if is_instance_valid(GameState):
+		missions = GameState.missions.size()
+		trade_missions = GameState.trade_missions.size()
+		ships = GameState.ships.size()
+		workers = GameState.workers.size()
+
+	f.seek_end()
+	f.store_line("%.1f,%.1f,%.2f,%d,%d,%d,%d,%d,%d,%d" % [
+		t, fps, process_ms, nodes, objects, orphans, missions, trade_missions, ships, workers
+	])
 
 func _scan_containers() -> void:
 	_monitored.clear()

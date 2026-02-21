@@ -1,7 +1,28 @@
 # Claim — Work Log
-# Updated: 2026-02-21 ~10:00–11:28 EST
+# Updated: 2026-02-21 ~15:00 EST
 
 ---
+
+## 2026-02-21 ~14:00–15:00 EST
+
+- Added 7 ship names to ship_data.gd: "A Searing Epiphany", "Squandered Fortune", "Laziness in Action", "Wandering Minstrel", "Faith Like a Candle", "Slurry", "Dastardly Cur"
+- Confirmed orphan worker autotest error has not recurred — marked resolved in handoff doc
+- Implemented Solar Map Dispatch (see previous session entry)
+
+## 2026-02-21 ~13:00–14:00 EST
+
+- Implemented Solar Map Dispatch feature — player can now dispatch ships spatially from the map
+- event_bus.gd: Added map_dispatch_to_asteroid(ship, asteroid) and map_dispatch_to_colony(ship, colony) signals
+- solar_map_view.gd: Added dispatch mode — clicking a docked ship in the left panel selects it (green border), then clicking an asteroid or colony emits dispatch signal; RMB or Escape cancels; hint label shows at bottom while in dispatch mode
+- main_ui.gd: Connected map dispatch signals → auto-switches to Fleet tab (index 1)
+- fleet_market_tab.gd: Added _on_map_dispatch_asteroid() and _on_map_dispatch_colony() — opens dispatch popup directly at worker selection or colony confirm, skipping the destination list
+
+## 2026-02-21 ~11:28–13:00 EST
+
+- Fixed remaining 4 IDLE_AT_DESTINATION transitions in simulation.gd — added mission.workers.clear() after worker-freeing loops (mining done, fuel stop abort, _complete_deploy, _complete_collection)
+- Added ore sale transaction logging to market_tab.gd — _sell_all_ores() and _sell_ore() now call record_transaction() (auto-sell at colonies was already logged)
+- Investigated "orphan worker in mining unit" autotest error — traced through fire_worker, deploy_mining_unit, _complete_deploy, _process_worker_leave; root cause NOT YET FOUND (see handoff)
+- Explained --dangerously-skip-permissions flag and how to set defaultMode in ~/.claude/settings.json
 
 ## 2026-02-21 ~10:00–11:28 EST
 

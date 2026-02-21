@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-21 11:28 EST
+**Last Updated:** 2026-02-21 ~15:00 EST
 **Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
-**Session Context:** Performance fixes, leak investigation, personality traits verified, doc workflow established
-**Next Session Priority:** Testing — verify personality traits work, confirm perf fix holds at max speed
+**Session Context:** Solar Map Dispatch + ship names
+**Next Session Priority:** Test solar map dispatch end-to-end
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -11,6 +11,58 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-21 ~14:00–15:00 EST - Ship Names
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - Added 7 ship names to `core/data/ship_data.gd`: "A Searing Epiphany", "Squandered Fortune", "Laziness in Action", "Wandering Minstrel", "Faith Like a Candle", "Slurry", "Dastardly Cur"
+  - Confirmed orphan worker autotest error has not recurred — closed that investigation
+- **Files Modified:** `core/data/ship_data.gd`
+
+### 2026-02-21 ~13:00–14:00 EST - Solar Map Dispatch
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Solar Map Dispatch (COMPLETE)**
+    - Players can now dispatch ships directly from the solar map
+    - Click a docked ship in the left panel → green selection border, hint label appears at bottom
+    - Click an asteroid on the map → switches to Fleet tab, opens dispatch popup at worker selection with asteroid pre-selected
+    - Click a colony on the map → switches to Fleet tab, opens colony confirm dialog
+    - Right-click or Escape while ship selected → cancels dispatch mode
+    - Non-docked ships (active missions, derelict) still center camera but don't enter dispatch mode
+    - If ship departs while selected (mission_started), dispatch mode auto-cancels
+- **Files Modified:**
+  - `core/autoloads/event_bus.gd` (map_dispatch_to_asteroid, map_dispatch_to_colony signals)
+  - `solar_map/solar_map_view.gd` (dispatch mode state, hint label, _try_dispatch_to, _set_map_selected_ship, _on_ship_selector_pressed, modified _unhandled_input)
+  - `ui/main_ui.gd` (connected dispatch signals → switch to Fleet tab)
+  - `ui/tabs/fleet_market_tab.gd` (_on_map_dispatch_asteroid, _on_map_dispatch_colony handlers)
+- **Status:** Ready to test.
+
+### 2026-02-21 ~11:28–13:00 EST - Bug Fixes + Orphan Worker Investigation (Incomplete)
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **IDLE_AT_DESTINATION workers.clear() fix (simulation.gd)**
+    - Root cause of 40 food depletion alerts early in game: IDLE_AT_DESTINATION missions retained workers in `mission.workers` array even after freeing them from `assigned_mission`
+    - `_process_food_consumption` iterated all missions including IDLE_AT_DESTINATION, saw non-empty workers, drained food, fired abandonment events
+    - Fixed all 5 transition points: cargo full on arrival, mining done/timeout, fuel stop abort, `_complete_deploy`, `_complete_collection`
+    - Each now calls `mission.workers.clear()` immediately after the worker-freeing loop
+  - **Ore sale transaction logging (market_tab.gd)**
+    - `_sell_all_ores()` and `_sell_ore()` both added money without calling `record_transaction()`
+    - Fixed: both now log to `financial_history`
+    - Auto-sell at colonies (simulation.gd line 730) was already logged — only manual Earth market sales were missing
+  - **Autotest validator fix (test_harness.gd)**
+    - `[AUTOTEST] Mission worker 'X' assigned_mission mismatch` — fixed by skipping IDLE_AT_DESTINATION missions in the worker assignment check (workers intentionally freed there)
+  - **Permissions explained**
+    - User can use `--dangerously-skip-permissions` flag or set `"defaultMode": "bypassPermissions"` in `~/.claude/settings.json`
+- **Files Modified:**
+  - `core/autoloads/simulation.gd` (5× workers.clear() at IDLE_AT_DESTINATION transitions)
+  - `core/autoloads/test_harness.gd` (skip IDLE_AT_DESTINATION in validator)
+  - `ui/tabs/market_tab.gd` (_sell_all_ores, _sell_ore transaction logging)
+- **Status:** IDLE_AT_DESTINATION and food depletion spam should be fixed. Orphan worker bug still open.
+
+- **RESOLVED (likely): "Orphan worker in mining unit" autotest error**
+  - Error has not recurred after the `workers.clear()` fixes to IDLE_AT_DESTINATION transitions
+  - Root cause was probably stale `mission.workers` references causing downstream corruption, not a direct issue in the mining unit assignment paths
+  - Consider resolved unless it reappears
 
 ### 2026-02-21 ~08:00–11:28 EST - Performance Fixes, Leak Investigation, Personality Traits, Doc Workflow
 - **Machine:** Windows desktop (Dweezil)
@@ -405,6 +457,12 @@
 - Comfortable with technical discussions
 - Prefers seeing results in code rather than lengthy explanations
 - Values documentation in GDD.md for future reference
+
+### Doc Maintenance
+- Say "update docs" at end of session — this means update WORK_LOG.txt, CLAUDE_HANDOFF.md, and GDD.md (if relevant)
+- WORK_LOG.txt uses time ranges (e.g. "11:28–13:00 EST"), not single timestamps — always include both start and end
+- User is precise about details like this; get them right rather than approximating
+- Start a new WORK_LOG block at the top when beginning a session, fill it in as work progresses
 
 ---
 

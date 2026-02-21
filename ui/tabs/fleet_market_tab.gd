@@ -90,6 +90,8 @@ func _ready() -> void:
 	EventBus.station_job_completed.connect(func(_s: Ship, _j: String, _su: String) -> void: _mark_dirty())
 	EventBus.worker_hired.connect(_on_worker_hired)
 	EventBus.tick.connect(_on_tick)
+	EventBus.map_dispatch_to_asteroid.connect(_on_map_dispatch_asteroid)
+	EventBus.map_dispatch_to_colony.connect(_on_map_dispatch_colony)
 	_rebuild_ships()
 
 func _mark_dirty() -> void:
@@ -733,6 +735,42 @@ func _cancel_preview() -> void:
 	EventBus.mission_preview_cancelled.emit()
 
 var _is_planning_mode: bool = false  # Track if we're planning next mission (vs immediate dispatch)
+
+func _on_map_dispatch_asteroid(ship: Ship, asteroid: AsteroidData) -> void:
+	if not ship.is_docked:
+		return
+	# Setup dispatch state and jump directly to worker selection (skip destination list)
+	_selected_ship = ship
+	_selected_asteroid = asteroid
+	_selected_workers.clear()
+	_selected_mission_type = Mission.MissionType.MINING
+	_selected_deploy_units.clear()
+	_selected_deploy_workers.clear()
+	_sort_by = "profit"
+	_filter_type = -1
+	_is_planning_mode = false
+	_colonies_section_expanded = -1
+	_mining_section_expanded = -1
+	dispatch_popup.visible = true
+	_show_worker_selection()
+
+func _on_map_dispatch_colony(ship: Ship, colony: Colony) -> void:
+	if not ship.is_docked:
+		return
+	# Setup dispatch state and jump directly to colony confirm (skip destination list)
+	_selected_ship = ship
+	_selected_asteroid = null
+	_selected_workers.clear()
+	_selected_mission_type = Mission.MissionType.MINING
+	_selected_deploy_units.clear()
+	_selected_deploy_workers.clear()
+	_sort_by = "profit"
+	_filter_type = -1
+	_is_planning_mode = false
+	_colonies_section_expanded = -1
+	_mining_section_expanded = -1
+	dispatch_popup.visible = true
+	_confirm_colony_dispatch(colony)
 
 func _start_dispatch(ship: Ship, planning_mode: bool = false) -> void:
 	_selected_ship = ship

@@ -621,6 +621,7 @@ func _sell_all_ores() -> void:
 			GameState.remove_resource(ore_type, amount)
 	if total_revenue > 0:
 		GameState.money += total_revenue
+		GameState.record_transaction(total_revenue, "Ore sold at Earth (all)")
 
 func _sell_ore(ore_type: ResourceTypes.OreType) -> void:
 	var amount: float = GameState.resources.get(ore_type, 0.0)
@@ -630,6 +631,7 @@ func _sell_ore(ore_type: ResourceTypes.OreType) -> void:
 	var revenue: int = int(amount * price)
 	GameState.remove_resource(ore_type, amount)
 	GameState.money += revenue
+	GameState.record_transaction(revenue, "Ore sold at Earth: %s" % ResourceTypes.get_ore_name(ore_type))
 
 func _buy_equipment(entry: Dictionary) -> void:
 	if GameState.purchase_equipment(entry):

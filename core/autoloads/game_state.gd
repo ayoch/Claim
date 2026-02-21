@@ -316,10 +316,13 @@ func fire_worker(worker: Worker) -> void:
 	if worker.assigned_station_ship:
 		worker.assigned_station_ship.last_crew.erase(worker)
 	worker.assigned_station_ship = null
-	# Remove from any mining unit
-	if worker.assigned_mining_unit:
+	# Remove from any mining unit — check all deployed units in case pointer is out of sync
+	if worker.assigned_mining_unit and is_instance_valid(worker.assigned_mining_unit):
 		worker.assigned_mining_unit.assigned_workers.erase(worker)
-		worker.assigned_mining_unit = null
+	for unit in deployed_mining_units:
+		if worker in unit.assigned_workers:
+			unit.assigned_workers.erase(worker)
+	worker.assigned_mining_unit = null
 	EventBus.worker_fired.emit(worker)
 
 func get_available_workers() -> Array[Worker]:
@@ -404,6 +407,8 @@ func deploy_mining_unit(unit: MiningUnit, asteroid: AsteroidData, unit_workers: 
 	unit.deployed_at_tick = total_ticks
 	unit.assigned_workers = []
 	for w in unit_workers:
+		if w.assigned_mining_unit != null:
+			print("[DEPLOY DEBUG] Worker '%s' → '%s' but already has assigned_mining_unit=%s" % [w.worker_name, unit.unit_name, str(w.assigned_mining_unit)])
 		unit.assigned_workers.append(w)
 		w.assigned_mining_unit = unit
 	EventBus.mining_unit_deployed.emit(unit, asteroid)
@@ -1267,11 +1272,13 @@ func buy_supplies(ship: Ship, supply_key: String, amount: float) -> bool:
 	# Find supply type from key
 	var cost_per_unit := 0
 	var mass_per_unit := 0.0
+	var volume_per_unit := 0.0
 	for supply_type in SupplyData.SUPPLY_INFO:
 		var info: Dictionary = SupplyData.SUPPLY_INFO[supply_type]
 		if info["key"] == supply_key:
 			cost_per_unit = info["cost_per_unit"]
 			mass_per_unit = info["mass_per_unit"]
+			volume_per_unit = info.get("volume_per_unit", 0.0)
 			break
 
 	if cost_per_unit <= 0:
@@ -1281,6 +1288,11 @@ func buy_supplies(ship: Ship, supply_key: String, amount: float) -> bool:
 	# Check cargo capacity (supplies share space with ore)
 	var available_space := ship.get_cargo_remaining() - ship.get_supplies_mass()
 	if total_mass > available_space + 0.01:
+		return false
+
+	# Check cargo volume
+	var total_volume := amount * volume_per_unit
+	if total_volume > ship.get_cargo_volume_remaining() + 0.01:
 		return false
 
 	var total_cost := int(amount * cost_per_unit)

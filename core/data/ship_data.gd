@@ -30,6 +30,13 @@ const SHIP_NAMES := [
 	"They're Everywhere",
 	"Phaistos",
 	"Jeirrut",
+	"A Searing Epiphany",
+	"Squandered Fortune",
+	"Laziness in Action",
+	"Wandering Minstrel",
+	"Faith Like a Candle",
+	"Slurry",
+	"Dastardly Cur",
 ]
 
 const CLASS_PRICES := {

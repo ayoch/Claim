@@ -469,7 +469,7 @@ func _try_deploy_units(ship: Ship, crew: Array[Worker], available: Array[Worker]
 	var total_volume := 0.0
 	var total_workers_needed := 0
 	var max_cargo_mass := ship.get_effective_cargo_capacity() - ship.get_cargo_total()
-	var max_cargo_volume := ship.get_effective_cargo_volume()
+	var max_cargo_volume := ship.get_effective_cargo_volume() - ship.get_cargo_volume_used()
 	var workers_spare := available.size() - ship.min_crew
 
 	for unit in GameState.mining_unit_inventory:
@@ -987,9 +987,11 @@ func _validate_missions() -> void:
 		if mission.ship not in GameState.ships:
 			_error("Mission ship '%s' not in GameState.ships" % mission.ship.ship_name)
 		# Workers in mission should have this as their assigned_mission
-		for w in mission.workers:
-			if w.assigned_mission != mission and w.assigned_mission != null:
-				_error("Mission worker '%s' assigned_mission mismatch" % w.worker_name)
+		# Skip IDLE_AT_DESTINATION — workers are intentionally freed there but still in mission.workers
+		if mission.status != Mission.Status.IDLE_AT_DESTINATION:
+			for w in mission.workers:
+				if w.assigned_mission != mission and w.assigned_mission != null:
+					_error("Mission worker '%s' assigned_mission mismatch" % w.worker_name)
 		# Deploy missions: units in transit must not appear in inventory or deployed list
 		# (they were removed from inventory at mission start and arrive at deploy completion)
 		if mission.mission_type == Mission.MissionType.DEPLOY_UNIT and mission.status == Mission.Status.TRANSIT_OUT:
@@ -1016,6 +1018,15 @@ func _validate_mining_units() -> void:
 		for w in unit.assigned_workers:
 			if w not in GameState.workers:
 				_error("Mining unit '%s' has orphan worker '%s'" % [unit.unit_name, w.worker_name])
+				print("[ORPHAN DEBUG] worker_name=%s | assigned_mission=%s | assigned_trade_mission=%s | assigned_mining_unit=%s | leave_status=%s | loyalty=%.1f | is_available=%s" % [
+					w.worker_name,
+					str(w.assigned_mission),
+					str(w.assigned_trade_mission),
+					str(w.assigned_mining_unit),
+					str(w.leave_status),
+					w.loyalty,
+					str(w.is_available)
+				])
 			# Bidirectional pointer check
 			if w.assigned_mining_unit != unit:
 				_error("Worker '%s' assigned_workers on unit '%s' but worker.assigned_mining_unit points elsewhere" % [w.worker_name, unit.unit_name])

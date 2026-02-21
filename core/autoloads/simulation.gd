@@ -208,6 +208,7 @@ func _process_missions(dt: float) -> void:
 										mission.ship.position_au = mission.asteroid.get_position_au()
 										for w in mission.workers:
 											w.assigned_mission = null
+										mission.workers.clear()
 										EventBus.ship_idle_at_destination.emit(mission.ship, mission)
 								else:
 									mission.status = Mission.Status.MINING
@@ -265,6 +266,7 @@ func _process_missions(dt: float) -> void:
 						# Free workers so they're available for next dispatch
 						for w in mission.workers:
 							w.assigned_mission = null
+						mission.workers.clear()
 						EventBus.mission_phase_changed.emit(mission)
 						EventBus.ship_idle_at_destination.emit(mission.ship, mission)
 
@@ -458,6 +460,7 @@ func _complete_refuel_stop(mission: Mission, is_outbound: bool) -> void:
 		# Free workers
 		for w in mission.workers:
 			w.assigned_mission = null
+		mission.workers.clear()
 		EventBus.mission_phase_changed.emit(mission)
 		# Notify player (could add a specific event for this)
 		print("Mission aborted: next waypoint unreachable from fuel stop (orbital drift)")
@@ -1906,6 +1909,9 @@ func _complete_deploy(mission: Mission) -> void:
 		# Find workers to assign from deploy_workers list
 		var unit_crew: Array[Worker] = []
 		for w in mission.workers_to_deploy:
+			if w not in GameState.workers:
+				print("[DEPLOY DEBUG] Skipping '%s' — not in GameState.workers. assigned_mission=%s assigned_mining_unit=%s" % [w.worker_name, str(w.assigned_mission), str(w.assigned_mining_unit)])
+				continue  # Worker was fired/removed during transit — skip
 			if w.assigned_mining_unit == null and unit_crew.size() < unit.workers_required:
 				unit_crew.append(w)
 		GameState.deploy_mining_unit(unit, mission.asteroid, unit_crew)
@@ -1945,6 +1951,7 @@ func _complete_deploy(mission: Mission) -> void:
 		mission.elapsed_ticks = 0.0
 		for w in mission.workers:
 			w.assigned_mission = null
+		mission.workers.clear()
 		EventBus.mission_phase_changed.emit(mission)
 		EventBus.ship_idle_at_destination.emit(mission.ship, mission)
 
@@ -1962,6 +1969,7 @@ func _complete_collection(mission: Mission) -> void:
 		mission.elapsed_ticks = 0.0
 		for w in mission.workers:
 			w.assigned_mission = null
+		mission.workers.clear()
 		EventBus.mission_phase_changed.emit(mission)
 		EventBus.ship_idle_at_destination.emit(mission.ship, mission)
 

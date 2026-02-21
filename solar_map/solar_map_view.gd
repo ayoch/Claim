@@ -14,6 +14,10 @@ const BELT_OUTER_AU: float = 3.5
 @onready var ship_selector_panel: VBoxContainer = %ShipSelectorPanel
 @onready var zoom_buttons: VBoxContainer = $UI/ZoomButtons
 
+var _map_selected_ship: Ship = null
+var _ship_buttons: Dictionary = {}  # Ship -> Button
+var _dispatch_hint_label: Label = null
+
 var _drag_start: Vector2 = Vector2.ZERO
 var _dragging: bool = false
 var _following_ship: Ship = null  # Ship the camera is tracking
@@ -73,7 +77,12 @@ func _ready() -> void:
 	_spawn_colony_markers()
 	_refresh_ship_markers()
 	_refresh_ship_selector()
-	EventBus.mission_started.connect(func(_m: Mission) -> void: _refresh_ships())
+	_setup_dispatch_hint_label()
+	EventBus.mission_started.connect(func(m: Mission) -> void:
+		if _map_selected_ship and m.ship == _map_selected_ship:
+			_set_map_selected_ship(null)
+		_refresh_ships()
+	)
 	EventBus.mission_completed.connect(func(_m: Mission) -> void: _refresh_ships())
 	EventBus.trade_mission_started.connect(func(_tm: TradeMission) -> void: _refresh_ships())
 	EventBus.trade_mission_completed.connect(func(_tm: TradeMission) -> void: _refresh_ships())
@@ -611,6 +620,13 @@ func _update_colony_targets() -> void:
 			marker.set_meta("target_pos", colony.get_position_au() * AU_PIXELS)
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Cancel dispatch mode on Escape
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_ESCAPE and _map_selected_ship != null:
+			_set_map_selected_ship(null)
+			get_viewport().set_input_as_handled()
+			return
+
 	# Mouse controls
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
@@ -621,8 +637,16 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				# Check if this was a click (not a drag)
 				if mb.position.distance_to(_drag_start) < 5.0:
-					_try_select_ship_at(mb.position)
+					if _map_selected_ship != null:
+						_try_dispatch_to(mb.position)
+					else:
+						_try_select_ship_at(mb.position)
 				_dragging = false
+		elif mb.button_index == MOUSE_BUTTON_RIGHT:
+			if _map_selected_ship != null:
+				_set_map_selected_ship(null)
+				get_viewport().set_input_as_handled()
+				return
 		elif mb.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_zoom_level = clampf(_zoom_level + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
 			camera.zoom = Vector2(_zoom_level, _zoom_level)
@@ -675,6 +699,7 @@ func _refresh_ship_selector() -> void:
 
 	# Clear existing buttons
 	_free_children(ship_selector_panel)
+	_ship_buttons.clear()
 
 	# Add button for each ship
 	for ship in GameState.ships:
@@ -693,12 +718,74 @@ func _refresh_ship_selector() -> void:
 		else:
 			btn.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
 
-		btn.pressed.connect(_center_on_ship.bind(ship))
+		btn.pressed.connect(_on_ship_selector_pressed.bind(ship))
 		ship_selector_panel.add_child(btn)
+		_ship_buttons[ship] = btn
+
+	# Re-apply selection border if a ship is still selected
+	if _map_selected_ship and _map_selected_ship in _ship_buttons:
+		_apply_selection_border(_ship_buttons[_map_selected_ship], true)
 
 func _center_on_ship(ship: Ship) -> void:
 	_following_ship = ship
 	camera.position = ship.position_au * AU_PIXELS
+
+func _setup_dispatch_hint_label() -> void:
+	_dispatch_hint_label = Label.new()
+	_dispatch_hint_label.text = "Select destination on map (RMB to cancel)"
+	_dispatch_hint_label.add_theme_font_size_override("font_size", 14)
+	_dispatch_hint_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
+	_dispatch_hint_label.anchors_preset = Control.PRESET_BOTTOM_WIDE
+	_dispatch_hint_label.anchor_top = 1.0
+	_dispatch_hint_label.anchor_bottom = 1.0
+	_dispatch_hint_label.offset_top = -30
+	_dispatch_hint_label.offset_bottom = 0
+	_dispatch_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_dispatch_hint_label.visible = false
+	$UI.add_child(_dispatch_hint_label)
+
+func _on_ship_selector_pressed(ship: Ship) -> void:
+	_center_on_ship(ship)
+	if ship.is_docked:
+		_set_map_selected_ship(ship)
+
+func _apply_selection_border(btn: Button, selected: bool) -> void:
+	if selected:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.15, 0.15, 0.15)
+		style.border_color = Color(0.3, 0.9, 0.5)
+		style.set_border_width_all(2)
+		style.set_corner_radius_all(3)
+		btn.add_theme_stylebox_override("normal", style)
+		btn.add_theme_stylebox_override("hover", style)
+	else:
+		btn.remove_theme_stylebox_override("normal")
+		btn.remove_theme_stylebox_override("hover")
+
+func _set_map_selected_ship(ship: Ship) -> void:
+	_map_selected_ship = ship
+	for s in _ship_buttons:
+		_apply_selection_border(_ship_buttons[s], s == ship)
+	if _dispatch_hint_label:
+		_dispatch_hint_label.visible = ship != null
+
+func _try_dispatch_to(screen_pos: Vector2) -> void:
+	var world_pos := camera.position + (screen_pos - get_viewport_rect().size / 2.0) / camera.zoom
+	# Check asteroids
+	for asteroid: AsteroidData in GameState.asteroids:
+		var asteroid_px := asteroid.get_position_au() * AU_PIXELS
+		if world_pos.distance_to(asteroid_px) < 40.0:
+			EventBus.map_dispatch_to_asteroid.emit(_map_selected_ship, asteroid)
+			_set_map_selected_ship(null)
+			return
+	# Check colonies
+	for colony: Colony in GameState.colonies:
+		var colony_px := colony.get_position_au() * AU_PIXELS
+		if world_pos.distance_to(colony_px) < 40.0:
+			EventBus.map_dispatch_to_colony.emit(_map_selected_ship, colony)
+			_set_map_selected_ship(null)
+			return
+	# Empty space — no-op
 
 func _try_select_ship_at(screen_pos: Vector2) -> void:
 	# Convert screen position to world position

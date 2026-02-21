@@ -103,6 +103,10 @@ signal worker_hitched_ride(worker: Worker, ship: Ship)
 signal worker_tardy(worker: Worker, reason: String)
 signal worker_tardiness_resolved(worker: Worker, action: String)
 
+# Solar map dispatch
+signal map_dispatch_to_asteroid(ship: Ship, asteroid: AsteroidData)
+signal map_dispatch_to_colony(ship: Ship, colony: Colony)
+
 # Mining units
 signal mining_unit_purchased(unit: MiningUnit)
 signal mining_unit_deployed(unit: MiningUnit, asteroid: AsteroidData)
