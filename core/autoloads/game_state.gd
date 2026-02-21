@@ -1655,6 +1655,7 @@ func save_game() -> void:
 			"thrust_setting": s.thrust_setting,
 			"ship_class": s.ship_class,
 			"cargo_capacity": s.cargo_capacity,
+			"cargo_volume": s.cargo_volume,
 			"position_au_x": s.position_au.x,
 			"position_au_y": s.position_au.y,
 			"engine_condition": s.engine_condition,
@@ -1844,6 +1845,7 @@ func save_game() -> void:
 			"unit_type": unit.unit_type,
 			"unit_name": unit.unit_name,
 			"mass": unit.mass,
+			"volume": unit.volume,
 			"workers_required": unit.workers_required,
 			"mining_multiplier": unit.mining_multiplier,
 			"durability": unit.durability,
@@ -1863,6 +1865,7 @@ func save_game() -> void:
 			"unit_type": unit.unit_type,
 			"unit_name": unit.unit_name,
 			"mass": unit.mass,
+			"volume": unit.volume,
 			"workers_required": unit.workers_required,
 			"mining_multiplier": unit.mining_multiplier,
 			"durability": unit.durability,
@@ -1977,6 +1980,9 @@ func load_game() -> bool:
 			s.thrust_setting = 1.0
 		s.ship_class = int(sd.get("ship_class", -1))
 		s.cargo_capacity = float(sd.get("cargo_capacity", 100.0))
+		# Default cargo_volume from class stats for backward compatibility with old saves
+		var _class_vol: float = ShipData.CLASS_STATS.get(s.ship_class, {}).get("cargo_volume", 143.0)
+		s.cargo_volume = float(sd.get("cargo_volume", _class_vol))
 		s.fuel_capacity = float(sd.get("fuel_capacity", 200.0))
 		s.fuel = float(sd.get("fuel", 200.0))
 		s.position_au = Vector2(
@@ -2360,12 +2366,14 @@ func load_game() -> bool:
 			})
 
 	# Restore mining unit inventory
+	const MU_VOL_DEFAULTS: Dictionary = {0: 11.4, 1: 16.8, 2: 27.3}
 	mining_unit_inventory.clear()
 	for mud in data.get("mining_unit_inventory", []):
 		var unit := MiningUnit.new()
 		unit.unit_type = int(mud.get("unit_type", 0))
 		unit.unit_name = mud.get("unit_name", "")
 		unit.mass = float(mud.get("mass", 7.6))
+		unit.volume = float(mud.get("volume", MU_VOL_DEFAULTS.get(unit.unit_type, 11.4)))
 		unit.workers_required = int(mud.get("workers_required", 1))
 		unit.mining_multiplier = float(mud.get("mining_multiplier", 1.0))
 		unit.durability = float(mud.get("durability", 100.0))
@@ -2381,6 +2389,7 @@ func load_game() -> bool:
 		unit.unit_type = int(mud.get("unit_type", 0))
 		unit.unit_name = mud.get("unit_name", "")
 		unit.mass = float(mud.get("mass", 7.6))
+		unit.volume = float(mud.get("volume", MU_VOL_DEFAULTS.get(unit.unit_type, 11.4)))
 		unit.workers_required = int(mud.get("workers_required", 1))
 		unit.mining_multiplier = float(mud.get("mining_multiplier", 1.0))
 		unit.durability = float(mud.get("durability", 100.0))

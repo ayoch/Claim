@@ -51,16 +51,18 @@ static func get_available_upgrades() -> Array[Dictionary]:
 		"name": "Cargo Bay Extension",
 		"type": ShipUpgrade.UpgradeType.CARGO_BAY,
 		"cost": 4000,
-		"description": "Adds 50t cargo capacity",
+		"description": "Adds 50t / 70m³ cargo capacity",
 		"cargo_capacity_bonus": 50.0,
+		"cargo_volume_bonus": 70.0,
 	})
 
 	catalog.append({
 		"name": "Heavy Hauler Conversion",
 		"type": ShipUpgrade.UpgradeType.CARGO_BAY,
 		"cost": 12000,
-		"description": "Adds 150t cargo capacity",
+		"description": "Adds 150t / 210m³ cargo capacity",
 		"cargo_capacity_bonus": 150.0,
+		"cargo_volume_bonus": 210.0,
 	})
 
 	# Hull Upgrades

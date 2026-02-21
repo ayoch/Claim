@@ -41,7 +41,8 @@ const CLASS_PRICES := {
 const CLASS_STATS := {
 	ShipClass.COURIER: {
 		"thrust_g": 0.5,           # Fast
-		"cargo_capacity": 50.0,    # Low cargo
+		"cargo_capacity": 50.0,    # Low cargo (t)
+		"cargo_volume": 54.0,      # Low cargo (m³)
 		"fuel_capacity": 250.0,    # Good range
 		"min_crew": 2,             # Small crew
 		"max_equipment_slots": 1,  # Limited mining
@@ -49,7 +50,8 @@ const CLASS_STATS := {
 	},
 	ShipClass.HAULER: {
 		"thrust_g": 0.2,           # Slow
-		"cargo_capacity": 200.0,   # High cargo
+		"cargo_capacity": 200.0,   # High cargo (t)
+		"cargo_volume": 584.0,     # High cargo (m³)
 		"fuel_capacity": 400.0,    # Large tank needed
 		"min_crew": 4,             # Large crew
 		"max_equipment_slots": 2,  # Standard mining
@@ -57,7 +59,8 @@ const CLASS_STATS := {
 	},
 	ShipClass.PROSPECTOR: {
 		"thrust_g": 0.3,           # Balanced
-		"cargo_capacity": 100.0,   # Medium cargo
+		"cargo_capacity": 100.0,   # Medium cargo (t)
+		"cargo_volume": 143.0,     # Medium cargo (m³)
 		"fuel_capacity": 300.0,    # Medium tank
 		"min_crew": 3,             # Medium crew
 		"max_equipment_slots": 3,  # Extra mining slots
@@ -65,7 +68,8 @@ const CLASS_STATS := {
 	},
 	ShipClass.EXPLORER: {
 		"thrust_g": 0.35,          # Slightly fast
-		"cargo_capacity": 80.0,    # Lower cargo
+		"cargo_capacity": 80.0,    # Lower cargo (t)
+		"cargo_volume": 91.0,      # Lower cargo (m³)
 		"fuel_capacity": 500.0,    # Huge tank for long range
 		"min_crew": 3,             # Medium crew
 		"max_equipment_slots": 2,  # Standard mining
@@ -90,6 +94,7 @@ static func create_ship(ship_class: ShipClass, ship_name: String = "") -> Ship:
 	ship.max_thrust_g = stats["thrust_g"]
 	ship.thrust_setting = 1.0  # Start at 100% thrust
 	ship.cargo_capacity = stats["cargo_capacity"]
+	ship.cargo_volume = stats["cargo_volume"]
 	ship.fuel_capacity = stats["fuel_capacity"]
 	ship.fuel = stats["fuel_capacity"]  # Start with full fuel
 	ship.min_crew = stats["min_crew"]

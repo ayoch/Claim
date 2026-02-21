@@ -130,6 +130,7 @@ func _refresh_all() -> void:
 		_add_stat_row(stats_grid, "Thrust:", "%.2fg max" % ship.max_thrust_g, ship.get_effective_thrust())
 		_add_stat_row(stats_grid, "Fuel Capacity:", "%.0f" % ship.fuel_capacity, ship.get_effective_fuel_capacity())
 		_add_stat_row(stats_grid, "Cargo Capacity:", "%.0ft" % ship.cargo_capacity, ship.get_effective_cargo_capacity())
+		_add_stat_row(stats_grid, "Cargo Volume:", "%.0fm³" % ship.cargo_volume, ship.get_effective_cargo_volume())
 		_add_stat_row(stats_grid, "Base Mass:", "%.0ft" % (ship.base_mass if ship.base_mass > 0 else ship.cargo_capacity * 2.0), ship.get_base_mass())
 
 		ship_vbox.add_child(stats_grid)

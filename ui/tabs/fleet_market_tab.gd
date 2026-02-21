@@ -1820,9 +1820,12 @@ func _show_worker_selection() -> void:
 
 		var slots_avail := _selected_asteroid.get_max_mining_slots() - GameState.get_occupied_slots(_selected_asteroid.asteroid_name)
 		var cargo_space := _selected_ship.cargo_capacity - _selected_ship.get_cargo_total()
+		var volume_space := _selected_ship.get_effective_cargo_volume() - _selected_ship.get_cargo_volume_used()
 		var total_unit_mass := 0.0
+		var total_unit_volume := 0.0
 		for u in _selected_deploy_units:
 			total_unit_mass += u.mass
+			total_unit_volume += u.volume
 
 		for unit in GameState.mining_unit_inventory:
 			var already_selected := unit in _selected_deploy_units
@@ -1830,11 +1833,13 @@ func _show_worker_selection() -> void:
 			unit_btn.flat = not already_selected
 			unit_btn.custom_minimum_size = Vector2(0, 36)
 			unit_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
-			unit_btn.text = "%s (%.1ft, %d workers, %.1fx)" % [
-				unit.unit_name, unit.mass, unit.workers_required, unit.mining_multiplier
+			unit_btn.text = "%s (%.1ft / %.1fm³, %d workers, %.1fx)" % [
+				unit.unit_name, unit.mass, unit.volume, unit.workers_required, unit.mining_multiplier
 			]
 			_apply_selection_style(unit_btn, already_selected)
-			var can_add := not already_selected and _selected_deploy_units.size() < slots_avail and (total_unit_mass + unit.mass) <= cargo_space
+			var can_add := not already_selected and _selected_deploy_units.size() < slots_avail \
+				and (total_unit_mass + unit.mass) <= cargo_space \
+				and (total_unit_volume + unit.volume) <= volume_space
 			if not already_selected and not can_add:
 				unit_btn.disabled = true
 			unit_btn.pressed.connect(func() -> void:
@@ -3317,7 +3322,7 @@ func _build_buy_ship_ui() -> void:
 		var specs := Label.new()
 		var spec_lines: Array[String] = []
 		spec_lines.append("Thrust: %.2fg" % stats["thrust_g"])
-		spec_lines.append("Cargo: %.0ft" % stats["cargo_capacity"])
+		spec_lines.append("Cargo: %.0ft / %.0fm³" % [stats["cargo_capacity"], stats["cargo_volume"]])
 		spec_lines.append("Fuel: %.0f units" % stats["fuel_capacity"])
 		spec_lines.append("Min Crew: %d" % stats["min_crew"])
 		spec_lines.append("Equipment Slots: %d" % stats["max_equipment_slots"])

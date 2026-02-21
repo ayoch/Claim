@@ -17,6 +17,7 @@ enum UpgradeType {
 @export var fuel_capacity_bonus: float = 0.0
 @export var thrust_bonus: float = 0.0
 @export var cargo_capacity_bonus: float = 0.0
+@export var cargo_volume_bonus: float = 0.0
 @export var base_mass_multiplier: float = 1.0  # <1.0 makes ship lighter
 @export var fuel_efficiency_multiplier: float = 1.0  # <1.0 reduces fuel consumption
 
@@ -29,6 +30,7 @@ static func from_catalog(entry: Dictionary) -> ShipUpgrade:
 	u.fuel_capacity_bonus = entry.get("fuel_capacity_bonus", 0.0)
 	u.thrust_bonus = entry.get("thrust_bonus", 0.0)
 	u.cargo_capacity_bonus = entry.get("cargo_capacity_bonus", 0.0)
+	u.cargo_volume_bonus = entry.get("cargo_volume_bonus", 0.0)
 	u.base_mass_multiplier = entry.get("base_mass_multiplier", 1.0)
 	u.fuel_efficiency_multiplier = entry.get("fuel_efficiency_multiplier", 1.0)
 	return u

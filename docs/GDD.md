@@ -6,7 +6,7 @@
 **Multiplayer Idle Strategy Simulation**
 **Platform:** Mobile (iOS / Android)
 **Engine:** Godot 4.6
-**Version:** 0.5 — Consortia, Policies, Colony Tiers, Design Pillars
+**Version:** 0.6 — Status audit, fuel stop routing, worker skill progression, save/load complete
 **February 2026**
 
 ---
@@ -178,7 +178,7 @@ Asteroids are classified by spectral type, which determines their composition an
 
 Each asteroid has a finite number of **mining slots** determined by its size and surface area. A small asteroid might support 2-3 mining units. A large one might support 10+. This caps how many corporations can operate on any given body simultaneously.
 
-> **STATUS: PARTIALLY IMPLEMENTED.** 200+ named asteroids with body types (ASTEROID, COMET, NEO, TROJAN, CENTAUR, KBO) and ore yields per type. Five ore types: Iron ($50 base), Nickel ($120), Platinum ($800), Water/Ice ($200), Carbon/Organics ($150). Survey events periodically shift individual asteroid yields by -30% to +50%. **Mining slot limits are not yet implemented.**
+> **STATUS: PARTIALLY IMPLEMENTED.** 200+ named asteroids with body types (ASTEROID, COMET, NEO, TROJAN, CENTAUR, KBO) and ore yields per type. Five ore types: Iron ($50 base), Nickel ($120), Platinum ($800), Water/Ice ($200), Carbon/Organics ($150). Survey events periodically shift individual asteroid yields by -30% to +50%. **Mining slot limits are defined per body type** (NEO: 3, Asteroid: 6, Comet: 2, Trojan: 8, Centaur: 5, KBO: 10) but are not yet enforced — any number of ships can mine a body simultaneously.
 
 ### 4.4 Orbital Mechanics
 Distances between objects change over time — an asteroid 0.5 AU away today might be 2 AU away in six months. Strategic opportunities shift continuously.
@@ -385,7 +385,7 @@ Each generated ship varies from its class baseline:
 
 Example: a generated Prospector at 208.1t dry, 0.29g thrust, 112t cargo, 136 m³, 122t fuel, 3 slots — lighter with more cargo but weaker engines.
 
-> **STATUS: NEEDS UPDATE.** Four ship classes exist in code but use old placeholder values (round numbers, no volume, no variation). Ship data needs to be updated to these specifications. Ship purchasing UI is not yet implemented.
+> **STATUS: PARTIALLY IMPLEMENTED.** Four ship classes exist with purchasing UI (buy popup with specs, prices, color-coded affordability). Ships spawn at Earth with full fuel and 100% engine condition. **Ship data still uses old placeholder values** — dry mass, cargo volume, per-ship variation from the table above are not yet applied to code.
 
 ### 8.3 Mining Equipment (Autonomous Mining Units)
 **Autonomous mining units** are cargo items deployed on asteroid surfaces. They require workers to operate — a unit without workers is inert. Once deployed and staffed, they extract ore continuously without a ship present. Ships periodically collect stockpiled ore and deliver food/supplies/parts.
@@ -402,7 +402,7 @@ Mining units have mass/volume (constrain transport capacity), require a mining s
 
 A Prospector (107t / 143 m³ cargo) can carry roughly 8 Basic Mining Units by volume, or 14 by mass — volume is the constraint. After accounting for food and repair parts for the workers, a typical deployment run might deliver 4-5 units plus supplies.
 
-> **STATUS: NOT YET IMPLEMENTED.** Current system uses ship-mounted equipment that provides mining bonuses while the ship is present. Three equipment types exist (Basic Processor, Advanced Processor, Refinery) but function as ship buffs, not deployable units. This is a fundamental architectural change.
+> **STATUS: FOUNDATIONS EXIST, DEPLOYMENT NOT IMPLEMENTED.** Mining unit data models exist: `mining_unit.gd`, `mining_unit_catalog.gd` with correct specs (Basic 7.6t/1 worker/$50k, Advanced 13.2t/2 workers/$150k, Refinery 21.5t/3 workers/$350k). Mission model has `DEPLOYING` status and `mining_units_to_deploy` field. **The deployment loop, autonomous ore accumulation at claimed sites, and supply/collect mission types are not yet implemented.** Ship-mounted processors (Basic Processor, Advanced Processor, Refinery) continue to function as ship-present mining bonuses in the interim.
 
 ### 8.4 Cargo: Mass and Volume
 Cargo holds are constrained by both **mass** (tonnes) and **volume** (m³). Heavy-but-compact items (platinum, weapons) vs. light-but-bulky items (food, organics, mining units). Supply runs are volume-constrained; ore hauling is mass-constrained.
@@ -419,7 +419,7 @@ Cargo holds are constrained by both **mass** (tonnes) and **volume** (m³). Heav
 
 **Example:** Resupplying 5 workers for 60 days = 840 kg food (0.264 m³) plus repair parts — lightweight, leaving room for ore pickup. But deploying 4 mining units (30.4t / 45.6 m³) plus supplies fills the hold quickly.
 
-> **STATUS: NOT YET IMPLEMENTED.** Currently only mass (tonnes) is tracked for cargo. Volume constraints, food, and supply items do not yet exist.
+> **STATUS: NOT YET IMPLEMENTED.** Currently only mass (tonnes) is tracked for cargo. Volume constraints do not yet exist. `supply_data.gd` exists in the codebase but food and supply items are not yet modeled as cargo.
 
 ### 8.5 Crew
 Named individuals with skills, personalities, and pay expectations.
@@ -447,6 +447,8 @@ Fuel consumption scales with distance, mass, and thrust. Fuel has weight that af
 With units deployed across the belt, logistics is the core challenge: supply route planning, fuel budgets, cargo allocation between food/parts/ore, and resupply frequency.
 
 > **STATUS: IMPLEMENTED (basic).** Fuel consumption scales with distance, mass, and thrust. Derelict state on fuel depletion. Location-aware fuel pricing from nearest source.
+>
+> **Automated Fuel Stop Routing** is implemented: a greedy nearest-colony algorithm plans multi-stop routes for missions that exceed a ship's fuel range. Waypoints are inserted automatically (outbound and return legs), shown as a cost preview in the dispatch UI, and persisted through save/load. At each fuel stop, the next leg is validated — if the destination has drifted out of range, the mission aborts and the ship idles at the fuel stop colony.
 >
 > **NOT YET IMPLEMENTED:** Supply route planning, food as cargo, fuel processor equipment (extracting fuel from water-ice asteroids), player-owned fuel depots.
 
@@ -679,9 +681,9 @@ At high simulation speeds, ticks are processed in batches: up to 30 steps per fr
 **Server authority required for:** simulation loop, all RNG, all state mutations, market/contract generation, worker encounter resolution, consortium coordination, leaderboards, anti-cheat (TimeScale, positions, money, fuel, engine condition, mining, claims).
 
 ### 14.6 Save System
-**Saved:** money, resources, workers, equipment, upgrades, ships (basic), settings, date format.
+**Saved:** money, resources, workers, equipment, upgrades, ships, settings, date format, game clock, active missions (with ship/asteroid/worker reconnection), trade missions (with cargo and colony refs), contracts (available and active), market events, fabrication queue, reputation, rescue missions, refuel missions, stranger rescue offers, fuel stop waypoint metadata.
 
-**Not yet saved:** missions, trade missions, contracts, market events/state, fabrication queue, game clock, reputation, stranger offers, rescue/refuel missions, yield mutations, claims, mining units, food/supply.
+**Not yet saved:** yield mutations, claims, mining units, food/supply. (These systems are not yet implemented.)
 
 ---
 
@@ -699,7 +701,7 @@ Build the fundamental game loop in Godot with no networking.
 | Mining output over time | **DONE** |
 | Selling at market prices | **DONE** |
 | Ship upgrades (speed, efficiency, capacity) | **DONE** |
-| Ship purchasing (multiple ship classes) | NOT STARTED |
+| Ship purchasing (multiple ship classes) | **DONE** |
 
 ### Phase 2: Simulation Depth
 Add the systems that make the single-player experience strategically rich.
@@ -745,7 +747,7 @@ Refactor the mining system from ship-present to deployable autonomous units.
 | Claim map UI tab | NOT STARTED |
 | Single-player leaderboards | NOT STARTED |
 | AI rival corporations (single-player opponents) | NOT STARTED |
-| Complete save/load system | NOT STARTED |
+| Complete save/load system | **DONE** |
 
 ### Phase 3: Networking & Multiplayer Foundation
 Move the simulation to a cloud backend and connect the Godot client to it.

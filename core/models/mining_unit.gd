@@ -25,6 +25,7 @@ const REBUILD_THRESHOLD: float = 40.0
 @export var unit_type: UnitType = UnitType.BASIC
 @export var unit_name: String = ""
 @export var mass: float = 0.0
+@export var volume: float = 0.0   # m³
 @export var workers_required: int = 1
 @export var mining_multiplier: float = 1.0
 @export var durability: float = 100.0
@@ -74,6 +75,7 @@ static func from_catalog(entry: Dictionary) -> MiningUnit:
 	u.unit_type = entry["type"]
 	u.unit_name = entry["name"]
 	u.mass = entry["mass"]
+	u.volume = entry.get("volume", 0.0)
 	u.workers_required = entry["workers_required"]
 	u.mining_multiplier = entry["mining_multiplier"]
 	u.wear_per_day = entry["wear_per_day"]

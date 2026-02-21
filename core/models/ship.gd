@@ -10,7 +10,8 @@ const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at co
 @export var docked_at_colony: Colony = null  # Which colony the ship is docked at (if any)
 @export var max_thrust_g: float = 0.3   # maximum acceleration in g
 @export var thrust_setting: float = 1.0 # 0.0 to 1.0, percentage of max_thrust to use
-@export var cargo_capacity: float = 100.0 # tons
+@export var cargo_capacity: float = 100.0 # tons (mass limit)
+@export var cargo_volume: float = 143.0   # m³ (volume limit)
 @export var fuel_capacity: float = 200.0  # fuel units
 @export var fuel: float = 200.0           # current fuel
 @export var min_crew: int = 3             # minimum crew to dispatch
@@ -155,6 +156,30 @@ func get_effective_cargo_capacity() -> float:
 	for upgrade in upgrades:
 		effective += upgrade.cargo_capacity_bonus
 	return effective
+
+func get_effective_cargo_volume() -> float:
+	var effective := cargo_volume
+	for upgrade in upgrades:
+		effective += upgrade.cargo_volume_bonus
+	return effective
+
+## Volume used by bulky cargo (mining units, supplies).
+## Ore is mass-constrained, not volume-constrained — not counted here.
+func get_cargo_volume_used() -> float:
+	var vol := 0.0
+	# Mining units being transported on an active deploy mission
+	if current_mission != null and current_mission.mission_type == Mission.MissionType.DEPLOY_UNIT:
+		for unit in current_mission.mining_units_to_deploy:
+			vol += unit.volume
+	# Supplies
+	for supply_type in SupplyData.SUPPLY_INFO:
+		var key: String = SupplyData.SUPPLY_INFO[supply_type]["key"]
+		var amount: float = supplies.get(key, 0.0)
+		vol += amount * SupplyData.SUPPLY_INFO[supply_type]["volume_per_unit"]
+	return vol
+
+func get_cargo_volume_remaining() -> float:
+	return get_effective_cargo_volume() - get_cargo_volume_used()
 
 func calc_fuel_for_distance(dist_au: float, cargo_mass: float = -1.0) -> float:
 	# Fuel proportional to mass, distance, and thrust (F=ma physics)
