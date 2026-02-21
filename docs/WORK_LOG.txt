@@ -1,0 +1,121 @@
+# Claim — Work Log
+# Updated: 2026-02-21 ~10:00–11:28 EST
+
+---
+
+## 2026-02-21 ~10:00–11:28 EST
+
+- Introduced WORK_LOG.txt as a standard end-of-session doc (replaces GIT_LOG.txt)
+- Retroactively populated work log with full project history, organized as time ranges
+- Updated MEMORY.md and CLAUDE_HANDOFF.md to include WORK_LOG.txt in the update-docs routine
+- "update docs" established as the end-of-session command to update WORK_LOG, HANDOFF, and GDD
+- Diagnosed false positive leak: ContractsList fills to ~48 nodes (bounded by data caps), not an actual leak
+- Fixed leak detector GameState logging: Engine.has_singleton() doesn't work for autoloads, changed to is_instance_valid(GameState)
+- Verified worker personality traits fully implemented across all 6 files
+- Tick batching fix confirmed: EventBus.tick now emitted once per frame instead of once per simulation step (~30x overhead reduction at SPEED_MAX)
+- financial_history trimming changed from slice() to remove_at(0) to avoid allocation
+- Ship outfitting tab horizontal expansion finally fixed: clip_text = true on all labels + refresh guard against stacked call_deferred
+
+## 2026-02-21 ~08:00–10:00 EST
+
+- CRITICAL FIX: Food consumption was 100x too fast — unit conversion bug (1 unit = 100kg, not 1kg)
+- CRITICAL FIX: Ship teleportation — docked_at_colony not cleared on Earth return caused ships to snap back to old colony
+- Auto-provisioning: ships now automatically purchase food when docking at colonies (30-day buffer)
+- Test harness: provisions ships before dispatch, mission redirects increased (15%→30% mining, 20% trade added), ships queue next job while busy
+- Comprehensive code review vs GDD: multiple features marked "not implemented" were actually fully functional
+- Mining units, cargo volume, mining slots, ore stockpiles all confirmed complete
+- GDD updated to v0.7: accurate status for mining units, cargo volume, Phase 2b roadmap (8 features marked DONE)
+- IMPLEMENTATION_STATUS.md written documenting GDD claims vs actual codebase reality
+
+## 2026-02-20 ~16:00–17:00 EST
+
+- Worker XP system: pilot_xp, engineer_xp, mining_xp fields; quadratic XP curve; skills cap at 2.0
+- XP accumulates in simulation: pilot XP during transit, mining XP during extraction, engineer XP on repairs
+- Wage auto-scales on level-up; small loyalty bonus per level
+- XP progress bars in Workers tab, level-up notifications in dashboard activity feed
+- worker_skill_leveled signal added
+- Worker personality traits: AGGRESSIVE, CAUTIOUS, LOYAL, GREEDY, LEADER
+- Each type modifies mining output, fatigue rate, accident rate, quit chance, tardiness rate
+- Greedy workers demand wage raises every 30 game-days if loyalty < 60
+- Leader aura: +5% crew mining, -5% crew fatigue for non-Leaders
+- Personality saves/loads with LOYAL as default for old saves
+- Mining units: full end-to-end system — purchase, deploy, passive ore accumulation, stockpiles, collect, durability degradation, all save/load
+- LeakDetector autoload created (F6 overlay, writes to leak_log.txt)
+- Test harness created for automated gameplay testing at max speed
+- Dashboard tab major expansion: contracts ticker, stationed ships panel, discipline panel, collapsible sections, balance history, reputation, company policies, activity feed, alerts
+
+## 2026-02-20 ~06:43–07:44 EST
+
+- Physics-based rescue system: derelict ships maintain velocity, intercept trajectory, life support tracking
+- Complete save/load: missions, trade missions, contracts, market events, fabrication queue, reputation, rescue/refuel missions
+- Ship purchasing backend: pricing for all 4 classes, purchase_ship(), ship spawns at Earth fully fueled
+- Ship purchasing UI: popup showing all 4 classes with specs and prices, color-coded affordability
+- Automated fuel stop routing: FuelRoutePlanner utility, greedy nearest-colony algorithm, waypoint metadata on missions, dispatch UI preview
+- CRITICAL FIX: Life support not reset on rescue — ships died instantly on second breakdown
+- Engineer self-repair: crew can patch breakdowns in-place before full derelict (0–50% by skill)
+- Space key toggles between 1x and previous speed
+- docs/ folder created; CLAUDE_HANDOFF.md, GDD.md, LORE.md moved there
+
+## 2026-02-19 ~19:37–22:13 EST
+
+- CRT shader disabled (every pixel every frame)
+- Starfield throttled (1000–3000+ circles/frame)
+- Patched conics trajectory visualization: replaced forward simulation with analytical conic math (KSP-style, 10–100x faster)
+- Orbital updates, label overlap detection, date display, dashboard ticks all throttled to wall-clock intervals
+- Sun-only gravity for drifting derelicts
+- Ships targeting stale Earth positions fixed, jerkiness at high speed fixed
+- CLAUDE_HANDOFF.md created for multi-machine coordination
+- Design conversation: server stack (Python/PostgreSQL), policy system, two-tier alerts, colony tiers, consortia, light-speed delay, piracy balance
+- GDD v0.5: design pillars, communication delay, policy system, alert system, colony tiers, HQ mechanics, consortia sections all written
+
+## 2026-02-18 ~16:53–21:25 EST
+
+- GDD first full draft (~780 lines)
+- Reputation system: model, score, tiers
+- Ephemeris verifier: validates positions against JPL data
+- Worker model: home colony, loyalty, leave status, fatigue
+- JPL ephemeris data integrated into celestial positions
+- Solar map: ship markers, orbit rendering, label overlap detection
+- Market: random walk pricing, buy/sell UI
+- Dashboard: missions, resources, workers, alerts
+- Trajectory visualization experiments (forward simulation approach, later replaced by patched conics)
+- Trade missions: buy/sell at colonies, revenue calculation
+- Ship outfitting tab: equipment upgrades, mining unit management
+- Dashboard: financial history, transaction log
+
+## 2026-02-18 ~07:28–07:45 EST
+
+- JPL ephemeris data: real orbital elements for all planets and major bodies
+- Colony positions tied to orbital mechanics
+- HTTP fetcher service for ephemeris
+- Solar map orbit path rendering
+- TimeScale autoload: speed control (1x through max), game clock formatting
+- Speed controls in main UI
+
+## 2026-02-17 ~19:29–22:42 EST
+
+- Contracts: offer/accept/complete/fail, deadlines, rewards
+- Market events: random price shocks
+- Ship upgrades: model, catalog, equipment slots
+- Brachistochrone trajectory calculation
+- Solar map: ship markers, orbit visualization
+- TimeScale autoload
+- Fleet tab: ship list, status, basic dispatch
+- Market tab: prices, buy/sell
+- All 4 ship classes defined: Courier, Prospector, Explorer, Hauler (thrust/cargo/fuel specs)
+- Fuel pricing: colony-based costs, distance scaling
+- Company policy system: thrust strategy
+- Trade mission model: full buy/sell flow
+- Fleet dispatch UI: crew selection, route preview, fuel cost
+- Solar map: ship movement along trajectory
+- LORE.md created
+
+## 2026-02-16 ~18:42–21:42 EST
+
+- Project created in Godot 4
+- Core autoloads: EventBus, GameState, Simulation
+- Core models: Ship, Worker, Mission, Equipment, Colony, Contract, TradeMission
+- Core data: AsteroidData, CelestialData, MarketData, ResourceTypes
+- Market tab, Fleet tab, Workers tab, Dashboard tab initial builds
+- Solar map skeleton
+- Brachistochrone physics stub

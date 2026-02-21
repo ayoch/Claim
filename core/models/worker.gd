@@ -21,6 +21,9 @@ extends Resource
 @export var engineer_xp: float = 0.0
 @export var mining_xp: float = 0.0
 
+enum Personality { AGGRESSIVE = 0, CAUTIOUS = 1, LOYAL = 2, GREEDY = 3, LEADER = 4 }
+@export var personality: int = Personality.LOYAL
+
 const BASE_XP: float = 86400.0  # 1 game-day at skill 0.0
 const SKILL_CAP: float = 2.0
 
@@ -133,6 +136,7 @@ static func generate_random() -> Worker:
 	var total_skill := w.pilot_skill + w.engineer_skill + w.mining_skill
 	w.wage = int(80 + total_skill * 40)
 	w.home_colony = _pick_home_colony()
+	w.personality = randi() % 5
 	w.hired_at = GameState.total_ticks
 	return w
 
@@ -269,3 +273,77 @@ func get_xp_progress(skill_type: int) -> float:
 		return 0.0
 
 	return current_xp / xp_needed
+
+func get_personality_name() -> String:
+	match personality:
+		Personality.AGGRESSIVE: return "Aggressive"
+		Personality.CAUTIOUS:   return "Cautious"
+		Personality.LOYAL:      return "Loyal"
+		Personality.GREEDY:     return "Greedy"
+		Personality.LEADER:     return "Leader"
+	return "Unknown"
+
+func get_personality_description() -> String:
+	match personality:
+		Personality.AGGRESSIVE: return "Works hard, takes risks. Higher output, more accidents."
+		Personality.CAUTIOUS:   return "Methodical and safety-conscious. Fewer accidents, lower output."
+		Personality.LOYAL:      return "Reliable and steadfast. Rarely quits, endures hardship."
+		Personality.GREEDY:     return "Motivated by money. Demands raises; leaves if underpaid."
+		Personality.LEADER:     return "Inspires the crew. Aura boosts team mining and reduces fatigue."
+	return ""
+
+func get_mining_multiplier() -> float:
+	match personality:
+		Personality.AGGRESSIVE: return 1.15
+		Personality.CAUTIOUS:   return 0.95
+		Personality.LOYAL:      return 1.05
+		Personality.GREEDY:     return 1.10
+		Personality.LEADER:     return 1.0
+	return 1.0
+
+func get_accident_multiplier() -> float:
+	match personality:
+		Personality.AGGRESSIVE: return 1.50
+		Personality.CAUTIOUS:   return 0.70
+		Personality.LOYAL:      return 1.0
+		Personality.GREEDY:     return 1.20
+		Personality.LEADER:     return 1.0
+	return 1.0
+
+func get_fatigue_multiplier() -> float:
+	match personality:
+		Personality.AGGRESSIVE: return 1.20
+		Personality.CAUTIOUS:   return 0.90
+		Personality.LOYAL:      return 1.0
+		Personality.GREEDY:     return 1.0
+		Personality.LEADER:     return 1.0
+	return 1.0
+
+func get_quit_multiplier() -> float:
+	match personality:
+		Personality.AGGRESSIVE: return 1.50
+		Personality.CAUTIOUS:   return 1.0
+		Personality.LOYAL:      return 0.20
+		Personality.GREEDY:     return 2.0
+		Personality.LEADER:     return 0.70
+	return 1.0
+
+func get_tardiness_multiplier() -> float:
+	match personality:
+		Personality.AGGRESSIVE: return 1.30
+		Personality.CAUTIOUS:   return 0.50
+		Personality.LOYAL:      return 0.20
+		Personality.GREEDY:     return 1.50
+		Personality.LEADER:     return 1.0
+	return 1.0
+
+## Additional loyalty delta applied on injury or abandonment events.
+## Negative = extra loyalty loss, positive = loyalty preserved.
+func get_injury_loyalty_delta() -> float:
+	match personality:
+		Personality.AGGRESSIVE: return -5.0
+		Personality.CAUTIOUS:   return -10.0
+		Personality.LOYAL:      return 5.0
+		Personality.GREEDY:     return 0.0
+		Personality.LEADER:     return 0.0
+	return 0.0

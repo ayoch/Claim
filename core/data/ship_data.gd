@@ -29,6 +29,7 @@ const SHIP_NAMES := [
 	"Frogblast the Vent Core",
 	"They're Everywhere",
 	"Phaistos",
+	"Jeirrut",
 ]
 
 const CLASS_PRICES := {
@@ -77,8 +78,26 @@ const CLASS_STATS := {
 	},
 }
 
+static var _used_ship_names: Dictionary = {}
+
 static func generate_random_name() -> String:
-	return SHIP_NAMES[randi() % SHIP_NAMES.size()]
+	var available: Array[String] = []
+	for n in SHIP_NAMES:
+		if not _used_ship_names.has(n):
+			available.append(n)
+	# Fall back to full list if all names exhausted
+	if available.is_empty():
+		available = SHIP_NAMES.duplicate()
+	var chosen: String = available[randi() % available.size()]
+	_used_ship_names[chosen] = true
+	return chosen
+
+static func release_name(ship_name: String) -> void:
+	_used_ship_names.erase(ship_name)
+
+## Apply subtle per-ship variance to a stat (±7% by default, rounded to 1 decimal)
+static func _vary(base: float, spread: float = 0.07) -> float:
+	return snappedf(base * randf_range(1.0 - spread, 1.0 + spread), 0.1)
 
 static func create_ship(ship_class: ShipClass, ship_name: String = "") -> Ship:
 	var ship := Ship.new()
@@ -90,16 +109,16 @@ static func create_ship(ship_class: ShipClass, ship_name: String = "") -> Ship:
 		ship_name = generate_random_name()
 	ship.ship_name = ship_name
 
-	# Apply stats from template
-	ship.max_thrust_g = stats["thrust_g"]
+	# Apply stats with subtle per-ship variance (±7%) — integers are not varied
+	ship.max_thrust_g = _vary(stats["thrust_g"])
 	ship.thrust_setting = 1.0  # Start at 100% thrust
-	ship.cargo_capacity = stats["cargo_capacity"]
-	ship.cargo_volume = stats["cargo_volume"]
-	ship.fuel_capacity = stats["fuel_capacity"]
-	ship.fuel = stats["fuel_capacity"]  # Start with full fuel
+	ship.cargo_capacity = _vary(stats["cargo_capacity"])
+	ship.cargo_volume = _vary(stats["cargo_volume"])
+	ship.fuel_capacity = _vary(stats["fuel_capacity"])
+	ship.fuel = ship.fuel_capacity  # Start with full fuel
 	ship.min_crew = stats["min_crew"]
 	ship.max_equipment_slots = stats["max_equipment_slots"]
-	ship.base_mass = stats["cargo_capacity"] * stats["base_mass_mult"]
+	ship.base_mass = _vary(stats["cargo_capacity"] * stats["base_mass_mult"])
 
 	# Initialize at Earth
 	ship.position_au = CelestialData.get_earth_position_au()

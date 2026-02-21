@@ -108,6 +108,14 @@ func _refresh_crew() -> void:
 		details.add_theme_color_override("font_color", status_color)
 		info_vbox.add_child(details)
 
+		# Personality trait
+		var personality_label := Label.new()
+		personality_label.text = "%s — %s" % [worker.get_personality_name(), worker.get_personality_description()]
+		personality_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		personality_label.add_theme_color_override("font_color", Color(0.75, 0.65, 0.9))
+		personality_label.add_theme_font_size_override("font_size", 13)
+		info_vbox.add_child(personality_label)
+
 		# XP Progress Bars
 		var xp_container := HBoxContainer.new()
 		xp_container.add_theme_constant_override("separation", 12)
@@ -191,8 +199,8 @@ func _refresh_candidates() -> void:
 		hbox.add_theme_constant_override("separation", 8)
 
 		var info := Label.new()
-		info.text = "%s  |  %s  |  $%d/pay" % [
-			candidate.worker_name, candidate.get_specialties_text(), candidate.wage
+		info.text = "%s  |  %s  |  $%d/pay  |  %s" % [
+			candidate.worker_name, candidate.get_specialties_text(), candidate.wage, candidate.get_personality_name()
 		]
 		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL

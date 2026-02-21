@@ -57,6 +57,10 @@ const STATION_RADIUS_AU: float = 1.0  # Ships consider targets within this radiu
 var _leave_accumulator: float = 0.0
 const LEAVE_CHECK_INTERVAL: float = 86400.0  # Check once per game-day
 
+# Greedy worker wage pressure
+var _greedy_wage_accumulator: float = 0.0
+const GREEDY_WAGE_INTERVAL: float = 86400.0 * 30.0  # Every 30 game-days
+
 const TARDINESS_REASONS: Array[String] = [
 	"Got drunk at a station bar and missed the shuttle",
 	"Family emergency back home — needed extra time",
@@ -100,12 +104,17 @@ func _process(delta: float) -> void:
 
 	_tick_accumulator += delta * game_speed
 	var steps := 0
+	var total_dt := 0.0
 	while _tick_accumulator >= TICK_INTERVAL and steps < MAX_STEPS_PER_FRAME:
 		# Batch ticks into larger steps when backlog is large
 		var dt := minf(_tick_accumulator, MAX_DT_PER_STEP)
 		_tick_accumulator -= dt
-		_process_tick(dt)
+		_process_tick(dt, false)  # Don't emit tick per step — emit once below
+		total_dt += dt
 		steps += 1
+	# Emit tick once per frame with total accumulated dt — prevents 30x signal spam
+	if total_dt > 0.0:
+		EventBus.tick.emit(total_dt)
 
 func _process_tick(dt: float, emit_event: bool = true) -> void:
 
@@ -132,9 +141,11 @@ func _process_tick(dt: float, emit_event: bool = true) -> void:
 	_process_worker_fatigue(dt)
 	_process_deployed_crews(dt)
 	_process_mining_units(dt)
+	_process_asteroid_supplies(dt)
 	_process_food_consumption(dt)
 	_process_hitchhike_pool(dt)
 	_process_worker_leave(dt)
+	_process_greedy_wages(dt)
 	_process_stationed_ships(dt)
 	_process_survey_events(dt)
 	_process_market_events(dt)
@@ -337,7 +348,7 @@ func _process_waypoint_transition(mission: Mission, is_outbound: bool) -> void:
 		# Get waypoint type
 		var waypoint_type := Mission.WaypointType.GRAVITY_ASSIST
 		if mission.outbound_waypoint_types.size() > mission.outbound_waypoint_index:
-			waypoint_type = mission.outbound_waypoint_types[mission.outbound_waypoint_index]
+			waypoint_type = mission.outbound_waypoint_types[mission.outbound_waypoint_index] as Mission.WaypointType
 
 		# Get waypoint position (may be updated colony position)
 		var waypoint_pos := mission.outbound_waypoints[mission.outbound_waypoint_index]
@@ -376,7 +387,7 @@ func _process_waypoint_transition(mission: Mission, is_outbound: bool) -> void:
 		# Return journey
 		var waypoint_type := Mission.WaypointType.GRAVITY_ASSIST
 		if mission.return_waypoint_types.size() > mission.return_waypoint_index:
-			waypoint_type = mission.return_waypoint_types[mission.return_waypoint_index]
+			waypoint_type = mission.return_waypoint_types[mission.return_waypoint_index] as Mission.WaypointType
 
 		var waypoint_pos := mission.return_waypoints[mission.return_waypoint_index]
 
@@ -479,7 +490,7 @@ func _process_trade_waypoint_transition(tm: TradeMission, is_outbound: bool) -> 
 	if is_outbound:
 		var waypoint_type := TradeMission.WaypointType.GRAVITY_ASSIST
 		if tm.outbound_waypoint_types.size() > tm.outbound_waypoint_index:
-			waypoint_type = tm.outbound_waypoint_types[tm.outbound_waypoint_index]
+			waypoint_type = tm.outbound_waypoint_types[tm.outbound_waypoint_index] as TradeMission.WaypointType
 
 		var waypoint_pos := tm.outbound_waypoints[tm.outbound_waypoint_index]
 
@@ -510,7 +521,7 @@ func _process_trade_waypoint_transition(tm: TradeMission, is_outbound: bool) -> 
 	else:
 		var waypoint_type := TradeMission.WaypointType.GRAVITY_ASSIST
 		if tm.return_waypoint_types.size() > tm.return_waypoint_index:
-			waypoint_type = tm.return_waypoint_types[tm.return_waypoint_index]
+			waypoint_type = tm.return_waypoint_types[tm.return_waypoint_index] as TradeMission.WaypointType
 
 		var waypoint_pos := tm.return_waypoints[tm.return_waypoint_index]
 
@@ -640,9 +651,12 @@ func _mine_tick(mission: Mission, dt: float) -> void:
 		loyalty_total += w.loyalty_modifier
 	var avg_loyalty_mod := loyalty_total / float(worker_count) if worker_count > 0 else 1.0
 
+	var personality_mining_mult := _get_personality_mining_multiplier(mission.workers)
+	var leader_mining_mult := _get_leader_mining_modifier(mission.workers)
+
 	for ore_type in mission.asteroid.ore_yields:
 		var base_yield: float = mission.asteroid.ore_yields[ore_type]
-		var mined: float = base_yield * mining_skill_total * equip_mult * luck * avg_loyalty_mod * BASE_MINING_RATE * dt
+		var mined: float = base_yield * mining_skill_total * equip_mult * luck * avg_loyalty_mod * personality_mining_mult * leader_mining_mult * BASE_MINING_RATE * dt
 		var remaining := ship.get_cargo_remaining()
 		mined = minf(mined, remaining)
 		if mined > 0:
@@ -710,6 +724,7 @@ func _process_trade_missions(dt: float) -> void:
 								revenue += int(amount * price)
 							tm.revenue = revenue
 							GameState.money += revenue
+							GameState.record_transaction(revenue, "Ore sold at %s" % tm.colony.colony_name, tm.ship.ship_name)
 							# Clear cargo after selling
 							tm.cargo.clear()
 							tm.ship.current_cargo.clear()
@@ -868,7 +883,7 @@ func _check_ship_collisions(prev_positions: Dictionary) -> void:
 		# Remove all crew
 		for w in ship.last_crew:
 			if w is Worker:
-				GameState.workers.erase(w)
+				GameState.fire_worker(w)
 		# Clean up missions
 		if ship.current_mission:
 			GameState.missions.erase(ship.current_mission)
@@ -880,7 +895,8 @@ func _check_ship_collisions(prev_positions: Dictionary) -> void:
 		GameState.rescue_missions.erase(ship)
 		GameState.refuel_missions.erase(ship)
 		GameState.stranger_offers.erase(ship)
-		# Remove the ship
+		# Remove the ship and free its name for reuse
+		ShipData.release_name(ship.ship_name)
 		GameState.ships.erase(ship)
 
 func _update_ship_transit_physics(ship: Ship, start_pos: Vector2, end_pos_stored: Vector2, time_fraction: float, transit_mode: int, total_time: float, dt: float) -> void:
@@ -1109,8 +1125,7 @@ func _process_rescues(dt: float) -> void:
 		# 10% worker loss chance per worker
 		for w in workers_to_check:
 			if w is Worker and randf() < 0.1:
-				GameState.workers.erase(w)
-				EventBus.worker_fired.emit(w)
+				GameState.fire_worker(w)
 
 		EventBus.rescue_mission_completed.emit(ship)
 
@@ -1193,7 +1208,8 @@ func _process_life_support(dt: float) -> void:
 		# Emit event before removing ship
 		EventBus.ship_destroyed.emit(ship, "Life support failure")
 
-		# Remove the ship
+		# Remove the ship and free its name for reuse
+		ShipData.release_name(ship.ship_name)
 		GameState.ships.erase(ship)
 
 const STRANGER_NAMES: Array[String] = [
@@ -1311,8 +1327,8 @@ func _station_try_mining(ship: Ship) -> bool:
 		var dist := station_pos.distance_to(asteroid.get_position_au())
 		if dist < STATION_RADIUS_AU and dist < best_dist:
 			# Check if we have fuel for round-trip
-			var fuel_needed := ship.calc_fuel_for_distance(dist, ship.get_cargo_total()) + ship.calc_fuel_for_distance(dist, ship.get_effective_cargo_capacity())
-			if fuel_needed <= ship.fuel:
+			var candidate_fuel := ship.calc_fuel_for_distance(dist, ship.get_cargo_total()) + ship.calc_fuel_for_distance(dist, ship.get_effective_cargo_capacity())
+			if candidate_fuel <= ship.fuel:
 				best_asteroid = asteroid
 				best_dist = dist
 
@@ -1362,8 +1378,8 @@ func _station_try_repair(ship: Ship) -> bool:
 			continue  # Already being rescued
 		var dist := station_pos.distance_to(other_ship.position_au)
 		if dist < STATION_RADIUS_AU and dist < best_dist:
-			var fuel_needed := ship.calc_fuel_for_distance(dist, 0.0) * 2.0  # Round trip
-			if fuel_needed <= ship.fuel:
+			var candidate_fuel := ship.calc_fuel_for_distance(dist, 0.0) * 2.0  # Round trip
+			if candidate_fuel <= ship.fuel:
 				best_target = other_ship
 				best_dist = dist
 
@@ -1426,8 +1442,8 @@ func _station_try_parts_delivery(ship: Ship) -> bool:
 
 		var dist := station_pos.distance_to(other_ship.position_au)
 		if dist < STATION_RADIUS_AU and dist > 0.01 and dist < best_dist:
-			var fuel_needed := ship.calc_fuel_for_distance(dist, ship.get_supplies_mass()) * 2.0
-			if fuel_needed <= ship.fuel:
+			var candidate_fuel := ship.calc_fuel_for_distance(dist, ship.get_supplies_mass()) * 2.0
+			if candidate_fuel <= ship.fuel:
 				best_target = other_ship
 				best_dist = dist
 
@@ -1489,8 +1505,8 @@ func _station_try_provisioning(ship: Ship) -> bool:
 		var asteroid_pos := asteroid.get_position_au()
 		var dist := station_pos.distance_to(asteroid_pos)
 		if dist < STATION_RADIUS_AU and dist < best_dist:
-			var fuel_needed := ship.calc_fuel_for_distance(dist, 0.0) * 2.0
-			if fuel_needed <= ship.fuel:
+			var candidate_fuel := ship.calc_fuel_for_distance(dist, 0.0) * 2.0
+			if candidate_fuel <= ship.fuel:
 				best_target = crew_entry
 				best_dist = dist
 
@@ -1561,8 +1577,8 @@ func _station_try_crew_ferry(ship: Ship) -> bool:
 			continue
 		var dist := station_pos.distance_to(other_ship.position_au)
 		if dist < STATION_RADIUS_AU and dist < best_dist:
-			var fuel_needed := ship.calc_fuel_for_distance(dist, 0.0) * 2.0
-			if fuel_needed <= ship.fuel:
+			var candidate_fuel := ship.calc_fuel_for_distance(dist, 0.0) * 2.0
+			if candidate_fuel <= ship.fuel:
 				best_target = other_ship
 				best_dist = dist
 				fatigued_count = tired
@@ -1623,8 +1639,8 @@ func _station_try_patrol(ship: Ship) -> bool:
 	for asteroid in GameState.asteroids:
 		var dist := station_pos.distance_to(asteroid.get_position_au())
 		if dist < STATION_RADIUS_AU * 0.5 and dist > 0.01 and dist < best_dist:
-			var fuel_needed := ship.calc_fuel_for_distance(dist, 0.0) * 2.0
-			if fuel_needed <= ship.fuel:
+			var candidate_fuel := ship.calc_fuel_for_distance(dist, 0.0) * 2.0
+			if candidate_fuel <= ship.fuel:
 				best_asteroid = asteroid
 				best_dist = dist
 
@@ -1698,11 +1714,16 @@ func _process_deployed_crews(dt: float) -> void:
 		food_remaining = maxf(food_remaining - food_consumed, 0.0)
 		supplies["food"] = food_remaining
 
-		# Accumulate fatigue for deployed workers
+		# Accumulate fatigue for deployed workers (modified by personality and leader aura)
+		var leader_fatigue_mod: float = _get_leader_fatigue_modifier(crew_workers)
 		for w in crew_workers:
-			w.fatigue = minf(w.fatigue + days, 100.0)
+			var fatigue_mult: float = w.get_fatigue_multiplier()
+			if w.personality != Worker.Personality.LEADER:
+				fatigue_mult *= leader_fatigue_mod
+			var fatigue_delta: float = days * fatigue_mult
+			w.fatigue = minf(w.fatigue + fatigue_delta, 100.0)
 			w.days_deployed += days
-			if w.fatigue >= 80.0 and w.fatigue - days < 80.0:
+			if w.fatigue >= 80.0 and w.fatigue - fatigue_delta < 80.0:
 				EventBus.worker_fatigued.emit(w)
 
 func _process_worker_fatigue(dt: float) -> void:
@@ -1716,10 +1737,14 @@ func _process_worker_fatigue(dt: float) -> void:
 
 	for w in GameState.workers:
 		if w.assigned_mission != null:
-			# On mission: fatigue increases
-			w.fatigue = minf(w.fatigue + days, 100.0)
+			# On mission: fatigue increases, modified by personality and leader aura
+			var fatigue_mult: float = w.get_fatigue_multiplier()
+			if w.personality != Worker.Personality.LEADER:
+				fatigue_mult *= _get_leader_fatigue_modifier(w.assigned_mission.workers)
+			var fatigue_delta: float = days * fatigue_mult
+			w.fatigue = minf(w.fatigue + fatigue_delta, 100.0)
 			w.days_deployed += days
-			if w.fatigue >= 80.0 and w.fatigue - days < 80.0:
+			if w.fatigue >= 80.0 and w.fatigue - fatigue_delta < 80.0:
 				EventBus.worker_fatigued.emit(w)
 		else:
 			# Idle: fatigue decreases (3x faster recovery)
@@ -1891,6 +1916,27 @@ func _complete_deploy(mission: Mission) -> void:
 			w.assigned_mission = null
 	mission.mining_units_to_deploy.clear()
 	mission.workers_to_deploy.clear()
+	# Transfer supplies from ship to asteroid site
+	if mission.asteroid:
+		var asteroid_name := mission.asteroid.asteroid_name
+		# Count workers staying at the asteroid
+		var staying_workers := 0
+		for unit in GameState.deployed_mining_units:
+			if unit.deployed_at_asteroid == asteroid_name:
+				staying_workers += unit.assigned_workers.size()
+		# Food: transfer enough minus a return-trip buffer (estimate return trip ~30 days, 1.5x safety)
+		var food_on_ship: float = mission.ship.supplies.get("food", 0.0)
+		var return_days := 30.0  # conservative estimate
+		var return_buffer: float = staying_workers * 0.028 * return_days * 1.5
+		var food_to_transfer := maxf(0.0, food_on_ship - return_buffer)
+		if food_to_transfer > 0.0:
+			mission.ship.supplies["food"] = food_on_ship - food_to_transfer
+			GameState.add_to_asteroid_supplies(asteroid_name, "food", food_to_transfer)
+		# Repair parts: transfer all (ship can resupply at colony, miners cannot)
+		var parts_on_ship: float = mission.ship.supplies.get("repair_parts", 0.0)
+		if parts_on_ship > 0.0:
+			mission.ship.supplies["repair_parts"] = 0.0
+			GameState.add_to_asteroid_supplies(asteroid_name, "repair_parts", parts_on_ship)
 	# Transition to idle at destination
 	if mission.ship.is_stationed:
 		_start_station_return(mission)
@@ -1951,39 +1997,82 @@ func _process_mining_units(dt: float) -> void:
 			skill_total = 0.1
 		var luck := randf_range(MINING_VARIANCE_MIN, MINING_VARIANCE_MAX)
 		var unit_mult := unit.get_effective_multiplier()
+		var pers_mining_mult := _get_personality_mining_multiplier(unit.assigned_workers)
+		var leader_mining_mult := _get_leader_mining_modifier(unit.assigned_workers)
 		# Grant mining XP to assigned workers while unit is operational
 		for w in unit.assigned_workers:
 			w.add_xp(2, dt)  # 2 = mining skill
 		# Mine each ore type and add to stockpile
 		for ore_type in asteroid.ore_yields:
 			var base_yield: float = asteroid.ore_yields[ore_type]
-			var ore_per_tick := base_yield * skill_total * unit_mult * luck * loyalty_avg * BASE_MINING_RATE * dt
+			var ore_per_tick := base_yield * skill_total * unit_mult * luck * loyalty_avg * pers_mining_mult * leader_mining_mult * BASE_MINING_RATE * dt
 			if ore_per_tick > 0.0:
 				GameState.add_to_stockpile(asteroid.asteroid_name, ore_type, ore_per_tick)
-		# Degrade durability — better engineers slow wear
+		# Degrade durability — better engineers slow wear; repair parts reduce wear by 20%
 		# 0.0 eng = full wear, 1.5 eng = 70% wear
 		var eng_wear_factor := 1.0 - (best_eng * 0.2)
-		unit.durability -= unit.wear_per_day * eng_wear_factor * days
-		unit.max_durability -= unit.wear_per_day * MiningUnit.MAX_DURABILITY_DECAY_RATIO * eng_wear_factor * days
+		var parts_wear_factor := 0.8 if GameState.asteroid_supplies.get(unit.deployed_at_asteroid, {}).get("repair_parts", 0.0) > 0.0 else 1.0
+		unit.durability -= unit.wear_per_day * eng_wear_factor * parts_wear_factor * days
+		unit.max_durability -= unit.wear_per_day * MiningUnit.MAX_DURABILITY_DECAY_RATIO * eng_wear_factor * parts_wear_factor * days
 		if unit.max_durability < 0.0:
 			unit.max_durability = 0.0
 		if unit.durability <= 0.0:
 			unit.durability = 0.0
 			EventBus.mining_unit_broken.emit(unit)
 		# Accidents — heavy equipment is dangerous
-		# Base chance: ~0.2% per game-day per unit. Better engineers reduce risk.
+		# Base chance: ~0.2% per game-day per unit. Better engineers and cautious personalities reduce risk.
 		# 0.0 eng = full risk, 1.5 eng = 25% risk
-		var accident_chance_per_day := 0.002 * (1.0 - best_eng * 0.5)
+		var accident_pers_mult := _get_personality_accident_multiplier(unit.assigned_workers)
+		var accident_chance_per_day := 0.002 * (1.0 - best_eng * 0.5) * accident_pers_mult
 		if days > 0.0 and randf() < accident_chance_per_day * days:
 			# Pick a random worker on this unit
 			var victim: Worker = unit.assigned_workers[randi() % unit.assigned_workers.size()]
 			if not victim.is_injured:
 				victim.is_injured = true
+				victim.loyalty = clampf(victim.loyalty + victim.get_injury_loyalty_delta(), 0.0, 100.0)
 				# Accident also damages the unit
 				unit.durability = maxf(0.0, unit.durability - randf_range(5.0, 15.0))
 				EventBus.worker_injured.emit(victim)
 
-func _process_hitchhike_pool(dt: float) -> void:
+const SUPPLY_ALERT_DAYS := 5.0
+
+func _process_asteroid_supplies(dt: float) -> void:
+	var days := dt / 86400.0
+	# Build per-asteroid summary of workers and units
+	var asteroid_workers: Dictionary = {}  # asteroid_name -> worker count
+	var asteroid_units: Dictionary = {}    # asteroid_name -> unit count
+	for unit in GameState.deployed_mining_units:
+		var name := unit.deployed_at_asteroid
+		asteroid_units[name] = asteroid_units.get(name, 0) + 1
+		asteroid_workers[name] = asteroid_workers.get(name, 0) + unit.assigned_workers.size()
+
+	for asteroid_name in GameState.asteroid_supplies.keys():
+		var workers: int = asteroid_workers.get(asteroid_name, 0)
+		var units: int = asteroid_units.get(asteroid_name, 0)
+
+		# Consume food
+		if workers > 0:
+			var food_needed: float = workers * 0.028 * days
+			GameState.consume_asteroid_supply(asteroid_name, "food", food_needed)
+			# Alert if low
+			var food_days := GameState.get_asteroid_supply_days(asteroid_name, "food")
+			if food_days < SUPPLY_ALERT_DAYS and food_days > 0.0:
+				EventBus.asteroid_supplies_low.emit(asteroid_name, "food", food_days)
+
+		# Consume repair parts
+		if units > 0:
+			var parts_needed: float = units * 0.05 * days
+			GameState.consume_asteroid_supply(asteroid_name, "repair_parts", parts_needed)
+			# Alert if low
+			var parts_days := GameState.get_asteroid_supply_days(asteroid_name, "repair_parts")
+			if parts_days < SUPPLY_ALERT_DAYS and parts_days > 0.0:
+				EventBus.asteroid_supplies_low.emit(asteroid_name, "repair_parts", parts_days)
+
+		# Clean up entries for asteroids with no deployed units
+		if workers <= 0 and units <= 0:
+			GameState.asteroid_supplies.erase(asteroid_name)
+
+func _process_hitchhike_pool(_dt: float) -> void:
 	# Expire pool entries where elapsed >= max_wait
 	var expired: Array[Dictionary] = []
 	for entry in GameState.hitchhike_pool:
@@ -2012,8 +2101,8 @@ func _process_worker_leave(dt: float) -> void:
 			# Leave recovery is handled by _process_worker_fatigue (idle recovery)
 			# Check if fatigue has dropped enough to return
 			if w.fatigue < 20.0:
-				# Ready to return — roll for tardiness
-				if randf() < 0.06:
+				# Ready to return — roll for tardiness (modified by personality)
+				if randf() < 0.06 * w.get_tardiness_multiplier():
 					# Tardy!
 					w.leave_status = 3
 					var reason_template: String = TARDINESS_REASONS[randi() % TARDINESS_REASONS.size()]
@@ -2030,13 +2119,53 @@ func _process_worker_leave(dt: float) -> void:
 					w.leave_status = 0
 					w.fatigue = 0.0
 
-		# Loyalty-based quitting: workers with very low loyalty may quit
+		# Loyalty-based quitting: workers with very low loyalty may quit (modified by personality)
 		if w.loyalty < 15.0 and w.is_available:
-			if randf() < 0.005:  # 0.5% daily chance
+			if randf() < 0.005 * w.get_quit_multiplier():
 				workers_to_quit.append(w)
 
 	for w in workers_to_quit:
 		GameState.fire_worker(w)
+
+func _process_greedy_wages(dt: float) -> void:
+	_greedy_wage_accumulator += dt
+	if _greedy_wage_accumulator < GREEDY_WAGE_INTERVAL:
+		return
+	_greedy_wage_accumulator -= GREEDY_WAGE_INTERVAL
+
+	for w in GameState.workers:
+		if w.personality == Worker.Personality.GREEDY and w.loyalty < 60.0:
+			var raise_amount := 8
+			w.wage += raise_amount
+			EventBus.worker_wage_increased.emit(w, raise_amount)
+
+func _get_leader_mining_modifier(workers: Array) -> float:
+	for w in workers:
+		if w.personality == Worker.Personality.LEADER:
+			return 1.05
+	return 1.0
+
+func _get_leader_fatigue_modifier(workers: Array) -> float:
+	for w in workers:
+		if w.personality == Worker.Personality.LEADER:
+			return 0.95
+	return 1.0
+
+func _get_personality_mining_multiplier(workers: Array) -> float:
+	if workers.is_empty():
+		return 1.0
+	var product := 1.0
+	for w in workers:
+		product *= w.get_mining_multiplier()
+	return pow(product, 1.0 / workers.size())
+
+func _get_personality_accident_multiplier(workers: Array) -> float:
+	if workers.is_empty():
+		return 1.0
+	var product := 1.0
+	for w in workers:
+		product *= w.get_accident_multiplier()
+	return pow(product, 1.0 / workers.size())
 
 func _process_payroll(dt: float) -> void:
 	_payroll_accumulator += dt
@@ -2047,6 +2176,7 @@ func _process_payroll(dt: float) -> void:
 			total_wages += w.wage
 		if total_wages > 0:
 			GameState.money -= total_wages
+			GameState.record_transaction(-total_wages, "Payroll (%d workers)" % GameState.workers.size())
 
 func _process_food_consumption(dt: float) -> void:
 	var days := dt / 86400.0
@@ -2107,7 +2237,7 @@ func _trigger_food_depletion(ship: Ship, mission: Mission = null, trade_mission:
 		abandoned_workers = mission.workers.duplicate()
 		for w in mission.workers:
 			w.assigned_mission = null
-			w.loyalty = maxf(w.loyalty - 20.0, 0.0)  # Major loyalty hit
+			w.loyalty = maxf(w.loyalty - 20.0 + w.get_injury_loyalty_delta(), 0.0)  # Major loyalty hit, modified by personality
 		mission.workers.clear()
 		mission.status = Mission.Status.COMPLETED
 		GameState.missions.erase(mission)
@@ -2116,7 +2246,7 @@ func _trigger_food_depletion(ship: Ship, mission: Mission = null, trade_mission:
 		abandoned_workers = trade_mission.workers.duplicate()
 		for w in trade_mission.workers:
 			w.assigned_trade_mission = null
-			w.loyalty = maxf(w.loyalty - 20.0, 0.0)
+			w.loyalty = maxf(w.loyalty - 20.0 + w.get_injury_loyalty_delta(), 0.0)
 		trade_mission.workers.clear()
 		trade_mission.status = TradeMission.Status.COMPLETED
 		GameState.trade_missions.erase(trade_mission)
@@ -2263,7 +2393,8 @@ func _auto_refuel_at_colony(ship: Ship) -> void:
 	if GameState.money >= fuel_cost:
 		ship.fuel = ship.get_effective_fuel_capacity()
 		GameState.money -= fuel_cost
-		# Note: Could add an event here if we want to notify player
+		if fuel_cost > 0:
+			GameState.record_transaction(-fuel_cost, "Refuel at colony", ship.ship_name)
 
 func _auto_provision_at_location(ship: Ship) -> void:
 	# Automatically buy food when ship is docked (at colony or Earth)

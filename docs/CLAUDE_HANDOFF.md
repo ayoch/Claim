@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-21 (evening) EST
-**Updated By:** Instance on Machine 2 (Mac laptop - HK-47)
-**Session Context:** Food system fixes, teleportation bugs, test harness enhancements
-**Next Session Priority:** Continue testing auto-provisioning and test harness, verify no more teleports
+**Last Updated:** 2026-02-21 11:28 EST
+**Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
+**Session Context:** Performance fixes, leak investigation, personality traits verified, doc workflow established
+**Next Session Priority:** Testing — verify personality traits work, confirm perf fix holds at max speed
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -12,7 +12,49 @@
 ## Session Log
 *(Most recent first)*
 
-### 2026-02-21 (evening) EST - Food System Fix & Teleportation Bugs
+### 2026-02-21 ~08:00–11:28 EST - Performance Fixes, Leak Investigation, Personality Traits, Doc Workflow
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Performance Fix: Tick Batching (simulation.gd)**
+    - At SPEED_MAX (200,000x), simulation ran up to 30 steps/frame
+    - Previously emitted `EventBus.tick` once per step → 30x signal overhead per frame
+    - Fixed: tick emitted ONCE per frame with accumulated dt — ~30x reduction in UI signal overhead
+    - Root cause of reported ~200ms process time and 6403 object count
+  - **Memory Fix: financial_history trimming (game_state.gd)**
+    - `financial_history.slice()` was allocating a new array on every cap hit
+    - Changed to `remove_at(0)` — in-place, no allocation
+  - **Ships Tab Horizontal Expansion (FINAL FIX)**
+    - Added `clip_text = true` to all 12 labels missing it in ship_outfitting_tab.gd
+    - Root cause: labels without clip_text report full text width as minimum size even with SIZE_EXPAND_FILL
+    - Added `_refresh_queued` guard + `_queue_refresh()` helper to prevent stacked call_deferred
+    - User confirmed: "Ship tab seems to be holding"
+  - **Leak Investigation: ContractsList (FALSE ALARM)**
+    - Log appeared to show ContractsList growing monotonically — was misidentified as a leak
+    - Reality: list fills to ~48 nodes (5 available + 4 active×3 + 1 separator + 30 messages) then plateaus
+    - Node/object counts overall healthy: ~800 nodes, ~3200–3400 objects, stable
+  - **Leak Detector Enhancement (leak_detector.gd)**
+    - Added GameState array size logging to overlay and log file
+    - Fixed condition: `Engine.has_singleton()` doesn't work for autoloads in Godot 4
+    - Changed to `is_instance_valid(GameState)` — now logs all array sizes correctly
+  - **Worker Personality Traits (VERIFIED COMPLETE)**
+    - All 6 files from the plan were already implemented (worker.gd, game_state.gd, event_bus.gd, simulation.gd, workers_tab.gd, dashboard_tab.gd)
+    - Enum + field, all multiplier methods, save/load, simulation hooks, UI display all present
+    - Greedy wage pressure, leader aura, accident/fatigue/quit/tardiness modifiers all wired in
+- **Files Modified:**
+  - core/autoloads/simulation.gd (tick batching)
+  - core/autoloads/game_state.gd (financial_history remove_at)
+  - core/autoloads/leak_detector.gd (GameState logging, fix condition)
+  - ui/tabs/ship_outfitting_tab.gd (clip_text, refresh guard)
+- **Status:** Performance fixes committed. Personality traits complete. Ready for testing.
+- **Testing Priorities:**
+  1. Run at SPEED_MAX — process time should be well under 100ms now
+  2. Hire workers, verify personality shown in candidates and crew cards
+  3. Advance time, verify Greedy workers get wage increase notifications in dashboard
+  4. Confirm Loyal workers rarely quit vs Aggressive at low loyalty
+  5. Save/load — verify personality persists; old saves load with LOYAL default
+  6. Enable leak detector (F6) and run autotest — GameState array sizes should now appear in log
+
+### 2026-02-21 (morning) EST - Food System Fix & Teleportation Bugs
 - **Machine:** Mac laptop (HK-47)
 - **Work Completed:**
   - **CRITICAL BUG FIX: Food Consumption Unit Conversion**
@@ -567,6 +609,8 @@ This handoff document is version-controlled in git. Update it as needed to help 
 - Add new entries to the Session Log with full timestamp (date + time + timezone)
 - Keep chronological order for session entries (newest first in log)
 - This timestamp synchronization allows multiple instances on different machines to coordinate
+- **Also update `docs/WORK_LOG.txt`** — append a new section with date+time and bullet list of what was done (used by user for writing commit descriptions)
+- **Also update `docs/GDD.md`** whenever features are implemented or design decisions are finalized
 
 **At the start of EVERY session:**
 - Read this file FIRST to check for updates from other instances

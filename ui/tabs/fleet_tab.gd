@@ -15,10 +15,10 @@ var _sort_by: String = "profit"  # "profit", "distance", "name"
 var _filter_type: int = -1  # -1 = all, otherwise AsteroidData.BodyType value
 var _needs_full_rebuild: bool = true
 var _progress_bars: Dictionary = {}  # Ship -> ProgressBar
+var _route_labels: Dictionary = {}   # Ship -> Label (overlaid on progress bar)
 var _status_labels: Dictionary = {}  # Ship -> Label
 var _detail_labels: Dictionary = {}  # Ship -> Label
-var _cargo_labels: Dictionary = {}  # Ship -> Label for cargo display
-var _location_labels: Dictionary = {}  # Ship -> Label for location display
+var _cargo_labels: Dictionary = {}   # Ship -> Label for cargo display
 const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catch up
 var _dispatch_refresh_timer: float = 0.0
 const DISPATCH_REFRESH_INTERVAL: float = 2.0  # Refresh dispatch popup every 2 seconds
@@ -115,18 +115,18 @@ func _on_tick(_dt: float) -> void:
 				if amount > 0.01:
 					cargo_lines.append("  %s: %.1ft" % [ResourceTypes.get_ore_name(ore_type), amount])
 			label.text = "\n".join(cargo_lines)
-	# Update location displays to show ship positions during transit
-	for ship: Ship in _location_labels:
-		var label: Label = _location_labels[ship]
+	# Update route text overlaid on progress bars
+	for ship: Ship in _route_labels:
+		var label: Label = _route_labels[ship]
 		if is_instance_valid(label):
-			label.text = _get_location_text(ship)
+			label.text = _get_route_text(ship)
 
 func _rebuild_ships() -> void:
 	_progress_bars.clear()
+	_route_labels.clear()
 	_status_labels.clear()
 	_detail_labels.clear()
 	_cargo_labels.clear()
-	_location_labels.clear()
 	_free_children(ships_list)
 
 	for ship: Ship in GameState.ships:
@@ -273,28 +273,61 @@ func _rebuild_ships() -> void:
 			header.add_child(status)
 			_status_labels[ship] = status
 		else:
-			var status := Label.new()
+			# Route and progress shown by the bar overlay below — only add status for extra info
+			var extra_text := ""
 			if ship.current_mission:
-				status.text = ship.current_mission.get_status_text()
-				status.add_theme_color_override("font_color", Color(0.8, 0.7, 0.2))
+				var m := ship.current_mission
+				if m.transit_mode == Mission.TransitMode.HOHMANN:
+					extra_text = "Hohmann transfer"
+				elif m.status == Mission.Status.REFUELING:
+					extra_text = m.get_status_text()
+				elif m.outbound_waypoint_planet_ids.size() > 0 or m.return_waypoint_planet_ids.size() > 0:
+					extra_text = "Gravity assist"
 			elif ship.current_trade_mission:
-				status.text = ship.current_trade_mission.get_status_text()
-				status.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
-			header.add_child(status)
-			_status_labels[ship] = status
+				var tm := ship.current_trade_mission
+				if tm.status == TradeMission.Status.REFUELING:
+					extra_text = tm.get_status_text()
+			if extra_text != "":
+				var status := Label.new()
+				status.text = extra_text
+				status.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
+				status.add_theme_font_size_override("font_size", 12)
+				header.add_child(status)
+				_status_labels[ship] = status
 
 		vbox.add_child(header)
 		if _derelict_actions:
 			vbox.add_child(_derelict_actions)
 
-		# Location line
-		var loc_label := Label.new()
-		loc_label.text = _get_location_text(ship)
-		loc_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
-		loc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		loc_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		vbox.add_child(loc_label)
-		_location_labels[ship] = loc_label
+		# Progress bar with route text overlay — shown for active transit/mining ships
+		if not ship.is_docked and not ship.is_idle_remote and not ship.is_derelict:
+			var progress_value := 0.0
+			if ship.current_mission:
+				progress_value = ship.current_mission.get_progress()
+			elif ship.current_trade_mission:
+				progress_value = ship.current_trade_mission.get_progress()
+
+			var bar_wrapper := Control.new()
+			bar_wrapper.custom_minimum_size = Vector2(0, 26)
+			bar_wrapper.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+			var progress := ProgressBar.new()
+			progress.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			progress.show_percentage = false
+			progress.value = progress_value * 100.0
+			bar_wrapper.add_child(progress)
+
+			var bar_label := Label.new()
+			bar_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+			bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			bar_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			bar_label.text = _get_route_text(ship)
+			bar_label.add_theme_font_size_override("font_size", 11)
+			bar_wrapper.add_child(bar_label)
+
+			vbox.add_child(bar_wrapper)
+			_progress_bars[ship] = progress
+			_route_labels[ship] = bar_label
 
 		var details := Label.new()
 		details.text = _build_details_text(ship)
@@ -408,44 +441,39 @@ func _rebuild_ships() -> void:
 
 				vbox.add_child(equip_row)
 
-		# Progress bar for active transit/mining
-		if not ship.is_docked and not ship.is_idle_remote and not ship.is_derelict:
-			var progress := ProgressBar.new()
-			var elapsed_time := 0.0
-			var total_time := 0.0
-			var progress_value := 0.0
-
-			if ship.current_mission:
-				elapsed_time = ship.current_mission.elapsed_ticks
-				total_time = ship.current_mission.get_current_phase_duration()
-				progress_value = ship.current_mission.get_progress()
-				print("DEBUG [%s]: Mission elapsed=%f, total=%f, progress=%f" % [ship.ship_name, elapsed_time, total_time, progress_value])
-			elif ship.current_trade_mission:
-				elapsed_time = ship.current_trade_mission.elapsed_ticks
-				total_time = ship.current_trade_mission.get_current_phase_duration()
-				progress_value = ship.current_trade_mission.get_progress()
-				print("DEBUG [%s]: Trade elapsed=%f, total=%f, progress=%f" % [ship.ship_name, elapsed_time, total_time, progress_value])
-
-			# Time display above progress bar
-			if total_time > 0:
-				var time_label := Label.new()
-				time_label.text = "%s / %s" % [
-					TimeScale.format_time(elapsed_time),
-					TimeScale.format_time(total_time)
-				]
-				print("DEBUG [%s]: Time label text = '%s'" % [ship.ship_name, time_label.text])
-				time_label.add_theme_font_size_override("font_size", 11)
-				time_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-				vbox.add_child(time_label)
-			else:
-				print("DEBUG [%s]: total_time <= 0, skipping time label" % ship.ship_name)
-
-			progress.value = progress_value * 100.0
-			vbox.add_child(progress)
-			_progress_bars[ship] = progress
-
 		panel.add_child(vbox)
 		ships_list.add_child(panel)
+
+func _get_route_text(ship: Ship) -> String:
+	if ship.current_mission:
+		var m := ship.current_mission
+		var dest := m.asteroid.asteroid_name if m.asteroid else "?"
+		var origin := "Earth" if m.origin_is_earth else "Space"
+		match m.status:
+			Mission.Status.TRANSIT_OUT:
+				return "%s → %s" % [origin, dest]
+			Mission.Status.TRANSIT_BACK:
+				return "%s → %s" % [dest, origin]
+			Mission.Status.MINING:
+				return "Mining: %s" % dest
+			Mission.Status.DEPLOYING:
+				return "Deploying: %s" % dest
+			_:
+				return dest
+	if ship.current_trade_mission:
+		var tm := ship.current_trade_mission
+		var col := tm.colony.colony_name if tm.colony else "?"
+		var origin := "Earth" if tm.origin_is_earth else "Space"
+		match tm.status:
+			TradeMission.Status.TRANSIT_TO_COLONY:
+				return "%s → %s" % [origin, col]
+			TradeMission.Status.TRANSIT_BACK:
+				return "%s → %s" % [col, origin]
+			TradeMission.Status.SELLING:
+				return "Selling: %s" % col
+			_:
+				return col
+	return ""
 
 func _get_location_text(ship: Ship) -> String:
 	if ship.is_at_earth:

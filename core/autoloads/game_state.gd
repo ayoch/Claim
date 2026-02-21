@@ -2,21 +2,15 @@ extends Node
 
 var money: int = 14000000:
 	set(value):
-		var old_money := money
 		money = value
 		EventBus.money_changed.emit(money)
-		# Record financial change - DISABLED FOR PERFORMANCE TESTING
-		#if value != old_money:
-		#	_record_financial_change(value - old_money, total_ticks)
 
 var resources: Dictionary = {} # OreType -> float (tons)
 
 # Financial history tracking
-# Each entry: { "timestamp": float (ticks), "balance": int, "change": int }
+# Each entry: { "timestamp": float, "balance": int, "change": int, "desc": String, "ship": String }
 var financial_history: Array[Dictionary] = []
-const MAX_FINANCIAL_HISTORY: int = 10000  # Keep last 10k entries
-var _last_financial_record_time: float = 0.0
-const MIN_RECORD_INTERVAL: float = 1.0  # Min 1 second between records
+const MAX_FINANCIAL_HISTORY: int = 1000
 var workers: Array[Worker] = []
 var ships: Array[Ship] = []
 var missions: Array[Mission] = []
@@ -57,7 +51,7 @@ func get_game_date() -> Dictionary:
 	var total_days := int(total_ticks / 86400.0)
 	var remaining_secs := int(total_ticks) % 86400
 	var hours := remaining_secs / 3600
-	var minutes := (remaining_secs % 3600) / 60
+	var minutes := (remaining_secs % 3600) / 60.0
 
 	var year := START_YEAR
 	var month := START_MONTH
@@ -88,25 +82,16 @@ func get_game_date_string() -> String:
 		_:
 			return "%02d/%02d/%04d  %02d:%02d" % [d["month"], d["day"], d["year"], d["hours"], d["minutes"]]
 
-func _record_financial_change(change: int, timestamp: float) -> void:
-	# Throttle recording to prevent too many entries
-	if timestamp - _last_financial_record_time < MIN_RECORD_INTERVAL:
-		# Too soon - just update the last entry if it exists
-		if not financial_history.is_empty():
-			var last_entry = financial_history[-1]
-			last_entry["balance"] = money
-			last_entry["change"] = int(last_entry["change"]) + change
-		return
-
-	_last_financial_record_time = timestamp
+func record_transaction(change: int, desc: String, ship_name: String = "") -> void:
 	financial_history.append({
-		"timestamp": timestamp,
+		"timestamp": total_ticks,
 		"balance": money,
-		"change": change
+		"change": change,
+		"desc": desc,
+		"ship": ship_name,
 	})
-	# Trim old entries if too many
 	if financial_history.size() > MAX_FINANCIAL_HISTORY:
-		financial_history = financial_history.slice(financial_history.size() - MAX_FINANCIAL_HISTORY)
+		financial_history.remove_at(0)  # Drop oldest — avoids allocating a new array
 
 func get_financial_data(time_range_seconds: float) -> Array[Dictionary]:
 	# Returns financial history within the time range
@@ -163,6 +148,7 @@ var deployed_crews: Array[Dictionary] = []
 var mining_unit_inventory: Array[MiningUnit] = []  # Purchased, not yet deployed
 var deployed_mining_units: Array[MiningUnit] = []  # On asteroids, mining autonomously
 var ore_stockpiles: Dictionary = {}  # asteroid_name -> { OreType -> float }
+var asteroid_supplies: Dictionary = {}  # asteroid_name -> { "food": float, "repair_parts": float }
 
 # Security zones created by patrolling ships
 # Each: { "center_au": Vector2, "radius_au": float, "ship_name": String, "expires_at": float }
@@ -189,8 +175,10 @@ func _init_resources() -> void:
 		resources[ore] = 0.0
 
 func _init_starter_ship() -> void:
-	var starter := ShipData.create_ship(ShipData.ShipClass.PROSPECTOR)  # Random evocative name
-	ships.append(starter)
+	var classes := ShipData.ShipClass.values()
+	for i in range(3):
+		var ship_class: ShipData.ShipClass = classes[randi() % classes.size()]
+		ships.append(ShipData.create_ship(ship_class))
 
 func purchase_ship(ship_class: ShipData.ShipClass) -> Ship:
 	var price: int = ShipData.CLASS_PRICES[ship_class]
@@ -376,6 +364,7 @@ func purchase_upgrade(entry: Dictionary) -> bool:
 		return false
 	var upgrade := ShipUpgrade.from_catalog(entry)
 	money -= upgrade.cost
+	record_transaction(-upgrade.cost, "Upgrade: %s" % upgrade.upgrade_name)
 	upgrade_inventory.append(upgrade)
 	EventBus.upgrade_purchased.emit(upgrade)
 	return true
@@ -395,6 +384,7 @@ func purchase_mining_unit(entry: Dictionary) -> bool:
 		return false
 	var unit := MiningUnit.from_catalog(entry)
 	money -= unit.cost
+	record_transaction(-unit.cost, "Mining unit: %s" % unit.unit_name)
 	mining_unit_inventory.append(unit)
 	EventBus.mining_unit_purchased.emit(unit)
 	return true
@@ -450,6 +440,7 @@ func rebuild_mining_unit(unit: MiningUnit) -> bool:
 	if money < cost:
 		return false
 	money -= cost
+	record_transaction(-cost, "Rebuild: %s" % unit.unit_name)
 	unit.max_durability = 100.0
 	unit.durability = 100.0
 	return true
@@ -517,6 +508,47 @@ func collect_from_stockpile(asteroid_name: String, ship: Ship) -> float:
 		ore_stockpiles.erase(asteroid_name)
 	return total_collected
 
+func get_asteroid_supplies(asteroid_name: String) -> Dictionary:
+	return asteroid_supplies.get(asteroid_name, {"food": 0.0, "repair_parts": 0.0})
+
+func add_to_asteroid_supplies(asteroid_name: String, supply_key: String, amount: float) -> void:
+	if not asteroid_supplies.has(asteroid_name):
+		asteroid_supplies[asteroid_name] = {"food": 0.0, "repair_parts": 0.0}
+	asteroid_supplies[asteroid_name][supply_key] = asteroid_supplies[asteroid_name].get(supply_key, 0.0) + amount
+
+func consume_asteroid_supply(asteroid_name: String, supply_key: String, amount: float) -> float:
+	## Consume up to `amount` from the supply. Returns actual amount consumed.
+	if not asteroid_supplies.has(asteroid_name):
+		return 0.0
+	var current: float = asteroid_supplies[asteroid_name].get(supply_key, 0.0)
+	var consumed: float = minf(amount, current)
+	asteroid_supplies[asteroid_name][supply_key] = current - consumed
+	return consumed
+
+func get_asteroid_supply_days(asteroid_name: String, supply_key: String) -> float:
+	## Returns days remaining for the given supply based on current deployed units/workers
+	var supply: float = asteroid_supplies.get(asteroid_name, {}).get(supply_key, 0.0)
+	if supply <= 0.0:
+		return 0.0
+	match supply_key:
+		"food":
+			var worker_count := 0
+			for unit in deployed_mining_units:
+				if unit.deployed_at_asteroid == asteroid_name:
+					worker_count += unit.assigned_workers.size()
+			if worker_count <= 0:
+				return INF
+			return supply / (worker_count * 0.028)
+		"repair_parts":
+			var unit_count := 0
+			for unit in deployed_mining_units:
+				if unit.deployed_at_asteroid == asteroid_name:
+					unit_count += 1
+			if unit_count <= 0:
+				return INF
+			return supply / (unit_count * 0.05)
+	return INF
+
 func start_deploy_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worker], units: Array[MiningUnit], deploy_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
 	var mission := Mission.new()
 	mission.ship = ship
@@ -526,7 +558,7 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worker
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
 	mission.return_position_au = ship.position_au
-	mission.transit_mode = transit_mode
+	mission.transit_mode = transit_mode as Mission.TransitMode
 	mission.mining_units_to_deploy = units
 	mission.workers_to_deploy = deploy_workers
 	mission.deploy_duration = 3600.0 * units.size()
@@ -574,6 +606,10 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worker
 	var total_transit_ticks := mission.transit_time * 2.0
 	mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
 
+	# Remove units from inventory immediately — they're now loaded on the ship
+	for u in units:
+		mining_unit_inventory.erase(u)
+
 	ship.current_mission = mission
 	ship.docked_at_colony = null
 	ship.reset_life_support(crew.size())
@@ -585,6 +621,11 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worker
 	return mission
 
 func start_collect_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+	# Clean up any lingering idle mission so its stale worker list doesn't cause mismatches
+	if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
+		ship.current_mission.ship = null
+		missions.erase(ship.current_mission)
+		ship.current_mission = null
 	var mission := Mission.new()
 	mission.ship = ship
 	mission.asteroid = asteroid
@@ -593,7 +634,7 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worke
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
 	mission.return_position_au = ship.position_au
-	mission.transit_mode = transit_mode
+	mission.transit_mode = transit_mode as Mission.TransitMode
 
 	var earth_pos := CelestialData.get_earth_position_au()
 	mission.origin_is_earth = ship.position_au.distance_to(earth_pos) < 0.05
@@ -695,6 +736,7 @@ func repair_equipment(ship: Ship, equip: Equipment) -> bool:
 	if money < cost:
 		return false
 	money -= cost
+	record_transaction(-cost, "Equip repair: %s" % equip.equipment_name, ship.ship_name)
 	equip.durability = equip.max_durability
 	EventBus.equipment_repaired.emit(ship, equip)
 	return true
@@ -706,10 +748,16 @@ func repair_engine(ship: Ship) -> bool:
 	if money < cost:
 		return false
 	money -= cost
+	record_transaction(-cost, "Engine repair", ship.ship_name)
 	ship.engine_condition = 100.0
 	return true
 
 func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+	# Clean up any lingering idle mission so its stale worker list doesn't cause mismatches
+	if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
+		ship.current_mission.ship = null
+		missions.erase(ship.current_mission)
+		ship.current_mission = null
 	var mission := Mission.new()
 	mission.ship = ship
 	mission.asteroid = asteroid
@@ -717,7 +765,7 @@ func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[W
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
 	mission.return_position_au = ship.position_au  # default return to origin
-	mission.transit_mode = transit_mode
+	mission.transit_mode = transit_mode as Mission.TransitMode
 
 	var dist := ship.position_au.distance_to(asteroid.get_position_au())
 
@@ -1240,6 +1288,7 @@ func buy_supplies(ship: Ship, supply_key: String, amount: float) -> bool:
 		return false
 
 	money -= total_cost
+	record_transaction(-total_cost, "Supplies: %s ×%.1f" % [supply_key, amount], ship.ship_name)
 	ship.supplies[supply_key] = ship.supplies.get(supply_key, 0.0) + amount
 	return true
 
@@ -1445,7 +1494,7 @@ func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Ar
 	tm.status = TradeMission.Status.TRANSIT_TO_COLONY
 	tm.origin_position_au = ship.position_au
 	tm.return_position_au = ship.position_au  # default return to origin
-	tm.transit_mode = transit_mode
+	tm.transit_mode = transit_mode as TradeMission.TransitMode
 
 	# Load cargo from stockpile onto ship (only if at Earth with stockpile access)
 	tm.cargo = {}
@@ -1647,6 +1696,7 @@ func save_game() -> void:
 			"loyalty": w.loyalty,
 			"hired_at": w.hired_at,
 			"leave_status": w.leave_status,
+			"personality": w.personality,
 		})
 	for s in ships:
 		var ship_data := {
@@ -1888,6 +1938,9 @@ func save_game() -> void:
 		stockpile_data[asteroid_name] = serialized_pile
 	save_data["ore_stockpiles"] = stockpile_data
 
+	# Save asteroid supplies
+	save_data["asteroid_supplies"] = asteroid_supplies.duplicate(true)
+
 	# Save hitchhike pool
 	var hitchhike_data: Array[Dictionary] = []
 	for entry in hitchhike_pool:
@@ -1964,6 +2017,7 @@ func load_game() -> bool:
 		w.loyalty = float(wd.get("loyalty", 50.0))
 		w.hired_at = float(wd.get("hired_at", 0.0))
 		w.leave_status = int(wd.get("leave_status", 0))
+		w.personality = int(wd.get("personality", Worker.Personality.LOYAL))
 		workers.append(w)
 
 	ships.clear()
@@ -2140,7 +2194,7 @@ func load_game() -> bool:
 		tm.transit_time = float(tmd.get("transit_time", 0.0))
 		tm.fuel_per_tick = float(tmd.get("fuel_per_tick", 0.0))
 		tm.revenue = int(tmd.get("revenue", 0))
-		tm.transit_mode = int(tmd.get("transit_mode", TradeMission.TransitMode.BRACHISTOCHRONE))
+		tm.transit_mode = int(tmd.get("transit_mode", TradeMission.TransitMode.BRACHISTOCHRONE)) as TradeMission.TransitMode
 
 		# Restore positions
 		var origin_data: Dictionary = tmd.get("origin_position_au", {})
@@ -2197,7 +2251,7 @@ func load_game() -> bool:
 	available_contracts.clear()
 	for cd in data.get("available_contracts", []):
 		var c := Contract.new()
-		c.ore_type = int(cd.get("ore_type", 0))
+		c.ore_type = int(cd.get("ore_type", 0)) as ResourceTypes.OreType
 		c.quantity = float(cd.get("quantity", cd.get("amount", 100.0)))
 		c.reward = int(cd.get("reward", 1000))
 		c.deadline_ticks = float(cd.get("deadline_ticks", 86400.0))
@@ -2214,7 +2268,7 @@ func load_game() -> bool:
 	active_contracts.clear()
 	for cd in data.get("active_contracts", []):
 		var c := Contract.new()
-		c.ore_type = int(cd.get("ore_type", 0))
+		c.ore_type = int(cd.get("ore_type", 0)) as ResourceTypes.OreType
 		c.quantity = float(cd.get("quantity", cd.get("amount", 100.0)))
 		c.quantity_delivered = float(cd.get("quantity_delivered", cd.get("fulfilled", 0.0)))
 		c.reward = int(cd.get("reward", 1000))
@@ -2370,7 +2424,7 @@ func load_game() -> bool:
 	mining_unit_inventory.clear()
 	for mud in data.get("mining_unit_inventory", []):
 		var unit := MiningUnit.new()
-		unit.unit_type = int(mud.get("unit_type", 0))
+		unit.unit_type = int(mud.get("unit_type", 0)) as MiningUnit.UnitType
 		unit.unit_name = mud.get("unit_name", "")
 		unit.mass = float(mud.get("mass", 7.6))
 		unit.volume = float(mud.get("volume", MU_VOL_DEFAULTS.get(unit.unit_type, 11.4)))
@@ -2386,7 +2440,7 @@ func load_game() -> bool:
 	deployed_mining_units.clear()
 	for mud in data.get("deployed_mining_units", []):
 		var unit := MiningUnit.new()
-		unit.unit_type = int(mud.get("unit_type", 0))
+		unit.unit_type = int(mud.get("unit_type", 0)) as MiningUnit.UnitType
 		unit.unit_name = mud.get("unit_name", "")
 		unit.mass = float(mud.get("mass", 7.6))
 		unit.volume = float(mud.get("volume", MU_VOL_DEFAULTS.get(unit.unit_type, 11.4)))
@@ -2417,5 +2471,15 @@ func load_game() -> bool:
 		for key in pile_data:
 			pile[int(key)] = float(pile_data[key])
 		ore_stockpiles[asteroid_name] = pile
+
+	# Restore asteroid supplies
+	asteroid_supplies.clear()
+	var supplies_data: Dictionary = data.get("asteroid_supplies", {})
+	for asteroid_name in supplies_data:
+		var sd: Dictionary = supplies_data[asteroid_name]
+		asteroid_supplies[asteroid_name] = {
+			"food": float(sd.get("food", 0.0)),
+			"repair_parts": float(sd.get("repair_parts", 0.0)),
+		}
 
 	return true

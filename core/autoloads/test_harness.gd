@@ -58,6 +58,10 @@ var supplies_bought: int = 0
 # Stats — market
 var market_events_seen: int = 0
 
+# Stats — personality
+var greedy_wage_increases: int = 0
+var asteroid_supply_alerts: int = 0
+
 # Stats — mission extras
 var missions_redirected: int = 0
 var missions_queued: int = 0
@@ -118,6 +122,12 @@ func _ready() -> void:
 		stockpile_collects += 1
 		stockpile_tons_collected += tons
 	)
+
+	# Personality signals
+	EventBus.worker_wage_increased.connect(func(_w: Worker, _amt: int) -> void: greedy_wage_increases += 1)
+
+	# Supply signals
+	EventBus.asteroid_supplies_low.connect(func(_name: String, _key: String, _days: float) -> void: asteroid_supply_alerts += 1)
 
 	# React to idle ships immediately
 	EventBus.ship_idle_at_destination.connect(_on_ship_idle)
@@ -244,9 +254,15 @@ func _manage_workforce() -> void:
 		if not ship.is_derelict:
 			total_crew_needed += ship.min_crew
 
-	# Operational ships + small buffer
-	var target := total_crew_needed + 2
-	target = clampi(target, 3, 20)
+	# Count workers permanently tied up at asteroid sites
+	var deployed_count := 0
+	for w in GameState.workers:
+		if w.assigned_mining_unit != null:
+			deployed_count += 1
+
+	# Operational ships + deployed headcount + small buffer
+	var target := total_crew_needed + deployed_count + 2
+	target = clampi(target, 3, 30)
 
 	# Hire 1 per day if under target (rotate specialties)
 	if GameState.workers.size() < target:
@@ -350,6 +366,7 @@ func _refuel_ship(ship: Ship) -> void:
 	if GameState.money >= cost:
 		ship.fuel = ship.get_effective_fuel_capacity()
 		GameState.money -= cost
+		GameState.record_transaction(-cost, "Refuel at Earth", ship.ship_name)
 
 func _provision_ship(ship: Ship) -> void:
 	const DAYS_BUFFER := 30.0
@@ -557,12 +574,12 @@ func _handle_idle_remote(ship: Ship) -> void:
 		for _ot in pile:
 			pile_tons += pile[_ot]
 		if pile_tons > 10.0 and ship.get_cargo_remaining() > 10.0:
-			var available := GameState.get_available_workers()
-			if available.size() >= ship.min_crew:
-				var crew: Array[Worker] = []
+			var collect_available := GameState.get_available_workers()
+			if collect_available.size() >= ship.min_crew:
+				var collect_crew: Array[Worker] = []
 				for i in range(ship.min_crew):
-					crew.append(available[i])
-				GameState.start_collect_mission(ship, idle_asteroid, crew)
+					collect_crew.append(collect_available[i])
+				GameState.start_collect_mission(ship, idle_asteroid, collect_crew)
 				return
 
 	# If we have available crew, send to a new asteroid from here
@@ -790,12 +807,8 @@ func _buy_supplies_for_docked() -> void:
 	var docked := GameState.get_docked_ships()
 	for ship in docked:
 		var parts: float = float(ship.supplies.get("repair_parts", 0.0))
-		if parts < 3.0:
-			if GameState.buy_supplies(ship, "repair_parts", 5.0):
-				supplies_bought += 1
-		var fuel_cells: float = float(ship.supplies.get("fuel_cells", 0.0))
-		if fuel_cells < 2.0:
-			if GameState.buy_supplies(ship, "fuel_cells", 5.0):
+		if parts < 10.0:
+			if GameState.buy_supplies(ship, "repair_parts", 15.0):
 				supplies_bought += 1
 
 func _consider_stationing() -> void:
@@ -899,6 +912,7 @@ func _validate_state() -> void:
 	_validate_missions()
 	_validate_mining_units()
 	_validate_stockpiles()
+	_validate_asteroid_supplies()
 	_validate_contracts()
 
 func _validate_workers() -> void:
@@ -930,6 +944,8 @@ func _validate_workers() -> void:
 				_error("Worker '%s' has skill=%.2f out of expected range [0, 2.0]" % [worker.worker_name, skill_val])
 		if worker.assigned_mission != null and worker.assigned_mission not in GameState.missions:
 			_error("Worker '%s' assigned_mission not in GameState.missions" % worker.worker_name)
+		if worker.personality < 0 or worker.personality > 4:
+			_error("Worker '%s' personality=%d out of range [0,4]" % [worker.worker_name, worker.personality])
 
 	for entry in GameState.hitchhike_pool:
 		if entry["worker"] not in GameState.workers:
@@ -974,11 +990,14 @@ func _validate_missions() -> void:
 		for w in mission.workers:
 			if w.assigned_mission != mission and w.assigned_mission != null:
 				_error("Mission worker '%s' assigned_mission mismatch" % w.worker_name)
-		# Deploy missions: units being transported should still be in inventory (not deployed)
+		# Deploy missions: units in transit must not appear in inventory or deployed list
+		# (they were removed from inventory at mission start and arrive at deploy completion)
 		if mission.mission_type == Mission.MissionType.DEPLOY_UNIT and mission.status == Mission.Status.TRANSIT_OUT:
 			for unit in mission.mining_units_to_deploy:
-				if unit not in GameState.mining_unit_inventory:
-					_error("Deploy mission transporting unit '%s' not in inventory" % unit.unit_name)
+				if unit in GameState.mining_unit_inventory:
+					_error("Deploy mission transporting unit '%s' still in inventory (should have been removed at launch)" % unit.unit_name)
+				if unit in GameState.deployed_mining_units:
+					_error("Deploy mission transporting unit '%s' already in deployed list before arrival" % unit.unit_name)
 
 	for tm in GameState.trade_missions:
 		if tm.ship == null:
@@ -997,6 +1016,9 @@ func _validate_mining_units() -> void:
 		for w in unit.assigned_workers:
 			if w not in GameState.workers:
 				_error("Mining unit '%s' has orphan worker '%s'" % [unit.unit_name, w.worker_name])
+			# Bidirectional pointer check
+			if w.assigned_mining_unit != unit:
+				_error("Worker '%s' assigned_workers on unit '%s' but worker.assigned_mining_unit points elsewhere" % [w.worker_name, unit.unit_name])
 		# A deployed unit must not also appear in inventory
 		if unit in GameState.mining_unit_inventory:
 			_error("Mining unit '%s' is in BOTH deployed_mining_units AND inventory" % unit.unit_name)
@@ -1012,6 +1034,16 @@ func _validate_stockpiles() -> void:
 			var amount: float = float(pile[ore_type])
 			if amount < -0.01:
 				_error("Stockpile '%s' ore_type=%d negative amount=%.2f" % [asteroid_name, ore_type, amount])
+
+func _validate_asteroid_supplies() -> void:
+	for asteroid_name in GameState.asteroid_supplies:
+		var s: Dictionary = GameState.asteroid_supplies[asteroid_name]
+		var food: float = float(s.get("food", 0.0))
+		var parts: float = float(s.get("repair_parts", 0.0))
+		if food < -0.01:
+			_error("Asteroid '%s' supplies food=%.3f is negative" % [asteroid_name, food])
+		if parts < -0.01:
+			_error("Asteroid '%s' supplies repair_parts=%.3f is negative" % [asteroid_name, parts])
 
 func _validate_contracts() -> void:
 	for contract in GameState.active_contracts:
@@ -1081,7 +1113,8 @@ func _update_overlay() -> void:
 		+ "Leave: %d | Wait: %d | Tardy: %d | Rides: %d | LvlUps: %d | Inj: %d\n" % [on_leave, waiting, tardy, rides_given, worker_level_ups, worker_injuries]
 		+ "Bkdn: %d | Resc: %d | Strgr: %d | Destr: %d | LS: %d | Food: %d\n" % [breakdowns_count, rescues_started, stranger_rescues, ships_destroyed, life_support_warnings, food_depletions]
 		+ "Bought: %d ships %d equip %d upgr %d supply\n" % [ships_bought, equipment_bought, upgrades_bought, supplies_bought]
-		+ "Units: %d inv %d dep %d broken | Stockpile: %.0ft depot / %.0ft field" % [
+		+ "Units: %d inv %d dep %d broken | Stockpile: %.0ft depot / %.0ft field\n" % [
 			GameState.mining_unit_inventory.size(), GameState.deployed_mining_units.size(),
 			units_broken, stockpile_total, deployed_stockpile]
+		+ "Greedy raises: %d | Supply alerts: %d" % [greedy_wage_increases, asteroid_supply_alerts]
 	)

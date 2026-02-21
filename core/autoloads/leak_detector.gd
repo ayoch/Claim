@@ -127,6 +127,31 @@ func _update_overlay() -> void:
 	])
 	lines.append("")
 
+	# --- GameState array sizes (key leak sources) ---
+	if is_instance_valid(GameState):
+		var gs := GameState
+		if gs:
+			var gs_lines: Array[String] = []
+			gs_lines.append("GameState arrays:")
+			gs_lines.append("  workers=%d  ships=%d  missions=%d  trade_missions=%d" % [
+				gs.workers.size(), gs.ships.size(), gs.missions.size(), gs.trade_missions.size()
+			])
+			gs_lines.append("  hitchhike_pool=%d  tardy_workers=%d  security_zones=%d" % [
+				gs.hitchhike_pool.size(), gs.tardy_workers.size(), gs.security_zones.size()
+			])
+			gs_lines.append("  financial_history=%d  available_contracts=%d  active_contracts=%d" % [
+				gs.financial_history.size(), gs.available_contracts.size(), gs.active_contracts.size()
+			])
+			gs_lines.append("  active_market_events=%d  equipment_inventory=%d  fabrication_queue=%d" % [
+				gs.active_market_events.size(), gs.equipment_inventory.size(), gs.fabrication_queue.size()
+			])
+			gs_lines.append("  mining_unit_inventory=%d  deployed_mining_units=%d" % [
+				gs.mining_unit_inventory.size(), gs.deployed_mining_units.size()
+			])
+			for l in gs_lines:
+				lines.append(l)
+			lines.append("")
+
 	var entries: Array[Dictionary] = []
 	for m in _monitored:
 		var node: Node = m["node"]

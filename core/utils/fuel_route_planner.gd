@@ -65,8 +65,8 @@ static func plan_route_to_position(
 		var best_score := INF
 
 		for colony in reachable:
-			var colony_pos := colony.get_position_au()
-			var dist_to_dest := colony_pos.distance_to(dest_pos)
+			var candidate_pos := colony.get_position_au()
+			var dist_to_dest := candidate_pos.distance_to(dest_pos)
 
 			# Score: distance to destination (lower is better)
 			# Could add other factors: fuel price, distance from current pos, etc.

@@ -9,6 +9,7 @@ static func _free_children(container: Node) -> void:
 var _dirty: bool = false
 var _last_refresh_msec: int = 0
 const REFRESH_INTERVAL_MSEC: int = 200
+var _refresh_queued: bool = false  # Guard against stacked _queue_refresh()
 
 func _ready() -> void:
 	EventBus.upgrade_purchased.connect(func(_u: ShipUpgrade) -> void: _dirty = true)
@@ -32,11 +33,19 @@ func _on_tick(_dt: float) -> void:
 	_dirty = false
 	_refresh_all()
 
+func _queue_refresh() -> void:
+	if not _refresh_queued:
+		_refresh_queued = true
+		call_deferred("_refresh_all")
+
 func _refresh_all() -> void:
+	_refresh_queued = false
 	_free_children(ships_list)
 
 	var title := Label.new()
 	title.text = "SHIP OUTFITTING"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.clip_text = true
 	title.add_theme_font_size_override("font_size", 24)
 	title.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 	ships_list.add_child(title)
@@ -48,12 +57,15 @@ func _refresh_all() -> void:
 	if not GameState.upgrade_inventory.is_empty():
 		var inv_header := Label.new()
 		inv_header.text = "Upgrade Inventory (ready to install):"
+		inv_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		inv_header.clip_text = true
 		inv_header.add_theme_font_size_override("font_size", 18)
 		inv_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 		ships_list.add_child(inv_header)
 
 		for upgrade in GameState.upgrade_inventory:
 			var upgrade_row := HFlowContainer.new()
+			upgrade_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			upgrade_row.add_theme_constant_override("h_separation", 8)
 			var upgrade_info := Label.new()
 			upgrade_info.text = "%s - %s" % [upgrade.upgrade_name, upgrade.description]
@@ -70,7 +82,7 @@ func _refresh_all() -> void:
 				install_btn.custom_minimum_size = Vector2(0, 40)
 				install_btn.pressed.connect(func() -> void:
 					GameState.install_upgrade(ship, upgrade)
-					call_deferred("_refresh_all")
+					_queue_refresh()
 				)
 				upgrade_row.add_child(install_btn)
 
@@ -82,12 +94,16 @@ func _refresh_all() -> void:
 	# Show each ship's current stats and upgrades
 	for ship in GameState.ships:
 		var ship_panel := PanelContainer.new()
+		ship_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var ship_vbox := VBoxContainer.new()
+		ship_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		ship_vbox.add_theme_constant_override("separation", 8)
 
 		# Ship header
 		var ship_header := Label.new()
 		ship_header.text = ship.ship_name
+		ship_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		ship_header.clip_text = true
 		ship_header.add_theme_font_size_override("font_size", 20)
 		ship_header.add_theme_color_override("font_color", Color(0.9, 0.9, 1.0))
 		ship_vbox.add_child(ship_header)
@@ -109,6 +125,8 @@ func _refresh_all() -> void:
 
 		var status_label := Label.new()
 		status_label.text = status_text
+		status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		status_label.clip_text = true
 		status_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 		ship_vbox.add_child(status_label)
 
@@ -118,12 +136,15 @@ func _refresh_all() -> void:
 		# Base stats
 		var base_stats := Label.new()
 		base_stats.text = "BASE STATS:"
+		base_stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		base_stats.clip_text = true
 		base_stats.add_theme_font_size_override("font_size", 14)
 		base_stats.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
 		ship_vbox.add_child(base_stats)
 
 		var stats_grid := GridContainer.new()
 		stats_grid.columns = 2
+		stats_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		stats_grid.add_theme_constant_override("h_separation", 16)
 		stats_grid.add_theme_constant_override("v_separation", 4)
 
@@ -141,6 +162,8 @@ func _refresh_all() -> void:
 
 		var upgrades_header := Label.new()
 		upgrades_header.text = "INSTALLED UPGRADES:"
+		upgrades_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		upgrades_header.clip_text = true
 		upgrades_header.add_theme_font_size_override("font_size", 14)
 		upgrades_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 		ship_vbox.add_child(upgrades_header)
@@ -148,12 +171,15 @@ func _refresh_all() -> void:
 		if ship.upgrades.is_empty():
 			var no_upgrades := Label.new()
 			no_upgrades.text = "No upgrades installed"
+			no_upgrades.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			no_upgrades.clip_text = true
 			no_upgrades.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 			ship_vbox.add_child(no_upgrades)
 		else:
 			for upgrade in ship.upgrades:
 				var upgrade_label := Label.new()
 				upgrade_label.text = "• %s - %s" % [upgrade.upgrade_name, upgrade.description]
+				upgrade_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				upgrade_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 				upgrade_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 				ship_vbox.add_child(upgrade_label)
@@ -167,12 +193,15 @@ func _refresh_all() -> void:
 
 	var purchase_header := Label.new()
 	purchase_header.text = "AVAILABLE UPGRADES TO PURCHASE"
+	purchase_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	purchase_header.clip_text = true
 	purchase_header.add_theme_font_size_override("font_size", 20)
 	purchase_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 	ships_list.add_child(purchase_header)
 
 	for entry in UpgradeCatalog.get_available_upgrades():
 		var buy_row := HBoxContainer.new()
+		buy_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		buy_row.add_theme_constant_override("separation", 8)
 		var info := Label.new()
 		info.text = "%s - %s ($%s)" % [
@@ -188,7 +217,7 @@ func _refresh_all() -> void:
 		btn.disabled = GameState.money < entry["cost"]
 		btn.pressed.connect(func() -> void:
 			if GameState.purchase_upgrade(entry):
-				call_deferred("_refresh_all")
+				_queue_refresh()
 		)
 		buy_row.add_child(btn)
 		ships_list.add_child(buy_row)
@@ -199,6 +228,8 @@ func _refresh_all() -> void:
 
 	var mu_header := Label.new()
 	mu_header.text = "MINING UNITS"
+	mu_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mu_header.clip_text = true
 	mu_header.add_theme_font_size_override("font_size", 20)
 	mu_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 	ships_list.add_child(mu_header)
@@ -207,10 +238,13 @@ func _refresh_all() -> void:
 	if not GameState.mining_unit_inventory.is_empty():
 		var inv_label := Label.new()
 		inv_label.text = "In Inventory: %d unit(s)" % GameState.mining_unit_inventory.size()
+		inv_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		inv_label.clip_text = true
 		inv_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 		ships_list.add_child(inv_label)
 		for unit in GameState.mining_unit_inventory:
 			var unit_row := HBoxContainer.new()
+			unit_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			unit_row.add_theme_constant_override("separation", 8)
 			var unit_info := Label.new()
 			unit_info.text = "  • %s (%.1ft, %.1fx, %.0f/%.0f%% dur)" % [
@@ -218,6 +252,7 @@ func _refresh_all() -> void:
 			]
 			unit_info.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 			unit_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			unit_info.clip_text = true
 			unit_row.add_child(unit_info)
 			if unit.max_durability < 100.0:
 				var rebuild_btn := Button.new()
@@ -226,7 +261,7 @@ func _refresh_all() -> void:
 				rebuild_btn.disabled = GameState.money < unit.rebuild_cost()
 				rebuild_btn.pressed.connect(func() -> void:
 					GameState.rebuild_mining_unit(unit)
-					call_deferred("_refresh_all")
+					_queue_refresh()
 				)
 				unit_row.add_child(rebuild_btn)
 			ships_list.add_child(unit_row)
@@ -235,6 +270,8 @@ func _refresh_all() -> void:
 	if not GameState.deployed_mining_units.is_empty():
 		var dep_label := Label.new()
 		dep_label.text = "Deployed: %d unit(s)" % GameState.deployed_mining_units.size()
+		dep_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		dep_label.clip_text = true
 		dep_label.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
 		ships_list.add_child(dep_label)
 		for unit in GameState.deployed_mining_units:
@@ -246,18 +283,23 @@ func _refresh_all() -> void:
 				unit.unit_name, unit.deployed_at_asteroid, unit.durability,
 				", ".join(worker_names) if not worker_names.is_empty() else "none"
 			]
+			unit_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			unit_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			unit_info.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 			ships_list.add_child(unit_info)
 
 	# Purchase catalog
 	var mu_buy_header := Label.new()
 	mu_buy_header.text = "Available to Purchase:"
+	mu_buy_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mu_buy_header.clip_text = true
 	mu_buy_header.add_theme_font_size_override("font_size", 16)
 	mu_buy_header.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
 	ships_list.add_child(mu_buy_header)
 
 	for mu_entry in MiningUnitCatalog.get_available_units():
 		var mu_row := HBoxContainer.new()
+		mu_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		mu_row.add_theme_constant_override("separation", 8)
 		var mu_info := Label.new()
 		mu_info.text = "%s - %s ($%s, %.1ft, %d workers)" % [
@@ -274,7 +316,7 @@ func _refresh_all() -> void:
 		mu_btn.disabled = GameState.money < mu_entry["cost"]
 		mu_btn.pressed.connect(func() -> void:
 			if GameState.purchase_mining_unit(mu_entry):
-				call_deferred("_refresh_all")
+				_queue_refresh()
 		)
 		mu_row.add_child(mu_btn)
 		ships_list.add_child(mu_row)
@@ -282,6 +324,8 @@ func _refresh_all() -> void:
 func _add_stat_row(grid: GridContainer, label_text: String, base_value: String, effective_value: float) -> void:
 	var label := Label.new()
 	label.text = label_text
+	label.clip_text = true
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	grid.add_child(label)
 
@@ -292,6 +336,8 @@ func _add_stat_row(grid: GridContainer, label_text: String, base_value: String, 
 		value.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 	else:
 		value.text = base_value
+	value.clip_text = true
+	value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.add_child(value)
 
 func _format_number(n: int) -> String:

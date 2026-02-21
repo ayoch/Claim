@@ -12,7 +12,7 @@ const BELT_OUTER_AU: float = 3.5
 @onready var asteroid_markers: Node2D = $AsteroidMarkers
 @onready var ship_markers: Node2D = $ShipMarkers
 @onready var ship_selector_panel: VBoxContainer = %ShipSelectorPanel
-@onready var zoom_buttons: HBoxContainer = $UI/ZoomButtons
+@onready var zoom_buttons: VBoxContainer = $UI/ZoomButtons
 
 var _drag_start: Vector2 = Vector2.ZERO
 var _dragging: bool = false
@@ -273,17 +273,35 @@ func _draw_orbit_ellipse(el: Dictionary, color: Color, width: float) -> void:
 		draw_line(from, to, color, width)
 
 func _setup_zoom_buttons() -> void:
+	# Big zoom row (3× step) — sits above
+	var big_row := HBoxContainer.new()
+	big_row.add_theme_constant_override("separation", 8)
+	var big_out := Button.new()
+	big_out.text = "−−"
+	big_out.custom_minimum_size = Vector2(48, 44)
+	big_out.pressed.connect(_zoom_out_big)
+	big_row.add_child(big_out)
+	var big_in := Button.new()
+	big_in.text = "++"
+	big_in.custom_minimum_size = Vector2(48, 44)
+	big_in.pressed.connect(_zoom_in_big)
+	big_row.add_child(big_in)
+	zoom_buttons.add_child(big_row)
+
+	# Small zoom row (1× step) — sits below
+	var small_row := HBoxContainer.new()
+	small_row.add_theme_constant_override("separation", 8)
 	var btn_out := Button.new()
 	btn_out.text = "-"
 	btn_out.custom_minimum_size = Vector2(48, 36)
 	btn_out.pressed.connect(_zoom_out)
-	zoom_buttons.add_child(btn_out)
-
+	small_row.add_child(btn_out)
 	var btn_in := Button.new()
 	btn_in.text = "+"
 	btn_in.custom_minimum_size = Vector2(48, 36)
 	btn_in.pressed.connect(_zoom_in)
-	zoom_buttons.add_child(btn_in)
+	small_row.add_child(btn_in)
+	zoom_buttons.add_child(small_row)
 
 func _zoom_in() -> void:
 	_zoom_level = clampf(_zoom_level + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
@@ -291,6 +309,14 @@ func _zoom_in() -> void:
 
 func _zoom_out() -> void:
 	_zoom_level = clampf(_zoom_level - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
+	camera.zoom = Vector2(_zoom_level, _zoom_level)
+
+func _zoom_in_big() -> void:
+	_zoom_level = clampf(_zoom_level + ZOOM_STEP * 3.0, ZOOM_MIN, ZOOM_MAX)
+	camera.zoom = Vector2(_zoom_level, _zoom_level)
+
+func _zoom_out_big() -> void:
+	_zoom_level = clampf(_zoom_level - ZOOM_STEP * 3.0, ZOOM_MIN, ZOOM_MAX)
 	camera.zoom = Vector2(_zoom_level, _zoom_level)
 
 func _spawn_planet_labels() -> void:

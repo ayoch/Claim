@@ -1,5 +1,9 @@
 extends Node
 
+# All signals in this file are emitted from other scripts and connected elsewhere.
+# GDScript cannot see cross-file usage, so we suppress the false-positive warning.
+@warning_ignore_start("unused_signal")
+
 # Money & resources
 signal money_changed(new_amount: int)
 signal resource_changed(ore_type: ResourceTypes.OreType, new_amount: float)
@@ -8,6 +12,7 @@ signal resource_changed(ore_type: ResourceTypes.OreType, new_amount: float)
 signal worker_hired(worker: Worker)
 signal worker_fired(worker: Worker)
 signal worker_skill_leveled(worker: Worker, skill_type: int, new_value: float)
+signal worker_wage_increased(worker: Worker, amount: int)
 
 # Ships & equipment
 signal ship_purchased(ship: Ship, cost: int)
@@ -104,3 +109,6 @@ signal mining_unit_deployed(unit: MiningUnit, asteroid: AsteroidData)
 signal mining_unit_recalled(unit: MiningUnit)
 signal mining_unit_broken(unit: MiningUnit)
 signal stockpile_collected(asteroid: AsteroidData, tons: float)
+signal asteroid_supplies_low(asteroid_name: String, supply_key: String, days_remaining: float)
+
+@warning_ignore_restore("unused_signal")

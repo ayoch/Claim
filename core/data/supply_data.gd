@@ -7,7 +7,6 @@ extends RefCounted
 enum SupplyType {
 	REPAIR_PARTS,
 	FOOD_RATIONS,
-	FUEL_CELLS,
 }
 
 const SUPPLY_INFO: Dictionary = {
@@ -26,14 +25,6 @@ const SUPPLY_INFO: Dictionary = {
 		"mass_per_unit": 0.1,     # tons
 		"volume_per_unit": 0.005, # m³ — compact rations
 		"description": "Feed deployed crews",
-	},
-	SupplyType.FUEL_CELLS: {
-		"name": "Fuel Cells",
-		"key": "fuel_cells",
-		"cost_per_unit": 200,
-		"mass_per_unit": 0.3,     # tons
-		"volume_per_unit": 0.4,   # m³
-		"description": "Refuel remote ships",
 	},
 }
 

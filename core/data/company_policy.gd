@@ -32,7 +32,7 @@ static func calculate_thrust_setting(
 	var ship_pos := ship.position_au
 	var dist := ship_pos.distance_to(destination_pos)
 	var current_fuel := ship.fuel
-	var max_fuel := ship.get_effective_fuel_capacity()
+	var _max_fuel := ship.get_effective_fuel_capacity()
 
 	# Calculate fuel needed for round trip with expected cargo
 	var current_cargo := ship.get_cargo_total()

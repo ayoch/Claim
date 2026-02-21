@@ -10,6 +10,8 @@ extends MarginContainer
 @onready var activity_scroll: ScrollContainer = %ActivityScroll
 @onready var contracts_list: VBoxContainer = %ContractsList
 @onready var contracts_scroll: ScrollContainer = %ContractsScroll
+@onready var transactions_list: VBoxContainer = %TransactionsList
+@onready var transactions_scroll: ScrollContainer = %TransactionsScroll
 
 const MAX_ALERTS: int = 50
 const MAX_ACTIVITY: int = 100
@@ -31,6 +33,11 @@ var _dirty_activity: bool = false
 var _dirty_contracts: bool = false
 var _dirty_resources: bool = false
 var _dirty_workers: bool = false
+var _dirty_balance_history: bool = false
+
+# Section collapse state: key -> true means collapsed
+var _section_collapsed: Dictionary = {}
+var _section_content: Dictionary = {}  # key -> Node
 
 static func _free_children(container: Node) -> void:
 	for i in range(container.get_child_count() - 1, -1, -1):
@@ -49,6 +56,9 @@ func _ready() -> void:
 	EventBus.worker_hired.connect(func(_w: Worker) -> void: _dirty_workers = true)
 	EventBus.worker_fired.connect(func(_w: Worker) -> void: _dirty_workers = true)
 	EventBus.worker_skill_leveled.connect(_on_worker_skill_leveled)
+	EventBus.worker_wage_increased.connect(func(w: Worker, amount: int) -> void:
+		_queue_activity("[Greedy] %s negotiated a $%d/day raise (now $%d/day)" % [w.worker_name, amount, w.wage], Color(1.0, 0.8, 0.2))
+	)
 	EventBus.survey_update.connect(func(_a: AsteroidData, msg: String) -> void:
 		var color := Color(0.3, 0.9, 0.4) if msg.contains("richer") else Color(0.9, 0.6, 0.3)
 		_queue_activity(msg, color)
@@ -157,6 +167,10 @@ func _ready() -> void:
 		_queue_activity("Collected %.1ft from %s stockpile" % [tons, asteroid.asteroid_name], Color(0.3, 0.9, 0.4))
 		_dirty_resources = true
 	)
+	EventBus.asteroid_supplies_low.connect(func(asteroid_name: String, supply_key: String, days_remaining: float) -> void:
+		var supply_label := "food" if supply_key == "food" else "repair parts"
+		_queue_alert("LOW SUPPLIES: %.1f days of %s remaining at %s" % [days_remaining, supply_label, asteroid_name], Color(1.0, 0.7, 0.2))
+	)
 
 	# Reputation
 	EventBus.reputation_changed.connect(func(_score: float, _tier: int) -> void:
@@ -193,7 +207,9 @@ func _ready() -> void:
 	_setup_policies_ui()
 	_setup_stationed_ships_panel()
 	_setup_reputation_display()
+	_setup_balance_history()
 	_setup_discipline_panel()
+	_setup_collapsible_sections()
 
 func _setup_stationed_ships_panel() -> void:
 	var scroll := get_node("ScrollContainer")
@@ -432,6 +448,10 @@ func _setup_policies_ui() -> void:
 	title.add_theme_font_size_override("font_size", 14)
 	policies_vbox.add_child(title)
 
+	# Content container (collapsed/expanded as a unit)
+	var policies_content := VBoxContainer.new()
+	policies_content.add_theme_constant_override("separation", 8)
+
 	# Thrust policy selector
 	var thrust_row := HBoxContainer.new()
 	thrust_row.add_theme_constant_override("separation", 8)
@@ -451,7 +471,7 @@ func _setup_policies_ui() -> void:
 	)
 	thrust_row.add_child(thrust_option)
 
-	policies_vbox.add_child(thrust_row)
+	policies_content.add_child(thrust_row)
 
 	# Policy description
 	var desc_label := Label.new()
@@ -459,15 +479,18 @@ func _setup_policies_ui() -> void:
 	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	desc_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	desc_label.custom_minimum_size = Vector2(0, 40)
-	policies_vbox.add_child(desc_label)
+	policies_content.add_child(desc_label)
 
 	# Update description when policy changes
 	thrust_option.item_selected.connect(func(idx: int) -> void:
 		desc_label.text = CompanyPolicy.THRUST_POLICY_DESCRIPTIONS[idx]
 	)
 
+	policies_vbox.add_child(policies_content)
 	policies_card.add_child(policies_vbox)
 	vbox.add_child(policies_card)
+
+	_make_collapsible("policies", title, policies_content)
 
 func _process(delta: float) -> void:
 	# Smooth progress bar updates with LERP
@@ -501,6 +524,7 @@ func _refresh_all() -> void:
 
 func _on_money_changed(amount: int) -> void:
 	money_label.text = "$%s" % _format_number(amount)
+	_dirty_balance_history = true
 
 func _on_tick(_dt: float) -> void:
 	# Throttle UI rebuilds to real-time interval (not game-time)
@@ -534,6 +558,9 @@ func _on_tick(_dt: float) -> void:
 	if _dirty_workers:
 		_dirty_workers = false
 		_refresh_workers()
+	if _dirty_balance_history:
+		_dirty_balance_history = false
+		_refresh_balance_history()
 
 func _refresh_resources() -> void:
 	_free_children(resources_list)
@@ -556,6 +583,7 @@ func _refresh_resources() -> void:
 		resources_list.add_child(claims_sep)
 		var claims_header := Label.new()
 		claims_header.text = "MINING CLAIMS"
+		claims_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		claims_header.add_theme_font_size_override("font_size", 16)
 		claims_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 		resources_list.add_child(claims_header)
@@ -582,6 +610,8 @@ func _refresh_resources() -> void:
 
 			var header_label := Label.new()
 			header_label.text = "%s  [%d/%d slots]" % [asteroid_name, units.size(), max_slots]
+			header_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			header_label.clip_text = true
 			header_label.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
 			resources_list.add_child(header_label)
 
@@ -593,6 +623,7 @@ func _refresh_resources() -> void:
 				elif unit.durability < 60.0:
 					dur_color = Color(0.9, 0.6, 0.2)
 				var unit_row := HBoxContainer.new()
+				unit_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				unit_row.add_theme_constant_override("separation", 8)
 				var unit_label := Label.new()
 				var rebuild_warn := " [RECALL FOR REBUILD]" if unit.needs_rebuild() else ""
@@ -625,8 +656,29 @@ func _refresh_resources() -> void:
 					total_value += tons * MarketData.get_ore_price(ore_type)
 				var stockpile_label := Label.new()
 				stockpile_label.text = "  Stockpile: %.1ft ($%s)" % [total_tons, _format_number(int(total_value))]
+				stockpile_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				stockpile_label.clip_text = true
 				stockpile_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 				resources_list.add_child(stockpile_label)
+
+			# Show supplies
+			var supplies := GameState.get_asteroid_supplies(asteroid_name)
+			var food_days := GameState.get_asteroid_supply_days(asteroid_name, "food")
+			var parts_days := GameState.get_asteroid_supply_days(asteroid_name, "repair_parts")
+			var food_val: float = supplies.get("food", 0.0)
+			var parts_val: float = supplies.get("repair_parts", 0.0)
+			if food_val > 0.0 or parts_val > 0.0:
+				var sup_label := Label.new()
+				var food_str := "%.1fd" % food_days if food_days < INF else "—"
+				var parts_str := "%.1fd" % parts_days if parts_days < INF else "—"
+				sup_label.text = "  Food: %.2f u (%s)  Parts: %.2f u (%s)" % [food_val, food_str, parts_val, parts_str]
+				sup_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				sup_label.clip_text = true
+				var sup_color := Color(0.7, 0.7, 0.7)
+				if (food_days < 5.0 and food_days > 0.0) or (parts_days < 5.0 and parts_days > 0.0):
+					sup_color = Color(1.0, 0.6, 0.2)
+				sup_label.add_theme_color_override("font_color", sup_color)
+				resources_list.add_child(sup_label)
 
 func _refresh_missions() -> void:
 	# Clean up old progress bar references for completed missions
@@ -818,35 +870,14 @@ func _send_system_notification(p_title: String, p_body: String) -> void:
 	# iOS: TODO — requires native plugin
 
 func _setup_reputation_display() -> void:
-	var scroll := get_node("ScrollContainer")
-	var vbox := scroll.get_node("VBox")
-
-	var rep_card := PanelContainer.new()
-	rep_card.name = "ReputationCard"
-	var rep_vbox := VBoxContainer.new()
-	rep_vbox.add_theme_constant_override("separation", 4)
-
-	var rep_title := Label.new()
-	rep_title.text = "REPUTATION"
-	rep_title.add_theme_font_size_override("font_size", 14)
-	rep_vbox.add_child(rep_title)
-
-	var rep_label := Label.new()
-	rep_label.name = "ReputationLabel"
-	rep_label.text = "%s (%+.0f)" % [Reputation.get_tier_name(), Reputation.score]
-	_color_reputation_label(rep_label)
-	rep_vbox.add_child(rep_label)
-
-	rep_card.add_child(rep_vbox)
-	vbox.add_child(rep_card)
+	# Reputation is added inside NumbersContent (set up in _setup_balance_history)
+	pass
 
 func _refresh_reputation() -> void:
-	var rep_card := get_node_or_null("ScrollContainer/VBox/ReputationCard")
-	if not rep_card:
-		return
-	var rep_label: Label = rep_card.find_child("ReputationLabel", true, false)
+	var rep_label: Label = get_node_or_null(
+		"ScrollContainer/VBox/BalanceCard/VBox/NumbersContent/ReputationLabel")
 	if rep_label:
-		rep_label.text = "%s (%+.0f)" % [Reputation.get_tier_name(), Reputation.score]
+		rep_label.text = "Reputation: %s (%+.0f)" % [Reputation.get_tier_name(), Reputation.score]
 		_color_reputation_label(rep_label)
 
 func _color_reputation_label(label: Label) -> void:
@@ -857,6 +888,97 @@ func _color_reputation_label(label: Label) -> void:
 		label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 	else:
 		label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+
+func _setup_balance_history() -> void:
+	var balance_vbox := get_node_or_null("ScrollContainer/VBox/BalanceCard/VBox")
+	if not balance_vbox:
+		return
+	var title: Label = balance_vbox.get_node("Title")
+
+	# Content wrapper: balance + reputation only
+	var content := VBoxContainer.new()
+	content.name = "NumbersContent"
+	content.add_theme_constant_override("separation", 6)
+	balance_vbox.add_child(content)
+
+	# Reparent MoneyLabel into content so it collapses with the section
+	var money_lbl: Label = balance_vbox.get_node("MoneyLabel")
+	money_lbl.reparent(content)
+
+	# Reputation line
+	var rep_label := Label.new()
+	rep_label.name = "ReputationLabel"
+	rep_label.text = "Reputation: %s (%+.0f)" % [Reputation.get_tier_name(), Reputation.score]
+	_color_reputation_label(rep_label)
+	content.add_child(rep_label)
+
+	_make_collapsible("numbers", title, content)
+
+func _refresh_balance_history() -> void:
+	_free_children(transactions_list)
+	var history := GameState.financial_history
+	if history.is_empty():
+		var empty := Label.new()
+		empty.text = "No transactions yet"
+		empty.add_theme_font_size_override("font_size", 12)
+		empty.add_theme_color_override("font_color", Color(0.4, 0.4, 0.4))
+		transactions_list.add_child(empty)
+		return
+	const MAX_DISPLAY := 40
+	var start := maxi(0, history.size() - MAX_DISPLAY)
+	for i in range(history.size() - 1, start - 1, -1):
+		var entry: Dictionary = history[i]
+		var change: int = int(entry["change"])
+		var balance: int = int(entry["balance"])
+		var ticks: float = float(entry["timestamp"])
+		var day := int(ticks / 86400.0) + 1
+		var hour := int(fmod(ticks, 86400.0) / 3600.0)
+		var sign_str := "+" if change >= 0 else ""
+		var desc: String = entry.get("desc", "")
+		var ship: String = entry.get("ship", "")
+		var ship_str := "  [%s]" % ship if ship != "" else ""
+		var row := Label.new()
+		row.text = "Day %d %02d:00  %s$%s  →  $%s  %s%s" % [
+			day, hour, sign_str, _format_number(change), _format_number(balance),
+			desc, ship_str
+		]
+		row.add_theme_font_size_override("font_size", 11)
+		row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		if change >= 0:
+			row.add_theme_color_override("font_color", Color(0.3, 0.85, 0.4))
+		else:
+			row.add_theme_color_override("font_color", Color(0.85, 0.4, 0.4))
+		transactions_list.add_child(row)
+
+func _setup_collapsible_sections() -> void:
+	var base := "ScrollContainer/VBox"
+	_make_collapsible("resources",  get_node(base + "/ResourcesCard/VBox/Title"),  resources_list)
+	_make_collapsible("missions",   get_node(base + "/MissionsCard/VBox/Title"),   missions_list)
+	_make_collapsible("workers",    get_node(base + "/WorkersCard/VBox/Title"),     workers_summary)
+	_make_collapsible("alerts",     get_node(base + "/AlertsCard/VBox/Title"),     alerts_scroll)
+	_make_collapsible("activity",   get_node(base + "/ActivityCard/VBox/Title"),   activity_scroll)
+	_make_collapsible("contracts",     get_node(base + "/ContractsCard/VBox/Title"),     contracts_scroll)
+	_make_collapsible("transactions",  get_node(base + "/TransactionsCard/VBox/Title"),  transactions_scroll)
+	# Dynamically-created cards are handled when built (stationed ships, reputation, discipline, policies)
+
+func _make_collapsible(key: String, title_label: Label, content: Node) -> void:
+	_section_collapsed[key] = false
+	_section_content[key] = content
+	title_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	title_label.text = title_label.text + " ▾"
+	title_label.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			_toggle_section(key, title_label)
+	)
+
+func _toggle_section(key: String, title_label: Label) -> void:
+	var collapsed: bool = not _section_collapsed.get(key, false)
+	_section_collapsed[key] = collapsed
+	var content: Node = _section_content.get(key)
+	if content:
+		content.visible = not collapsed
+	var base_text := title_label.text.split(" ▾")[0].split(" ▸")[0]
+	title_label.text = "%s %s" % [base_text, "▸" if collapsed else "▾"]
 
 func _format_number(n: int) -> String:
 	var s := str(abs(n))
