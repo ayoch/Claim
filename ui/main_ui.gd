@@ -172,8 +172,17 @@ func _show_settings() -> void:
 	)
 	vbox.add_child(unreachable_check)
 
+	var auto_sell_earth_check := CheckBox.new()
+	auto_sell_earth_check.text = "Auto-sell ore when ships return to Earth"
+	auto_sell_earth_check.custom_minimum_size = Vector2(0, 44)
+	auto_sell_earth_check.button_pressed = GameState.settings.get("auto_sell_at_earth", true)
+	auto_sell_earth_check.toggled.connect(func(on: bool) -> void:
+		GameState.settings["auto_sell_at_earth"] = on
+	)
+	vbox.add_child(auto_sell_earth_check)
+
 	var auto_sell_check := CheckBox.new()
-	auto_sell_check.text = "Auto-sell cargo at markets"
+	auto_sell_check.text = "Auto-sell cargo at colony markets"
 	auto_sell_check.custom_minimum_size = Vector2(0, 44)
 	auto_sell_check.button_pressed = GameState.settings.get("auto_sell_at_markets", false)
 	auto_sell_check.toggled.connect(func(on: bool) -> void:

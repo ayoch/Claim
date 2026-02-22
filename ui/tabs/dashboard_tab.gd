@@ -203,6 +203,27 @@ func _ready() -> void:
 		_queue_activity("%s tardiness resolved: %s" % [w.worker_name, action], Color(0.3, 0.8, 0.9))
 		_dirty_discipline = true
 	)
+	EventBus.order_queued.connect(func(ship: Ship, label: String, delay_secs: float) -> void:
+		var mins := int(delay_secs / 60.0)
+		var secs := int(fmod(delay_secs, 60.0))
+		var delay_str := "%dm %02ds" % [mins, secs] if mins > 0 else "%ds" % secs
+		_queue_activity("📡 %s: '%s' — arrives in %s" % [ship.ship_name, label, delay_str], Color(0.9, 0.8, 0.3))
+	)
+	EventBus.order_executed.connect(func(ship: Ship, label: String) -> void:
+		_queue_activity("✓ %s received order: %s" % [ship.ship_name, label], Color(0.4, 0.9, 0.5))
+	)
+	EventBus.rival_corp_dispatched.connect(func(corp_name: String, asteroid_name: String) -> void:
+		_queue_activity("[Rival] %s heading to %s" % [corp_name, asteroid_name], Color(0.9, 0.6, 0.2))
+	)
+	EventBus.rival_corp_arrived.connect(func(corp_name: String, asteroid_name: String) -> void:
+		_queue_activity("[Rival] %s arrived at %s" % [corp_name, asteroid_name], Color(0.9, 0.5, 0.1))
+	)
+	EventBus.rival_corp_departed.connect(func(corp_name: String, asteroid_name: String, tons: float) -> void:
+		_queue_activity("[Rival] %s left %s with %.1ft cargo" % [corp_name, asteroid_name, tons], Color(0.7, 0.5, 0.2))
+	)
+	EventBus.rival_corps_contested.connect(func(corp_name: String, asteroid_name: String) -> void:
+		_queue_alert("[RIVAL] %s is now competing with you at %s!" % [corp_name, asteroid_name], Color(1.0, 0.4, 0.1))
+	)
 
 	_refresh_all()
 	_setup_policies_ui()
@@ -461,10 +482,24 @@ func _setup_policies_ui() -> void:
 	var policies_vbox := VBoxContainer.new()
 	policies_vbox.add_theme_constant_override("separation", 8)
 
+	var title_row := HBoxContainer.new()
 	var title := Label.new()
 	title.text = "COMPANY POLICIES"
 	title.add_theme_font_size_override("font_size", 14)
-	policies_vbox.add_child(title)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_child(title)
+
+	var autoplay_btn := Button.new()
+	autoplay_btn.toggle_mode = true
+	autoplay_btn.button_pressed = GameState.settings.get("autoplay", false)
+	autoplay_btn.text = "AUTOPLAY: ON" if autoplay_btn.button_pressed else "AUTOPLAY: OFF"
+	autoplay_btn.custom_minimum_size = Vector2(130, 0)
+	autoplay_btn.toggled.connect(func(on: bool) -> void:
+		GameState.settings["autoplay"] = on
+		autoplay_btn.text = "AUTOPLAY: ON" if on else "AUTOPLAY: OFF"
+	)
+	title_row.add_child(autoplay_btn)
+	policies_vbox.add_child(title_row)
 
 	var policies_content := VBoxContainer.new()
 	policies_content.add_theme_constant_override("separation", 10)

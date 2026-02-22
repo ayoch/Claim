@@ -18,10 +18,18 @@ var equipment_inventory: Array[Equipment] = []
 var upgrade_inventory: Array[ShipUpgrade] = []  # Purchased but not yet installed
 var fabrication_queue: Array[Equipment] = []  # Equipment being fabricated
 var asteroids: Array[AsteroidData] = []
+var rival_corps: Array[RivalCorp] = []
+
+# Lightspeed communication delay
+const LIGHT_SECONDS_PER_AU: float = 499.0
+var pending_orders: Array[Dictionary] = []  # { fires_at, ship, label, fn }
+
 var settings: Dictionary = {
 	"auto_refuel": true,
 	"show_unreachable_destinations": false,
 	"auto_sell_at_markets": false,
+	"auto_sell_at_earth": true,
+	"autoplay": false,
 }
 
 # Company policies
@@ -172,6 +180,7 @@ func _ready() -> void:
 	asteroids = CelestialData.get_asteroids()
 	market = MarketState.new()
 	colonies = ColonyData.get_colonies()
+	rival_corps = RivalCorpData.create_all()
 
 func _init_resources() -> void:
 	for ore in ResourceTypes.OreType.values():
@@ -193,11 +202,22 @@ func purchase_ship(ship_class: ShipData.ShipClass) -> Ship:
 	EventBus.ship_purchased.emit(new_ship, price)
 	return new_ship
 
-## Redirect a ship in transit to a new asteroid
-## Returns true if redirect successful, false if not feasible or not enough fuel/money
+## Redirect a ship in transit to a new asteroid.
+## Queues the order with lightspeed delay; returns true if order accepted/queued.
 func redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> bool:
 	if mission.status != Mission.Status.TRANSIT_OUT and mission.status != Mission.Status.TRANSIT_BACK:
-		return false  # Can only redirect during transit
+		return false
+	var ship := mission.ship
+	var label := "Redirect to " + new_asteroid.asteroid_name
+	queue_ship_order(ship, label, func(): _apply_redirect_mission(mission, new_asteroid))
+	return true
+
+func _apply_redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> void:
+	# Re-validate: mission may have completed or ship state changed during signal transit
+	if mission == null or mission.ship == null:
+		return
+	if mission.status != Mission.Status.TRANSIT_OUT and mission.status != Mission.Status.TRANSIT_BACK:
+		return
 
 	var ship := mission.ship
 	var new_dest := new_asteroid.get_position_au()
@@ -233,13 +253,13 @@ func redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> bool:
 
 	if fuel_needed > ship.fuel:
 		EventBus.mission_redirect_failed.emit(ship, "Insufficient fuel (need %.0f for redirect + return, have %.0f)" % [fuel_needed, ship.fuel])
-		return false
+		return
 
 	# Redirect costs money (2x outbound fuel cost as opportunity cost penalty)
 	var redirect_cost := int(fuel_out * Ship.FUEL_COST_PER_UNIT * 2.0)
 	if money < redirect_cost:
 		EventBus.mission_redirect_failed.emit(ship, "Cannot afford redirect cost ($%d)" % redirect_cost)
-		return false
+		return
 
 	money -= redirect_cost
 	mission.asteroid = new_asteroid
@@ -292,12 +312,23 @@ func redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> bool:
 		mission.fuel_per_tick = fuel_needed / total_time_single if total_time_single > 0.0 else 0.0
 
 	EventBus.mission_redirected.emit(ship, new_asteroid, redirect_cost)
-	return true
 
-## Redirect a ship in trade mission to a new colony
+## Redirect a ship in trade mission to a new colony.
+## Queues the order with lightspeed delay; returns true if order accepted/queued.
 func redirect_trade_mission(trade_mission: TradeMission, new_colony: Colony) -> bool:
 	if trade_mission.status != TradeMission.Status.TRANSIT_TO_COLONY and trade_mission.status != TradeMission.Status.TRANSIT_BACK:
-		return false  # Can only redirect during transit
+		return false
+	var ship := trade_mission.ship
+	var label := "Redirect to " + new_colony.colony_name
+	queue_ship_order(ship, label, func(): _apply_redirect_trade_mission(trade_mission, new_colony))
+	return true
+
+func _apply_redirect_trade_mission(trade_mission: TradeMission, new_colony: Colony) -> void:
+	# Re-validate: mission may have completed or ship state changed during signal transit
+	if trade_mission == null or trade_mission.ship == null:
+		return
+	if trade_mission.status != TradeMission.Status.TRANSIT_TO_COLONY and trade_mission.status != TradeMission.Status.TRANSIT_BACK:
+		return
 
 	var ship := trade_mission.ship
 	var new_dest := new_colony.get_position_au()
@@ -316,13 +347,13 @@ func redirect_trade_mission(trade_mission: TradeMission, new_colony: Colony) -> 
 
 	if fuel_needed > ship.fuel:
 		EventBus.trade_mission_redirect_failed.emit(ship, "Insufficient fuel (need %.0f for redirect + return, have %.0f)" % [fuel_needed, ship.fuel])
-		return false
+		return
 
 	# Redirect cost (2x outbound fuel cost)
 	var redirect_cost := int(fuel_out_tm * Ship.FUEL_COST_PER_UNIT * 2.0)
 	if money < redirect_cost:
 		EventBus.trade_mission_redirect_failed.emit(ship, "Cannot afford redirect cost ($%d)" % redirect_cost)
-		return false
+		return
 
 	money -= redirect_cost
 	trade_mission.colony = new_colony
@@ -389,7 +420,6 @@ func redirect_trade_mission(trade_mission: TradeMission, new_colony: Colony) -> 
 		trade_mission.fuel_per_tick = fuel_needed / total_time_single if total_time_single > 0.0 else 0.0
 
 	EventBus.trade_mission_redirected.emit(ship, new_colony, redirect_cost)
-	return true
 
 func _init_starter_crew() -> void:
 	# Hire starter crew with guaranteed specialty coverage: pilot, engineer, miner
@@ -584,6 +614,23 @@ func get_mining_units_at(asteroid_name: String) -> Array[MiningUnit]:
 	return result
 
 func get_occupied_slots(asteroid_name: String) -> int:
+	var count := 0
+	for unit in deployed_mining_units:
+		if unit.deployed_at_asteroid == asteroid_name:
+			count += 1
+	# Include rival ships currently mining at this asteroid
+	count += get_rival_occupied_slots(asteroid_name)
+	return count
+
+func get_rival_occupied_slots(asteroid_name: String) -> int:
+	var count := 0
+	for corp: RivalCorp in rival_corps:
+		for ship: RivalShip in corp.ships:
+			if ship.status == RivalShip.Status.MINING and ship.target_asteroid_name == asteroid_name:
+				count += 1
+	return count
+
+func get_player_units_at(asteroid_name: String) -> int:
 	var count := 0
 	for unit in deployed_mining_units:
 		if unit.deployed_at_asteroid == asteroid_name:
@@ -1056,9 +1103,19 @@ func complete_mission(mission: Mission) -> void:
 		# Don't transfer cargo, ship keeps it for trading
 		pass
 	elif mission.ship.is_at_earth:
-		# Transfer cargo from ship to stockpile (only if returning to Earth)
-		for ore_type in mission.ship.current_cargo:
-			add_resource(ore_type, mission.ship.current_cargo[ore_type])
+		# Transfer cargo from ship to Earth — either sell immediately or stockpile
+		if settings.get("auto_sell_at_earth", true):
+			var revenue := 0
+			for ore_type in mission.ship.current_cargo:
+				var amount: float = mission.ship.current_cargo[ore_type]
+				var price: float = MarketData.get_ore_price(ore_type)
+				revenue += int(amount * price)
+			if revenue > 0:
+				money += revenue
+				record_transaction(revenue, "Ore sold at Earth", mission.ship.ship_name)
+		else:
+			for ore_type in mission.ship.current_cargo:
+				add_resource(ore_type, mission.ship.current_cargo[ore_type])
 		mission.ship.current_cargo.clear()
 
 	mission.ship.current_mission = null
@@ -1099,10 +1156,57 @@ func _name_for_position(pos: Vector2) -> String:
 			return CelestialData.PLANETS[i]["name"]
 	return "deep space"
 
+## Returns the light-travel delay in game-seconds to reach this ship.
+## Docked ships have zero delay (direct line comms).
+func calc_signal_delay(ship: Ship) -> float:
+	if ship.is_docked:
+		return 0.0
+	return ship.position_au.distance_to(CelestialData.get_earth_position_au()) * LIGHT_SECONDS_PER_AU
+
+## Queue an order to a ship with lightspeed delay.
+## If delay == 0 (ship is docked), executes immediately.
+## Returns the delay in game-seconds.
+func queue_ship_order(ship: Ship, label: String, fn: Callable) -> float:
+	var delay := calc_signal_delay(ship)
+	if delay > 0.0:
+		pending_orders.append({
+			"fires_at": total_ticks + delay,
+			"ship": ship,
+			"label": label,
+			"fn": fn,
+		})
+		EventBus.order_queued.emit(ship, label, delay)
+	else:
+		fn.call()
+	return delay
+
+## Called each tick from simulation to fire ready orders.
+func process_pending_orders() -> void:
+	var remaining: Array[Dictionary] = []
+	for order in pending_orders:
+		if total_ticks >= order["fires_at"]:
+			order["fn"].call()
+			EventBus.order_executed.emit(order["ship"], order["label"])
+		else:
+			remaining.append(order)
+	pending_orders = remaining
+
+## Returns the pending order dictionary for a ship, or {} if none.
+func get_pending_order(ship: Ship) -> Dictionary:
+	for order in pending_orders:
+		if order["ship"] == ship:
+			return order
+	return {}
+
 func order_return_to_earth(ship: Ship) -> void:
-	# Start a transit-back mission from current idle position to Earth
 	if not ship.is_idle_remote:
 		return
+	queue_ship_order(ship, "Return to Earth", func(): _apply_order_return_to_earth(ship))
+
+func _apply_order_return_to_earth(ship: Ship) -> void:
+	# Start a transit-back mission from current idle position to Earth
+	if not ship.is_idle_remote:
+		return  # State changed while signal was in transit
 
 	var earth_pos := CelestialData.get_earth_position_au()
 	var dist := ship.position_au.distance_to(earth_pos)
@@ -1145,6 +1249,13 @@ func order_return_to_earth(ship: Ship) -> void:
 		EventBus.mission_started.emit(mission)
 
 func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+	var label := "Dispatch to " + asteroid.asteroid_name
+	queue_ship_order(ship, label, func(): _apply_dispatch_idle_ship(ship, asteroid, assigned_workers, transit_mode, slingshot_route))
+	return null  # Callers should not rely on the return value when ship is remote
+
+func _apply_dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker], transit_mode: int, slingshot_route) -> void:
+	if not ship.is_idle_remote:
+		return  # Ship state changed while signal was in transit
 	# Capture origin name before clearing missions
 	var origin_asteroid_name := ""
 	if ship.current_mission and ship.current_mission.asteroid:
@@ -1169,9 +1280,15 @@ func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_workers: Ar
 	var mission := start_mission(ship, asteroid, assigned_workers, transit_mode, slingshot_route)
 	mission.origin_is_earth = false
 	mission.origin_name = origin_asteroid_name if origin_asteroid_name != "" else "deep space"
-	return mission
 
 func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned_workers: Array[Worker], cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
+	var label := "Trade mission to " + colony_target.colony_name
+	queue_ship_order(ship, label, func(): _apply_dispatch_idle_ship_trade(ship, colony_target, assigned_workers, cargo_to_load, transit_mode))
+	return null  # Callers should not rely on the return value when ship is remote
+
+func _apply_dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned_workers: Array[Worker], cargo_to_load: Dictionary, transit_mode: int) -> void:
+	if not ship.is_idle_remote:
+		return  # Ship state changed while signal was in transit
 	# Capture origin name before clearing missions
 	var origin_loc_name := ""
 	if ship.current_mission and ship.current_mission.asteroid:
@@ -1196,7 +1313,6 @@ func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned_worker
 	var tm := start_trade_mission(ship, colony_target, assigned_workers, cargo_to_load, transit_mode)
 	tm.origin_is_earth = false
 	tm.origin_name = origin_loc_name if origin_loc_name != "" else "deep space"
-	return tm
 
 const RESCUE_COST_BASE: int = 20000  # Crew wages, equipment, opportunity cost — even nearby rescues are expensive
 const RESCUE_COST_PER_AU: int = 8000  # Fuel + extended crew time for distance
@@ -1780,6 +1896,12 @@ func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Ar
 	return tm
 
 func complete_trade_mission(tm: TradeMission) -> void:
+	# If the ship still has unsold cargo (e.g. returned to Earth without selling),
+	# return it to the stockpile rather than losing it.
+	if not tm.cargo.is_empty():
+		for ore_type in tm.cargo:
+			add_resource(ore_type, tm.cargo[ore_type])
+		tm.cargo.clear()
 	tm.ship.current_cargo.clear()
 	tm.ship.current_trade_mission = null
 	for w in tm.workers:
@@ -1839,6 +1961,10 @@ func save_game() -> void:
 		"available_contracts": [],
 		"active_contracts": [],
 		"market_events": [],
+		"rival_corps": [],
+		"autoplay": settings.get("autoplay", false),
+		"auto_sell_at_earth": settings.get("auto_sell_at_earth", true),
+		"auto_sell_at_markets": settings.get("auto_sell_at_markets", false),
 		"fabrication_queue": [],
 		"reputation": Reputation.score,
 		"rescue_missions": {},
@@ -2139,6 +2265,27 @@ func save_game() -> void:
 		})
 	save_data["tardy_workers"] = tardy_data
 
+	# Save rival corps (ship states only — corp definitions recreated from RivalCorpData)
+	var rival_data: Array[Dictionary] = []
+	for corp: RivalCorp in rival_corps:
+		var corp_entry := { "name": corp.corp_name, "money": corp.money,
+			"total_ore_mined": corp.total_ore_mined, "total_revenue": corp.total_revenue,
+			"ships": [] }
+		for ship: RivalShip in corp.ships:
+			corp_entry["ships"].append({
+				"status": ship.status,
+				"target_asteroid_name": ship.target_asteroid_name,
+				"target_position_au_x": ship.target_position_au.x,
+				"target_position_au_y": ship.target_position_au.y,
+				"cargo_tons": ship.cargo_tons,
+				"transit_time": ship.transit_time,
+				"elapsed_ticks": ship.elapsed_ticks,
+				"mining_elapsed": ship.mining_elapsed,
+				"mining_duration": ship.mining_duration,
+			})
+		rival_data.append(corp_entry)
+	save_data["rival_corps"] = rival_data
+
 	var file := FileAccess.open("user://save_game.json", FileAccess.WRITE)
 	file.store_string(JSON.stringify(save_data, "\t"))
 
@@ -2156,6 +2303,9 @@ func load_game() -> bool:
 	supply_policy = int(data.get("supply_policy", CompanyPolicy.SupplyPolicy.ROUTINE))
 	collection_policy = int(data.get("collection_policy", CompanyPolicy.CollectionPolicy.ROUTINE))
 	encounter_policy = int(data.get("encounter_policy", CompanyPolicy.EncounterPolicy.COEXIST))
+	settings["autoplay"] = data.get("autoplay", false)
+	settings["auto_sell_at_earth"] = data.get("auto_sell_at_earth", true)
+	settings["auto_sell_at_markets"] = data.get("auto_sell_at_markets", false)
 
 	_init_resources()
 	var res_data: Dictionary = data.get("resources", {})
@@ -2659,5 +2809,29 @@ func load_game() -> bool:
 			"food": float(sd.get("food", 0.0)),
 			"repair_parts": float(sd.get("repair_parts", 0.0)),
 		}
+
+	# Restore rival corp states — rebuild structure from RivalCorpData, then overlay saved state
+	rival_corps = RivalCorpData.create_all()
+	var saved_rivals: Array = data.get("rival_corps", [])
+	for i in min(rival_corps.size(), saved_rivals.size()):
+		var corp: RivalCorp = rival_corps[i]
+		var cd: Dictionary = saved_rivals[i]
+		corp.money = int(cd.get("money", corp.money))
+		corp.total_ore_mined = float(cd.get("total_ore_mined", 0.0))
+		corp.total_revenue = int(cd.get("total_revenue", 0))
+		var saved_ships: Array = cd.get("ships", [])
+		for j in min(corp.ships.size(), saved_ships.size()):
+			var ship: RivalShip = corp.ships[j]
+			var shipd: Dictionary = saved_ships[j]
+			ship.status = int(shipd.get("status", RivalShip.Status.IDLE))
+			ship.target_asteroid_name = shipd.get("target_asteroid_name", "")
+			ship.target_position_au = Vector2(
+				float(shipd.get("target_position_au_x", 0.0)),
+				float(shipd.get("target_position_au_y", 0.0)))
+			ship.cargo_tons = float(shipd.get("cargo_tons", 0.0))
+			ship.transit_time = float(shipd.get("transit_time", 0.0))
+			ship.elapsed_ticks = float(shipd.get("elapsed_ticks", 0.0))
+			ship.mining_elapsed = float(shipd.get("mining_elapsed", 0.0))
+			ship.mining_duration = float(shipd.get("mining_duration", 86400.0))
 
 	return true
