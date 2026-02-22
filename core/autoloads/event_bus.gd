@@ -107,6 +107,16 @@ signal worker_tardiness_resolved(worker: Worker, action: String)
 signal map_dispatch_to_asteroid(ship: Ship, asteroid: AsteroidData)
 signal map_dispatch_to_colony(ship: Ship, colony: Colony)
 
+# Lightspeed communication delay
+signal order_queued(ship: Ship, label: String, delay_secs: float)
+signal order_executed(ship: Ship, label: String)
+
+# Rival corporations
+signal rival_corp_dispatched(corp_name: String, asteroid_name: String)
+signal rival_corp_arrived(corp_name: String, asteroid_name: String)
+signal rival_corp_departed(corp_name: String, asteroid_name: String, tons: float)
+signal rival_corps_contested(corp_name: String, asteroid_name: String)
+
 # Mining units
 signal mining_unit_purchased(unit: MiningUnit)
 signal mining_unit_deployed(unit: MiningUnit, asteroid: AsteroidData)

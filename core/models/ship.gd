@@ -109,6 +109,12 @@ func get_mining_multiplier() -> float:
 		mult *= e.get_effective_bonus()
 	return mult
 
+func get_ore_total() -> float:
+	var total := 0.0
+	for amount in current_cargo.values():
+		total += amount
+	return total
+
 func get_cargo_total() -> float:
 	var total := 0.0
 	# Ore cargo

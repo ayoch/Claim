@@ -1,7 +1,59 @@
 ﻿# Claim — Work Log
-# Updated: 2026-02-21 ~19:30 EST
+# Updated: 2026-02-21 ~22:45 EST
 
 ---
+
+## 2026-02-21 ~22:30-22:45 EST
+
+- Updated GDD.md to v0.9 reflecting this session's work
+  - §3.4 Communication Delay: updated from "NOT YET IMPLEMENTED" to full implemented description (lightspeed queue, 499 s/AU, 5 order types, UI banners)
+  - §3.5 Policy System: updated from "NOT YET IMPLEMENTED" to "PARTIALLY IMPLEMENTED" (all 4 policies wired, autoplay uses them; per-site overrides still deferred)
+  - §5.2 Open Market: added ore selling flow documentation (auto_sell_at_earth, stockpile, colony trade)
+  - §6.5 AI Corporations: updated from "NOT YET IMPLEMENTED" to full implemented description (5 named corps, personalities, hourly AI, slot competition, save/load; solar map display deferred)
+- Updated CLAUDE_HANDOFF.md timestamps and session context
+
+## 2026-02-21 ~22:00-22:30 EST
+
+- Fixed "no deposits when selling ore" bug: root cause was that mining missions deposit ore to `GameState.resources` (stockpile) but nothing auto-sells it — autoplay re-dispatches ships immediately, so the player never has a chance to manually sell from the Market tab
+- Added `auto_sell_at_earth: true` setting to `game_state.gd` — when on, ore is sold at Earth market prices immediately when a mining mission completes rather than going to stockpile
+- Setting is saved/loaded alongside `autoplay` and `auto_sell_at_markets`
+- Added checkbox in main_ui.gd settings panel: "Auto-sell ore when ships return to Earth" (on by default)
+- Renamed "Auto-sell cargo at markets" → "Auto-sell cargo at colony markets" to distinguish the two settings
+
+## 2026-02-21 ~21:30-22:00 EST
+
+- Fixed ore-loss bug: trade mission ships returning to Earth with unsold cargo now have that cargo returned to the stockpile instead of being silently destroyed
+- Root cause: `complete_trade_mission()` in `game_state.gd` called `tm.ship.current_cargo.clear()` without checking if `tm.cargo` still had unsold ore; ore was removed from stockpile at mission start (line 1778: `remove_resource`) but never returned
+- Fix: added stockpile restoration at top of `complete_trade_mission()` — iterates `tm.cargo`, calls `add_resource()` for each ore type, then clears `tm.cargo`; the selling path clears `tm.cargo` before calling `complete_trade_mission`, so there's no double-return risk
+
+## 2026-02-21 ~20:30-21:30 EST
+
+- Lightspeed communication delay implemented: orders sent to remote ships are delayed by `distance × 499 s/AU` game-time
+- Architecture: `pending_orders: Array[Dictionary]` in `game_state.gd`; each entry holds `fires_at`, `ship`, `label`, `fn: Callable`
+- `calc_signal_delay(ship)` returns 0 for docked ships, else `distance_au * 499.0`
+- `queue_ship_order(ship, label, fn)` appends to pending_orders (or executes immediately if delay = 0); emits `order_queued` signal
+- `process_pending_orders()` called each tick in `simulation.gd`, fires ready orders, emits `order_executed`
+- Wrapped 5 order functions in `game_state.gd` with `_apply_*` internal variants:
+  - `order_return_to_earth` → queues `_apply_order_return_to_earth`
+  - `redirect_mission` → queues `_apply_redirect_mission` (re-validates at arrival; realistic since ship position has changed)
+  - `redirect_trade_mission` → queues `_apply_redirect_trade_mission`
+  - `dispatch_idle_ship` → queues `_apply_dispatch_idle_ship`
+  - `dispatch_idle_ship_trade` → queues `_apply_dispatch_idle_ship_trade`
+- `event_bus.gd`: added `order_queued(ship, label, delay_secs)` and `order_executed(ship, label)` signals
+- `fleet_market_tab.gd`: shows "📡 Signal in transit: <label> (<time> remaining)" banner on idle-remote and in-transit ship cards; dispatch/return buttons disabled while order is pending; redirect confirmations show "Signal delay: Xm XXs" line
+- `dashboard_tab.gd`: order_queued → amber activity entry with ship name, label, and delay; order_executed → green entry confirming receipt
+- Also fixed: bug fixes from prior session (cargo/supply distinction, autoplay Earth ships, ships not returning, cargo unsellable after return)
+
+## 2026-02-21 ~19:30-20:30 EST
+
+- Rival corporations implemented (single-player AI competition)
+- Created `core/models/rival_ship.gd` — RivalShip resource with Status enum (IDLE/TRANSIT_TO/MINING/TRANSIT_HOME), cargo, thrust, transit/mining timing, `get_position_au()` for interpolated map position
+- Created `core/models/rival_corp.gd` — RivalCorp resource with Personality enum (AGGRESSIVE/SYSTEMATIC/OPPORTUNISTIC/CONSERVATIVE/EXPANSIONIST), ships array, money/stats
+- Created `core/data/rival_corp_data.gd` — factory for 5 named corps: Helios Extraction (AGGRESSIVE), Meridian Heavy Industries (SYSTEMATIC), Vanguard Prospecting (OPPORTUNISTIC), Consolidated Belt Resources (CONSERVATIVE), Arcturus Syndicate (EXPANSIONIST)
+- `event_bus.gd`: added 4 rival signals — rival_corp_dispatched, rival_corp_arrived, rival_corp_departed, rival_corps_contested
+- `game_state.gd`: added `rival_corps: Array[RivalCorp]`; initialized in `_ready()` from RivalCorpData.create_all(); updated `get_occupied_slots()` to include rival ships at MINING status; added `get_rival_occupied_slots()` and `get_player_units_at()` helpers; rival corp states serialized in save/load (stats overlay on recreated structure)
+- `simulation.gd`: added _rival_accumulator/RIVAL_CHECK_INTERVAL; `_process_rival_corps(dt)` called each tick; `_advance_rival_ship()` handles per-tick transit/mining/return; `_update_rival_corp_decisions()` + `_rival_try_dispatch()` run hourly; `_score_asteroid_for_rival()` applies personality-specific scoring (AGGRESSIVE=richest, SYSTEMATIC=uncontested, OPPORTUNISTIC=follows player, CONSERVATIVE=avoids conflict, EXPANSIONIST=any open slot); `_sell_rival_cargo()` updates corp finances; `_find_asteroid()` helper
+- `dashboard_tab.gd`: connected all 4 rival EventBus signals to activity/alert feed with orange color coding; contested signal shows as bold alert
 
 ## 2026-02-21 ~18:00-19:30 EST
 

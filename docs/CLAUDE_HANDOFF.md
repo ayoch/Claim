@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-21 ~19:45 EST
+**Last Updated:** 2026-02-21 ~22:45 EST
 **Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
-**Session Context:** Ship specs, policy system, Python server skeleton
-**Next Session Priority:** Connect Godot client to server (thin client refactor — GameState reads from server REST API instead of simulating locally)
+**Session Context:** Lightspeed comms delay, rival corporations, food starvation fix, ore-loss fix, auto-sell at Earth
+**Next Session Priority:** Rival corp visibility on solar map (show rival ships as faint markers); or lightspeed delay UX polish (live countdown timer on ship cards)
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -12,6 +12,49 @@
 ## Session Log
 *(Most recent first)*
 
+
+### 2026-02-21 ~22:00-22:30 EST - Auto-Sell at Earth
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **"No deposits" bug fixed**: Mining ships deposit ore to stockpile but nothing auto-sells it. With autoplay, ships are re-dispatched immediately so players never have a window to manually sell. After months of gameplay, zero income entries appeared in the transaction log.
+  - **New setting `auto_sell_at_earth: true`**: When enabled (default), ore is sold at Earth market prices the moment a mining mission completes rather than going to the stockpile. Produces an "Ore sold at Earth" entry in the transaction log with the ship name.
+  - **Settings UI** (`main_ui.gd`): Added "Auto-sell ore when ships return to Earth" checkbox. Renamed "Auto-sell cargo at markets" to "Auto-sell cargo at colony markets" to avoid confusion between the two settings.
+  - **Save/load**: `auto_sell_at_earth` and `auto_sell_at_markets` now persisted in save data (were previously session-only).
+- **Files Modified:** `core/autoloads/game_state.gd`, `ui/main_ui.gd`
+- **Note:** If players want to stockpile ore for better prices, they can uncheck "Auto-sell ore when ships return to Earth."
+
+### 2026-02-21 ~21:30-22:00 EST - Ore-Loss Bug Fix
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Ore-loss bug**: Trade mission ships returning to Earth with unsold cargo were having that cargo silently destroyed. Root cause: `complete_trade_mission()` called `current_cargo.clear()` without restoring `tm.cargo` to the stockpile, but ore had been removed from `GameState.resources` at mission start via `remove_resource()`.
+  - **Fix**: `complete_trade_mission()` now iterates `tm.cargo` and calls `add_resource()` for each ore type before clearing. The selling path clears `tm.cargo` before calling this function, so there's no double-return.
+- **Files Modified:** `core/autoloads/game_state.gd`
+
+### 2026-02-21 ~20:30-21:30 EST - Lightspeed Communication Delay
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Lightspeed delay system**: Orders sent to remote ships are now delayed by `distance_au × 499 s/AU` game-seconds (1 AU = 499 light-seconds). This is intentional game design — player experiences the frustration of communication lag with deep-space ships.
+  - **Infrastructure in `game_state.gd`**: `LIGHT_SECONDS_PER_AU = 499.0`, `pending_orders: Array[Dictionary]`, `calc_signal_delay(ship)`, `queue_ship_order(ship, label, fn)`, `process_pending_orders()`, `get_pending_order(ship)`.
+  - **5 order functions wrapped**: `order_return_to_earth`, `redirect_mission`, `redirect_trade_mission`, `dispatch_idle_ship`, `dispatch_idle_ship_trade` — all now go through queue. `_apply_*` internal functions contain original logic; re-validate at arrival in case ship state changed.
+  - **Signals**: `order_queued(ship, label, delay_secs)` and `order_executed(ship, label)` added to `event_bus.gd`.
+  - **UI**: Pending order banner (amber) with countdown on ship cards; action buttons disabled while order in transit; redirect dialogs show "Signal delay: Xm XXs" line; dashboard feeds for both sent and received orders.
+  - **Simulation tick**: `GameState.process_pending_orders()` called at end of each `_process_tick()`.
+- **Files Modified:** `core/autoloads/event_bus.gd`, `core/autoloads/game_state.gd`, `core/autoloads/simulation.gd`, `ui/tabs/fleet_market_tab.gd`, `ui/tabs/dashboard_tab.gd`
+- **Design Notes:** Route is computed at ORDER ARRIVAL time (not dispatch time) — physically correct since ship is at a different position by then. The validation (fuel/money) also runs at arrival, so a failed order is possible if game state changed.
+
+### 2026-02-21 ~19:30-20:30 EST - Rival Corporations
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Rival corps system**: 5 named AI corporations that independently mine asteroids, competing with the player for slots.
+  - **RivalShip / RivalCorp models**: GDScript Resources in `core/models/`. RivalCorp has Personality enum driving dispatch behavior. RivalShip tracks status (IDLE/TRANSIT_TO/MINING/TRANSIT_HOME), timing, and cargo.
+  - **RivalCorpData factory**: `core/data/rival_corp_data.gd` creates 5 corps with distinct personalities, home positions, fleet sizes, and cargo caps.
+  - **Simulation AI**: `_process_rival_corps(dt)` advances ships each tick; hourly AI loop scores all asteroids per personality, dispatches idle ships to best target. Contested slot check fires alert when rival arrives at player-occupied asteroid.
+  - **Slot competition**: `get_occupied_slots()` now includes rival ships currently MINING. `get_rival_occupied_slots()` and `get_player_units_at()` added.
+  - **Dashboard alerts**: 4 new EventBus signals wired to activity/alert feed with orange color coding.
+  - **Save/load**: Rival corp financial stats + ship states serialized; on load, structure rebuilt from RivalCorpData then overlaid with saved state.
+- **Files Created:** `core/models/rival_ship.gd`, `core/models/rival_corp.gd`, `core/data/rival_corp_data.gd`
+- **Files Modified:** `core/autoloads/event_bus.gd`, `core/autoloads/game_state.gd`, `core/autoloads/simulation.gd`, `ui/tabs/dashboard_tab.gd`
+- **Next Steps:** Show rival ships on solar map as faint/ghosted markers using `ship.get_position_au()`
 
 ### 2026-02-21 ~18:00-19:30 EST - Ship Specs, Policy System, Python Server Skeleton
 - **Machine:** Windows desktop (Dweezil)

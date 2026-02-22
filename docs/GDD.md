@@ -6,7 +6,7 @@
 **Multiplayer Idle Strategy Simulation**
 **Platform:** Mobile (iOS / Android)
 **Engine:** Godot 4.6
-**Version:** 0.8 — Food consumption system, auto-provisioning, teleportation fixes, enhanced test harness
+**Version:** 0.9 — Lightspeed communication delay, rival corporations, auto-sell at Earth, bug fixes
 **February 2026**
 
 ---
@@ -96,7 +96,7 @@ Key decisions:
 ### 3.4 Communication Delay
 Light-speed delay is real. An order at 2 AU takes ~17 minutes; at 5 AU, nearly an hour. This physically prevents micromanagement — by the time you learn about a situation and respond, your workers have already handled it their way.
 
-> **STATUS: NOT YET IMPLEMENTED.**
+> **STATUS: IMPLEMENTED.** All player orders to remote ships are delayed by `distance_au × 499 game-seconds` (1 AU = 499 light-seconds). The order queue lives in `GameState.pending_orders` and fires each tick when `fires_at ≤ total_ticks`. Orders to docked ships execute immediately (delay = 0). Five order types are queued: `order_return_to_earth`, `redirect_mission`, `redirect_trade_mission`, `dispatch_idle_ship`, `dispatch_idle_ship_trade`. Each queues an `_apply_*` variant that re-validates ship state at arrival time (since the ship's position and fuel may have changed during transit). UI shows "📡 Signal in transit: [label] ([time] remaining)" on ship cards; action buttons are disabled while an order is in flight. Dashboard activity feed logs both the send event (amber) and receipt (green). The player's intent — frustration and tension from lag — is by design.
 
 ### 3.5 Policy System
 **Policies** are broad strategic directives governing crew behavior across the operation, set in the HQ tab. This is the core idle mechanism: set policy, check in occasionally, handle the rare situation that needs a personal decision.
@@ -118,7 +118,7 @@ Per-site overrides surface naturally: the HQ tab shows **advisory alerts** when 
 
 Both manual and auto play styles are always available from the start. A player who wants a fully passive experience can set policies immediately. This won't be competitive in multiplayer, but it's allowed.
 
-> **STATUS: NOT YET IMPLEMENTED.** Company thrust policy exists. All other policies, per-site overrides, and the advisory alert system are not yet built.
+> **STATUS: PARTIALLY IMPLEMENTED.** Supply policy (PROACTIVE/ROUTINE/MINIMAL/MANUAL), Collection policy (AGGRESSIVE/ROUTINE/PATIENT/MANUAL), and Encounter policy (AVOID/COEXIST/CONFRONT/DEFEND) are implemented in `core/data/company_policy.gd` and wired into the simulation. Thrust policy (Conservative/Balanced/Aggressive/Economical) is also implemented. All four policies are configurable from the Dashboard tab. The **autoplay** system (`_autoplay_dispatch_from_earth`, `_process_stationed_ships`) uses these policies to drive ship behavior autonomously. Per-site overrides and advisory alerts are **not yet implemented.**
 
 ### 3.6 Alert System
 The HQ tab divides incoming information into two tiers:
@@ -207,6 +207,8 @@ Two forms of value, and the tension between them drives strategy:
 Prices fluctuate on supply and demand. Events drive shifts — construction booms raise metal prices, tech announcements crash rare earths (which may recover if the announcement proves false). In multiplayer, the market responds to all players collectively.
 
 > **STATUS: IMPLEMENTED.** Random walk (±3%/tick) with 1% mean reversion, clamped 0.3x–3.0x base. Eight event types (SHORTAGE, SURPLUS, DISASTER, BOOM, RECESSION, DISCOVERY, STRIKE, TECH_ADVANCE) with 0.5x–3.5x multipliers. System-wide or colony-specific. Up to 3 concurrent events. **Player-driven market effects not yet implemented** (multiplayer).
+>
+> **Ore selling flow:** When a mining mission completes at Earth, ore is either auto-sold at current market prices (default: `auto_sell_at_earth = true`, logs "Ore sold at Earth" in the transaction feed) or placed in the `GameState.resources` stockpile for manual sale from the Market tab. Colony trade missions auto-sell when the ship is stationed or `auto_sell_at_markets = true`; otherwise the ship idles at the colony until the player orders a return, at which point unsold cargo is returned to the Earth stockpile. Both settings are configurable in the Settings panel and are saved with the game.
 
 ### 5.3 Contracts
 Guaranteed sale price for a specific material over a defined period. Income stability at the cost of flexibility — if market spikes above your rate, you lose potential profit.
@@ -303,7 +305,7 @@ Weapon types (to be designed in detail):
 ### 6.5 AI Corporations
 AI corporations follow all the same rules: stake claims, deploy units, trade, hire, and contest. They make strategic decisions, react to expansion, and occasionally make mistakes. Present in single player; fill gaps in low-population multiplayer servers.
 
-> **STATUS: NOT YET IMPLEMENTED.**
+> **STATUS: IMPLEMENTED (single-player rival corps).** Five named rival corporations exist: **Helios Extraction** (AGGRESSIVE), **Meridian Heavy Industries** (SYSTEMATIC), **Vanguard Prospecting** (OPPORTUNISTIC), **Consolidated Belt Resources** (CONSERVATIVE), and **Arcturus Syndicate** (EXPANSIONIST). Each has a distinct personality that drives dispatch behavior via a scoring function (distance, yield, slot availability, risk tolerance). Rivals score and dispatch to asteroids each hourly AI tick; their ships transit, mine, and return in real-time alongside the player. Slot competition is enforced: `get_occupied_slots()` includes rival ships currently mining. Dashboard alerts fire when a rival ship arrives at a player-occupied asteroid. Rival corp stats and ship states are saved/loaded. **Rival ships are not yet visible on the solar map** (planned next). Full deep-game AI decision-making (dynamic pricing response, targeted harassment, investment strategy) is deferred to Phase 3.
 
 ### 6.6 Fog of War
 Limited visibility into competitor activity:

@@ -51,6 +51,11 @@ var _station_accumulator: float = 0.0
 const STATION_CHECK_INTERVAL: float = 3600.0  # Check every game-hour
 const STATION_RADIUS_AU: float = 1.0  # Ships consider targets within this radius of their station
 
+# Rival corporation AI
+var _rival_accumulator: float = 0.0
+const RIVAL_CHECK_INTERVAL: float = 3600.0   # AI decisions every game-hour
+const RIVAL_BASE_MINING_DURATION: float = 86400.0  # 1 game-day of mining per run
+
 # Worker fatigue (piggybacks on payroll accumulator interval)
 
 # Worker leave processing
@@ -91,6 +96,16 @@ func _ready() -> void:
 	EventBus.ship_breakdown.connect(func(_s: Ship, _r: String) -> void: TimeScale.slow_for_critical_event())
 	EventBus.stranger_rescue_offered.connect(func(_s: Ship, _n: String) -> void: TimeScale.slow_for_critical_event())
 	EventBus.ship_destroyed.connect(func(_s: Ship, _b: String) -> void: TimeScale.slow_for_critical_event())
+	# Autoplay: immediately re-evaluate Earth ships when a mission completes
+	EventBus.mission_completed.connect(func(mission: Mission) -> void:
+		if not GameState.settings.get("autoplay", false):
+			return
+		var ship := mission.ship
+		if ship == null or ship.is_derelict or ship.is_stationed:
+			return
+		if ship.is_at_earth and ship.current_mission == null and ship.current_trade_mission == null:
+			_autoplay_dispatch_from_earth(ship)
+	)
 
 func _process(delta: float) -> void:
 	var game_speed := TimeScale.speed_multiplier
@@ -150,6 +165,8 @@ func _process_tick(dt: float, emit_event: bool = true) -> void:
 	_process_survey_events(dt)
 	_process_market_events(dt)
 	_process_contracts(dt)
+	_process_rival_corps(dt)
+	GameState.process_pending_orders()
 
 func _process_orbits(dt: float) -> void:
 	# Advance all planets (including Earth)
@@ -255,8 +272,8 @@ func _process_missions(dt: float) -> void:
 				# Stay until hold is full; safety timeout at 2x estimated duration
 				var cargo_full := mission.ship.get_cargo_total() >= mission.ship.get_effective_cargo_capacity() * 0.99
 				if cargo_full or mission.elapsed_ticks >= mission.mining_duration * 2.0:
-					# Stationed ships auto-return instead of idling
-					if mission.ship.is_stationed:
+					# Stationed ships and autoplay missions auto-return instead of idling
+					if mission.ship.is_stationed or mission.return_to_station:
 						_start_station_return(mission)
 					else:
 						mission.status = Mission.Status.IDLE_AT_DESTINATION
@@ -322,9 +339,15 @@ func _process_missions(dt: float) -> void:
 						elif not mission.return_to_station:
 							mission.ship.position_au = CelestialData.get_earth_position_au()
 							mission.ship.docked_at_colony = null  # Returning to Earth, not a colony
+							_auto_refuel_at_earth(mission.ship)
+							_auto_provision_at_location(mission.ship)
 						else:
-							mission.ship.position_au = mission.return_position_au
-							# Clear docked_at_colony for non-stationed ships (will be set below if stationed)
+							if mission.ship.station_colony == null:
+								mission.ship.position_au = CelestialData.get_earth_position_au()
+								_auto_refuel_at_earth(mission.ship)
+								_auto_provision_at_location(mission.ship)
+							else:
+								mission.ship.position_au = mission.return_position_au
 							if not mission.ship.is_stationed:
 								mission.ship.docked_at_colony = null
 						# Stationed ships: dock at colony and refuel
@@ -802,6 +825,8 @@ func _process_trade_missions(dt: float) -> void:
 						else:
 							tm.ship.position_au = CelestialData.get_earth_position_au()
 							tm.ship.docked_at_colony = null  # Returning to Earth, not a colony
+							_auto_refuel_at_earth(tm.ship)
+							_auto_provision_at_location(tm.ship)
 						GameState.complete_trade_mission(tm)
 
 func _update_ship_positions(dt: float) -> void:
@@ -1279,6 +1304,16 @@ func _process_stationed_ships(dt: float) -> void:
 	_station_accumulator -= STATION_CHECK_INTERVAL
 	_cleanup_expired_security_zones()
 
+	# Autoplay: station colony-docked ships; directly dispatch Earth-docked ships
+	if GameState.settings.get("autoplay", false):
+		for ship in GameState.ships:
+			if ship.is_derelict or ship.is_stationed:
+				continue
+			if ship.docked_at_colony != null:
+				GameState.station_ship(ship, ship.docked_at_colony, _autoplay_jobs())
+			elif ship.is_at_earth and ship.current_mission == null and ship.current_trade_mission == null:
+				_autoplay_dispatch_from_earth(ship)
+
 	for ship in GameState.ships:
 		if not ship.is_stationed_idle:
 			continue
@@ -1316,6 +1351,78 @@ func _process_stationed_ships(dt: float) -> void:
 			if took_job:
 				break  # Only do one job at a time
 
+func _autoplay_jobs() -> Array[String]:
+	# Build a priority-ordered job list from current company policies.
+	# Jobs whose policy is MANUAL are excluded -- the player handles those manually.
+	var jobs: Array[String] = []
+	jobs.append("mining")  # Core operation -- always included
+	if GameState.collection_policy != CompanyPolicy.CollectionPolicy.MANUAL:
+		jobs.append("collect_ore")
+	if GameState.supply_policy != CompanyPolicy.SupplyPolicy.MANUAL:
+		jobs.append("provisioning")
+	jobs.append("parts_delivery")
+	if GameState.encounter_policy in [CompanyPolicy.EncounterPolicy.CONFRONT, CompanyPolicy.EncounterPolicy.DEFEND]:
+		jobs.append("patrol")
+	return jobs
+
+func _autoplay_dispatch_from_earth(ship: Ship) -> void:
+	# For ships docked at Earth, pick the best reachable asteroid and send them mining.
+	# Mirrors _station_try_mining but without the colony-radius restriction.
+	if ship.get_ore_total() > ship.get_effective_cargo_capacity() * 0.9:
+		# Cargo nearly full — sell first; skip for now (future: auto-sell at Earth)
+		return
+	if ship.get_cargo_remaining() < ship.get_effective_cargo_capacity() * 0.1:
+		return
+
+	var ship_pos := ship.position_au
+	var best_asteroid: AsteroidData = null
+	var best_score: float = -1.0
+
+	for asteroid in GameState.asteroids:
+		if asteroid.ore_yields.is_empty():
+			continue
+		var slots_left := asteroid.get_max_mining_slots() - GameState.get_occupied_slots(asteroid.asteroid_name)
+		if slots_left <= 0:
+			continue
+		var dist := ship_pos.distance_to(asteroid.get_position_au())
+		if dist <= 0.0:
+			continue
+		# Need enough fuel for round trip (loaded out, full cargo back)
+		var fuel_needed := ship.calc_fuel_for_distance(dist, ship.get_cargo_total()) \
+			+ ship.calc_fuel_for_distance(dist, ship.get_effective_cargo_capacity())
+		if fuel_needed > ship.fuel:
+			continue
+		# Score = ore value density / distance
+		var yield_sum := 0.0
+		for ore_type in asteroid.ore_yields:
+			yield_sum += float(asteroid.ore_yields[ore_type]) * float(GameState.market.current_prices.get(ore_type, 1000.0))
+		var score := yield_sum / dist
+		if score > best_score:
+			best_score = score
+			best_asteroid = asteroid
+
+	if best_asteroid == null:
+		return
+
+	# Assign crew — use last_crew if valid, otherwise grab available workers
+	var crew: Array[Worker] = []
+	for w in ship.last_crew:
+		if w in GameState.workers and w.is_available:
+			crew.append(w)
+	if crew.size() < ship.min_crew:
+		crew.clear()
+		var available := GameState.get_available_workers()
+		for i in mini(ship.min_crew, available.size()):
+			crew.append(available[i])
+	if crew.size() < ship.min_crew:
+		return  # Not enough workers
+
+	var mission := GameState.start_mission(ship, best_asteroid, crew)
+	if mission:
+		mission.return_to_station = true  # Auto-return when done; no idle-at-destination
+		ship.last_crew = crew
+		EventBus.station_job_started.emit(ship, "mining", best_asteroid.asteroid_name)
+
 func _station_try_mining(ship: Ship) -> bool:
 	# Actionable if: cargo space > 10%, fuel sufficient, crew aboard
 	if ship.get_cargo_remaining() < ship.get_effective_cargo_capacity() * 0.1:
@@ -1351,8 +1458,8 @@ func _station_try_mining(ship: Ship) -> bool:
 	return mission != null
 
 func _station_try_trading(ship: Ship) -> bool:
-	# Actionable if: ship has ore cargo to sell
-	if ship.get_cargo_total() < 0.1:
+	# Actionable if: ship has ore cargo to sell (supplies don't count)
+	if ship.get_ore_total() < 0.1:
 		return false
 
 	var colony: Colony = ship.station_colony
@@ -2492,6 +2599,20 @@ func _process_contracts(dt: float) -> void:
 			GameState.available_contracts.append(contract)
 			EventBus.contract_offered.emit(contract)
 
+func _auto_refuel_at_earth(ship: Ship) -> void:
+	# Automatically refuel ship when it returns to Earth (if auto_refuel enabled)
+	if not GameState.settings.get("auto_refuel", true):
+		return
+	if ship.fuel >= ship.get_effective_fuel_capacity():
+		return  # Already full
+	var fuel_needed := ship.get_effective_fuel_capacity() - ship.fuel
+	var fuel_cost := int(fuel_needed * Ship.FUEL_COST_PER_UNIT)
+	if GameState.money >= fuel_cost:
+		ship.fuel = ship.get_effective_fuel_capacity()
+		GameState.money -= fuel_cost
+		if fuel_cost > 0:
+			GameState.record_transaction(-fuel_cost, "Refuel at Earth", ship.ship_name)
+
 func _auto_refuel_at_colony(ship: Ship) -> void:
 	# Automatically refuel ship when it arrives at a colony
 	if ship.fuel >= ship.get_effective_fuel_capacity():
@@ -2533,3 +2654,173 @@ func _auto_provision_at_location(ship: Ship) -> void:
 
 	# Use GameState.buy_supplies which handles payment and cargo checks
 	GameState.buy_supplies(ship, "food", amount_to_buy)
+
+# ─── Rival Corporations ───────────────────────────────────────────────────────
+
+func _process_rival_corps(dt: float) -> void:
+	# Advance all rival ships every tick (transit & mining progress)
+	for corp: RivalCorp in GameState.rival_corps:
+		for ship: RivalShip in corp.ships:
+			_advance_rival_ship(corp, ship, dt)
+
+	# AI decision logic runs every RIVAL_CHECK_INTERVAL
+	_rival_accumulator += dt
+	if _rival_accumulator < RIVAL_CHECK_INTERVAL:
+		return
+	_rival_accumulator -= RIVAL_CHECK_INTERVAL
+	for corp: RivalCorp in GameState.rival_corps:
+		_update_rival_corp_decisions(corp)
+
+func _advance_rival_ship(corp: RivalCorp, ship: RivalShip, dt: float) -> void:
+	match ship.status:
+		RivalShip.Status.TRANSIT_TO:
+			ship.elapsed_ticks += dt
+			if ship.elapsed_ticks >= ship.transit_time:
+				ship.status = RivalShip.Status.MINING
+				ship.elapsed_ticks = 0.0
+				ship.mining_elapsed = 0.0
+				EventBus.rival_corp_arrived.emit(corp.corp_name, ship.target_asteroid_name)
+				# Check for contested slots
+				if GameState.get_player_units_at(ship.target_asteroid_name) > 0:
+					EventBus.rival_corps_contested.emit(corp.corp_name, ship.target_asteroid_name)
+
+		RivalShip.Status.MINING:
+			ship.mining_elapsed += dt
+			# Accumulate cargo based on asteroid ore density
+			var asteroid := _find_asteroid(ship.target_asteroid_name)
+			if asteroid != null and not asteroid.ore_yields.is_empty():
+				var total_yield_rate: float = 0.0
+				for ore_type in asteroid.ore_yields:
+					total_yield_rate += float(asteroid.ore_yields[ore_type])
+				var mined := total_yield_rate * BASE_MINING_RATE * dt
+				ship.cargo_tons = minf(ship.cargo_tons + mined, ship.cargo_capacity)
+			if ship.mining_elapsed >= ship.mining_duration or ship.cargo_tons >= ship.cargo_capacity * 0.95:
+				# Head home
+				ship.status = RivalShip.Status.TRANSIT_HOME
+				ship.elapsed_ticks = 0.0
+				var dist := ship.target_position_au.distance_to(ship.home_position_au)
+				ship.transit_time = Brachistochrone.transit_time(dist, ship.thrust_g)
+
+		RivalShip.Status.TRANSIT_HOME:
+			ship.elapsed_ticks += dt
+			if ship.elapsed_ticks >= ship.transit_time:
+				ship.status = RivalShip.Status.IDLE
+				ship.elapsed_ticks = 0.0
+				var revenue := _sell_rival_cargo(corp, ship)
+				EventBus.rival_corp_departed.emit(corp.corp_name, ship.target_asteroid_name, ship.cargo_tons)
+				ship.cargo_tons = 0.0
+				ship.target_asteroid_name = ""
+				if revenue > 0:
+					corp.money += revenue
+
+func _update_rival_corp_decisions(corp: RivalCorp) -> void:
+	for ship: RivalShip in corp.ships:
+		if ship.status != RivalShip.Status.IDLE:
+			continue
+		_rival_try_dispatch(corp, ship)
+
+func _rival_try_dispatch(corp: RivalCorp, ship: RivalShip) -> void:
+	var best_asteroid: AsteroidData = null
+	var best_score: float = -1.0
+
+	for asteroid in GameState.asteroids:
+		var score := _score_asteroid_for_rival(corp, ship, asteroid)
+		if score > best_score:
+			best_score = score
+			best_asteroid = asteroid
+
+	if best_asteroid == null or best_score <= 0.0:
+		return
+
+	var dist := ship.home_position_au.distance_to(best_asteroid.get_position_au())
+	ship.target_asteroid_name = best_asteroid.asteroid_name
+	ship.target_position_au = best_asteroid.get_position_au()
+	ship.transit_time = Brachistochrone.transit_time(dist, ship.thrust_g)
+	ship.elapsed_ticks = 0.0
+	ship.mining_duration = RIVAL_BASE_MINING_DURATION * randf_range(0.7, 1.3)
+	ship.status = RivalShip.Status.TRANSIT_TO
+	EventBus.rival_corp_dispatched.emit(corp.corp_name, best_asteroid.asteroid_name)
+
+func _score_asteroid_for_rival(corp: RivalCorp, ship: RivalShip, asteroid: AsteroidData) -> float:
+	if asteroid.ore_yields.is_empty():
+		return -1.0
+
+	var dist := ship.home_position_au.distance_to(asteroid.get_position_au())
+	if dist <= 0.0:
+		return -1.0
+
+	# Range filter — only attempt reachable asteroids (fuel heuristic: 2× transit fuel)
+	var max_range := _get_rival_max_range(ship)
+	if dist > max_range:
+		return -1.0
+
+	# Base ore value of asteroid
+	var ore_value := _calc_rival_ore_rate(asteroid)
+
+	# Slot availability — penalise contested asteroids
+	var occupied := GameState.get_occupied_slots(asteroid.asteroid_name)
+	var max_slots := asteroid.get_max_mining_slots()
+	if occupied >= max_slots:
+		return -1.0
+
+	var slot_factor := 1.0 - float(occupied) / float(max_slots)
+	var player_units := GameState.get_player_units_at(asteroid.asteroid_name)
+
+	# Personality modifiers
+	var proximity_penalty := dist  # Closer is better by default
+	match corp.personality:
+		RivalCorp.Personality.AGGRESSIVE:
+			# Targets richest regardless of competition
+			return ore_value * slot_factor / proximity_penalty
+		RivalCorp.Personality.SYSTEMATIC:
+			# Prefers less-contested bodies; penalises player presence
+			var contest_penalty := 1.0 + player_units * 0.5
+			return (ore_value / contest_penalty) / proximity_penalty
+		RivalCorp.Personality.OPPORTUNISTIC:
+			# Follows the richest opportunity, boosted by player presence (follows the money)
+			var follow_bonus := 1.0 + player_units * 0.3
+			return ore_value * follow_bonus / proximity_penalty
+		RivalCorp.Personality.CONSERVATIVE:
+			# Prefers safe nearby bodies; avoids conflict
+			if player_units > 0 or occupied > 0:
+				return -1.0
+			return ore_value / (proximity_penalty * proximity_penalty)
+		RivalCorp.Personality.EXPANSIONIST:
+			# Sends many ships; prefers any open slot, less picky about value
+			return slot_factor / proximity_penalty
+	return -1.0
+
+func _get_rival_max_range(ship: RivalShip) -> float:
+	# Simple heuristic: rivals operate within 4 AU of home (adjustable)
+	return 4.0 + ship.thrust_g * 4.0
+
+func _calc_rival_ore_rate(asteroid: AsteroidData) -> float:
+	var total := 0.0
+	for ore_type in asteroid.ore_yields:
+		var rate: float = float(asteroid.ore_yields[ore_type])
+		# Weight by current market price if available
+		var price: float = float(GameState.market.current_prices.get(ore_type, 1000.0))
+		total += rate * price
+	return total
+
+func _sell_rival_cargo(corp: RivalCorp, ship: RivalShip) -> int:
+	if ship.cargo_tons <= 0.0:
+		return 0
+	# Estimate value using average price across all ores
+	var avg_price := 0.0
+	var count := 0
+	for ore_type in GameState.market.current_prices:
+		avg_price += float(GameState.market.current_prices[ore_type])
+		count += 1
+	if count > 0:
+		avg_price /= count
+	var revenue := int(ship.cargo_tons * avg_price * 0.8)  # 80% of market (they sell at discount)
+	corp.total_ore_mined += ship.cargo_tons
+	corp.total_revenue += revenue
+	return revenue
+
+func _find_asteroid(name: String) -> AsteroidData:
+	for asteroid in GameState.asteroids:
+		if asteroid.asteroid_name == name:
+			return asteroid
+	return null

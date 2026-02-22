@@ -92,6 +92,8 @@ func _ready() -> void:
 	EventBus.tick.connect(_on_tick)
 	EventBus.map_dispatch_to_asteroid.connect(_on_map_dispatch_asteroid)
 	EventBus.map_dispatch_to_colony.connect(_on_map_dispatch_colony)
+	EventBus.order_queued.connect(func(_s: Ship, _l: String, _d: float) -> void: _mark_dirty())
+	EventBus.order_executed.connect(func(_s: Ship, _l: String) -> void: _mark_dirty())
 	_rebuild_ships()
 
 func _mark_dirty() -> void:
@@ -216,6 +218,9 @@ func _on_tick(_dt: float) -> void:
 				var amount: float = ship.current_cargo[ore_type]
 				if amount > 0.01:
 					cargo_lines.append("  %s: %.1ft" % [ResourceTypes.get_ore_name(ore_type), amount])
+			var sup_mass := ship.get_supplies_mass()
+			if sup_mass > 0.01:
+				cargo_lines.append("  Supplies: %.1ft (food, parts)" % sup_mass)
 			label.text = "\n".join(cargo_lines)
 	# Update location displays to show ship positions during transit
 	for ship: Ship in _location_labels:
@@ -420,14 +425,19 @@ func _rebuild_ships() -> void:
 		_detail_labels[ship] = details
 
 		# === CARGO DISPLAY ===
-		if ship.get_cargo_total() > 0.01:
+		var _ore_total := 0.0
+		for _amt in ship.current_cargo.values():
+			_ore_total += _amt
+		var _supplies_mass := ship.get_supplies_mass()
+		if _ore_total > 0.01 or _supplies_mass > 0.01:
 			var cargo_label := Label.new()
 			var cargo_lines: Array[String] = ["Cargo (%.1ft):" % ship.get_cargo_total()]
 			for ore_type in ship.current_cargo:
 				var amount: float = ship.current_cargo[ore_type]
-				# Only show ore types with meaningful amounts (skip near-zero from floating point)
 				if amount > 0.01:
 					cargo_lines.append("  %s: %.1ft" % [ResourceTypes.get_ore_name(ore_type), amount])
+			if _supplies_mass > 0.01:
+				cargo_lines.append("  Supplies: %.1ft (food, parts)" % _supplies_mass)
 			cargo_label.text = "\n".join(cargo_lines)
 			cargo_label.add_theme_color_override("font_color", Color(0.7, 0.9, 0.7))
 			vbox.add_child(cargo_label)
@@ -512,10 +522,13 @@ func _rebuild_ships() -> void:
 			dispatch_btn.pressed.connect(_start_dispatch.bind(ship))
 			btn_row.add_child(dispatch_btn)
 
-			# Unload cargo button
-			if ship.get_cargo_total() > 0:
+			# Unload ore button (only when there's actual ore, not just supplies)
+			var _dock_ore_total := 0.0
+			for _v in ship.current_cargo.values():
+				_dock_ore_total += _v
+			if _dock_ore_total > 0.01:
 				var unload_btn := Button.new()
-				unload_btn.text = "Unload to Stockpile"
+				unload_btn.text = "Unload Ore to Stockpile"
 				unload_btn.custom_minimum_size = Vector2(0, 44)
 				unload_btn.pressed.connect(func() -> void:
 					for ore_type in ship.current_cargo:
@@ -543,7 +556,7 @@ func _rebuild_ships() -> void:
 				at_colony = ship.current_trade_mission.colony
 
 			# Contract fulfillment and cargo selling options
-			if at_colony and ship.get_cargo_total() > 0:
+			if at_colony and ship.get_ore_total() > 0:
 				# Check for matching contracts
 				var matching_contracts := _get_matching_contracts(ship, at_colony)
 
@@ -582,18 +595,34 @@ func _rebuild_ships() -> void:
 				)
 				vbox.add_child(sell_btn)
 
+			# Show pending order status if signal is still in transit
+			var pending_order := GameState.get_pending_order(ship)
+			if not pending_order.is_empty():
+				var remaining_secs: float = pending_order["fires_at"] - GameState.total_ticks
+				var mins := int(remaining_secs / 60.0)
+				var secs := int(fmod(remaining_secs, 60.0))
+				var delay_str := "%dm %02ds" % [mins, secs] if mins > 0 else "%ds" % secs
+				var signal_lbl := Label.new()
+				signal_lbl.text = "📡 Signal in transit: %s (%s remaining)" % [pending_order["label"], delay_str]
+				signal_lbl.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+				signal_lbl.add_theme_font_size_override("font_size", 13)
+				signal_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				vbox.add_child(signal_lbl)
+
 			var action_row := HBoxContainer.new()
 			action_row.add_theme_constant_override("separation", 8)
 
 			var dispatch_btn := Button.new()
 			dispatch_btn.text = "Dispatch"
 			dispatch_btn.custom_minimum_size = Vector2(0, 44)
+			dispatch_btn.disabled = not pending_order.is_empty()
 			dispatch_btn.pressed.connect(_start_dispatch.bind(ship))
 			action_row.add_child(dispatch_btn)
 
 			var return_btn := Button.new()
 			return_btn.text = "Return to Earth"
 			return_btn.custom_minimum_size = Vector2(0, 44)
+			return_btn.disabled = not pending_order.is_empty()
 			return_btn.pressed.connect(func() -> void:
 				GameState.order_return_to_earth(ship)
 				_mark_dirty()
@@ -672,6 +701,20 @@ func _rebuild_ships() -> void:
 				queued_info.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 				queued_info.add_theme_font_size_override("font_size", 14)
 				vbox.add_child(queued_info)
+
+			# Show pending order (lightspeed signal in transit)
+			var transit_pending := GameState.get_pending_order(ship)
+			if not transit_pending.is_empty():
+				var rem_secs: float = transit_pending["fires_at"] - GameState.total_ticks
+				var r_mins := int(rem_secs / 60.0)
+				var r_secs := int(fmod(rem_secs, 60.0))
+				var transit_delay_str := "%dm %02ds" % [r_mins, r_secs] if r_mins > 0 else "%ds" % r_secs
+				var pending_lbl := Label.new()
+				pending_lbl.text = "📡 Signal in transit: %s (%s remaining)" % [transit_pending["label"], transit_delay_str]
+				pending_lbl.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
+				pending_lbl.add_theme_font_size_override("font_size", 13)
+				pending_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				vbox.add_child(pending_lbl)
 
 			var plan_row := HBoxContainer.new()
 			plan_row.add_theme_constant_override("separation", 8)
@@ -775,10 +818,17 @@ func _on_map_dispatch_asteroid(ship: Ship, asteroid: AsteroidData) -> void:
 		dispatch_popup.visible = true
 		if feasible:
 			var cost := int(fuel_out * Ship.FUEL_COST_PER_UNIT * 2.0)
+			var signal_delay_secs := GameState.calc_signal_delay(ship)
+			var delay_suffix := ""
+			if signal_delay_secs > 0.0:
+				var sd_mins := int(signal_delay_secs / 60.0)
+				var sd_secs := int(fmod(signal_delay_secs, 60.0))
+				var sd_str := "%dm %02ds" % [sd_mins, sd_secs] if sd_mins > 0 else "%ds" % sd_secs
+				delay_suffix = "\nSignal delay: %s" % sd_str
 			_show_redirect_confirmation(
-				"Redirect %s to %s?\n\nNew transit: %s\nRedirect cost: $%s" % [
+				"Redirect %s to %s?\n\nNew transit: %s\nRedirect cost: $%s%s" % [
 					ship.ship_name, asteroid.asteroid_name,
-					transit_str, _format_number(cost)
+					transit_str, _format_number(cost), delay_suffix
 				],
 				func() -> void: GameState.redirect_mission(ship.current_mission, asteroid)
 			)
@@ -833,10 +883,17 @@ func _on_map_dispatch_colony(ship: Ship, colony: Colony) -> void:
 		dispatch_popup.visible = true
 		if feasible:
 			var cost := int(fuel_out_tm * Ship.FUEL_COST_PER_UNIT * 2.0)
+			var tm_signal_delay := GameState.calc_signal_delay(ship)
+			var tm_delay_suffix := ""
+			if tm_signal_delay > 0.0:
+				var tm_sd_mins := int(tm_signal_delay / 60.0)
+				var tm_sd_secs := int(fmod(tm_signal_delay, 60.0))
+				var tm_sd_str := "%dm %02ds" % [tm_sd_mins, tm_sd_secs] if tm_sd_mins > 0 else "%ds" % tm_sd_secs
+				tm_delay_suffix = "\nSignal delay: %s" % tm_sd_str
 			_show_redirect_confirmation(
-				"Redirect %s to %s?\n\nNew transit: %s\nRedirect cost: $%s" % [
+				"Redirect %s to %s?\n\nNew transit: %s\nRedirect cost: $%s%s" % [
 					ship.ship_name, colony.colony_name,
-					transit_str, _format_number(cost)
+					transit_str, _format_number(cost), tm_delay_suffix
 				],
 				func() -> void: GameState.redirect_trade_mission(ship.current_trade_mission, colony)
 			)
@@ -936,17 +993,17 @@ func _show_asteroid_selection() -> void:
 
 	# Show ship origin info and cargo
 	var origin_label := Label.new()
-	var cargo_total := _selected_ship.get_cargo_total()
-	if cargo_total > 0:
-		origin_label.text = "Dispatching from: %s (%.1ft cargo)" % [_get_location_text(_selected_ship), cargo_total]
+	var ore_total: float = _selected_ship.get_ore_total()
+	if ore_total > 0:
+		origin_label.text = "Dispatching from: %s (%.1ft ore)" % [_get_location_text(_selected_ship), ore_total]
 	else:
 		origin_label.text = "Dispatching from: %s" % _get_location_text(_selected_ship)
 	origin_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 	origin_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dispatch_content.add_child(origin_label)
 
-	# Determine layout priority: use persisted toggle state, or default from cargo
-	var has_cargo_for_selling := cargo_total > 0
+	# Determine layout priority: use persisted toggle state, or default from ore cargo
+	var has_cargo_for_selling := ore_total > 0
 	var colonies_expanded: bool
 	var mining_expanded: bool
 	if _colonies_section_expanded >= 0:
@@ -2983,7 +3040,7 @@ func _show_supply_shop(ship: Ship) -> void:
 	dispatch_content.add_child(desc)
 
 	var capacity_label := Label.new()
-	var cargo_used := ship.get_cargo_total() + ship.get_supplies_mass()
+	var cargo_used := ship.get_cargo_total()
 	capacity_label.text = "Cargo: %.1f / %.1f tons" % [cargo_used, ship.cargo_capacity]
 	capacity_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.5))
 	dispatch_content.add_child(capacity_label)
