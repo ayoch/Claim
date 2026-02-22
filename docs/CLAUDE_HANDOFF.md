@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-21 ~15:00 EST
+**Last Updated:** 2026-02-21 ~19:45 EST
 **Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
-**Session Context:** Solar Map Dispatch + ship names
-**Next Session Priority:** Test solar map dispatch end-to-end
+**Session Context:** Ship specs, policy system, Python server skeleton
+**Next Session Priority:** Connect Godot client to server (thin client refactor — GameState reads from server REST API instead of simulating locally)
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -11,6 +11,62 @@
 
 ## Session Log
 *(Most recent first)*
+
+
+### 2026-02-21 ~18:00-19:30 EST - Ship Specs, Policy System, Python Server Skeleton
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Ship spec cleanup (ship_data.gd + Python server)**: Updated CLASS_STATS to GDD S8.2 canonical values for all 4 ship types (Courier, Hauler, Prospector, Explorer). Per-ship variance updated to per-type spreads (+-5% dry mass/thrust, +-10% cargo, +-8% fuel, +-1 slot). Python server `server/server/models/ship.py` synced to match.
+  - **Policy system**: Added `company_policy.gd` with SupplyPolicy (PROACTIVE/ROUTINE/MINIMAL/MANUAL), CollectionPolicy (AGGRESSIVE/ROUTINE/PATIENT/MANUAL), EncounterPolicy (AVOID/COEXIST/CONFRONT/DEFEND) ΓÇö each with names, descriptions, and threshold constants.
+  - **Policies wired into simulation**: `_station_try_provisioning` uses supply policy thresholds instead of hardcoded 5-day value; new `_station_try_collect_ore()` auto-collects ore at collection policy thresholds; `_complete_delivery_job` delivers to both deployed_crews and asteroid_supplies.
+  - **Policies in UI**: `dashboard_tab.gd` now shows all 4 policies (Thrust, Resupply, Ore Collection, Encounter) via generic `_add_policy_row` helper with name dropdown and live description label.
+  - **Policies in save/load**: `game_state.gd` has supply_policy, collection_policy, encounter_policy vars, all serialized.
+  - **Python server skeleton**: Created at `server/` ΓÇö FastAPI + SQLAlchemy async + PostgreSQL; routers for auth/game/events/admin; asyncio background task for simulation (1 real second = 1 game tick at 1x); SSE event stream; seed script; Alembic migrations; README with Windows setup instructions.
+  - **NOTE**: Python is not installed on this machine yet. Must install from python.org before running server.
+- **Files Modified:**
+  - `core/data/ship_data.gd` (CLASS_STATS canonical values + per-type variance)
+  - `server/server/models/ship.py` (ship stats synced to GDD)
+  - `core/autoloads/game_state.gd` (policy vars + save/load)
+  - `core/autoloads/simulation.gd` (provisioning threshold, collect_ore, delivery to both supply models)
+  - `ui/tabs/dashboard_tab.gd` (policy rows UI)
+  - `server/server/models/player.py` (policy enum comments fixed)
+- **Files Created:** `server/` directory (full Python server skeleton)
+- **Next Steps:**
+  1. Install Python from python.org (3.11+)
+  2. Install PostgreSQL and create `claim` database
+  3. Run `pip install -r requirements.txt` in `server/`
+  4. Run `alembic upgrade head` for migrations
+  5. Run `python seed.py` to populate initial data
+  6. Run `uvicorn server.main:app --reload` and verify server starts
+- **Status:** Policy system complete and integrated. Python server skeleton complete but not yet runnable (Python not installed).
+
+### 2026-02-21 ~16:00–16:30 EST - Redirect Momentum Arc + Ship Speed Display
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Ship speed on solar map**: Added `_update_label()` to `ship_marker.gd` — shows `"ShipName\n{speed} km/s"` for speed ≥ 0.5 km/s. Speed computed from mission parameters (`thrust × 9.81 × transit_time × min(t, 1-t)`) not live orbital positions (which inflate due to drift). Fixed label rect height in `ship_marker.tscn` (`offset_bottom` 10→28).
+  - **Redirect momentum arc**: Ships now arc in their current velocity direction before turning to the new destination. `redirect_mission` and `redirect_trade_mission` use a two-leg route: leg 1 is along current velocity direction (`arc_fraction * dist`), leg 2 is to the destination. `arc_fraction = clamp(sqrt((1-dot)/2) * speed_fraction * 0.4, 0, 0.30)`. Falls back to single-leg if arc is too short (< 5%) or if the ship's speed would carry it past the waypoint (initial_t ≥ 0.48). Both legs use the existing `outbound_waypoints`/`outbound_leg_times` multi-leg infrastructure — no simulation changes needed.
+  - **Velocity-preserving redirect**: Speed magnitude preserved on entry to new brachistochrone via `initial_t = clamp(speed / (4 × avg_v), 0, 0.5)` and virtual origin adjusted backward.
+- **Files Modified:**
+  - `core/autoloads/game_state.gd` (redirect_mission + redirect_trade_mission: momentum arc)
+  - `solar_map/ship_marker.gd` (speed label)
+  - `solar_map/ship_marker.tscn` (label rect height)
+- **Status:** Ready to test.
+
+### 2026-02-21 ~15:00–16:00 EST - Solar Map Dispatch Bug Fixes
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **HQ Tab label overflow fix**: Labels in `dashboard_tab.gd` were pushing the panel wider. Added `SIZE_EXPAND_FILL` + `clip_text = true` to all dynamic labels across 7 refresh functions.
+  - **Ships staying at asteroids permanently**: `IDLE_AT_DESTINATION` ships have non-null `current_mission`, routing them into the broken redirect path. Fixed `_on_map_dispatch_asteroid`/`_on_map_dispatch_colony` to check specific transit statuses.
+  - **`_return_to_map_if_needed` never firing**: `_hide_dispatch()` was clearing `_dispatched_from_map` before the check. Reordered calls in `_execute_dispatch`, `_queue_mission`, `_select_colony_trade`.
+  - **Redirect fuel calculation always infeasible**: `calculate_course_change` used km/s physics producing astronomically large estimates. Replaced with `ship.calc_fuel_for_distance(dist)` in `fleet_market_tab.gd` and `game_state.gd`.
+  - **Silent failure on infeasible redirect**: Now always shows popup — Confirm/Cancel if feasible, Close + reason if not.
+  - **Ship positions jumping back to Earth on redirect**: `redirect_mission` reset `elapsed_ticks=0` without updating origin, causing interpolation to restart from live Earth position. Fixed: set `origin_position_au = ship.position_au`, `origin_is_earth = false`, clear waypoints before resetting elapsed_ticks. Same fix in `redirect_trade_mission`.
+  - **Ships stopping and changing direction on redirect**: `TRANSIT_BACK` redirects only changed `mission.asteroid` while leaving `elapsed_ticks`/`transit_time` intact — the lerp start-point (`asteroid.get_position_au()`) snapped to the new asteroid's location mid-trip, teleporting the ship. Fixed: `redirect_mission` and `redirect_trade_mission` now unconditionally reset to `TRANSIT_OUT` from the ship's current position regardless of prior transit status.
+- **Files Modified:**
+  - `ui/tabs/dashboard_tab.gd` (label overflow fixes)
+  - `ui/tabs/fleet_market_tab.gd` (idle dispatch fix, return-to-map ordering, redirect popup with feasibility, fuel formula)
+  - `core/autoloads/game_state.gd` (redirect_mission + redirect_trade_mission fuel formula + origin anchor fix)
+- **Status:** Ready to test.
 
 ### 2026-02-21 ~14:00–15:00 EST - Ship Names
 - **Machine:** Windows desktop (Dweezil)
@@ -516,44 +572,46 @@ The game had critical performance issues (2% of expected framerate on gaming PC)
 
 ## Current State
 
+### Feature Status (as of 2026-02-21)
+- **Ship specs:** DONE — GDD S8.2 values applied to all 4 ship types in `ship_data.gd` and Python server
+- **Policy system:** DONE — SupplyPolicy, CollectionPolicy, EncounterPolicy all implemented in `company_policy.gd`, wired into simulation and UI, saved/loaded
+- **Python server skeleton:** DONE — at `server/` directory; FastAPI + SQLAlchemy async + PostgreSQL + Alembic + SSE; simulation runs as asyncio background task
+
+### Python Server Setup (not yet run on this machine — Python not installed)
+To run the server on a fresh machine:
+1. Install Python 3.11+ from python.org
+2. Install PostgreSQL and create a database named `claim`
+3. `cd server && pip install -r requirements.txt`
+4. `python seed.py` (creates tables, seeds asteroids/colonies, creates default player)
+5. `uvicorn server.main:app --reload` from the `server/` directory
+6. API available at http://localhost:8000 — docs at http://localhost:8000/docs
+
 ### Git Status
-Multiple files have staged changes:
-- Core systems modified (event_bus.gd, game_state.gd, simulation.gd, various models)
-- UI files modified (main_ui.tscn, starfield_bg.gd, tabs)
-- New files: ui/shaders/, fleet_market_tab.gd, theme/fonts/
-
-These changes represent performance optimization work and are ready to commit.
-
-### Ready Plans
-1. **Crew Roles Plan** (`reactive-squishing-shannon.md`) — crew specialties, derelict drift, velocity rescue, auto-slowdown. Ready to implement.
-2. **Position-Aware Dispatch** (`C:\Users\Jonat\.claude\plans\compressed-knitting-hammock.md`) — mass-based fuel, position-aware distances, colony scarcity pricing. Ready to implement.
-
-### GDD State
-- Version 0.5 — comprehensive design conversation integrated
-- Prose tightened throughout (reduced ~150 lines of unnecessary wording)
-- User wants to review before further implementation
+Uncommitted changes as of session end:
+- `core/autoloads/game_state.gd` — policy vars + save/load + redirect fixes
+- `core/autoloads/simulation.gd` — provisioning threshold, collect_ore, delivery fix
+- `core/autoloads/leak_detector.gd` — is_instance_valid fix
+- `core/autoloads/test_harness.gd` — test improvements
+- `ui/tabs/market_tab.gd` — ore sale transaction logging
+- `docs/` — CLAUDE_HANDOFF.md, GDD.md, WORK_LOG.txt
+- `server/` — full Python server skeleton (new directory)
 
 ---
 
 ## What the Next Instance Should Do
 
-### 1. Review GDD Changes (FIRST)
-The user asked to review the GDD before proceeding. Let them look it over and discuss any needed changes.
+### 1. Thin Client Refactor (TOP PRIORITY)
+Connect the Godot client to the Python server. The goal is a thin client where `GameState` reads data from the server REST API instead of running simulation locally.
 
-### 2. Implementation: Crew Roles Plan
-A complete plan exists at `reactive-squishing-shannon.md`:
-- **Crew skills:** Replace single `skill` with pilot/engineer/mining specialties
-- **Derelict drift:** Broken ships maintain velocity instead of freezing
-- **Velocity-based rescue:** Cost scales with derelict speed + intercept calculation
-- **Auto-slowdown:** Time drops to 1x on critical events (breakdown, stranger offer)
-- All files identified, verification criteria defined
+Approach:
+- Add an `HttpRequest` node or GDScript HTTP calls in `game_state.gd` to poll `GET /game/state`
+- Replace local simulation tick processing with server-driven state updates
+- Use the SSE stream (`/events`) for push notifications (missions completing, market moves, alerts)
+- Auth: `POST /auth/login` on startup, store JWT, include in all subsequent requests
+- Start with read-only: get state from server, display in existing UI — no writes yet
+- Then wire dispatch: `POST /game/dispatch` replaces local `start_mission`
 
-### 3. Implementation: Position-Aware Dispatch (Windows plan)
-A plan exists at `C:\Users\Jonat\.claude\plans\compressed-knitting-hammock.md`:
-- Mass-based fuel consumption, position-aware distances, colony scarcity pricing
-- Should align with design conversation outcomes
-
-### 4. Working Pattern
+### 2. Working Pattern
 - Ask about WHAT/WHY, not implementation details
 - Suggest industry-standard alternatives proactively
 - Push back on decisions that seem problematic
@@ -694,3 +752,28 @@ When major architectural decisions are made during the design conversation, docu
 - [ ] Note: Ship purchasing UI is COMPLETE, rescue system COMPLETE, save/load COMPLETE
 - [ ] Note: Position-aware dispatch plan was ALREADY IMPLEMENTED in previous session
 - [ ] **UPDATE TIMESTAMP** whenever you modify this handoff document
+
+## Session Log — 2026-02-21 FastAPI Server
+
+**Last Updated: 2026-02-21**
+
+### What was done:
+- Created `C:/Users/Jonat/desktop/claim/server/` — complete FastAPI server
+- Python 3.11+, FastAPI 0.115, SQLAlchemy 2.0 async, asyncpg, Alembic, Pydantic v2
+- Full ORM models matching GDD entities (Player, Ship, Worker, Mission, Asteroid, Colony)
+- JWT auth with bcrypt, simulation background task, SSE event streaming
+- 20 real asteroid bodies with orbital elements, 9 colonies
+- `server/seed.py` standalone script for first-run setup
+- `server/README.md` with full quickstart
+
+### Next steps for this server:
+- Install Python 3.11+ and PostgreSQL if not installed
+- `cd server && pip install -r requirements.txt`
+- `createdb claim_dev` then `python seed.py` for initial data
+- `uvicorn server.main:app --reload` to start
+- The Godot client will eventually call these REST endpoints instead of its own simulation
+
+### Handoff notes:
+- Server runs from `C:/Users/Jonat/desktop/claim/` directory (not inside `server/`)
+- All imports use `server.xxx` package path
+- `.env` file in `server/` directory (copy from `.env.example` if missing)

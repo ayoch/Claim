@@ -28,8 +28,6 @@ func _ready() -> void:
 
 	EventBus.money_changed.connect(_on_money_changed)
 	_on_money_changed(GameState.money)
-	EventBus.map_dispatch_to_asteroid.connect(_on_map_dispatch)
-	EventBus.map_dispatch_to_colony.connect(_on_map_dispatch_colony)
 
 	if TESTING_MODE:
 		_setup_speed_bar()
@@ -125,14 +123,6 @@ func _update_speed_display() -> void:
 		if _speed_input.has_focus():
 			_speed_input.release_focus()
 		_speed_input.text = TimeScale.get_speed_display()
-
-const FLEET_TAB_INDEX: int = 1
-
-func _on_map_dispatch(_ship: Ship, _asteroid: AsteroidData) -> void:
-	tab_container.current_tab = FLEET_TAB_INDEX
-
-func _on_map_dispatch_colony(_ship: Ship, _colony: Colony) -> void:
-	tab_container.current_tab = FLEET_TAB_INDEX
 
 func _on_money_changed(amount: int) -> void:
 	money_display.text = "$%s" % _format_number(amount)

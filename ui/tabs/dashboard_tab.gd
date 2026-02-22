@@ -38,6 +38,7 @@ var _dirty_balance_history: bool = false
 # Section collapse state: key -> true means collapsed
 var _section_collapsed: Dictionary = {}
 var _section_content: Dictionary = {}  # key -> Node
+var _section_titles: Dictionary = {}  # key -> Label
 
 static func _free_children(container: Node) -> void:
 	for i in range(container.get_child_count() - 1, -1, -1):
@@ -263,14 +264,19 @@ func _refresh_stationed_ships() -> void:
 
 		var ship_vbox := VBoxContainer.new()
 		ship_vbox.add_theme_constant_override("separation", 2)
+		ship_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 		var header := Label.new()
 		header.text = "%s @ %s" % [ship.ship_name, ship.station_colony.colony_name if ship.station_colony else "Unknown"]
 		header.add_theme_font_size_override("font_size", 16)
+		header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		header.clip_text = true
 		ship_vbox.add_child(header)
 
 		# Current status
 		var status_label := Label.new()
+		status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		status_label.clip_text = true
 		if ship.is_stationed_idle:
 			status_label.text = "Status: Idle (awaiting next job)"
 			status_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.2))
@@ -294,6 +300,8 @@ func _refresh_stationed_ships() -> void:
 			var cargo_label := Label.new()
 			cargo_label.text = "Cargo: %.0ft / %.0ft" % [ship.get_cargo_total(), ship.get_effective_cargo_capacity()]
 			cargo_label.add_theme_color_override("font_color", Color(0.7, 0.9, 0.7))
+			cargo_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			cargo_label.clip_text = true
 			ship_vbox.add_child(cargo_label)
 
 		# Last log entry
@@ -305,6 +313,7 @@ func _refresh_stationed_ships() -> void:
 			log_label.text = "Last: %s (%s)" % [log_entry["message"], time_str]
 			log_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
 			log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			log_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			ship_vbox.add_child(log_label)
 
 		ships_list_node.add_child(ship_vbox)
@@ -369,12 +378,15 @@ func _refresh_discipline() -> void:
 
 		var entry_vbox := VBoxContainer.new()
 		entry_vbox.add_theme_constant_override("separation", 4)
+		entry_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 		# Name
 		var name_label := Label.new()
 		name_label.text = worker.worker_name
 		name_label.add_theme_font_size_override("font_size", 20)
 		name_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_label.clip_text = true
 		entry_vbox.add_child(name_label)
 
 		# Skills / wage / tenure / loyalty
@@ -385,12 +397,15 @@ func _refresh_discipline() -> void:
 		]
 		info_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 		info_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		info_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		entry_vbox.add_child(info_label)
 
 		# Home colony
 		var home_label := Label.new()
 		home_label.text = "Home: %s" % worker.home_colony
 		home_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		home_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		home_label.clip_text = true
 		entry_vbox.add_child(home_label)
 
 		# Reason
@@ -398,6 +413,7 @@ func _refresh_discipline() -> void:
 		reason_label.text = "Reason: %s" % reason
 		reason_label.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
 		reason_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		reason_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		entry_vbox.add_child(reason_label)
 
 		# Late by
@@ -405,6 +421,8 @@ func _refresh_discipline() -> void:
 		var late_label := Label.new()
 		late_label.text = "Late by: %.1f days" % late_days
 		late_label.add_theme_color_override("font_color", Color(0.9, 0.4, 0.3))
+		late_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		late_label.clip_text = true
 		entry_vbox.add_child(late_label)
 
 		# Action buttons
@@ -448,49 +466,77 @@ func _setup_policies_ui() -> void:
 	title.add_theme_font_size_override("font_size", 14)
 	policies_vbox.add_child(title)
 
-	# Content container (collapsed/expanded as a unit)
 	var policies_content := VBoxContainer.new()
-	policies_content.add_theme_constant_override("separation", 8)
+	policies_content.add_theme_constant_override("separation", 10)
 
-	# Thrust policy selector
-	var thrust_row := HBoxContainer.new()
-	thrust_row.add_theme_constant_override("separation", 8)
+	# Helper: build one policy row with label, dropdown, and description
+	var _add_policy_row := func(
+		label_text: String,
+		names: Dictionary,
+		descriptions: Dictionary,
+		get_fn: Callable,
+		set_fn: Callable
+	) -> void:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		var lbl := Label.new()
+		lbl.text = label_text
+		lbl.custom_minimum_size = Vector2(130, 0)
+		lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+		row.add_child(lbl)
+		var opt := OptionButton.new()
+		opt.custom_minimum_size = Vector2(0, 36)
+		opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		for key in names.keys():
+			opt.add_item(names[key])
+		opt.selected = get_fn.call()
+		var desc := Label.new()
+		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		desc.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		desc.add_theme_font_size_override("font_size", 11)
+		desc.text = descriptions.get(get_fn.call(), "")
+		opt.item_selected.connect(func(idx: int) -> void:
+			set_fn.call(idx)
+			desc.text = descriptions.get(idx, "")
+		)
+		row.add_child(opt)
+		policies_content.add_child(row)
+		policies_content.add_child(desc)
 
-	var thrust_label := Label.new()
-	thrust_label.text = "Thrust Strategy:"
-	thrust_label.custom_minimum_size = Vector2(120, 0)
-	thrust_row.add_child(thrust_label)
-
-	var thrust_option := OptionButton.new()
-	thrust_option.custom_minimum_size = Vector2(0, 36)
-	for policy in CompanyPolicy.ThrustPolicy.values():
-		thrust_option.add_item(CompanyPolicy.THRUST_POLICY_NAMES[policy])
-	thrust_option.selected = GameState.thrust_policy
-	thrust_option.item_selected.connect(func(idx: int) -> void:
-		GameState.thrust_policy = idx
+	_add_policy_row.call(
+		"Thrust:",
+		CompanyPolicy.THRUST_POLICY_NAMES,
+		CompanyPolicy.THRUST_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.thrust_policy,
+		func(idx: int) -> void: GameState.thrust_policy = idx
 	)
-	thrust_row.add_child(thrust_option)
-
-	policies_content.add_child(thrust_row)
-
-	# Policy description
-	var desc_label := Label.new()
-	desc_label.text = CompanyPolicy.THRUST_POLICY_DESCRIPTIONS[GameState.thrust_policy]
-	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	desc_label.custom_minimum_size = Vector2(0, 40)
-	policies_content.add_child(desc_label)
-
-	# Update description when policy changes
-	thrust_option.item_selected.connect(func(idx: int) -> void:
-		desc_label.text = CompanyPolicy.THRUST_POLICY_DESCRIPTIONS[idx]
+	_add_policy_row.call(
+		"Resupply:",
+		CompanyPolicy.SUPPLY_POLICY_NAMES,
+		CompanyPolicy.SUPPLY_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.supply_policy,
+		func(idx: int) -> void: GameState.supply_policy = idx
+	)
+	_add_policy_row.call(
+		"Ore Collection:",
+		CompanyPolicy.COLLECTION_POLICY_NAMES,
+		CompanyPolicy.COLLECTION_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.collection_policy,
+		func(idx: int) -> void: GameState.collection_policy = idx
+	)
+	_add_policy_row.call(
+		"Encounter:",
+		CompanyPolicy.ENCOUNTER_POLICY_NAMES,
+		CompanyPolicy.ENCOUNTER_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.encounter_policy,
+		func(idx: int) -> void: GameState.encounter_policy = idx
 	)
 
 	policies_vbox.add_child(policies_content)
 	policies_card.add_child(policies_vbox)
 	vbox.add_child(policies_card)
 
-	_make_collapsible("policies", title, policies_content)
+	_make_collapsible("policies", title, policies_content, true)
 
 func _process(delta: float) -> void:
 	# Smooth progress bar updates with LERP
@@ -570,6 +616,8 @@ func _refresh_resources() -> void:
 			var price: float = MarketData.get_ore_price(ore_type)
 			var label := Label.new()
 			label.text = "%s: %.1f t ($%.0f/t)" % [ResourceTypes.get_ore_name(ore_type), amount, price]
+			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			label.clip_text = true
 			resources_list.add_child(label)
 	if resources_list.get_child_count() == 0:
 		var label := Label.new()
@@ -632,6 +680,7 @@ func _refresh_resources() -> void:
 				]
 				unit_label.add_theme_color_override("font_color", dur_color)
 				unit_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				unit_label.clip_text = true
 				unit_row.add_child(unit_label)
 				var repair_cost := unit.repair_cost()
 				if repair_cost > 0:
@@ -767,6 +816,7 @@ func _refresh_alerts() -> void:
 		var label := Label.new()
 		label.text = entry["text"]
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if entry["color"] != Color.WHITE:
 			label.add_theme_color_override("font_color", entry["color"])
 		alerts_list.add_child(label)
@@ -783,6 +833,7 @@ func _refresh_activity() -> void:
 		var label := Label.new()
 		label.text = entry["text"]
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if entry["color"] != Color.WHITE:
 			label.add_theme_color_override("font_color", entry["color"])
 		activity_list.add_child(label)
@@ -838,6 +889,7 @@ func _refresh_contracts() -> void:
 			c.get_delivery_location_text(), _format_number(c.reward)
 		]
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.add_theme_color_override("font_color", Color(0.5, 0.7, 0.8))
 		contracts_list.add_child(label)
 
@@ -852,6 +904,7 @@ func _refresh_contracts() -> void:
 		var label := Label.new()
 		label.text = entry["text"]
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if entry["color"] != Color.WHITE:
 			label.add_theme_color_override("font_color", entry["color"])
 		contracts_list.add_child(label)
@@ -912,7 +965,7 @@ func _setup_balance_history() -> void:
 	_color_reputation_label(rep_label)
 	content.add_child(rep_label)
 
-	_make_collapsible("numbers", title, content)
+	_make_collapsible("numbers", title, content, true)
 
 func _refresh_balance_history() -> void:
 	_free_children(transactions_list)
@@ -944,6 +997,7 @@ func _refresh_balance_history() -> void:
 		]
 		row.add_theme_font_size_override("font_size", 11)
 		row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if change >= 0:
 			row.add_theme_color_override("font_color", Color(0.3, 0.85, 0.4))
 		else:
@@ -952,20 +1006,22 @@ func _refresh_balance_history() -> void:
 
 func _setup_collapsible_sections() -> void:
 	var base := "ScrollContainer/VBox"
-	_make_collapsible("resources",  get_node(base + "/ResourcesCard/VBox/Title"),  resources_list)
-	_make_collapsible("missions",   get_node(base + "/MissionsCard/VBox/Title"),   missions_list)
-	_make_collapsible("workers",    get_node(base + "/WorkersCard/VBox/Title"),     workers_summary)
-	_make_collapsible("alerts",     get_node(base + "/AlertsCard/VBox/Title"),     alerts_scroll)
-	_make_collapsible("activity",   get_node(base + "/ActivityCard/VBox/Title"),   activity_scroll)
-	_make_collapsible("contracts",     get_node(base + "/ContractsCard/VBox/Title"),     contracts_scroll)
-	_make_collapsible("transactions",  get_node(base + "/TransactionsCard/VBox/Title"),  transactions_scroll)
+	_make_collapsible("resources",    get_node(base + "/ResourcesCard/VBox/Title"),    resources_list,    true)
+	_make_collapsible("missions",     get_node(base + "/MissionsCard/VBox/Title"),     missions_list,     true)
+	_make_collapsible("workers",      get_node(base + "/WorkersCard/VBox/Title"),      workers_summary,   true)
+	_make_collapsible("alerts",       get_node(base + "/AlertsCard/VBox/Title"),       alerts_scroll,     false)
+	_make_collapsible("activity",     get_node(base + "/ActivityCard/VBox/Title"),     activity_scroll,   true)
+	_make_collapsible("contracts",    get_node(base + "/ContractsCard/VBox/Title"),    contracts_scroll,  true)
+	_make_collapsible("transactions", get_node(base + "/TransactionsCard/VBox/Title"), transactions_scroll, true)
 	# Dynamically-created cards are handled when built (stationed ships, reputation, discipline, policies)
 
-func _make_collapsible(key: String, title_label: Label, content: Node) -> void:
-	_section_collapsed[key] = false
+func _make_collapsible(key: String, title_label: Label, content: Node, start_collapsed: bool = false) -> void:
+	_section_collapsed[key] = start_collapsed
 	_section_content[key] = content
+	_section_titles[key] = title_label
+	content.visible = not start_collapsed
 	title_label.mouse_filter = Control.MOUSE_FILTER_STOP
-	title_label.text = title_label.text + " ▾"
+	title_label.text = title_label.text + (" ▸" if start_collapsed else " ▾")
 	title_label.gui_input.connect(func(event: InputEvent) -> void:
 		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 			_toggle_section(key, title_label)
@@ -977,8 +1033,9 @@ func _toggle_section(key: String, title_label: Label) -> void:
 	var content: Node = _section_content.get(key)
 	if content:
 		content.visible = not collapsed
-	var base_text := title_label.text.split(" ▾")[0].split(" ▸")[0]
-	title_label.text = "%s %s" % [base_text, "▸" if collapsed else "▾"]
+	# Update arrow indicator
+	var base_text := title_label.text.trim_suffix(" ▾").trim_suffix(" ▸")
+	title_label.text = base_text + (" ▸" if collapsed else " ▾")
 
 func _format_number(n: int) -> String:
 	var s := str(abs(n))

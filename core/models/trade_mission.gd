@@ -26,6 +26,7 @@ enum TransitMode {
 @export var return_position_au: Vector2 = Vector2.ZERO    # where ship returns to
 @export var transit_mode: TransitMode = TransitMode.BRACHISTOCHRONE  # orbit type
 @export var origin_is_earth: bool = true   # True if ship departed from Earth (for live position tracking)
+@export var origin_name: String = ""       # Human-readable departure location
 
 # Gravity assist / multi-leg journey support
 @export var outbound_waypoints: Array[Vector2] = []

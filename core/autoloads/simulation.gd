@@ -1307,6 +1307,8 @@ func _process_stationed_ships(dt: float) -> void:
 					took_job = _station_try_parts_delivery(ship)
 				"provisioning":
 					took_job = _station_try_provisioning(ship)
+				"collect_ore":
+					took_job = _station_try_collect_ore(ship)
 				"crew_ferry":
 					took_job = _station_try_crew_ferry(ship)
 				"patrol":
@@ -1484,41 +1486,52 @@ func _station_try_parts_delivery(ship: Ship) -> bool:
 	return true
 
 func _station_try_provisioning(ship: Ship) -> bool:
-	# Find deployed crews in radius running low on food
+	# Skip if player has disabled auto-supply
+	if GameState.supply_policy == CompanyPolicy.SupplyPolicy.MANUAL:
+		return false
+
+	var threshold_days: float = CompanyPolicy.SUPPLY_POLICY_THRESHOLDS[GameState.supply_policy]
 	var station_pos: Vector2 = ship.station_colony.get_position_au()
 	var food_on_ship: float = ship.supplies.get("food", 0.0)
 
 	if food_on_ship < 1.0:
-		return false  # No food to deliver
+		return false  # Nothing to deliver
 
-	var best_target: Dictionary = {}
+	# Find the asteroid in range that is most critically undersupplied
+	var best_asteroid: AsteroidData = null
 	var best_dist: float = INF
+	var best_days: float = INF
 
-	for crew_entry in GameState.deployed_crews:
-		var asteroid: AsteroidData = crew_entry["asteroid"]
-		var supplies: Dictionary = crew_entry["supplies"]
-		var food_remaining: float = supplies.get("food", 0.0)
-		var worker_count: int = crew_entry["workers"].size()
+	for asteroid_name in GameState.asteroid_supplies.keys():
+		var food_days := GameState.get_asteroid_supply_days(asteroid_name, "food")
+		if food_days >= threshold_days:
+			continue  # Supply is adequate per policy
 
-		# Need provisioning if food is below 50% of a 10-day supply
-		var days_of_food := food_remaining / (worker_count * 0.5) if worker_count > 0 else 999.0
-		if days_of_food >= 5.0:
-			continue  # Still has enough
+		# Locate this asteroid
+		var asteroid: AsteroidData = null
+		for a in GameState.asteroids:
+			if a.asteroid_name == asteroid_name:
+				asteroid = a
+				break
+		if asteroid == null:
+			continue
 
-		var asteroid_pos := asteroid.get_position_au()
-		var dist := station_pos.distance_to(asteroid_pos)
-		if dist < STATION_RADIUS_AU and dist < best_dist:
-			var candidate_fuel := ship.calc_fuel_for_distance(dist, 0.0) * 2.0
-			if candidate_fuel <= ship.fuel:
-				best_target = crew_entry
-				best_dist = dist
+		var dist := station_pos.distance_to(asteroid.get_position_au())
+		if dist >= STATION_RADIUS_AU:
+			continue
+		var fuel_needed := ship.calc_fuel_for_distance(dist, 0.0) * 2.0
+		if fuel_needed > ship.fuel:
+			continue
 
-	if best_target.is_empty():
+		# Prefer most critically undersupplied, then nearest
+		if food_days < best_days or (food_days == best_days and dist < best_dist):
+			best_asteroid = asteroid
+			best_dist = dist
+			best_days = food_days
+
+	if best_asteroid == null:
 		return false
 
-	var target_asteroid: AsteroidData = best_target["asteroid"]
-
-	# Create supply run mission with food
 	var crew: Array[Worker] = ship.last_crew.duplicate()
 	var mission := Mission.new()
 	mission.mission_type = Mission.MissionType.SUPPLY_RUN
@@ -1529,9 +1542,9 @@ func _station_try_provisioning(ship: Ship) -> bool:
 	mission.origin_is_earth = false
 	mission.return_position_au = ship.station_colony.get_position_au()
 	mission.return_to_station = true
-	mission.destination_position_au = target_asteroid.get_position_au()
+	mission.destination_position_au = best_asteroid.get_position_au()
 	mission.transit_time = Brachistochrone.transit_time(best_dist, ship.get_effective_thrust())
-	mission.station_job_duration = 1800.0  # 30 min to offload supplies
+	mission.station_job_duration = 1800.0
 	mission.elapsed_ticks = 0.0
 
 	var fuel_needed := ship.calc_fuel_for_distance(best_dist, 0.0) * 2.0
@@ -1544,9 +1557,71 @@ func _station_try_provisioning(ship: Ship) -> bool:
 	GameState.missions.append(mission)
 	EventBus.mission_started.emit(mission)
 
-	ship.add_station_log("Provisioning crew at %s" % target_asteroid.asteroid_name, "provisioning")
-	EventBus.station_job_started.emit(ship, "provisioning", target_asteroid.asteroid_name)
+	ship.add_station_log("Resupplying %s (%.0f days food remaining)" % [best_asteroid.asteroid_name, best_days], "provisioning")
+	EventBus.station_job_started.emit(ship, "provisioning", best_asteroid.asteroid_name)
 	return true
+
+func _station_try_collect_ore(ship: Ship) -> bool:
+	# Auto-collect stockpiled ore when stockpile meets collection policy threshold
+	if GameState.collection_policy == CompanyPolicy.CollectionPolicy.MANUAL:
+		return false
+
+	var threshold_fraction: float = CompanyPolicy.COLLECTION_POLICY_THRESHOLDS[GameState.collection_policy]
+	var threshold_tons: float = ship.get_effective_cargo_capacity() * threshold_fraction
+	if threshold_tons <= 0.0:
+		return false
+
+	# Need cargo space to make it worthwhile
+	if ship.get_cargo_remaining() < ship.get_effective_cargo_capacity() * 0.25:
+		return false
+
+	var station_pos: Vector2 = ship.station_colony.get_position_au()
+
+	# Find the asteroid with the largest eligible stockpile within range
+	var best_asteroid: AsteroidData = null
+	var best_dist: float = INF
+	var best_stockpile: float = 0.0
+
+	for asteroid_name in GameState.ore_stockpiles.keys():
+		var pile: Dictionary = GameState.ore_stockpiles[asteroid_name]
+		var total: float = 0.0
+		for ore_type in pile:
+			total += pile[ore_type]
+		if total < threshold_tons:
+			continue
+
+		var asteroid: AsteroidData = null
+		for a in GameState.asteroids:
+			if a.asteroid_name == asteroid_name:
+				asteroid = a
+				break
+		if asteroid == null:
+			continue
+
+		var dist := station_pos.distance_to(asteroid.get_position_au())
+		if dist >= STATION_RADIUS_AU:
+			continue
+		var fuel_needed := ship.calc_fuel_for_distance(dist, ship.get_cargo_total()) + \
+			ship.calc_fuel_for_distance(dist, ship.get_effective_cargo_capacity())
+		if fuel_needed > ship.fuel:
+			continue
+
+		if total > best_stockpile or (total == best_stockpile and dist < best_dist):
+			best_asteroid = asteroid
+			best_dist = dist
+			best_stockpile = total
+
+	if best_asteroid == null:
+		return false
+
+	var workers: Array[Worker] = ship.last_crew.duplicate()
+	var mission := GameState.start_collect_mission(ship, best_asteroid, workers)
+	if mission:
+		mission.return_to_station = true
+		mission.return_position_au = station_pos
+		ship.add_station_log("Collecting %.0ft ore from %s" % [best_stockpile, best_asteroid.asteroid_name], "mining")
+		EventBus.station_job_started.emit(ship, "collect_ore", best_asteroid.asteroid_name)
+	return mission != null
 
 func _station_try_crew_ferry(ship: Ship) -> bool:
 	# Find nearby ships on missions with fatigued workers
@@ -1829,7 +1904,11 @@ func _complete_delivery_job(mission: Mission) -> void:
 		EventBus.station_job_completed.emit(ship, "parts_delivery", "Parts delivered to %s" % other_ship.ship_name)
 		break
 
-	# Also deliver food to deployed crews nearby
+	# Deliver food/parts to deployed crews (legacy model) and asteroid supplies (mining units model)
+	var food_delivered := false
+	var parts_delivered := false
+
+	# Legacy deployed_crews model
 	for crew_data in GameState.deployed_crews:
 		var asteroid: AsteroidData = crew_data["asteroid"]
 		if asteroid.get_position_au().distance_to(delivery_pos) > 0.05:
@@ -1838,9 +1917,34 @@ func _complete_delivery_job(mission: Mission) -> void:
 		if food > 0:
 			crew_data["supplies"]["food"] = crew_data["supplies"].get("food", 0.0) + food
 			ship.supplies["food"] = 0.0
-			ship.add_station_log("Delivered food to crew at %s" % asteroid.asteroid_name, "supply")
-			EventBus.station_job_completed.emit(ship, "provisioning", "Food delivered to %s" % asteroid.asteroid_name)
+			food_delivered = true
 		break
+
+	# Mining units model — match by nearest asteroid to delivery position
+	var nearest_asteroid_name := ""
+	var nearest_dist := INF
+	for asteroid in GameState.asteroids:
+		var d := asteroid.get_position_au().distance_to(delivery_pos)
+		if d < nearest_dist and d < 0.05:
+			nearest_dist = d
+			nearest_asteroid_name = asteroid.asteroid_name
+
+	if nearest_asteroid_name != "":
+		var food: float = ship.supplies.get("food", 0.0)
+		if food > 0.0:
+			GameState.add_to_asteroid_supplies(nearest_asteroid_name, "food", food)
+			ship.supplies["food"] = 0.0
+			food_delivered = true
+		var parts: float = ship.supplies.get("repair_parts", 0.0)
+		if parts > 0.0:
+			GameState.add_to_asteroid_supplies(nearest_asteroid_name, "repair_parts", parts)
+			ship.supplies["repair_parts"] = 0.0
+			parts_delivered = true
+
+	if food_delivered or parts_delivered:
+		var what := "supplies" if (food_delivered and parts_delivered) else ("food" if food_delivered else "parts")
+		ship.add_station_log("Delivered %s to %s" % [what, nearest_asteroid_name if nearest_asteroid_name != "" else "crew"], "supply")
+		EventBus.station_job_completed.emit(ship, "provisioning", "Delivered %s" % what)
 
 	_start_station_return(mission)
 

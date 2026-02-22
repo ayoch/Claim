@@ -46,42 +46,43 @@ const CLASS_PRICES := {
 	ShipClass.EXPLORER: 1200000,
 }
 
+# GDD §8.2 canonical ship specs
 const CLASS_STATS := {
 	ShipClass.COURIER: {
-		"thrust_g": 0.5,           # Fast
-		"cargo_capacity": 50.0,    # Low cargo (t)
-		"cargo_volume": 54.0,      # Low cargo (m³)
-		"fuel_capacity": 250.0,    # Good range
-		"min_crew": 2,             # Small crew
-		"max_equipment_slots": 1,  # Limited mining
-		"base_mass_mult": 1.5,     # Light frame (1.5x cargo vs 2.0x)
+		"thrust_g": 0.38,          # g
+		"cargo_capacity": 38.0,    # tonnes (mass limit)
+		"cargo_volume": 54.0,      # m³ (volume limit)
+		"fuel_capacity": 46.5,     # fuel units (propellant equivalent)
+		"dry_mass": 73.4,          # tonnes (ship structural mass)
+		"min_crew": 2,
+		"max_equipment_slots": 3,
 	},
 	ShipClass.HAULER: {
-		"thrust_g": 0.2,           # Slow
-		"cargo_capacity": 200.0,   # High cargo (t)
-		"cargo_volume": 584.0,     # High cargo (m³)
-		"fuel_capacity": 400.0,    # Large tank needed
-		"min_crew": 4,             # Large crew
-		"max_equipment_slots": 2,  # Standard mining
-		"base_mass_mult": 2.5,     # Heavy frame (2.5x cargo)
+		"thrust_g": 0.19,
+		"cargo_capacity": 412.0,
+		"cargo_volume": 584.0,
+		"fuel_capacity": 237.0,
+		"dry_mass": 488.2,
+		"min_crew": 5,
+		"max_equipment_slots": 5,
 	},
 	ShipClass.PROSPECTOR: {
-		"thrust_g": 0.3,           # Balanced
-		"cargo_capacity": 100.0,   # Medium cargo (t)
-		"cargo_volume": 143.0,     # Medium cargo (m³)
-		"fuel_capacity": 300.0,    # Medium tank
-		"min_crew": 3,             # Medium crew
-		"max_equipment_slots": 3,  # Extra mining slots
-		"base_mass_mult": 2.0,     # Standard frame (2.0x cargo)
+		"thrust_g": 0.31,
+		"cargo_capacity": 107.0,
+		"cargo_volume": 143.0,
+		"fuel_capacity": 118.0,
+		"dry_mass": 214.8,
+		"min_crew": 3,
+		"max_equipment_slots": 4,
 	},
 	ShipClass.EXPLORER: {
-		"thrust_g": 0.35,          # Slightly fast
-		"cargo_capacity": 80.0,    # Lower cargo (t)
-		"cargo_volume": 91.0,      # Lower cargo (m³)
-		"fuel_capacity": 500.0,    # Huge tank for long range
-		"min_crew": 3,             # Medium crew
-		"max_equipment_slots": 2,  # Standard mining
-		"base_mass_mult": 1.8,     # Light frame (1.8x cargo)
+		"thrust_g": 0.47,
+		"cargo_capacity": 63.0,
+		"cargo_volume": 91.0,
+		"fuel_capacity": 192.0,
+		"dry_mass": 141.6,
+		"min_crew": 2,
+		"max_equipment_slots": 4,
 	},
 }
 
@@ -102,50 +103,50 @@ static func generate_random_name() -> String:
 static func release_name(ship_name: String) -> void:
 	_used_ship_names.erase(ship_name)
 
-## Apply subtle per-ship variance to a stat (±7% by default, rounded to 1 decimal)
-static func _vary(base: float, spread: float = 0.07) -> float:
+## Apply per-ship variance to a stat, rounded to 1 decimal
+static func _vary(base: float, spread: float) -> float:
 	return snappedf(base * randf_range(1.0 - spread, 1.0 + spread), 0.1)
 
 static func create_ship(ship_class: ShipClass, ship_name: String = "") -> Ship:
 	var ship := Ship.new()
 	var stats: Dictionary = CLASS_STATS[ship_class]
 
-	# Set class and name
 	ship.ship_class = ship_class
 	if ship_name.is_empty():
 		ship_name = generate_random_name()
 	ship.ship_name = ship_name
 
-	# Apply stats with subtle per-ship variance (±7%) — integers are not varied
-	ship.max_thrust_g = _vary(stats["thrust_g"])
-	ship.thrust_setting = 1.0  # Start at 100% thrust
-	ship.cargo_capacity = _vary(stats["cargo_capacity"])
-	ship.cargo_volume = _vary(stats["cargo_volume"])
-	ship.fuel_capacity = _vary(stats["fuel_capacity"])
-	ship.fuel = ship.fuel_capacity  # Start with full fuel
+	# Per-ship variance per GDD §8.2
+	ship.base_mass = _vary(stats["dry_mass"], 0.05)           # ±5%
+	ship.max_thrust_g = _vary(stats["thrust_g"], 0.05)        # ±5%
+	ship.thrust_setting = 1.0
+	ship.cargo_capacity = _vary(stats["cargo_capacity"], 0.10) # ±10%
+	ship.cargo_volume = _vary(stats["cargo_volume"], 0.10)     # ±10%
+	ship.fuel_capacity = _vary(stats["fuel_capacity"], 0.08)   # ±8%
+	ship.fuel = ship.fuel_capacity
 	ship.min_crew = stats["min_crew"]
-	ship.max_equipment_slots = stats["max_equipment_slots"]
-	ship.base_mass = _vary(stats["cargo_capacity"] * stats["base_mass_mult"])
+	# Upgrade slots: base ±1 slot
+	ship.max_equipment_slots = clampi(
+		stats["max_equipment_slots"] + (randi() % 3) - 1, 1, 8)
 
-	# Initialize at Earth
 	ship.position_au = CelestialData.get_earth_position_au()
 	ship.engine_condition = 100.0
 
 	# Start with basic provisions (1 unit = 100kg)
 	ship.supplies["food"] = 3.0  # ~30 days for 3 crew (0.084 units/day)
-	ship.supplies["repair_parts"] = 10.0  # Basic maintenance supplies
+	ship.supplies["repair_parts"] = 10.0
 
 	return ship
 
 static func get_class_description(ship_class: ShipClass) -> String:
 	match ship_class:
 		ShipClass.COURIER:
-			return "Fast courier with low cargo capacity. Ideal for quick deliveries and contracts."
+			return "Fast light courier (0.38g, 38t cargo). Quick deliveries and contracts. Crew 2."
 		ShipClass.HAULER:
-			return "Heavy hauler with massive cargo bay. Slow but profitable for bulk mining."
+			return "Heavy bulk hauler (0.19g, 412t cargo). Slow but high throughput. Crew 5."
 		ShipClass.PROSPECTOR:
-			return "Balanced mining vessel. Extra equipment slots for mining bonuses."
+			return "Balanced mining vessel (0.31g, 107t cargo). Good slot count for equipment. Crew 3."
 		ShipClass.EXPLORER:
-			return "Long-range explorer with extended fuel capacity. Good for distant operations."
+			return "High-thrust long-range ship (0.47g, 63t cargo, 192 fuel). Ideal for deep belt. Crew 2."
 		_:
 			return "Unknown ship class"

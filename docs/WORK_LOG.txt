@@ -1,7 +1,60 @@
-# Claim — Work Log
-# Updated: 2026-02-21 ~15:00 EST
+﻿# Claim — Work Log
+# Updated: 2026-02-21 ~19:30 EST
 
 ---
+
+## 2026-02-21 ~18:00-19:30 EST
+
+- Ship spec cleanup: updated `ship_data.gd` CLASS_STATS to GDD S8.2 canonical values - Courier (0.38g/38t/54m3/46.5fuel/73.4t dry/crew2/slots3), Hauler (0.19g/412t/584m3/237fuel/488.2t dry/crew5/slots5), Prospector (0.31g/107t/143m3/118fuel/214.8t dry/crew3/slots4), Explorer (0.47g/63t/91m3/192fuel/141.6t dry/crew2/slots4)
+- Per-ship variance updated to GDD S8.2 spreads: +-5% dry mass, +-5% thrust, +-10% cargo mass, +-10% cargo volume, +-8% fuel, +-1 slot; removed uniform +-7%
+- Python server ship stats synced to match GDD in `server/server/models/ship.py`
+- Policy system added: SupplyPolicy (PROACTIVE/ROUTINE/MINIMAL/MANUAL), CollectionPolicy (AGGRESSIVE/ROUTINE/PATIENT/MANUAL), EncounterPolicy (AVOID/COEXIST/CONFRONT/DEFEND) - added to `company_policy.gd` with names, descriptions, and threshold constants
+- `game_state.gd`: added supply_policy, collection_policy, encounter_policy vars; wired into save/load
+- `simulation.gd` _station_try_provisioning: replaced hardcoded 5-day threshold with CompanyPolicy.SUPPLY_POLICY_THRESHOLDS[GameState.supply_policy]; switched from deployed_crews to asteroid_supplies+get_asteroid_supply_days() for threshold check; skips if MANUAL
+- `simulation.gd`: added _station_try_collect_ore() - auto-collects stockpiled ore when stockpile >= cargo_capacity * CollectionPolicy threshold; skips if MANUAL; added collect_ore to station job dispatch match
+- `simulation.gd` _complete_delivery_job: now delivers food/parts to both deployed_crews (legacy) AND asteroid_supplies (mining units model) by proximity matching to nearest asteroid
+- `dashboard_tab.gd`: replaced single thrust policy row with a generic _add_policy_row helper; now shows all 4 policies (Thrust, Resupply, Ore Collection, Encounter) each with name dropdown and live description label
+- Python server skeleton created at `server/`: FastAPI + SQLAlchemy async + PostgreSQL; routers for auth/game/events/admin; simulation runs as background asyncio task (1 real second = 1 game tick at 1x); SSE event stream; seed script; Alembic migrations; full README with Windows setup instructions
+- Python policy enum comments fixed in `server/server/models/player.py` to match GDScript enum values exactly
+
+## 2026-02-21 ~17:00–17:30 EST
+
+- Fixed redirect fuel check: previously only checked one-way fuel to new destination; ship could arrive stranded with nothing left for return trip
+- Fixed redirect `fuel_per_tick`: was set to `ship.fuel / transit_time` (burning ALL remaining fuel on outbound leg, leaving 0 for return); now uses round-trip rate `(fuel_out + fuel_ret) / (outbound_time + return_time)` matching `start_mission`'s pattern
+- Both `redirect_mission` and `redirect_trade_mission` now: (1) compute return fuel from new_dest back to home (Earth/station), (2) check total against ship.fuel, (3) use round-trip `fuel_per_tick`
+- `redirect_cost` now based on `fuel_out` only (not total round-trip) — redirect penalty is for the course change, not the full mission
+- Updated `fleet_market_tab.gd` redirect popups to use round-trip feasibility check and show correct infeasibility message
+
+## 2026-02-21 ~16:30–17:00 EST
+
+- Fixed mission origin display: fleet tab now shows actual origin name (e.g., "Castalia") instead of "Earth"/"Space"
+- Root cause 1: `start_mission` never set `origin_is_earth` — it defaulted to `true`, so all missions started from non-Earth showed "Earth"
+- Root cause 2: "Earth"/"Space" binary was never expressive enough; needed `origin_name` field
+- Added `origin_name: String` to `mission.gd` and `trade_mission.gd`
+- `start_mission`: now sets `origin_is_earth` from ship position + `origin_name` from Earth/colony
+- `dispatch_idle_ship`: captures previous asteroid name BEFORE clearing idle mission, then sets `origin_name` on new mission (e.g., "Castalia")
+- `dispatch_idle_ship_trade`: same, captures colony name
+- `start_trade_mission`: now sets `origin_is_earth` + `origin_name` (was also missing)
+- `start_deploy_mission` / `start_collect_mission`: already had `origin_is_earth`, added `origin_name`
+- `fleet_tab.gd`: uses `origin_name` if set, falls back to "Earth"/"Space"
+- Save/load: added `origin_name` to both Mission and TradeMission save/load dicts
+
+## 2026-02-21 ~16:00–16:30 EST
+
+- Added ship speed display to solar map: `ship_marker.gd` `_update_label()` shows `"ShipName\n{N} km/s"` for speed ≥ 0.5 km/s; speed from `thrust × 9.81 × transit_time × min(t, 1-t)` (fixed mission params, not live orbital positions which inflate due to drift); label rect height fixed in `ship_marker.tscn` (`offset_bottom` 10→28, 38px total)
+- Implemented redirect momentum arc in `game_state.gd`: ships no longer snap direction instantly on redirect. Two-leg route: leg 1 continues in current velocity direction (`arc_fraction * dist`), leg 2 turns to new destination. `arc_fraction = clamp(sqrt((1-dot)/2) * speed_fraction * 0.4, 0, 0.30)`. Falls back to single-leg if arc < 5% or if ship speed too high for arc length (initial_t ≥ 0.48). Uses existing `outbound_waypoints`/`outbound_leg_times` multi-leg infrastructure.
+- Velocity preservation on redirect: speed magnitude preserved via `initial_t = clamp(speed / (4 × avg_v), 0, 0.5)`, virtual origin pushed backward so position is correct at entry time. Applied to both Mission redirects and TradeMission redirects.
+
+## 2026-02-21 ~15:00–16:00 EST
+
+- Fixed HQ tab horizontal expansion: added SIZE_EXPAND_FILL + clip_text to labels in dashboard_tab.gd (_refresh_stationed_ships, _refresh_discipline, _refresh_resources, _refresh_alerts, _refresh_activity, _refresh_contracts, _refresh_balance_history)
+- Fixed ships staying at asteroids permanently: IDLE_AT_DESTINATION ships have non-null current_mission, causing them to route into the redirect path. Fixed _on_map_dispatch_asteroid and _on_map_dispatch_colony to check specific transit statuses (TRANSIT_OUT, TRANSIT_BACK, REFUELING) instead of just if ship.current_mission
+- Fixed _return_to_map_if_needed never firing: _hide_dispatch() was resetting _dispatched_from_map=false before the check; reordered calls in _execute_dispatch, _queue_mission, _select_colony_trade
+- Fixed redirect fuel calculation: calculate_course_change converted AU/tick velocity to km/s producing astronomically large fuel estimates; replaced with ship.calc_fuel_for_distance(dist) in both fleet_market_tab.gd and game_state.gd
+- Fixed silent failure on infeasible redirect: now always shows popup with Confirm/Cancel if feasible, or Close + reason if not
+- Fixed ship position jumping back to Earth on redirect: redirect_mission and redirect_trade_mission now set origin_position_au = ship.position_au and origin_is_earth = false before resetting elapsed_ticks, preventing interpolation from restarting at Earth's current position
+- Fixed ships stopping and changing direction when redirected: when a TRANSIT_BACK ship was redirected, only mission.asteroid changed but elapsed_ticks/transit_time stayed the same — the lerp start-point snapped to the new asteroid's position (potentially across the solar system). Fixed by always resetting to TRANSIT_OUT from ship's current position regardless of prior status, same fix in redirect_trade_mission
+- Implemented velocity-preserving redirects: ships no longer stop and restart from rest when redirected. The brachistochrone is entered at initial_t = clamp(speed / (4 * avg_velocity), 0, 0.5) so speed is preserved. The virtual origin is pushed behind the ship (adjusted_origin = (pos - dest*dfrac)/(1-dfrac)) so position is also correct at initial_t. The popup displays the effective remaining transit time (1-initial_t)*T instead of the from-rest time
 
 ## 2026-02-21 ~14:00–15:00 EST
 
@@ -140,3 +193,16 @@
 - Market tab, Fleet tab, Workers tab, Dashboard tab initial builds
 - Solar map skeleton
 - Brachistochrone physics stub
+
+## 2026-02-21 FastAPI server scaffold
+
+- Created `server/` directory with full Python/FastAPI server implementation
+- SQLAlchemy 2.0 async + PostgreSQL (asyncpg) + Alembic migrations configured
+- ORM models: Player, Ship, Worker, Mission, Asteroid, Colony
+- Auth: bcrypt password hashing, JWT tokens, OAuth2 Bearer scheme
+- REST routers: /auth (register/login/me), /game (state/dispatch/hire/fire/buy-ship/policies/asteroids/colonies/market), /events (SSE stream), /admin (status/seed/give-starter-pack)
+- Simulation background asyncio task: missions (transit/mining/return), market random walk, payroll deduction
+- In-memory EventBus for SSE push to all connected clients
+- Seed data: 20 real asteroids with Keplerian orbital elements, 9 colonies with price multipliers
+- Standalone seed.py script: creates tables, seeds data, creates default player1 with Prospector ship + 3 workers
+- README.md with setup instructions and full API reference

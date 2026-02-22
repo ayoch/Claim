@@ -448,7 +448,7 @@ func _get_route_text(ship: Ship) -> String:
 	if ship.current_mission:
 		var m := ship.current_mission
 		var dest := m.asteroid.asteroid_name if m.asteroid else "?"
-		var origin := "Earth" if m.origin_is_earth else "Space"
+		var origin := m.origin_name if m.origin_name != "" else ("Earth" if m.origin_is_earth else "Space")
 		match m.status:
 			Mission.Status.TRANSIT_OUT:
 				return "%s → %s" % [origin, dest]
@@ -463,7 +463,7 @@ func _get_route_text(ship: Ship) -> String:
 	if ship.current_trade_mission:
 		var tm := ship.current_trade_mission
 		var col := tm.colony.colony_name if tm.colony else "?"
-		var origin := "Earth" if tm.origin_is_earth else "Space"
+		var origin := tm.origin_name if tm.origin_name != "" else ("Earth" if tm.origin_is_earth else "Space")
 		match tm.status:
 			TradeMission.Status.TRANSIT_TO_COLONY:
 				return "%s → %s" % [origin, col]

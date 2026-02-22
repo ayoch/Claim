@@ -25,7 +25,10 @@ var settings: Dictionary = {
 }
 
 # Company policies
-var thrust_policy: int = CompanyPolicy.ThrustPolicy.BALANCED  # Default to balanced
+var thrust_policy: int = CompanyPolicy.ThrustPolicy.BALANCED
+var supply_policy: int = CompanyPolicy.SupplyPolicy.ROUTINE
+var collection_policy: int = CompanyPolicy.CollectionPolicy.ROUTINE
+var encounter_policy: int = CompanyPolicy.EncounterPolicy.COEXIST
 
 # Game clock: total elapsed game-seconds (ticks) since game start
 var total_ticks: float = 0.0
@@ -198,38 +201,95 @@ func redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> bool:
 
 	var ship := mission.ship
 	var new_dest := new_asteroid.get_position_au()
+	var dist := ship.position_au.distance_to(new_dest)
+	var thrust := ship.get_effective_thrust()
+	var new_transit_time := Brachistochrone.transit_time(dist, thrust)
+	var avg_velocity := dist / new_transit_time if new_transit_time > 0.0 else 0.0
 
-	# Calculate course change from current position/velocity
-	var course_change := Brachistochrone.calculate_course_change(
-		ship.position_au,
-		ship.velocity_au_per_tick,
-		ship.get_effective_thrust(),
-		ship.fuel,
-		new_dest
-	)
+	# Determine if a momentum arc is needed (ship is moving at significant angle to new dest)
+	var velocity_dir := ship.velocity_au_per_tick.normalized() if ship.speed_au_per_tick > 1e-8 else Vector2.ZERO
+	var dest_dir := (new_dest - ship.position_au).normalized() if dist > 1e-6 else Vector2.ZERO
+	var dot := velocity_dir.dot(dest_dir) if ship.speed_au_per_tick > 1e-8 else 1.0
+	var speed_fraction := clampf(ship.speed_au_per_tick / (2.0 * avg_velocity), 0.0, 1.0) if avg_velocity > 0.0 else 0.0
+	var arc_fraction := clampf(sqrt((1.0 - dot) * 0.5) * speed_fraction * 0.4, 0.0, 0.30)
 
-	if not course_change["feasible"]:
-		EventBus.mission_redirect_failed.emit(ship, course_change["reason"])
+	# Compute arc waypoint and check if it makes sense
+	var waypoint := ship.position_au + velocity_dir * (arc_fraction * dist)
+	var dist1 := arc_fraction * dist
+	var dist2 := waypoint.distance_to(new_dest)
+	var use_arc := arc_fraction >= 0.05 and ship.speed_au_per_tick > 1e-8 and dist1 > 1e-6
+
+	# Fuel check: outbound (redirect path) + return trip
+	var total_path := dist1 + dist2 if use_arc else dist
+	var fuel_out := ship.calc_fuel_for_distance(total_path)
+	var return_origin: Vector2
+	if mission.return_to_station and ship.station_colony:
+		return_origin = ship.station_colony.get_position_au()
+	else:
+		return_origin = CelestialData.get_earth_position_au()
+	var return_dist := new_dest.distance_to(return_origin)
+	var fuel_ret := ship.calc_fuel_for_distance(return_dist, ship.cargo_capacity)
+	var fuel_needed := fuel_out + fuel_ret
+
+	if fuel_needed > ship.fuel:
+		EventBus.mission_redirect_failed.emit(ship, "Insufficient fuel (need %.0f for redirect + return, have %.0f)" % [fuel_needed, ship.fuel])
 		return false
 
-	# Redirect costs money (crew time, recalculation, opportunity cost)
-	var redirect_cost := int(course_change["fuel_cost"] * Ship.FUEL_COST_PER_UNIT * 2.0)  # 2x fuel cost as penalty
+	# Redirect costs money (2x outbound fuel cost as opportunity cost penalty)
+	var redirect_cost := int(fuel_out * Ship.FUEL_COST_PER_UNIT * 2.0)
 	if money < redirect_cost:
 		EventBus.mission_redirect_failed.emit(ship, "Cannot afford redirect cost ($%d)" % redirect_cost)
 		return false
 
 	money -= redirect_cost
-
-	# Update mission to new destination
 	mission.asteroid = new_asteroid
+	mission.origin_is_earth = false
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.outbound_waypoints.clear()
+	mission.outbound_waypoint_index = 0
+	mission.outbound_leg_times.clear()
+	mission.outbound_waypoint_types.clear()
+	mission.outbound_waypoint_colony_refs.clear()
+	mission.outbound_waypoint_fuel_amounts.clear()
+	mission.outbound_waypoint_fuel_costs.clear()
 
-	# Reset transit for outbound leg
-	if mission.status == Mission.Status.TRANSIT_OUT:
-		mission.elapsed_ticks = 0.0
-		mission.transit_time = course_change["new_transit_time"]
-		# Fuel already consumed doesn't change, but update fuel_per_tick for remaining transit
-		var remaining_fuel_budget := ship.fuel
-		mission.fuel_per_tick = remaining_fuel_budget / mission.transit_time if mission.transit_time > 0 else 0.0
+	var return_transit_time := Brachistochrone.transit_time(return_dist, thrust)
+
+	if use_arc:
+		# Two-leg route: arc in current direction, then turn to destination
+		var time1 := Brachistochrone.transit_time(dist1, thrust)
+		var time2 := Brachistochrone.transit_time(dist2, thrust)
+		var avg_velocity1 := dist1 / time1 if time1 > 0.0 else 0.0
+		var initial_t := 0.0
+		var adjusted_origin := ship.position_au
+		if avg_velocity1 > 0.0 and ship.speed_au_per_tick > 0.0:
+			initial_t = clampf(ship.speed_au_per_tick / (4.0 * avg_velocity1), 0.0, 0.5)
+			var dfrac := 2.0 * initial_t * initial_t
+			if dfrac < 0.98:
+				adjusted_origin = (ship.position_au - waypoint * dfrac) / (1.0 - dfrac)
+		mission.origin_position_au = adjusted_origin
+		mission.outbound_waypoints.append(waypoint)
+		mission.outbound_leg_times.append(time1)
+		mission.outbound_leg_times.append(time2)
+		# outbound_waypoint_types left empty = GRAVITY_ASSIST default
+		mission.elapsed_ticks = initial_t * time1
+		mission.transit_time = time1
+		var total_time_arc := time1 + time2 + return_transit_time
+		mission.fuel_per_tick = fuel_needed / total_time_arc if total_time_arc > 0.0 else 0.0
+	else:
+		# Single-leg velocity-preserving redirect
+		var initial_t := 0.0
+		var adjusted_origin := ship.position_au
+		if avg_velocity > 0.0 and ship.speed_au_per_tick > 0.0:
+			initial_t = clampf(ship.speed_au_per_tick / (4.0 * avg_velocity), 0.0, 0.5)
+			var dfrac := 2.0 * initial_t * initial_t
+			if dfrac < 0.98:
+				adjusted_origin = (ship.position_au - new_dest * dfrac) / (1.0 - dfrac)
+		mission.origin_position_au = adjusted_origin
+		mission.elapsed_ticks = initial_t * new_transit_time
+		mission.transit_time = new_transit_time
+		var total_time_single := new_transit_time + return_transit_time
+		mission.fuel_per_tick = fuel_needed / total_time_single if total_time_single > 0.0 else 0.0
 
 	EventBus.mission_redirected.emit(ship, new_asteroid, redirect_cost)
 	return true
@@ -242,36 +302,91 @@ func redirect_trade_mission(trade_mission: TradeMission, new_colony: Colony) -> 
 	var ship := trade_mission.ship
 	var new_dest := new_colony.get_position_au()
 
-	# Calculate course change
-	var course_change := Brachistochrone.calculate_course_change(
-		ship.position_au,
-		ship.velocity_au_per_tick,
-		ship.get_effective_thrust(),
-		ship.fuel,
-		new_dest
-	)
+	# Fuel check: outbound (redirect path) + return trip
+	var dist := ship.position_au.distance_to(new_dest)
+	var fuel_out_tm := ship.calc_fuel_for_distance(dist, ship.get_cargo_total())
+	var tm_return_origin: Vector2
+	if ship.is_stationed and ship.station_colony:
+		tm_return_origin = ship.station_colony.get_position_au()
+	else:
+		tm_return_origin = CelestialData.get_earth_position_au()
+	var tm_return_dist := new_dest.distance_to(tm_return_origin)
+	var fuel_ret_tm := ship.calc_fuel_for_distance(tm_return_dist, 0.0)  # empty after selling
+	var fuel_needed := fuel_out_tm + fuel_ret_tm
 
-	if not course_change["feasible"]:
-		EventBus.trade_mission_redirect_failed.emit(ship, course_change["reason"])
+	if fuel_needed > ship.fuel:
+		EventBus.trade_mission_redirect_failed.emit(ship, "Insufficient fuel (need %.0f for redirect + return, have %.0f)" % [fuel_needed, ship.fuel])
 		return false
 
-	# Redirect cost
-	var redirect_cost := int(course_change["fuel_cost"] * Ship.FUEL_COST_PER_UNIT * 2.0)
+	# Redirect cost (2x outbound fuel cost)
+	var redirect_cost := int(fuel_out_tm * Ship.FUEL_COST_PER_UNIT * 2.0)
 	if money < redirect_cost:
 		EventBus.trade_mission_redirect_failed.emit(ship, "Cannot afford redirect cost ($%d)" % redirect_cost)
 		return false
 
 	money -= redirect_cost
-
-	# Update trade mission
 	trade_mission.colony = new_colony
 
-	# Reset transit
-	if trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY:
-		trade_mission.elapsed_ticks = 0.0
-		trade_mission.transit_time = course_change["new_transit_time"]
-		var remaining_fuel_budget := ship.fuel
-		trade_mission.fuel_per_tick = remaining_fuel_budget / trade_mission.transit_time if trade_mission.transit_time > 0 else 0.0
+	var thrust := ship.get_effective_thrust()
+	var new_transit_time := Brachistochrone.transit_time(dist, thrust)
+	var avg_velocity := dist / new_transit_time if new_transit_time > 0.0 else 0.0
+
+	# Determine if a momentum arc is needed
+	var velocity_dir := ship.velocity_au_per_tick.normalized() if ship.speed_au_per_tick > 1e-8 else Vector2.ZERO
+	var dest_dir := (new_dest - ship.position_au).normalized() if dist > 1e-6 else Vector2.ZERO
+	var dot := velocity_dir.dot(dest_dir) if ship.speed_au_per_tick > 1e-8 else 1.0
+	var speed_fraction := clampf(ship.speed_au_per_tick / (2.0 * avg_velocity), 0.0, 1.0) if avg_velocity > 0.0 else 0.0
+	var arc_fraction := clampf(sqrt((1.0 - dot) * 0.5) * speed_fraction * 0.4, 0.0, 0.30)
+
+	var waypoint := ship.position_au + velocity_dir * (arc_fraction * dist)
+	var dist1 := arc_fraction * dist
+	var dist2 := waypoint.distance_to(new_dest)
+	var use_arc := arc_fraction >= 0.05 and ship.speed_au_per_tick > 1e-8 and dist1 > 1e-6
+
+	var tm_return_transit_time := Brachistochrone.transit_time(tm_return_dist, thrust)
+
+	trade_mission.origin_is_earth = false
+	trade_mission.status = TradeMission.Status.TRANSIT_TO_COLONY
+	trade_mission.outbound_waypoints.clear()
+	trade_mission.outbound_waypoint_index = 0
+	trade_mission.outbound_leg_times.clear()
+	trade_mission.outbound_waypoint_types.clear()
+	trade_mission.outbound_waypoint_colony_refs.clear()
+	trade_mission.outbound_waypoint_fuel_amounts.clear()
+	trade_mission.outbound_waypoint_fuel_costs.clear()
+
+	if use_arc:
+		var time1 := Brachistochrone.transit_time(dist1, thrust)
+		var time2 := Brachistochrone.transit_time(dist2, thrust)
+		var avg_velocity1 := dist1 / time1 if time1 > 0.0 else 0.0
+		var initial_t := 0.0
+		var adjusted_origin := ship.position_au
+		if avg_velocity1 > 0.0 and ship.speed_au_per_tick > 0.0:
+			initial_t = clampf(ship.speed_au_per_tick / (4.0 * avg_velocity1), 0.0, 0.5)
+			var dfrac := 2.0 * initial_t * initial_t
+			if dfrac < 0.98:
+				adjusted_origin = (ship.position_au - waypoint * dfrac) / (1.0 - dfrac)
+		trade_mission.origin_position_au = adjusted_origin
+		trade_mission.outbound_waypoints.append(waypoint)
+		trade_mission.outbound_leg_times.append(time1)
+		trade_mission.outbound_leg_times.append(time2)
+		trade_mission.elapsed_ticks = initial_t * time1
+		trade_mission.transit_time = time1
+		var total_time_arc := time1 + time2 + tm_return_transit_time
+		trade_mission.fuel_per_tick = fuel_needed / total_time_arc if total_time_arc > 0.0 else 0.0
+	else:
+		var initial_t := 0.0
+		var adjusted_origin := ship.position_au
+		if avg_velocity > 0.0 and ship.speed_au_per_tick > 0.0:
+			initial_t = clampf(ship.speed_au_per_tick / (4.0 * avg_velocity), 0.0, 0.5)
+			var dfrac := 2.0 * initial_t * initial_t
+			if dfrac < 0.98:
+				adjusted_origin = (ship.position_au - new_dest * dfrac) / (1.0 - dfrac)
+		trade_mission.origin_position_au = adjusted_origin
+		trade_mission.elapsed_ticks = initial_t * new_transit_time
+		trade_mission.transit_time = new_transit_time
+		var total_time_single := new_transit_time + tm_return_transit_time
+		trade_mission.fuel_per_tick = fuel_needed / total_time_single if total_time_single > 0.0 else 0.0
 
 	EventBus.trade_mission_redirected.emit(ship, new_colony, redirect_cost)
 	return true
@@ -571,6 +686,10 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worker
 	# Determine if departing from Earth
 	var earth_pos := CelestialData.get_earth_position_au()
 	mission.origin_is_earth = ship.position_au.distance_to(earth_pos) < 0.05
+	if mission.origin_is_earth:
+		mission.origin_name = "Earth"
+	elif ship.docked_at_colony:
+		mission.origin_name = ship.docked_at_colony.colony_name
 
 	var dist := ship.position_au.distance_to(asteroid.get_position_au())
 
@@ -643,6 +762,10 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worke
 
 	var earth_pos := CelestialData.get_earth_position_au()
 	mission.origin_is_earth = ship.position_au.distance_to(earth_pos) < 0.05
+	if mission.origin_is_earth:
+		mission.origin_name = "Earth"
+	elif ship.docked_at_colony:
+		mission.origin_name = ship.docked_at_colony.colony_name
 
 	var dist := ship.position_au.distance_to(asteroid.get_position_au())
 
@@ -771,6 +894,15 @@ func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[W
 	mission.origin_position_au = ship.position_au
 	mission.return_position_au = ship.position_au  # default return to origin
 	mission.transit_mode = transit_mode as Mission.TransitMode
+
+	# Set origin flag and name based on ship's current position
+	var _earth_pos := CelestialData.get_earth_position_au()
+	mission.origin_is_earth = ship.position_au.distance_to(_earth_pos) < 0.05
+	if mission.origin_is_earth:
+		mission.origin_name = "Earth"
+	elif ship.docked_at_colony:
+		mission.origin_name = ship.docked_at_colony.colony_name
+	# else: left blank; dispatch_idle_ship will fill it in from the previous mission
 
 	var dist := ship.position_au.distance_to(asteroid.get_position_au())
 
@@ -1013,9 +1145,15 @@ func order_return_to_earth(ship: Ship) -> void:
 		EventBus.mission_started.emit(mission)
 
 func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+	# Capture origin name before clearing missions
+	var origin_asteroid_name := ""
+	if ship.current_mission and ship.current_mission.asteroid:
+		origin_asteroid_name = ship.current_mission.asteroid.asteroid_name
+	elif ship.current_trade_mission and ship.current_trade_mission.colony:
+		origin_asteroid_name = ship.current_trade_mission.colony.colony_name
+
 	# End idle state and start new mission from current position
 	if ship.current_mission:
-		# Clean up the idle mission
 		ship.current_mission.ship = null
 		missions.erase(ship.current_mission)
 		ship.current_mission = null
@@ -1029,10 +1167,18 @@ func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_workers: Ar
 		w.assigned_trade_mission = null
 
 	var mission := start_mission(ship, asteroid, assigned_workers, transit_mode, slingshot_route)
-	mission.origin_is_earth = false  # Ship is dispatched from a remote location, not Earth
+	mission.origin_is_earth = false
+	mission.origin_name = origin_asteroid_name if origin_asteroid_name != "" else "deep space"
 	return mission
 
 func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned_workers: Array[Worker], cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
+	# Capture origin name before clearing missions
+	var origin_loc_name := ""
+	if ship.current_mission and ship.current_mission.asteroid:
+		origin_loc_name = ship.current_mission.asteroid.asteroid_name
+	elif ship.current_trade_mission and ship.current_trade_mission.colony:
+		origin_loc_name = ship.current_trade_mission.colony.colony_name
+
 	# End idle state and start new trade mission from current position
 	if ship.current_mission:
 		ship.current_mission.ship = null
@@ -1048,7 +1194,8 @@ func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned_worker
 		w.assigned_trade_mission = null
 
 	var tm := start_trade_mission(ship, colony_target, assigned_workers, cargo_to_load, transit_mode)
-	tm.origin_is_earth = false  # Ship is dispatched from a remote location, not Earth
+	tm.origin_is_earth = false
+	tm.origin_name = origin_loc_name if origin_loc_name != "" else "deep space"
 	return tm
 
 const RESCUE_COST_BASE: int = 20000  # Crew wages, equipment, opportunity cost — even nearby rescues are expensive
@@ -1508,6 +1655,15 @@ func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Ar
 	tm.return_position_au = ship.position_au  # default return to origin
 	tm.transit_mode = transit_mode as TradeMission.TransitMode
 
+	# Set origin flag and name based on ship's current position
+	var _tm_earth_pos := CelestialData.get_earth_position_au()
+	tm.origin_is_earth = ship.position_au.distance_to(_tm_earth_pos) < 0.05
+	if tm.origin_is_earth:
+		tm.origin_name = "Earth"
+	elif ship.docked_at_colony:
+		tm.origin_name = ship.docked_at_colony.colony_name
+	# else: left blank; dispatch_idle_ship_trade will fill it in
+
 	# Load cargo from stockpile onto ship (only if at Earth with stockpile access)
 	tm.cargo = {}
 	for ore_type in cargo_to_load:
@@ -1671,6 +1827,9 @@ func save_game() -> void:
 		"money": money,
 		"total_ticks": total_ticks,
 		"thrust_policy": thrust_policy,
+		"supply_policy": supply_policy,
+		"collection_policy": collection_policy,
+		"encounter_policy": encounter_policy,
 		"resources": {},
 		"workers": [],
 		"ships": [],
@@ -1765,6 +1924,7 @@ func save_game() -> void:
 			"mission_type": m.mission_type,
 			"return_to_station": m.return_to_station,
 			"origin_is_earth": m.origin_is_earth,
+			"origin_name": m.origin_name,
 			"elapsed_ticks": m.elapsed_ticks,
 			"transit_time": m.transit_time,
 			"mining_duration": m.mining_duration,
@@ -1801,6 +1961,7 @@ func save_game() -> void:
 			"cargo": cargo_data,
 			"origin_position_au": {"x": tm.origin_position_au.x, "y": tm.origin_position_au.y},
 			"origin_is_earth": tm.origin_is_earth,
+			"origin_name": tm.origin_name,
 			"return_position_au": {"x": tm.return_position_au.x, "y": tm.return_position_au.y},
 			"transit_mode": tm.transit_mode,
 			"revenue": tm.revenue,
@@ -1992,6 +2153,9 @@ func load_game() -> bool:
 
 	money = int(data.get("money", 10000))
 	thrust_policy = int(data.get("thrust_policy", CompanyPolicy.ThrustPolicy.BALANCED))
+	supply_policy = int(data.get("supply_policy", CompanyPolicy.SupplyPolicy.ROUTINE))
+	collection_policy = int(data.get("collection_policy", CompanyPolicy.CollectionPolicy.ROUTINE))
+	encounter_policy = int(data.get("encounter_policy", CompanyPolicy.EncounterPolicy.COEXIST))
 
 	_init_resources()
 	var res_data: Dictionary = data.get("resources", {})
@@ -2134,6 +2298,7 @@ func load_game() -> bool:
 		m.mission_type = int(md.get("mission_type", Mission.MissionType.MINING))
 		m.return_to_station = md.get("return_to_station", false)
 		m.origin_is_earth = md.get("origin_is_earth", true)
+		m.origin_name = str(md.get("origin_name", ""))
 		m.elapsed_ticks = float(md.get("elapsed_ticks", 0.0))
 		m.transit_time = float(md.get("transit_time", 0.0))
 		m.mining_duration = float(md.get("mining_duration", 86400.0))
@@ -2213,6 +2378,7 @@ func load_game() -> bool:
 		if origin_data.has("x") and origin_data.has("y"):
 			tm.origin_position_au = Vector2(float(origin_data["x"]), float(origin_data["y"]))
 		tm.origin_is_earth = tmd.get("origin_is_earth", true)
+		tm.origin_name = str(tmd.get("origin_name", ""))
 		var return_data: Dictionary = tmd.get("return_position_au", {})
 		if return_data.has("x") and return_data.has("y"):
 			tm.return_position_au = Vector2(float(return_data["x"]), float(return_data["y"]))
