@@ -22,6 +22,94 @@ const THRUST_POLICY_DESCRIPTIONS := {
 	ThrustPolicy.ECONOMICAL: "Minimize fuel costs. Use lower thrust to maximize profit margins, accept slower completion.",
 }
 
+# --- Supply Policy ---
+# Controls when stationed ships are sent to resupply remote asteroid sites.
+# Threshold is expressed as days of supplies remaining at the site.
+enum SupplyPolicy {
+	PROACTIVE,  # Resupply when <30 days remain — always well-stocked
+	ROUTINE,    # Resupply when <15 days remain — standard operations
+	MINIMAL,    # Resupply when <7 days remain — lean logistics, more risk
+	MANUAL,     # Never auto-resupply — player dispatches manually
+}
+
+const SUPPLY_POLICY_NAMES := {
+	SupplyPolicy.PROACTIVE: "Proactive",
+	SupplyPolicy.ROUTINE: "Routine",
+	SupplyPolicy.MINIMAL: "Minimal",
+	SupplyPolicy.MANUAL: "Manual",
+}
+
+const SUPPLY_POLICY_DESCRIPTIONS := {
+	SupplyPolicy.PROACTIVE: "Resupply sites before they fall below 30 days of provisions. Higher logistics cost, no risk of starvation.",
+	SupplyPolicy.ROUTINE: "Resupply when sites fall below 15 days. Balanced cost and safety.",
+	SupplyPolicy.MINIMAL: "Resupply only when critically low (<7 days). Lean but risky — delays or breakdowns can strand workers.",
+	SupplyPolicy.MANUAL: "Never auto-resupply. You handle all supply dispatches manually.",
+}
+
+# Threshold in days for each policy — auto-resupply when remaining days < this
+const SUPPLY_POLICY_THRESHOLDS := {
+	SupplyPolicy.PROACTIVE: 30.0,
+	SupplyPolicy.ROUTINE: 15.0,
+	SupplyPolicy.MINIMAL: 7.0,
+	SupplyPolicy.MANUAL: 0.0,  # Never triggers
+}
+
+# --- Collection Policy ---
+# Controls when stationed ships are sent to collect ore from remote stockpiles.
+# Threshold is expressed as % of the ship's cargo capacity that the stockpile must reach.
+enum CollectionPolicy {
+	AGGRESSIVE,  # Collect when stockpile reaches 25% of ship cargo — frequent runs
+	ROUTINE,     # Collect when stockpile reaches 50% of ship cargo — standard
+	PATIENT,     # Collect when stockpile reaches 80% of ship cargo — fewer trips
+	MANUAL,      # Never auto-collect — player dispatches manually
+}
+
+const COLLECTION_POLICY_NAMES := {
+	CollectionPolicy.AGGRESSIVE: "Aggressive",
+	CollectionPolicy.ROUTINE: "Routine",
+	CollectionPolicy.PATIENT: "Patient",
+	CollectionPolicy.MANUAL: "Manual",
+}
+
+const COLLECTION_POLICY_DESCRIPTIONS := {
+	CollectionPolicy.AGGRESSIVE: "Collect ore when stockpile reaches 25% of ship cargo capacity. More trips, lower inventory risk.",
+	CollectionPolicy.ROUTINE: "Collect when stockpile reaches 50% of ship cargo. Balanced trip frequency.",
+	CollectionPolicy.PATIENT: "Collect when stockpile reaches 80% of ship cargo. Fewer trips, higher stockpile risk.",
+	CollectionPolicy.MANUAL: "Never auto-collect. You dispatch all collection runs manually.",
+}
+
+# Threshold as fraction of ship cargo capacity
+const COLLECTION_POLICY_THRESHOLDS := {
+	CollectionPolicy.AGGRESSIVE: 0.25,
+	CollectionPolicy.ROUTINE: 0.50,
+	CollectionPolicy.PATIENT: 0.80,
+	CollectionPolicy.MANUAL: 0.0,  # Never triggers
+}
+
+# --- Encounter Policy ---
+# Controls how workers behave when rival crews are present at the same asteroid.
+# (Currently informational — encounter resolution activates in Phase 4.)
+enum EncounterPolicy {
+	AVOID,     # Yield slots or leave to avoid confrontation
+	COEXIST,   # Stay but do not escalate — share if necessary
+	CONFRONT,  # Assert dominance, challenge rivals, pressure them to leave
+	DEFEND,    # Hold the claim; use force if threatened
+}
+
+const ENCOUNTER_POLICY_NAMES := {
+	EncounterPolicy.AVOID: "Avoid",
+	EncounterPolicy.COEXIST: "Coexist",
+	EncounterPolicy.CONFRONT: "Confront",
+	EncounterPolicy.DEFEND: "Defend",
+}
+
+const ENCOUNTER_POLICY_DESCRIPTIONS := {
+	EncounterPolicy.AVOID: "Workers yield and leave rather than risk confrontation. Safest crew, lowest productivity at contested sites.",
+	EncounterPolicy.COEXIST: "Workers stay but won't escalate. Peaceful coexistence where possible. Reputation benefit over time.",
+	EncounterPolicy.CONFRONT: "Workers assert dominance and pressure rivals to leave. Higher productivity at contested sites; reputation risk if violence occurs.",
+	EncounterPolicy.DEFEND: "Workers hold the claim at all costs. Use force if threatened. Best claim retention; significant reputation risk.",
+}
+
 # Calculate optimal thrust setting based on policy and mission parameters
 static func calculate_thrust_setting(
 	policy: ThrustPolicy,

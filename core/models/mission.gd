@@ -53,6 +53,7 @@ enum TransitMode {
 @export var station_job_duration: float = 0.0     # Duration for timed jobs (patrol, repair, etc.)
 @export var destination_name: String = ""  # Fallback name when asteroid is null (e.g., return-only missions)
 @export var origin_is_earth: bool = true   # True if ship departed from Earth (for live position tracking)
+@export var origin_name: String = ""       # Human-readable departure location (e.g., "Earth", "Castalia", "Phobos Station")
 
 # Deploy/collect mission support
 @export var mining_units_to_deploy: Array[MiningUnit] = []

@@ -17,6 +17,7 @@ const BELT_OUTER_AU: float = 3.5
 var _map_selected_ship: Ship = null
 var _ship_buttons: Dictionary = {}  # Ship -> Button
 var _dispatch_hint_label: Label = null
+var _dispatch_ready: bool = false  # Deferred to true after ship selection, prevents same-click dispatch
 
 var _drag_start: Vector2 = Vector2.ZERO
 var _dragging: bool = false
@@ -637,9 +638,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			else:
 				# Check if this was a click (not a drag)
 				if mb.position.distance_to(_drag_start) < 5.0:
-					if _map_selected_ship != null:
+					if _map_selected_ship != null and _dispatch_ready:
 						_try_dispatch_to(mb.position)
-					else:
+					elif _map_selected_ship == null:
 						_try_select_ship_at(mb.position)
 				_dragging = false
 		elif mb.button_index == MOUSE_BUTTON_RIGHT:
@@ -746,8 +747,13 @@ func _setup_dispatch_hint_label() -> void:
 
 func _on_ship_selector_pressed(ship: Ship) -> void:
 	_center_on_ship(ship)
-	if ship.is_docked:
-		_set_map_selected_ship(ship)
+	_dispatch_ready = false
+	_set_map_selected_ship(ship)
+	call_deferred(&"_enable_dispatch")
+
+func _enable_dispatch() -> void:
+	if _map_selected_ship != null:
+		_dispatch_ready = true
 
 func _apply_selection_border(btn: Button, selected: bool) -> void:
 	if selected:
@@ -764,6 +770,8 @@ func _apply_selection_border(btn: Button, selected: bool) -> void:
 
 func _set_map_selected_ship(ship: Ship) -> void:
 	_map_selected_ship = ship
+	if ship == null:
+		_dispatch_ready = false
 	for s in _ship_buttons:
 		_apply_selection_border(_ship_buttons[s], s == ship)
 	if _dispatch_hint_label:
@@ -776,14 +784,12 @@ func _try_dispatch_to(screen_pos: Vector2) -> void:
 		var asteroid_px := asteroid.get_position_au() * AU_PIXELS
 		if world_pos.distance_to(asteroid_px) < 40.0:
 			EventBus.map_dispatch_to_asteroid.emit(_map_selected_ship, asteroid)
-			_set_map_selected_ship(null)
 			return
 	# Check colonies
 	for colony: Colony in GameState.colonies:
 		var colony_px := colony.get_position_au() * AU_PIXELS
 		if world_pos.distance_to(colony_px) < 40.0:
 			EventBus.map_dispatch_to_colony.emit(_map_selected_ship, colony)
-			_set_map_selected_ship(null)
 			return
 	# Empty space — no-op
 

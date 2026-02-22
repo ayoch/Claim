@@ -168,6 +168,9 @@ func _process(delta: float) -> void:
 	var position_lerp_speed := maxf(50.0, 12.0 * TimeScale.speed_multiplier)
 	position = position.lerp(_target_pos, minf(position_lerp_speed * delta, 1.0))
 
+	# Update label with current speed
+	_update_label()
+
 	# Update trajectory cache periodically
 	_trajectory_update_timer += delta
 	if _trajectory_update_timer >= TRAJECTORY_UPDATE_INTERVAL:
@@ -175,6 +178,41 @@ func _process(delta: float) -> void:
 		_update_trajectory_cache()
 
 	queue_redraw()
+
+func _update_label() -> void:
+	var s: Ship = null
+	if mission and mission.ship:
+		s = mission.ship
+	elif trade_mission and trade_mission.ship:
+		s = trade_mission.ship
+	elif ship:
+		s = ship
+	else:
+		return  # rescue/refuel vessel — label set in _ready, don't override
+
+	# Compute speed from mission parameters rather than ship.speed_au_per_tick.
+	# ship.speed_au_per_tick uses live-tracked orbital positions for total_distance,
+	# which inflates speed as the endpoints drift apart over long transits.
+	# Correct formula: v = thrust * 9.81 * transit_time * min(t, 1-t)
+	# (equivalent to the original brachistochrone but using only fixed mission values)
+	var speed_km_s := 0.0
+	var active_mission: Object = null
+	if mission and (mission.status == Mission.Status.TRANSIT_OUT or mission.status == Mission.Status.TRANSIT_BACK):
+		active_mission = mission
+	elif trade_mission and (trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY or trade_mission.status == TradeMission.Status.TRANSIT_BACK):
+		active_mission = trade_mission
+	if active_mission and active_mission.transit_time > 0.0:
+		var t_frac := clampf(active_mission.elapsed_ticks / active_mission.transit_time, 0.0, 1.0)
+		var speed_factor := minf(t_frac, 1.0 - t_frac)
+		speed_km_s = s.get_effective_thrust() * 9.81 * active_mission.transit_time * speed_factor / 1000.0
+
+	var new_text: String
+	if speed_km_s >= 0.5:
+		new_text = "%s\n%.0f km/s" % [s.ship_name, speed_km_s]
+	else:
+		new_text = s.ship_name
+	if $Label.text != new_text:
+		$Label.text = new_text
 
 func _update_rescue_target() -> void:
 	if not rescue_target_ship:

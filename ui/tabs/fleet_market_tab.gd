@@ -108,6 +108,12 @@ func _hide_dispatch() -> void:
 	_ships_scroll.visible = true
 	_tab_title.visible = true
 	_clear_dispatch_buttons()
+	_dispatched_from_map = false
+
+func _return_to_map_if_needed() -> void:
+	if _dispatched_from_map:
+		_dispatched_from_map = false
+		get_parent().current_tab = MAP_TAB_INDEX
 
 func _set_dispatch_buttons(buttons: Array) -> void:
 	_clear_dispatch_buttons()
@@ -735,42 +741,155 @@ func _cancel_preview() -> void:
 	EventBus.mission_preview_cancelled.emit()
 
 var _is_planning_mode: bool = false  # Track if we're planning next mission (vs immediate dispatch)
+var _dispatched_from_map: bool = false  # If true, return to Map tab after dispatch
+const MAP_TAB_INDEX: int = 4
+
+func _switch_to_self() -> void:
+	get_parent().current_tab = get_index()
 
 func _on_map_dispatch_asteroid(ship: Ship, asteroid: AsteroidData) -> void:
-	if not ship.is_docked:
-		return
-	# Setup dispatch state and jump directly to worker selection (skip destination list)
 	_selected_ship = ship
-	_selected_asteroid = asteroid
-	_selected_workers.clear()
-	_selected_mission_type = Mission.MissionType.MINING
-	_selected_deploy_units.clear()
-	_selected_deploy_workers.clear()
-	_sort_by = "profit"
-	_filter_type = -1
-	_is_planning_mode = false
-	_colonies_section_expanded = -1
-	_mining_section_expanded = -1
-	dispatch_popup.visible = true
-	_show_worker_selection()
+	# Only redirect if actively in transit (not idle at destination)
+	var in_transit := ship.current_mission != null and (
+		ship.current_mission.status == Mission.Status.TRANSIT_OUT or
+		ship.current_mission.status == Mission.Status.TRANSIT_BACK or
+		ship.current_mission.status == Mission.Status.REFUELING
+	)
+	if in_transit:
+		# Ship is underway — redirect, no crew reassignment
+		var dist := ship.position_au.distance_to(asteroid.get_position_au())
+		var new_transit_time := Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+		var fuel_out := ship.calc_fuel_for_distance(dist)
+		var return_origin := ship.station_colony.get_position_au() if (ship.is_stationed and ship.station_colony) else CelestialData.get_earth_position_au()
+		var return_dist := asteroid.get_position_au().distance_to(return_origin)
+		var fuel_ret := ship.calc_fuel_for_distance(return_dist, ship.cargo_capacity)
+		var fuel_needed := fuel_out + fuel_ret
+		var feasible := fuel_needed <= ship.fuel
+		# Adjust displayed transit time for existing velocity (ship enters brachistochrone mid-curve)
+		var avg_velocity := dist / new_transit_time if new_transit_time > 0.0 else 0.0
+		var entry_t := clampf(ship.speed_au_per_tick / (4.0 * avg_velocity), 0.0, 0.5) if avg_velocity > 0.0 else 0.0
+		var effective_transit_time := (1.0 - entry_t) * new_transit_time
+		var transit_str := TimeScale.format_time(effective_transit_time)
+		_dispatched_from_map = true
+		_switch_to_self()
+		dispatch_popup.visible = true
+		if feasible:
+			var cost := int(fuel_out * Ship.FUEL_COST_PER_UNIT * 2.0)
+			_show_redirect_confirmation(
+				"Redirect %s to %s?\n\nNew transit: %s\nRedirect cost: $%s" % [
+					ship.ship_name, asteroid.asteroid_name,
+					transit_str, _format_number(cost)
+				],
+				func() -> void: GameState.redirect_mission(ship.current_mission, asteroid)
+			)
+		else:
+			_show_redirect_confirmation(
+				"Cannot redirect %s to %s: not enough fuel for redirect + return\n\nFuel needed: %.0f  Available: %.0f\nNew transit if refueled: %s" % [
+					ship.ship_name, asteroid.asteroid_name,
+					fuel_needed, ship.fuel, transit_str
+				],
+				Callable(), false
+			)
+	else:
+		# Docked or idle at destination — normal dispatch with crew selection
+		_selected_asteroid = asteroid
+		_selected_workers.clear()
+		_selected_mission_type = Mission.MissionType.MINING
+		_selected_deploy_units.clear()
+		_selected_deploy_workers.clear()
+		_sort_by = "profit"
+		_filter_type = -1
+		_is_planning_mode = false
+		_colonies_section_expanded = -1
+		_mining_section_expanded = -1
+		_dispatched_from_map = true
+		_switch_to_self()
+		dispatch_popup.visible = true
+		_show_worker_selection()
 
 func _on_map_dispatch_colony(ship: Ship, colony: Colony) -> void:
-	if not ship.is_docked:
-		return
-	# Setup dispatch state and jump directly to colony confirm (skip destination list)
 	_selected_ship = ship
-	_selected_asteroid = null
-	_selected_workers.clear()
-	_selected_mission_type = Mission.MissionType.MINING
-	_selected_deploy_units.clear()
-	_selected_deploy_workers.clear()
-	_sort_by = "profit"
-	_filter_type = -1
-	_is_planning_mode = false
-	_colonies_section_expanded = -1
-	_mining_section_expanded = -1
-	dispatch_popup.visible = true
-	_confirm_colony_dispatch(colony)
+	# Only redirect if actively in transit (not idle at colony)
+	var in_transit := ship.current_trade_mission != null and (
+		ship.current_trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY or
+		ship.current_trade_mission.status == TradeMission.Status.TRANSIT_BACK
+	)
+	if in_transit:
+		# Ship is underway on a trade mission — redirect
+		var dist := ship.position_au.distance_to(colony.get_position_au())
+		var new_transit_time := Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+		var fuel_out_tm := ship.calc_fuel_for_distance(dist, ship.get_cargo_total())
+		var tm_return_origin := ship.station_colony.get_position_au() if (ship.is_stationed and ship.station_colony) else CelestialData.get_earth_position_au()
+		var tm_return_dist := colony.get_position_au().distance_to(tm_return_origin)
+		var fuel_ret_tm := ship.calc_fuel_for_distance(tm_return_dist, 0.0)
+		var fuel_needed := fuel_out_tm + fuel_ret_tm
+		var feasible := fuel_needed <= ship.fuel
+		var avg_velocity := dist / new_transit_time if new_transit_time > 0.0 else 0.0
+		var entry_t := clampf(ship.speed_au_per_tick / (4.0 * avg_velocity), 0.0, 0.5) if avg_velocity > 0.0 else 0.0
+		var effective_transit_time := (1.0 - entry_t) * new_transit_time
+		var transit_str := TimeScale.format_time(effective_transit_time)
+		_dispatched_from_map = true
+		_switch_to_self()
+		dispatch_popup.visible = true
+		if feasible:
+			var cost := int(fuel_out_tm * Ship.FUEL_COST_PER_UNIT * 2.0)
+			_show_redirect_confirmation(
+				"Redirect %s to %s?\n\nNew transit: %s\nRedirect cost: $%s" % [
+					ship.ship_name, colony.colony_name,
+					transit_str, _format_number(cost)
+				],
+				func() -> void: GameState.redirect_trade_mission(ship.current_trade_mission, colony)
+			)
+		else:
+			_show_redirect_confirmation(
+				"Cannot redirect %s to %s: not enough fuel for redirect + return\n\nFuel needed: %.0f  Available: %.0f\nNew transit if refueled: %s" % [
+					ship.ship_name, colony.colony_name,
+					fuel_needed, ship.fuel, transit_str
+				],
+				Callable(), false
+			)
+	else:
+		# Docked or idle remote — normal colony dispatch
+		_selected_asteroid = null
+		_selected_workers.clear()
+		_selected_mission_type = Mission.MissionType.MINING
+		_selected_deploy_units.clear()
+		_selected_deploy_workers.clear()
+		_sort_by = "profit"
+		_filter_type = -1
+		_is_planning_mode = false
+		_colonies_section_expanded = -1
+		_mining_section_expanded = -1
+		_dispatched_from_map = true
+		_switch_to_self()
+		dispatch_popup.visible = true
+		_confirm_colony_dispatch(colony)
+
+func _show_redirect_confirmation(message: String, on_confirm: Callable, feasible: bool = true) -> void:
+	_clear_dispatch_content()
+	var title := Label.new()
+	title.text = "Redirect Ship"
+	title.add_theme_font_size_override("font_size", 20)
+	dispatch_content.add_child(title)
+	var msg_label := Label.new()
+	msg_label.text = message
+	msg_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	msg_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	dispatch_content.add_child(msg_label)
+	var close_cb := func() -> void: _hide_dispatch()
+	if feasible:
+		var confirm_cb := func() -> void:
+			on_confirm.call()
+			_return_to_map_if_needed()
+			_hide_dispatch()
+		_set_dispatch_buttons([
+			{"text": "Confirm", "callback": confirm_cb},
+			{"text": "Cancel", "callback": close_cb},
+		])
+	else:
+		_set_dispatch_buttons([
+			{"text": "Close", "callback": close_cb},
+		])
 
 func _start_dispatch(ship: Ship, planning_mode: bool = false) -> void:
 	_selected_ship = ship
@@ -1729,6 +1848,7 @@ func _select_colony_trade(colony: Colony) -> void:
 	else:
 		GameState.start_trade_mission(_selected_ship, colony, assigned, cargo)
 	_cancel_preview()
+	_return_to_map_if_needed()
 	_hide_dispatch()
 	_mark_dirty()
 
@@ -2582,6 +2702,7 @@ func _queue_mission() -> void:
 	_selected_ship.last_crew = _selected_workers.duplicate()
 
 	_cancel_preview()
+	_return_to_map_if_needed()
 	_hide_dispatch()
 	_mark_dirty()
 
@@ -2623,6 +2744,7 @@ func _execute_dispatch() -> void:
 			else:
 				GameState.start_mission(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode, _selected_slingshot_route)
 	_cancel_preview()
+	_return_to_map_if_needed()
 	_hide_dispatch()
 	_mark_dirty()
 
