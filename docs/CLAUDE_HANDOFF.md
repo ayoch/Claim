@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-23 EST (session 12)
-**Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
-**Session Context:** Architectural review; mission.workers removal complete
-**Next Session Priority:** Architectural refactors (see session 12 log). Start with WaypointLeg class — highest value, lowest risk.
+**Last Updated:** 2026-02-23 EST (session 13)
+**Updated By:** Instance on Machine 2 (Mac laptop - HK-47)
+**Session Context:** Backend abstraction layer & local leaderboards implemented
+**Next Session Priority:** Phase 3 - Implement ServerBackend HTTP wrapper, server leaderboard endpoint, login/register screen
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -13,6 +13,52 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-23 EST (session 13) - Backend Abstraction & Leaderboards
+- **Machine:** Mac laptop (HK-47)
+- **Work Completed:**
+  - **Phase 1 - Backend Abstraction Layer** ✅
+    - Created `core/backend/backend_interface.gd` - abstract interface for all backend operations
+    - Created `core/backend/local_backend.gd` - single-player implementation wrapping GameState
+    - Created `core/backend/backend_manager.gd` - singleton managing active backend (local/server)
+    - Registered BackendManager as autoload in project.godot
+    - Added EventBus signals: backend_mode_changed, ship_sold
+    - Fixed compilation errors: type inference (int/float explicit), indentation, method lookups
+
+  - **Phase 2 - Main Menu & Local Leaderboards** ✅
+    - Added Leaderboards button to title screen
+    - Created `ui/leaderboards_screen.tscn` with Single Player/Multiplayer tabs
+    - Created `ui/leaderboards_screen.gd` with leaderboard display logic
+    - Implemented local leaderboard system in GameState:
+      - `calculate_net_worth()` - money + ship values + cargo values
+      - `submit_leaderboard_entry()` - auto-called on save
+      - `get_local_leaderboard()` - sorted by net worth
+    - Added save/load support for player_name and local_leaderboard
+    - Added server status indicator to title screen (green/red light, checks localhost:3000/health)
+
+  - **Server Management:**
+    - Started Python/FastAPI server on localhost:3000 for testing
+    - Server health check endpoint working, green light displays when online
+
+- **Files Modified:**
+  - `core/backend/backend_interface.gd` (new)
+  - `core/backend/local_backend.gd` (new)
+  - `core/backend/backend_manager.gd` (new)
+  - `core/backend/test_backend.gd` (new)
+  - `core/autoloads/game_state.gd` (leaderboard system added)
+  - `core/autoloads/event_bus.gd` (new signals)
+  - `ui/title_screen.tscn` (leaderboards button + server status indicator)
+  - `ui/title_screen.gd` (server health check)
+  - `ui/leaderboards_screen.tscn` (new)
+  - `ui/leaderboards_screen.gd` (new)
+  - `project.godot` (BackendManager autoload)
+  - `.gitignore` (removed docs folder exclusion)
+
+- **Next Steps:**
+  - Phase 3: Implement ServerBackend HTTP wrapper
+  - Add server leaderboard endpoint
+  - Create login/register screen
+  - Implement leaderboard caching and offline mode
 
 ### 2026-02-23 EST (session 12) - Architectural review
 - **Machine:** Windows desktop (Dweezil)
