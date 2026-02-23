@@ -787,6 +787,12 @@ func _rebuild_ships() -> void:
 			var plan_row := HBoxContainer.new()
 			plan_row.add_theme_constant_override("separation", 8)
 
+			var redispatch_btn := Button.new()
+			redispatch_btn.text = "Redispatch"
+			redispatch_btn.custom_minimum_size = Vector2(0, 44)
+			redispatch_btn.pressed.connect(_start_dispatch.bind(ship, false, true))
+			plan_row.add_child(redispatch_btn)
+
 			var plan_btn := Button.new()
 			plan_btn.text = "Plan Next Mission" if not ship.has_queued_mission() else "Change Queued Mission"
 			plan_btn.custom_minimum_size = Vector2(0, 44)
@@ -895,7 +901,7 @@ func _rebuild_ships() -> void:
 				ship_crew.append(w)
 			elif ship.current_trade_mission != null and w.assigned_trade_mission == ship.current_trade_mission:
 				ship_crew.append(w)
-			elif w.assigned_station_ship == ship:
+			elif w.assigned_ship == ship:
 				ship_crew.append(w)
 
 		var crew_panel := VBoxContainer.new()
@@ -999,7 +1005,8 @@ func _get_location_text(ship: Ship) -> String:
 func _cancel_preview() -> void:
 	EventBus.mission_preview_cancelled.emit()
 
-var _is_planning_mode: bool = false  # Track if we're planning next mission (vs immediate dispatch)
+var _is_planning_mode: bool = false    # Queue mission for after current task completes
+var _is_redispatch_mode: bool = false  # Abort current mission and immediately reroute
 var _dispatched_from_map: bool = false  # If true, return to Map tab after dispatch
 const MAP_TAB_INDEX: int = 4
 
@@ -1164,7 +1171,7 @@ func _show_redirect_confirmation(message: String, on_confirm: Callable, feasible
 			{"text": "Close", "callback": close_cb},
 		])
 
-func _start_dispatch(ship: Ship, planning_mode: bool = false) -> void:
+func _start_dispatch(ship: Ship, planning_mode: bool = false, redispatch_mode: bool = false) -> void:
 	_selected_ship = ship
 	_selected_asteroid = null
 	_selected_workers.clear()
@@ -1174,6 +1181,7 @@ func _start_dispatch(ship: Ship, planning_mode: bool = false) -> void:
 	_sort_by = "profit"
 	_filter_type = -1
 	_is_planning_mode = planning_mode
+	_is_redispatch_mode = redispatch_mode
 	_colonies_section_expanded = -1  # Reset to cargo-based default
 	_mining_section_expanded = -1
 
@@ -1203,17 +1211,23 @@ func _show_asteroid_selection() -> void:
 	_mining_dest_data.clear()
 
 	var title := Label.new()
-	title.text = "Select Destination"
+	if _is_planning_mode:
+		title.text = "Plan Next Mission — Select Destination"
+	elif _is_redispatch_mode:
+		title.text = "Redispatch — Select Destination"
+	else:
+		title.text = "Select Destination"
 	title.add_theme_font_size_override("font_size", 20)
 	dispatch_content.add_child(title)
 
 	# Show ship origin info and cargo
 	var origin_label := Label.new()
 	var ore_total: float = _selected_ship.get_ore_total()
+	var origin_prefix := "Current position:" if _is_redispatch_mode else "Dispatching from:"
 	if ore_total > 0:
-		origin_label.text = "Dispatching from: %s (%.1ft ore)" % [_get_location_text(_selected_ship), ore_total]
+		origin_label.text = "%s %s (%.1ft ore)" % [origin_prefix, _get_location_text(_selected_ship), ore_total]
 	else:
-		origin_label.text = "Dispatching from: %s" % _get_location_text(_selected_ship)
+		origin_label.text = "%s %s" % [origin_prefix, _get_location_text(_selected_ship)]
 	origin_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 	origin_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dispatch_content.add_child(origin_label)
@@ -1765,9 +1779,9 @@ func _show_asteroid_selection() -> void:
 		elif fuel_warning != "":
 			warning_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
 
-		# Dispatch button
+		# Select / Dispatch button
 		var btn := Button.new()
-		btn.text = "Dispatch"
+		btn.text = "Select" if (_is_planning_mode or _is_redispatch_mode) else "Dispatch"
 		btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		btn.custom_minimum_size = Vector2(0, 36)
 		btn.focus_mode = Control.FOCUS_NONE
@@ -2167,10 +2181,11 @@ func _select_colony_trade(colony: Colony) -> void:
 				break
 	if assigned.size() < _selected_ship.min_crew:
 		return  # Not enough crew available
+	_selected_ship.crew = assigned
 	if _selected_ship.is_idle_remote:
-		GameState.dispatch_idle_ship_trade(_selected_ship, colony, assigned, cargo)
+		GameState.dispatch_idle_ship_trade(_selected_ship, colony, cargo)
 	else:
-		GameState.start_trade_mission(_selected_ship, colony, assigned, cargo)
+		GameState.start_trade_mission(_selected_ship, colony, cargo)
 	_cancel_preview()
 	_return_to_map_if_needed()
 	_hide_dispatch()
@@ -2704,9 +2719,20 @@ func _show_worker_selection() -> void:
 	var _cancel_cb := func() -> void:
 		_cancel_preview()
 		_hide_dispatch()
+	var next_btn_text: String
+	var next_btn_cb: Callable
+	if _is_planning_mode:
+		next_btn_text = "Queue Mission"
+		next_btn_cb = _queue_mission
+	elif _is_redispatch_mode:
+		next_btn_text = "Confirm Redispatch"
+		next_btn_cb = _abort_and_dispatch
+	else:
+		next_btn_text = "Confirm Dispatch"
+		next_btn_cb = _execute_dispatch
 	_set_dispatch_buttons([
 		{"text": "Back", "callback": _back_cb},
-		{"text": "Confirm Dispatch", "callback": _execute_dispatch},
+		{"text": next_btn_text, "callback": next_btn_cb},
 		{"text": "Cancel", "callback": _cancel_cb},
 	])
 
@@ -2985,7 +3011,12 @@ func _show_dispatch_confirmation(message: String) -> void:
 	_clear_dispatch_content()
 
 	var title := Label.new()
-	title.text = "Plan Next Mission" if _is_planning_mode else "Confirm Mission Dispatch"
+	if _is_planning_mode:
+		title.text = "Plan Next Mission"
+	elif _is_redispatch_mode:
+		title.text = "Redispatch Ship"
+	else:
+		title.text = "Confirm Mission Dispatch"
 	title.add_theme_font_size_override("font_size", 20)
 	dispatch_content.add_child(title)
 
@@ -3003,11 +3034,22 @@ func _show_dispatch_confirmation(message: String) -> void:
 		note.add_theme_color_override("font_color", Color(0.6, 0.85, 0.6))
 		note.add_theme_font_size_override("font_size", 13)
 		dispatch_content.add_child(note)
+	elif _is_redispatch_mode:
+		var note := Label.new()
+		note.text = "The current mission will be aborted. The ship changes course immediately from its current position."
+		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		note.add_theme_color_override("font_color", Color(0.95, 0.7, 0.3))
+		note.add_theme_font_size_override("font_size", 13)
+		dispatch_content.add_child(note)
 
 	var buttons: Array[Dictionary] = []
 	if _is_planning_mode:
 		var _queue_cb := func() -> void: _queue_mission()
 		buttons.append({"text": "Confirm Plan", "callback": _queue_cb})
+	elif _is_redispatch_mode:
+		var _redispatch_cb := func() -> void: _abort_and_dispatch()
+		buttons.append({"text": "Confirm Redispatch", "color": Color(0.95, 0.7, 0.3), "callback": _redispatch_cb})
 	else:
 		var _confirm_cb := func() -> void: _execute_dispatch()
 		buttons.append({"text": "Confirm Dispatch", "callback": _confirm_cb})
@@ -3024,9 +3066,9 @@ func _queue_mission() -> void:
 		var est := AsteroidData.estimate_mission(_selected_asteroid, _selected_ship, _selected_workers, -1)
 		mining_duration = est.get("mining_time", 86400.0)
 
+	_selected_ship.crew = _selected_workers.duplicate()
 	_selected_ship.queue_mission(
 		_selected_asteroid,
-		_selected_workers,
 		_selected_transit_mode,
 		mining_duration,
 		_selected_slingshot_route,
@@ -3066,18 +3108,19 @@ func _execute_dispatch() -> void:
 		GameState.money -= fuel_cost
 
 	# Remember crew for next dispatch
+	_selected_ship.crew = _selected_workers.duplicate()
 	_selected_ship.last_crew = _selected_workers.duplicate()
 
 	match _selected_mission_type:
 		Mission.MissionType.DEPLOY_UNIT:
-			GameState.start_deploy_mission(_selected_ship, _selected_asteroid, _selected_workers, _selected_deploy_units, _selected_deploy_workers, _selected_transit_mode, _selected_slingshot_route)
+			GameState.start_deploy_mission(_selected_ship, _selected_asteroid, _selected_deploy_units, _selected_deploy_workers, _selected_transit_mode, _selected_slingshot_route)
 		Mission.MissionType.COLLECT_ORE:
-			GameState.start_collect_mission(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode, _selected_slingshot_route)
+			GameState.start_collect_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
 		_:
 			if _selected_ship.is_idle_remote:
-				GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode, _selected_slingshot_route)
+				GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
 			else:
-				GameState.start_mission(_selected_ship, _selected_asteroid, _selected_workers, _selected_transit_mode, _selected_slingshot_route)
+				GameState.start_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
 	_cancel_preview()
 	_return_to_map_if_needed()
 	_hide_dispatch()

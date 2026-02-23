@@ -520,7 +520,7 @@ func _rebuild_ships() -> void:
 				ship_crew.append(w)
 			elif ship.current_trade_mission != null and w.assigned_trade_mission == ship.current_trade_mission:
 				ship_crew.append(w)
-			elif w.assigned_station_ship == ship:
+			elif w.assigned_ship == ship:
 				ship_crew.append(w)
 
 		var crew_panel := VBoxContainer.new()
@@ -1014,10 +1014,11 @@ func _select_colony_trade(colony: Colony) -> void:
 		GameState.money -= fuel_cost
 
 	var assigned: Array[Worker] = []
+	_selected_ship.crew = assigned
 	if _selected_ship.is_idle_remote:
-		GameState.dispatch_idle_ship_trade(_selected_ship, colony, assigned, cargo)
+		GameState.dispatch_idle_ship_trade(_selected_ship, colony, cargo)
 	else:
-		GameState.start_trade_mission(_selected_ship, colony, assigned, cargo)
+		GameState.start_trade_mission(_selected_ship, colony, cargo)
 	_cancel_preview()
 	dispatch_popup.visible = false
 	_mark_dirty()
@@ -1375,12 +1376,13 @@ func _confirm_dispatch() -> void:
 		_selected_ship.fuel = _selected_ship.fuel_capacity
 		GameState.money -= fuel_cost
 	# Remember crew for next dispatch
+	_selected_ship.crew = _selected_workers.duplicate()
 	_selected_ship.last_crew = _selected_workers.duplicate()
 
 	if _selected_ship.is_idle_remote:
-		GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_workers)
+		GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid)
 	else:
-		GameState.start_mission(_selected_ship, _selected_asteroid, _selected_workers)
+		GameState.start_mission(_selected_ship, _selected_asteroid)
 	_cancel_preview()
 	dispatch_popup.visible = false
 	_mark_dirty()

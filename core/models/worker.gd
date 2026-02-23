@@ -6,9 +6,9 @@ extends Resource
 @export var engineer_skill: float = 0.0 # 0.0–1.5, reduces wear/breakdowns
 @export var mining_skill: float = 0.0   # 0.0–1.5, affects ore output
 @export var wage: int = 100      # cost per payroll interval (per game-day)
-@export var assigned_mission: Mission = null
-@export var assigned_trade_mission: TradeMission = null
-@export var assigned_station_ship: Ship = null  # Set when crew on a stationed ship
+var assigned_ship: Ship = null  # The ship this worker belongs to (persistent, not per-mission)
+var assigned_mission: Mission = null
+var assigned_trade_mission: TradeMission = null
 @export var fatigue: float = 0.0           # 0–100, accumulates while on mission
 @export var days_deployed: float = 0.0     # Game-days away from a station
 @export var is_injured: bool = false       # Set by breakdowns, combat
@@ -34,7 +34,7 @@ var skill: float:
 
 var is_available: bool:
 	get:
-		return assigned_mission == null and assigned_trade_mission == null and assigned_station_ship == null and assigned_mining_unit == null and leave_status == 0
+		return assigned_ship == null and assigned_mining_unit == null and leave_status == 0
 
 var days_at_company: float:
 	get: return (GameState.total_ticks - hired_at) / 86400.0

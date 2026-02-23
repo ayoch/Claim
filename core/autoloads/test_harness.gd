@@ -423,9 +423,10 @@ func _send_docked_ship(ship: Ship) -> void:
 	# Priority 2: collect ore from stockpiles
 	var best_collect_asteroid: AsteroidData = _find_best_stockpile_asteroid(ship)
 	if best_collect_asteroid != null:
-		GameState.start_collect_mission(ship, best_collect_asteroid, crew)
-		missions_started += 1
+		ship.crew = crew
 		ship.last_crew = crew.duplicate()
+		GameState.start_collect_mission(ship, best_collect_asteroid)
+		missions_started += 1
 		return
 
 	# Priority 3: trade stockpile, or mine
@@ -501,15 +502,17 @@ func _try_deploy_units(ship: Ship, crew: Array[Worker], available: Array[Worker]
 		return false
 
 	_refuel_ship(ship)
-	GameState.start_deploy_mission(ship, asteroid, crew, units_to_deploy, deploy_workers)
+	ship.crew = crew
 	ship.last_crew = crew.duplicate()
+	GameState.start_deploy_mission(ship, asteroid, units_to_deploy, deploy_workers)
 	return true
 
 func _send_mining_mission(ship: Ship, crew: Array[Worker]) -> void:
 	var asteroid: AsteroidData = _pick_good_asteroid(ship)
 	if asteroid == null:
 		return
-	GameState.start_mission(ship, asteroid, crew)
+	ship.crew = crew
+	GameState.start_mission(ship, asteroid)
 
 func _send_trade_mission(ship: Ship, crew: Array[Worker]) -> void:
 	if GameState.colonies.is_empty():
@@ -530,7 +533,8 @@ func _send_trade_mission(ship: Ship, crew: Array[Worker]) -> void:
 	if cargo_to_load.is_empty():
 		_send_mining_mission(ship, crew)
 		return
-	GameState.start_trade_mission(ship, colony, crew, cargo_to_load)
+	ship.crew = crew
+	GameState.start_trade_mission(ship, colony, cargo_to_load)
 
 func _handle_idle_remote(ship: Ship) -> void:
 	# Damaged or low fuel — head home for repair/refuel
@@ -559,7 +563,8 @@ func _handle_idle_remote(ship: Ship) -> void:
 				for i in range(mini(ship.min_crew, avail.size())):
 					crew.append(avail[i])
 				if crew.size() >= ship.min_crew or ship.min_crew == 0:
-					GameState.dispatch_idle_ship_trade(ship, nearby_colony, crew, cargo_to_load)
+					ship.crew = crew
+					GameState.dispatch_idle_ship_trade(ship, nearby_colony, cargo_to_load)
 					return
 		GameState.order_return_to_earth(ship)
 		return
@@ -579,7 +584,8 @@ func _handle_idle_remote(ship: Ship) -> void:
 				var collect_crew: Array[Worker] = []
 				for i in range(ship.min_crew):
 					collect_crew.append(collect_available[i])
-				GameState.start_collect_mission(ship, idle_asteroid, collect_crew)
+				ship.crew = collect_crew
+				GameState.start_collect_mission(ship, idle_asteroid)
 				return
 
 	# If we have available crew, send to a new asteroid from here
@@ -590,7 +596,8 @@ func _handle_idle_remote(ship: Ship) -> void:
 			crew.append(available[i])
 		var asteroid: AsteroidData = _pick_good_asteroid(ship)
 		if asteroid:
-			GameState.dispatch_idle_ship(ship, asteroid, crew)
+			ship.crew = crew
+			GameState.dispatch_idle_ship(ship, asteroid)
 			return
 
 	# No crew and no cargo — head home
@@ -648,7 +655,8 @@ func _queue_next_missions() -> void:
 				if next_asteroid != null:
 					var crew := ship.last_crew.duplicate() if not ship.last_crew.is_empty() else _get_crew_for_ship(ship)
 					if crew.size() >= ship.min_crew:
-						ship.queue_mission(next_asteroid, crew, Mission.TransitMode.BRACHISTOCHRONE)
+						ship.crew = crew
+						ship.queue_mission(next_asteroid, Mission.TransitMode.BRACHISTOCHRONE)
 						missions_queued += 1
 
 		# Queue for ships idle at remote destinations
@@ -658,7 +666,8 @@ func _queue_next_missions() -> void:
 				if next_asteroid != null:
 					var crew := _get_crew_for_ship(ship)
 					if crew.size() >= ship.min_crew:
-						ship.queue_mission(next_asteroid, crew, Mission.TransitMode.BRACHISTOCHRONE)
+						ship.crew = crew
+						ship.queue_mission(next_asteroid, Mission.TransitMode.BRACHISTOCHRONE)
 						missions_queued += 1
 
 func _get_crew_for_ship(ship: Ship) -> Array[Worker]:

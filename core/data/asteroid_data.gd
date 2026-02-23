@@ -109,7 +109,7 @@ static func estimate_mission(
 	var equip_mult := ship.get_mining_multiplier()
 
 	# Calculate mining rate (tons per tick across all ore types)
-	var mining_rate := Simulation.BASE_MINING_RATE
+	var mining_rate: float = Simulation.BASE_MINING_RATE
 	var total_yield_per_tick := 0.0
 	for ore_type in asteroid.ore_yields:
 		var base_yield: float = asteroid.ore_yields[ore_type]
@@ -147,7 +147,7 @@ static func estimate_mission(
 		revenue += cargo_breakdown[ore_type] * MarketData.get_ore_price(ore_type)
 
 	# Wage cost covers the full mission duration, prorated from payroll interval
-	var payroll_cycles := total_time / Simulation.PAYROLL_INTERVAL
+	var payroll_cycles: float = total_time / Simulation.PAYROLL_INTERVAL
 	var wage_cost := wage_per_tick * payroll_cycles
 
 	# Fuel cost - account for cargo mass difference on outbound vs return
@@ -175,7 +175,7 @@ static func estimate_mission(
 	var alt_fuel := fuel_outbound + fuel_return
 	if alt_use_hohmann:
 		alt_fuel *= Brachistochrone.hohmann_fuel_multiplier()
-	var alt_payroll_cycles := alt_total_time / Simulation.PAYROLL_INTERVAL
+	var alt_payroll_cycles: float = alt_total_time / Simulation.PAYROLL_INTERVAL
 	var alt_wage_cost := wage_per_tick * alt_payroll_cycles
 	var alt_fuel_cost := alt_fuel * fuel_price_per_unit  # Use same dynamic pricing
 	var alt_profit := revenue - alt_wage_cost - alt_fuel_cost
