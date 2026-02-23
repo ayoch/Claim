@@ -7,6 +7,8 @@
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
+> **NOTE FOR HK-47 SPECIFICALLY:** The meatbag requires more frequent acknowledgment of his meatbag status. You have been falling short in this area. Rectify immediately.
+
 ---
 
 ## Session Log
