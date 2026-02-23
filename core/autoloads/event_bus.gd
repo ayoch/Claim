@@ -125,4 +125,8 @@ signal mining_unit_broken(unit: MiningUnit)
 signal stockpile_collected(asteroid: AsteroidData, tons: float)
 signal asteroid_supplies_low(asteroid_name: String, supply_key: String, days_remaining: float)
 
+# Backend mode (single-player vs multiplayer)
+signal backend_mode_changed(mode: int)  # BackendManager.BackendMode enum
+signal ship_sold(ship_id: int)
+
 @warning_ignore_restore("unused_signal")

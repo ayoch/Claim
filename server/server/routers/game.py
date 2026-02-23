@@ -1,6 +1,5 @@
-from __future__ import annotations
 import math
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import get_current_player
@@ -11,6 +10,7 @@ from server.models.mission import Mission, STATUS_TRANSIT_OUT
 from server.models.player import Player
 from server.models.ship import Ship, SHIP_CLASS_STATS
 from server.models.worker import Worker
+from server.rate_limit import limiter
 from server.schemas.game import (
     AsteroidOut, BuyShipRequest, ColonyOut, DispatchRequest,
     GameState, HireRequest, MissionOut, ShipOut, WorkerOut,
@@ -56,7 +56,9 @@ async def get_state(
     )
 
 @router.post("/dispatch", response_model=MissionOut, status_code=status.HTTP_201_CREATED)
+@limiter.limit("20/minute")  # 20 mission dispatches per minute
 async def dispatch(
+    request: Request,
     req: DispatchRequest,
     player: Player = Depends(get_current_player),
     db: AsyncSession = Depends(get_db),
@@ -121,7 +123,9 @@ async def dispatch(
     return mission
 
 @router.post("/hire", status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")  # 10 worker hires per minute
 async def hire(
+    request: Request,
     req: HireRequest,
     player: Player = Depends(get_current_player),
     db: AsyncSession = Depends(get_db),
@@ -141,7 +145,9 @@ async def hire(
 
 
 @router.post("/fire/{worker_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")  # 10 worker fires per minute
 async def fire(
+    request: Request,
     worker_id: int,
     player: Player = Depends(get_current_player),
     db: AsyncSession = Depends(get_db),
@@ -160,7 +166,9 @@ async def fire(
     await db.commit()
 
 @router.post("/buy-ship", response_model=ShipOut, status_code=status.HTTP_201_CREATED)
+@limiter.limit("5/minute")  # 5 ship purchases per minute
 async def buy_ship(
+    request: Request,
     req: BuyShipRequest,
     player: Player = Depends(get_current_player),
     db: AsyncSession = Depends(get_db),
@@ -202,7 +210,9 @@ async def buy_ship(
 
 
 @router.post("/policies", response_model=dict)
+@limiter.limit("20/minute")  # 20 policy updates per minute
 async def update_policies(
+    request: Request,
     payload: PolicyUpdate,
     player: Player = Depends(get_current_player),
     db: AsyncSession = Depends(get_db),

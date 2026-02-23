@@ -1,4 +1,3 @@
-from __future__ import annotations
 import asyncio
 import json
 import logging
@@ -13,9 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _sse_line(event: dict) -> str:
-    return "data: " + json.dumps(event) + "
-
-"
+    return "data: " + json.dumps(event) + "\n\n"
 
 
 @router.get("/stream")
@@ -34,9 +31,7 @@ async def stream_events(player: Player = Depends(get_current_player)):
                     if player_id is None or player_id == player.id:
                         yield _sse_line(event)
                 except asyncio.TimeoutError:
-                    yield ": keepalive
-
-"
+                    yield ": keepalive\n\n"
                 except asyncio.CancelledError:
                     break
         except Exception as exc:

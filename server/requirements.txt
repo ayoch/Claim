@@ -6,7 +6,9 @@ alembic==1.14.0
 pydantic==2.9.2
 pydantic-settings==2.6.1
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+passlib==1.7.4
+bcrypt==4.1.3  # 5.0+ breaks passlib compatibility
 python-dotenv==1.0.1
 httpx==0.27.2
 python-multipart==0.0.12
+slowapi==0.1.9

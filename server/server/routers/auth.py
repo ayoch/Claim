@@ -1,19 +1,20 @@
-﻿from __future__ import annotations
-from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+﻿from datetime import timedelta
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import create_access_token, get_current_player, hash_password, verify_password
 from server.database import get_db
 from server.models.player import Player
+from server.rate_limit import limiter
 from server.schemas.player import PlayerCreate, PlayerOut, Token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=PlayerOut, status_code=status.HTTP_201_CREATED)
-async def register(payload: PlayerCreate, db: AsyncSession = Depends(get_db)):
+@limiter.limit("5/hour")  # Strict limit for account creation
+async def register(payload: PlayerCreate, request: Request, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Player).where(Player.username == payload.username))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Username already taken")
@@ -28,7 +29,8 @@ async def register(payload: PlayerCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-async def login(form: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")  # Prevent brute force attacks
+async def login(form: OAuth2PasswordRequestForm = Depends(), request: Request = None, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Player).where(Player.username == form.username.lower()))
     player = result.scalar_one_or_none()
     if not player or not verify_password(form.password, player.password_hash):
