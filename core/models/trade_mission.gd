@@ -16,7 +16,6 @@ enum TransitMode {
 @export var status: Status = Status.TRANSIT_TO_COLONY
 @export var ship: Ship = null
 @export var colony: Colony = null
-@export var workers: Array[Worker] = []
 @export var cargo: Dictionary = {}       # OreType -> tons (loaded at dispatch)
 @export var transit_time: float = 0.0    # one-way transit in ticks
 @export var elapsed_ticks: float = 0.0

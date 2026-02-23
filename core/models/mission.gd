@@ -39,7 +39,6 @@ enum TransitMode {
 @export var mission_type: int = MissionType.MINING
 @export var status: Status = Status.TRANSIT_OUT
 @export var ship: Ship = null
-@export var workers: Array[Worker] = []
 @export var asteroid: AsteroidData = null
 @export var transit_time: float = 0.0     # ticks for one-way transit
 @export var elapsed_ticks: float = 0.0    # ticks elapsed in current phase

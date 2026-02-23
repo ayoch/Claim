@@ -998,10 +998,9 @@ func _validate_missions() -> void:
 			continue
 		if mission.ship not in GameState.ships:
 			_error("Mission ship '%s' not in GameState.ships" % mission.ship.ship_name)
-		# Workers in mission should have this as their assigned_mission
-		# Skip IDLE_AT_DESTINATION — workers are intentionally freed there but still in mission.workers
+		# Workers on the ship should have this mission as their assigned_mission
 		if mission.status != Mission.Status.IDLE_AT_DESTINATION:
-			for w in mission.workers:
+			for w in mission.ship.crew:
 				if w.assigned_mission != mission and w.assigned_mission != null:
 					_error("Mission worker '%s' assigned_mission mismatch" % w.worker_name)
 		# Deploy missions: units in transit must not appear in inventory or deployed list
