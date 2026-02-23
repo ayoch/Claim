@@ -149,6 +149,7 @@ func _refresh_sell() -> void:
 		if trend_color != Color.WHITE:
 			info.add_theme_color_override("font_color", trend_color)
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info.clip_text = true
 		hbox.add_child(info)
 
 		var btn := Button.new()

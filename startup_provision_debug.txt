@@ -1,0 +1,8 @@
+=== PROVISIONING STARTER SHIPS ===
+Number of ships: 6
+Ship Known Issue: min_crew=4, food=336.0 kg
+Ship Headstrong in the Gale: min_crew=4, food=336.0 kg
+Ship Salt and Tarnish: min_crew=4, food=336.0 kg
+Ship Faith Like a Candle: min_crew=3, food=252.0 kg
+Ship Searing Epiphany: min_crew=3, food=252.0 kg
+Ship Modest Ambitions: min_crew=6, food=504.0 kg

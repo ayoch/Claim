@@ -43,6 +43,12 @@ const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at co
 # Supply cargo (shared cargo capacity with ore)
 @export var supplies: Dictionary = {}            # "repair_parts": float, "food": float
 
+# Grace period tracking - when each supply type was depleted (game ticks)
+@export var food_depleted_at: float = -1.0       # -1 = not depleted
+@export var water_depleted_at: float = -1.0
+@export var oxygen_depleted_at: float = -1.0
+@export var last_supply_loyalty_penalty: float = 0.0  # Last time loyalty was penalized for supply shortage
+
 # Life support tracking (in game-seconds remaining)
 @export var life_support_remaining: float = 2592000.0  # 30 days default
 
@@ -169,6 +175,10 @@ func get_base_mass() -> float:
 	return raw_mass * mass_multiplier
 
 func get_effective_thrust() -> float:
+	# Broken down ships have no thrust
+	if is_derelict and derelict_reason == "breakdown":
+		return 0.0
+
 	var max_thrust := max_thrust_g
 	for upgrade in upgrades:
 		max_thrust += upgrade.thrust_bonus

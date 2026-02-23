@@ -6,8 +6,6 @@ extends MarginContainer
 @onready var dispatch_popup: PanelContainer = %DispatchPopup
 @onready var dispatch_content: VBoxContainer = %DispatchContent
 @onready var dispatch_buttons: HBoxContainer = %DispatchButtons
-@onready var buy_ship_popup: PanelContainer = %BuyShipPopup
-@onready var buy_ship_content: VBoxContainer = %BuyShipContent
 @onready var _ships_scroll: ScrollContainer = %ShipsList.get_parent()
 @onready var _tab_title: Label = $VBox/Title
 
@@ -31,6 +29,7 @@ var _location_labels: Dictionary = {}
 var _cargo_labels: Dictionary = {}  # Ship -> Label for cargo display
 var _crew_expanded: Dictionary = {}  # Ship -> bool, persists across rebuilds
 var _policy_overrides_expanded: Dictionary = {}  # Ship -> bool, persists across rebuilds
+var _ship_stats_expanded: Dictionary = {}  # Ship -> bool, persists across rebuilds
 const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catch up
 var _dispatch_refresh_timer: float = 0.0
 const DISPATCH_REFRESH_INTERVAL: float = 2.0  # Refresh dispatch popup every 2 seconds
@@ -61,7 +60,6 @@ static func _free_children(container: Node) -> void:
 func _ready() -> void:
 	_cancel_preview()
 	_hide_dispatch()
-	_hide_buy_ship()
 	EventBus.ship_purchased.connect(func(_s: Ship, _c: int) -> void: _mark_dirty())
 	EventBus.mission_started.connect(func(_m: Mission) -> void: _mark_dirty())
 	EventBus.mission_completed.connect(func(_m: Mission) -> void: _mark_dirty())
@@ -103,7 +101,6 @@ func _mark_dirty() -> void:
 
 func _show_dispatch() -> void:
 	dispatch_popup.visible = true
-	buy_ship_popup.visible = false
 	_ships_scroll.visible = false
 	_tab_title.visible = false
 
@@ -133,18 +130,6 @@ func _set_dispatch_buttons(buttons: Array) -> void:
 
 func _clear_dispatch_buttons() -> void:
 	_free_children(dispatch_buttons)
-
-func _show_buy_ship() -> void:
-	buy_ship_popup.visible = true
-	dispatch_popup.visible = false
-	_ships_scroll.visible = false
-	_tab_title.visible = false
-	_build_buy_ship_ui()
-
-func _hide_buy_ship() -> void:
-	buy_ship_popup.visible = false
-	_ships_scroll.visible = true
-	_tab_title.visible = true
 
 func _process(delta: float) -> void:
 	# Smooth LERP for progress bars
@@ -464,6 +449,43 @@ func _rebuild_ships() -> void:
 		if _derelict_actions:
 			vbox.add_child(_derelict_actions)
 
+		# === SHIP STATS (Collapsible) ===
+		var stats_expanded: bool = _ship_stats_expanded.get(ship, false)  # Default collapsed
+
+		var stats_header_btn := Button.new()
+		stats_header_btn.text = "[Stats] ▶" if not stats_expanded else "[Stats] ▼"
+		stats_header_btn.flat = true
+		stats_header_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		stats_header_btn.add_theme_color_override("font_color", Color(0.5, 0.7, 0.9))
+		stats_header_btn.add_theme_font_size_override("font_size", 13)
+		stats_header_btn.custom_minimum_size = Vector2(0, 28)
+		vbox.add_child(stats_header_btn)
+
+		var stats_container := VBoxContainer.new()
+		stats_container.visible = stats_expanded
+		stats_container.add_theme_constant_override("separation", 4)
+
+		var stats_grid := GridContainer.new()
+		stats_grid.columns = 2
+		stats_grid.add_theme_constant_override("h_separation", 16)
+		stats_grid.add_theme_constant_override("v_separation", 4)
+
+		# Add stat rows
+		_add_fleet_stat_row(stats_grid, "Thrust:", "%.2fg" % ship.max_thrust_g, ship.get_effective_thrust())
+		_add_fleet_stat_row(stats_grid, "Fuel:", "%.0f" % ship.fuel_capacity, ship.get_effective_fuel_capacity())
+		_add_fleet_stat_row(stats_grid, "Cargo:", "%.0ft" % ship.cargo_capacity, ship.get_effective_cargo_capacity())
+		_add_fleet_stat_row(stats_grid, "Volume:", "%.0fm³" % ship.cargo_volume, ship.get_effective_cargo_volume())
+		_add_fleet_stat_row(stats_grid, "Min Crew:", "%d" % ship.min_crew, ship.min_crew)
+
+		stats_container.add_child(stats_grid)
+		vbox.add_child(stats_container)
+
+		# Toggle button functionality
+		stats_header_btn.pressed.connect(func() -> void:
+			_ship_stats_expanded[ship] = not _ship_stats_expanded.get(ship, false)
+			_mark_dirty()
+		)
+
 		# === LOCATION & DETAILS ===
 		var loc_label := Label.new()
 		loc_label.text = _get_location_text(ship)
@@ -501,17 +523,21 @@ func _rebuild_ships() -> void:
 		if _sup_mass > 0.01:
 			var sup_label := Label.new()
 			var sup_lines: Array[String] = ["Supplies (%.1ft):" % _sup_mass]
-			var crew_count := maxi(ship.last_crew.size(), 1)
-			var _food_units: float = ship.supplies.get("food", 0.0)
-			if _food_units > 0.01:
-				var food_days := _food_units / (crew_count * 0.028)
-				sup_lines.append("  Food: %.1f crates (~%.0fd for %d crew)" % [_food_units, food_days, crew_count])
+			var crew_count := maxi(ship.crew.size(), 1)
+			var _food_kg: float = ship.supplies.get("food", 0.0)
+			if _food_kg > 0.01:
+				var food_days := _food_kg / (crew_count * 2.8)
+				sup_lines.append("  Food: %.1f kg (~%.1fd for %d crew)" % [_food_kg, food_days, crew_count])
 			var _water_units: float = ship.supplies.get("water", 0.0)
 			if _water_units > 0.01:
-				sup_lines.append("  Water: %.1f tanks" % _water_units)
+				# 0.25 L/person/day, 1 tank = 20 L → days = tanks * 80 / crew
+				var water_days := _water_units * 80.0 / crew_count
+				sup_lines.append("  Water: %.1f tanks (~%.1fd for %d crew)" % [_water_units, water_days, crew_count])
 			var _o2_units: float = ship.supplies.get("oxygen", 0.0)
 			if _o2_units > 0.01:
-				sup_lines.append("  O2: %.1f canisters" % _o2_units)
+				# 0.05 kg/person/day, 1 canister = 2 kg → days = canisters * 40 / crew
+				var o2_days := _o2_units * 40.0 / crew_count
+				sup_lines.append("  O2: %.1f canisters (~%.1fd for %d crew)" % [_o2_units, o2_days, crew_count])
 			var _parts_units: float = ship.supplies.get("repair_parts", 0.0)
 			if _parts_units > 0.01:
 				sup_lines.append("  Repair Parts: %.0f kits" % _parts_units)
@@ -765,7 +791,7 @@ func _rebuild_ships() -> void:
 					dest_name = ship.queued_destination.asteroid_name
 				elif ship.queued_destination is Colony:
 					dest_name = ship.queued_destination.colony_name
-				queued_info.text = "Queued: %s (%d crew)" % [dest_name, ship.queued_workers.size()]
+				queued_info.text = "Queued: %s (%d crew)" % [dest_name, ship.crew.size()]
 				queued_info.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 				queued_info.add_theme_font_size_override("font_size", 14)
 				vbox.add_child(queued_info)
@@ -895,14 +921,7 @@ func _rebuild_ships() -> void:
 			vbox.add_child(policy_grid)
 
 		# Crew toggle button + inline crew panel
-		var ship_crew: Array[Worker] = []
-		for w in GameState.workers:
-			if ship.current_mission != null and w.assigned_mission == ship.current_mission:
-				ship_crew.append(w)
-			elif ship.current_trade_mission != null and w.assigned_trade_mission == ship.current_trade_mission:
-				ship_crew.append(w)
-			elif w.assigned_ship == ship:
-				ship_crew.append(w)
+		var ship_crew: Array[Worker] = ship.crew.duplicate()
 
 		var crew_panel := VBoxContainer.new()
 		crew_panel.add_theme_constant_override("separation", 3)
@@ -963,20 +982,6 @@ func _rebuild_ships() -> void:
 		panel.add_child(vbox)
 		ships_list.add_child(panel)
 
-	# Add "Buy Ship" button at the end
-	var buy_ship_panel := PanelContainer.new()
-	buy_ship_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var buy_ship_vbox := VBoxContainer.new()
-	buy_ship_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	var buy_ship_btn := Button.new()
-	buy_ship_btn.text = "Buy New Ship"
-	buy_ship_btn.custom_minimum_size = Vector2(0, 56)
-	buy_ship_btn.pressed.connect(_show_buy_ship)
-	buy_ship_vbox.add_child(buy_ship_btn)
-
-	buy_ship_panel.add_child(buy_ship_vbox)
-	ships_list.add_child(buy_ship_panel)
 
 # Include all the helper functions from fleet_tab.gd
 func _get_location_text(ship: Ship) -> String:
@@ -2249,63 +2254,73 @@ func _show_worker_selection() -> void:
 	dist_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 	dispatch_content.add_child(dist_label)
 
-	# Mission type selection (only show options when relevant)
-	var has_deploy_units := not GameState.mining_unit_inventory.is_empty()
-	var has_stockpile := not GameState.get_ore_stockpile(_selected_asteroid.asteroid_name).is_empty()
-	if has_deploy_units or has_stockpile:
-		var type_sep := HSeparator.new()
-		dispatch_content.add_child(type_sep)
-		var type_label := Label.new()
-		type_label.text = "Mission Type:"
-		type_label.add_theme_font_size_override("font_size", 16)
-		type_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
-		dispatch_content.add_child(type_label)
-		var type_row := HFlowContainer.new()
-		type_row.add_theme_constant_override("h_separation", 8)
+	# Mission type selection - always show
+	var type_sep := HSeparator.new()
+	dispatch_content.add_child(type_sep)
+	var type_label := Label.new()
+	type_label.text = "Mission Type:"
+	type_label.add_theme_font_size_override("font_size", 16)
+	type_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
+	dispatch_content.add_child(type_label)
+	var type_row := HFlowContainer.new()
+	type_row.add_theme_constant_override("h_separation", 8)
 
-		var mine_btn := Button.new()
-		mine_btn.text = "Mine"
-		mine_btn.toggle_mode = true
-		mine_btn.button_pressed = (_selected_mission_type == Mission.MissionType.MINING)
-		mine_btn.custom_minimum_size = Vector2(0, 36)
-		mine_btn.pressed.connect(func() -> void:
-			_selected_mission_type = Mission.MissionType.MINING
+	var mine_btn := Button.new()
+	mine_btn.text = "Mine"
+	mine_btn.toggle_mode = true
+	mine_btn.button_pressed = (_selected_mission_type == Mission.MissionType.MINING)
+	mine_btn.custom_minimum_size = Vector2(0, 36)
+	mine_btn.pressed.connect(func() -> void:
+		_selected_mission_type = Mission.MissionType.MINING
+		_show_worker_selection()
+	)
+	type_row.add_child(mine_btn)
+
+	var reposition_btn := Button.new()
+	reposition_btn.text = "Reposition"
+	reposition_btn.toggle_mode = true
+	reposition_btn.button_pressed = (_selected_mission_type == Mission.MissionType.REPOSITION)
+	reposition_btn.custom_minimum_size = Vector2(0, 36)
+	reposition_btn.pressed.connect(func() -> void:
+		_selected_mission_type = Mission.MissionType.REPOSITION
+		_show_worker_selection()
+	)
+	type_row.add_child(reposition_btn)
+
+	var has_deploy_units := not GameState.mining_unit_inventory.is_empty()
+	if has_deploy_units:
+		var slots := _selected_asteroid.get_max_mining_slots()
+		var occupied := GameState.get_occupied_slots(_selected_asteroid.asteroid_name)
+		var deploy_btn := Button.new()
+		deploy_btn.text = "Deploy Units (%d/%d slots)" % [occupied, slots]
+		deploy_btn.toggle_mode = true
+		deploy_btn.button_pressed = (_selected_mission_type == Mission.MissionType.DEPLOY_UNIT)
+		deploy_btn.custom_minimum_size = Vector2(0, 36)
+		deploy_btn.disabled = occupied >= slots
+		deploy_btn.pressed.connect(func() -> void:
+			_selected_mission_type = Mission.MissionType.DEPLOY_UNIT
 			_show_worker_selection()
 		)
-		type_row.add_child(mine_btn)
+		type_row.add_child(deploy_btn)
 
-		if has_deploy_units:
-			var slots := _selected_asteroid.get_max_mining_slots()
-			var occupied := GameState.get_occupied_slots(_selected_asteroid.asteroid_name)
-			var deploy_btn := Button.new()
-			deploy_btn.text = "Deploy Units (%d/%d slots)" % [occupied, slots]
-			deploy_btn.toggle_mode = true
-			deploy_btn.button_pressed = (_selected_mission_type == Mission.MissionType.DEPLOY_UNIT)
-			deploy_btn.custom_minimum_size = Vector2(0, 36)
-			deploy_btn.disabled = occupied >= slots
-			deploy_btn.pressed.connect(func() -> void:
-				_selected_mission_type = Mission.MissionType.DEPLOY_UNIT
-				_show_worker_selection()
-			)
-			type_row.add_child(deploy_btn)
+	var has_stockpile := not GameState.get_ore_stockpile(_selected_asteroid.asteroid_name).is_empty()
+	if has_stockpile:
+		var pile := GameState.get_ore_stockpile(_selected_asteroid.asteroid_name)
+		var total_stockpile := 0.0
+		for _ot in pile:
+			total_stockpile += pile[_ot]
+		var collect_btn := Button.new()
+		collect_btn.text = "Collect Ore (%.1ft)" % total_stockpile
+		collect_btn.toggle_mode = true
+		collect_btn.button_pressed = (_selected_mission_type == Mission.MissionType.COLLECT_ORE)
+		collect_btn.custom_minimum_size = Vector2(0, 36)
+		collect_btn.pressed.connect(func() -> void:
+			_selected_mission_type = Mission.MissionType.COLLECT_ORE
+			_show_worker_selection()
+		)
+		type_row.add_child(collect_btn)
 
-		if has_stockpile:
-			var pile := GameState.get_ore_stockpile(_selected_asteroid.asteroid_name)
-			var total_stockpile := 0.0
-			for _ot in pile:
-				total_stockpile += pile[_ot]
-			var collect_btn := Button.new()
-			collect_btn.text = "Collect Ore (%.1ft)" % total_stockpile
-			collect_btn.toggle_mode = true
-			collect_btn.button_pressed = (_selected_mission_type == Mission.MissionType.COLLECT_ORE)
-			collect_btn.custom_minimum_size = Vector2(0, 36)
-			collect_btn.pressed.connect(func() -> void:
-				_selected_mission_type = Mission.MissionType.COLLECT_ORE
-				_show_worker_selection()
-			)
-			type_row.add_child(collect_btn)
-
-		dispatch_content.add_child(type_row)
+	dispatch_content.add_child(type_row)
 
 	# Deploy unit selection (when Deploy Units is selected)
 	if _selected_mission_type == Mission.MissionType.DEPLOY_UNIT:
@@ -2722,7 +2737,7 @@ func _show_worker_selection() -> void:
 	var next_btn_text: String
 	var next_btn_cb: Callable
 	if _is_planning_mode:
-		next_btn_text = "Queue Mission"
+		next_btn_text = "Queue Destination"
 		next_btn_cb = _queue_mission
 	elif _is_redispatch_mode:
 		next_btn_text = "Confirm Redispatch"
@@ -3046,7 +3061,7 @@ func _show_dispatch_confirmation(message: String) -> void:
 	var buttons: Array[Dictionary] = []
 	if _is_planning_mode:
 		var _queue_cb := func() -> void: _queue_mission()
-		buttons.append({"text": "Confirm Plan", "callback": _queue_cb})
+		buttons.append({"text": "Queue Destination", "callback": _queue_cb})
 	elif _is_redispatch_mode:
 		var _redispatch_cb := func() -> void: _abort_and_dispatch()
 		buttons.append({"text": "Confirm Redispatch", "color": Color(0.95, 0.7, 0.3), "callback": _redispatch_cb})
@@ -3116,6 +3131,10 @@ func _execute_dispatch() -> void:
 			GameState.start_deploy_mission(_selected_ship, _selected_asteroid, _selected_deploy_units, _selected_deploy_workers, _selected_transit_mode, _selected_slingshot_route)
 		Mission.MissionType.COLLECT_ORE:
 			GameState.start_collect_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
+		Mission.MissionType.REPOSITION:
+			var mission := GameState.start_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
+			if mission:
+				mission.mission_type = Mission.MissionType.REPOSITION
 		_:
 			if _selected_ship.is_idle_remote:
 				GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
@@ -3372,10 +3391,10 @@ func _show_fleet_rescue_dispatch(target_ship: Ship) -> void:
 	# Supplies to send
 	var food_on_ferry: float = ferry.supplies.get("food", 0.0)
 	var parts_on_ferry: float = ferry.supplies.get("repair_parts", 0.0)
-	var target_crew_est := maxi(target_ship.last_crew.size(), 1)
+	var target_crew_est := maxi(target_ship.crew.size(), 1)
 
 	var sup_label := Label.new()
-	sup_label.text = "Ferry supplies available: Food %.0f units, Repair Parts %.0f units" % [food_on_ferry, parts_on_ferry]
+	sup_label.text = "Ferry supplies available: Food %.0f kg, Repair Parts %.0f units" % [food_on_ferry, parts_on_ferry]
 	sup_label.add_theme_color_override("font_color", Color(0.4, 0.85, 0.55))
 	sup_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dispatch_content.add_child(sup_label)
@@ -3392,17 +3411,17 @@ func _show_fleet_rescue_dispatch(target_ship: Ship) -> void:
 	food_spin.min_value = 0.0
 	food_spin.max_value = food_on_ferry
 	food_spin.step = 1.0
-	food_spin.value = minf(food_on_ferry, target_crew_est * 30 * 0.028)  # ~30 days default
+	food_spin.value = minf(food_on_ferry, target_crew_est * 30 * 2.8)  # ~30 days default (2.8 kg/crew/day)
 	food_spin.custom_minimum_size = Vector2(100, 0)
 	sup_grid.add_child(food_spin)
 	var food_est_lbl := Label.new()
 	food_est_lbl.add_theme_font_size_override("font_size", 12)
 	food_est_lbl.add_theme_color_override("font_color", Color(0.5, 0.8, 0.5))
 	food_spin.value_changed.connect(func(v: float) -> void:
-		var days_f := v / (target_crew_est * 0.028) if target_crew_est > 0 else 0.0
+		var days_f := v / (target_crew_est * 2.8) if target_crew_est > 0 else 0.0
 		food_est_lbl.text = "~%.0fd for %d crew" % [days_f, target_crew_est]
 	)
-	var init_food_days := food_spin.value / (target_crew_est * 0.028) if target_crew_est > 0 else 0.0
+	var init_food_days := food_spin.value / (target_crew_est * 2.8) if target_crew_est > 0 else 0.0
 	food_est_lbl.text = "~%.0fd for %d crew" % [init_food_days, target_crew_est]
 	sup_grid.add_child(food_est_lbl)
 
@@ -3575,6 +3594,28 @@ func _format_number(n: int) -> String:
 	if n < 0:
 		result = "-" + result
 	return result
+
+func _add_fleet_stat_row(grid: GridContainer, label_text: String, base_value: String, effective_value: float) -> void:
+	var label := Label.new()
+	label.text = label_text
+	label.clip_text = true
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	label.add_theme_font_size_override("font_size", 12)
+	grid.add_child(label)
+
+	var value := Label.new()
+	# Show effective value if different from base
+	if str(effective_value) != base_value:
+		value.text = "%s (base) → %.2f (effective)" % [base_value, effective_value]
+		value.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+	else:
+		value.text = base_value
+		value.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	value.clip_text = true
+	value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	value.add_theme_font_size_override("font_size", 12)
+	grid.add_child(value)
 
 func _calculate_colony_profit(colony: Colony) -> int:
 	# Calculate net profit for selling at this colony (revenue - fuel cost)
@@ -3887,112 +3928,4 @@ func _add_contract_fulfillment_ui(container: VBoxContainer, ship: Ship, contract
 	vbox.add_child(btn_row)
 	panel.add_child(vbox)
 	container.add_child(panel)
-
-func _build_buy_ship_ui() -> void:
 	# Clear existing content
-	_free_children(buy_ship_content)
-
-	# Header with title and close button
-	var header := HBoxContainer.new()
-	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-	var title := Label.new()
-	title.text = "BUY NEW SHIP"
-	title.add_theme_font_size_override("font_size", 20)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(title)
-
-	var close_btn := Button.new()
-	close_btn.text = "Close"
-	close_btn.custom_minimum_size = Vector2(0, 40)
-	close_btn.pressed.connect(_hide_buy_ship)
-	header.add_child(close_btn)
-
-	buy_ship_content.add_child(header)
-
-	var sep := HSeparator.new()
-	buy_ship_content.add_child(sep)
-
-	# Show current money
-	var money_label := Label.new()
-	money_label.text = "Available Funds: $%s" % _format_number(GameState.money)
-	money_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
-	money_label.add_theme_font_size_override("font_size", 16)
-	buy_ship_content.add_child(money_label)
-
-	buy_ship_content.add_child(HSeparator.new())
-
-	# Display each ship class
-	var ship_classes := [
-		ShipData.ShipClass.COURIER,
-		ShipData.ShipClass.PROSPECTOR,
-		ShipData.ShipClass.EXPLORER,
-		ShipData.ShipClass.HAULER,
-	]
-
-	for ship_class in ship_classes:
-		var panel := PanelContainer.new()
-		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-
-		var vbox := VBoxContainer.new()
-		vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		vbox.add_theme_constant_override("separation", 6)
-
-		# Ship class name and price
-		var class_header := HBoxContainer.new()
-		var class_label := Label.new()
-		class_label.text = ShipData.CLASS_NAMES[ship_class]
-		class_label.add_theme_font_size_override("font_size", 18)
-		class_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		class_header.add_child(class_label)
-
-		var price: int = ShipData.CLASS_PRICES[ship_class]
-		var price_label := Label.new()
-		price_label.text = "$%s" % _format_number(price)
-		price_label.add_theme_font_size_override("font_size", 18)
-		if GameState.money >= price:
-			price_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
-		else:
-			price_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
-		class_header.add_child(price_label)
-
-		vbox.add_child(class_header)
-
-		# Description
-		var desc := Label.new()
-		desc.text = ShipData.get_class_description(ship_class)
-		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		desc.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
-		vbox.add_child(desc)
-
-		# Specs
-		var stats: Dictionary = ShipData.CLASS_STATS[ship_class]
-		var specs := Label.new()
-		var spec_lines: Array[String] = []
-		spec_lines.append("Thrust: %.2fg" % stats["thrust_g"])
-		spec_lines.append("Cargo: %.0ft / %.0fm³" % [stats["cargo_capacity"], stats["cargo_volume"]])
-		spec_lines.append("Fuel: %.0f units" % stats["fuel_capacity"])
-		spec_lines.append("Min Crew: %d" % stats["min_crew"])
-		spec_lines.append("Equipment Slots: %d" % stats["max_equipment_slots"])
-		specs.text = " • ".join(spec_lines)
-		specs.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		specs.add_theme_color_override("font_color", Color(0.6, 0.8, 0.9))
-		vbox.add_child(specs)
-
-		# Purchase button
-		var purchase_btn := Button.new()
-		purchase_btn.text = "Purchase"
-		purchase_btn.custom_minimum_size = Vector2(0, 48)
-		purchase_btn.disabled = GameState.money < price
-
-		purchase_btn.pressed.connect(func() -> void:
-			var new_ship := GameState.purchase_ship(ship_class)
-			if new_ship:
-				_hide_buy_ship()
-				_mark_dirty()
-		)
-
-		vbox.add_child(purchase_btn)
-
-		panel.add_child(vbox)
-		buy_ship_content.add_child(panel)

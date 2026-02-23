@@ -24,11 +24,11 @@ const SUPPLY_INFO: Dictionary = {
 	SupplyType.FOOD_RATIONS: {
 		"name": "Food Rations",
 		"key": "food",
-		"unit_label": "crate",    # 1 crate = 100 kg
-		"cost_per_unit": 50,
-		"mass_per_unit": 0.1,     # tons (100 kg)
-		"volume_per_unit": 0.005, # m³ — compact rations
-		"description": "Feed deployed crews",
+		"unit_label": "kg",
+		"cost_per_unit": 0.5,     # $0.50 per kg
+		"mass_per_unit": 0.001,   # tons (1 kg)
+		"volume_per_unit": 0.00005, # m³ — compact rations
+		"description": "Feed deployed crews (~2.8 kg per crew per day)",
 	},
 	SupplyType.WATER: {
 		"name": "Water (recycled)",

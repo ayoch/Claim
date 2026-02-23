@@ -5,6 +5,8 @@ static func _free_children(container: Node) -> void:
 		container.get_child(i).queue_free()
 
 @onready var ships_list: VBoxContainer = %ShipsList
+@onready var buy_ship_popup: PanelContainer = %BuyShipPopup
+@onready var buy_ship_content: VBoxContainer = %BuyShipContent
 
 var _dirty: bool = false
 var _last_refresh_msec: int = 0
@@ -20,7 +22,9 @@ func _ready() -> void:
 	EventBus.mining_unit_purchased.connect(func(_u: MiningUnit) -> void: _dirty = true)
 	EventBus.mining_unit_deployed.connect(func(_u: MiningUnit, _a: AsteroidData) -> void: _dirty = true)
 	EventBus.mining_unit_recalled.connect(func(_u: MiningUnit) -> void: _dirty = true)
+	EventBus.ship_purchased.connect(func(_s: Ship, _c: int) -> void: _hide_buy_ship(); _dirty = true)
 	EventBus.tick.connect(_on_tick)
+	buy_ship_popup.visible = false
 	_refresh_all()
 
 func _on_tick(_dt: float) -> void:
@@ -187,6 +191,21 @@ func _refresh_all() -> void:
 		ship_panel.add_child(ship_vbox)
 		ships_list.add_child(ship_panel)
 
+	# Buy New Ship button
+	var buy_ship_panel := PanelContainer.new()
+	buy_ship_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var buy_ship_vbox := VBoxContainer.new()
+	buy_ship_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	buy_ship_vbox.add_theme_constant_override("separation", 8)
+	var buy_ship_btn := Button.new()
+	buy_ship_btn.text = "Buy New Ship"
+	buy_ship_btn.custom_minimum_size = Vector2(0, 56)
+	buy_ship_btn.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
+	buy_ship_btn.pressed.connect(_show_buy_ship)
+	buy_ship_vbox.add_child(buy_ship_btn)
+	buy_ship_panel.add_child(buy_ship_vbox)
+	ships_list.add_child(buy_ship_panel)
+
 	# Available upgrades to purchase
 	var purchase_sep := HSeparator.new()
 	ships_list.add_child(purchase_sep)
@@ -350,3 +369,119 @@ func _format_number(n: int) -> String:
 	if n < 0:
 		result = "-" + result
 	return result
+
+func _show_buy_ship() -> void:
+	buy_ship_popup.visible = true
+	_build_buy_ship_ui()
+
+func _hide_buy_ship() -> void:
+	buy_ship_popup.visible = false
+
+func _build_buy_ship_ui() -> void:
+	# Clear existing content
+	_free_children(buy_ship_content)
+
+	# Header with title and close button
+	var header := HBoxContainer.new()
+	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var title := Label.new()
+	title.text = "BUY NEW SHIP"
+	title.add_theme_font_size_override("font_size", 20)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(title)
+
+	var close_btn := Button.new()
+	close_btn.text = "Close"
+	close_btn.custom_minimum_size = Vector2(0, 40)
+	close_btn.pressed.connect(_hide_buy_ship)
+	header.add_child(close_btn)
+
+	buy_ship_content.add_child(header)
+
+	var sep := HSeparator.new()
+	buy_ship_content.add_child(sep)
+
+	# Show current money
+	var money_label := Label.new()
+	money_label.text = "Available Funds: $%s" % _format_number(GameState.money)
+	money_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
+	money_label.add_theme_font_size_override("font_size", 16)
+	buy_ship_content.add_child(money_label)
+
+	buy_ship_content.add_child(HSeparator.new())
+
+	# Display each ship class
+	var ship_classes := [
+		ShipData.ShipClass.COURIER,
+		ShipData.ShipClass.PROSPECTOR,
+		ShipData.ShipClass.EXPLORER,
+		ShipData.ShipClass.HAULER,
+	]
+
+	for ship_class in ship_classes:
+		var panel := PanelContainer.new()
+		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+		var vbox := VBoxContainer.new()
+		vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		vbox.add_theme_constant_override("separation", 6)
+
+		# Ship class name and price
+		var class_header := HBoxContainer.new()
+		var class_label := Label.new()
+		class_label.text = ShipData.CLASS_NAMES[ship_class]
+		class_label.add_theme_font_size_override("font_size", 18)
+		class_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		class_header.add_child(class_label)
+
+		var price: int = ShipData.CLASS_PRICES[ship_class]
+		var price_label := Label.new()
+		price_label.text = "$%s" % _format_number(price)
+		price_label.add_theme_font_size_override("font_size", 18)
+		if GameState.money >= price:
+			price_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
+		else:
+			price_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
+		class_header.add_child(price_label)
+
+		vbox.add_child(class_header)
+
+		# Description
+		var desc := Label.new()
+		desc.text = ShipData.get_class_description(ship_class)
+		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		desc.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
+		vbox.add_child(desc)
+
+		# Specs
+		var stats: Dictionary = ShipData.CLASS_STATS[ship_class]
+		var specs := Label.new()
+		var spec_lines: Array[String] = []
+		spec_lines.append("Thrust: %.2fg" % stats["thrust_g"])
+		spec_lines.append("Cargo: %.0ft / %.0fm³" % [stats["cargo_capacity"], stats["cargo_volume"]])
+		spec_lines.append("Fuel: %.0f units" % stats["fuel_capacity"])
+		spec_lines.append("Min Crew: %d" % stats["min_crew"])
+		spec_lines.append("Equipment Slots: %d" % stats["max_equipment_slots"])
+		specs.text = " • ".join(spec_lines)
+		specs.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		specs.add_theme_color_override("font_color", Color(0.6, 0.8, 0.9))
+		vbox.add_child(specs)
+
+		# Purchase button
+		var purchase_btn := Button.new()
+		purchase_btn.text = "Purchase"
+		purchase_btn.custom_minimum_size = Vector2(0, 48)
+		purchase_btn.disabled = GameState.money < price
+
+		purchase_btn.pressed.connect(func() -> void:
+			var new_ship := GameState.purchase_ship(ship_class)
+			if new_ship:
+				_hide_buy_ship()
+				_queue_refresh()
+		)
+
+		vbox.add_child(purchase_btn)
+
+		panel.add_child(vbox)
+		buy_ship_content.add_child(panel)

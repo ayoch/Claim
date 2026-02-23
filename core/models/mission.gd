@@ -9,6 +9,7 @@ enum MissionType {
 	PATROL,          # Watch area for threats, deter rivals
 	DEPLOY_UNIT,     # Deploy mining units to an asteroid
 	COLLECT_ORE,     # Collect stockpiled ore from an asteroid
+	REPOSITION,      # Move ship to location and leave idle
 }
 
 enum Status {
