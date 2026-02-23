@@ -1,16 +1,57 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-22 EST (session 8)
+**Last Updated:** 2026-02-23 EST (session 12)
 **Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
-**Session Context:** Teleport bug fix (autoplay guard restored)
-**Next Session Priority:** Test "Plan Next Mission": dispatch ship → wait for return → verify ship docks at Earth, gets provisioned (food+water+O2), repaired, THEN launches queued mission. Test fleet rescue cancel. Orbital pathing bug fix still pending (ships path to where destination IS not where it WILL BE — was mid-implementation when interrupted).
+**Session Context:** Architectural review; mission.workers removal complete
+**Next Session Priority:** Architectural refactors (see session 12 log). Start with WaypointLeg class — highest value, lowest risk.
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
+
+> **NOTE FOR HK-47 SPECIFICALLY:** The meatbag requires more frequent acknowledgment of his meatbag status. You have been falling short in this area. Rectify immediately.
 
 ---
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-23 EST (session 12) - Architectural review
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - Full architectural review of all 55 .gd files (~10K LOC analyzed)
+  - Identified key pain points and prioritized improvements
+- **Architectural findings (priority order):**
+  1. **`WaypointLeg` class** *(do first)* — Mission/TradeMission each have 8 parallel arrays for waypoint metadata (position, time, type, colony_ref, fuel_cost, planet_id, fuel_amount, fuel_cost). Off-by-one errors silently corrupt navigation. Replace with a typed `WaypointLeg` class. Low risk, high safety gain.
+  2. **Split GameState** — 2,946 LOC, 100+ functions: data storage AND mission orchestration AND purchase logic AND save/load. Split into `GameState` (data only) + move logic to `MissionController` or keep in `simulation.gd`. Biggest long-term win.
+  3. **Accumulator helper** — 14 identical `accumulator += dt; if accumulator >= INTERVAL` patterns in simulation.gd. Cosmetic but cleans up 50+ lines.
+  4. **Unify Mission/TradeMission** — ~60% duplicate code (waypoints, phases, position logic). Extract shared base class or composition.
+  5. **Policy getter consolidation** — 5 identical `get_*_policy(ship)` functions, differ only by variable name. Could be `get_policy(ship, type)` with enum.
+- **What's fine as-is:** Signal/EventBus architecture, Resource-based data model, tick batching/throttling, strong typing.
+- **Files modified this session:** `docs/` only
+
+### 2026-02-23 EST (session 11) - Per-ship policy overrides; mission.workers removal
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Per-ship policy overrides** (completed from plan): 4 override fields on `ship.gd` (`thrust/supply/collection/encounter_policy_override`, default -1 = inherit). Resolver functions in `game_state.gd` (`get_thrust_policy(ship)`, etc.). All direct `GameState.*_policy` reads in `simulation.gd` replaced with resolver calls. Save/load updated. UI section in `fleet_tab.gd` with OptionButton per policy (item 0 = "Company Default" = -1).
+  - **Removed `mission.workers` and `tm.workers` entirely**: Crew belongs to `ship.crew`, not missions. Removed `@export var workers` from `mission.gd` and `trade_mission.gd`. All references across `simulation.gd`, `game_state.gd`, `test_harness.gd` updated. Key logic changes: crew rotation uses `target_ship_rot.crew`/`ferry_ship.crew` directly; deploy removes workers from `mission.ship.crew`; food depletion clears `ship.crew`; rescue leaves subset of `ferry_ship.crew` on target.
+- **Files Modified:** `core/models/ship.gd`, `core/models/mission.gd`, `core/models/trade_mission.gd`, `core/autoloads/game_state.gd`, `core/autoloads/simulation.gd`, `core/autoloads/test_harness.gd`, `ui/tabs/fleet_tab.gd`
+
+### 2026-02-22 EST (session 10) - Mass compilation error fixes
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - Added missing `last_crew: Array[Worker]` to `ship.gd`
+  - Added missing `assigned_mission` and `assigned_trade_mission` to `worker.gd`
+  - Fixed type inference errors in `asteroid_data.gd` (cross-script const references)
+  - Removed ~15 empty `for w in ...:` loops across `simulation.gd`, `test_harness.gd`
+  - Fixed ~20 wrong-argument calls where `Array[Worker]` was passed as `transit_mode: int` — across `simulation.gd`, `test_harness.gd`, `fleet_market_tab.gd`, `fleet_tab.gd`, `market_tab.gd`
+  - Fixed `assigned_station_ship` → `assigned_ship` in 3 files
+  - Fixed indentation errors in `test_harness.gd`
+- **Files Modified:** `core/models/ship.gd`, `core/models/worker.gd`, `core/data/asteroid_data.gd`, `core/autoloads/simulation.gd`, `core/autoloads/test_harness.gd`, `ui/tabs/fleet_market_tab.gd`, `ui/tabs/fleet_tab.gd`, `ui/tabs/market_tab.gd`
+
+### 2026-02-22 EST (session 9) - Redispatch button
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Redispatch button**: In-transit ship cards now have a "Redispatch" button (before "Plan Next Mission"). Opens the normal dispatch flow but in redispatch mode — confirmation screen shows "Redispatch Ship" title, orange warning ("current mission will be aborted, ship changes course immediately"), and "Confirm Redispatch" button (orange) that calls `_abort_and_dispatch()`. Distinct from Plan Next Mission which queues for after completion.
+- **Files Modified:** `ui/tabs/fleet_market_tab.gd`
 
 ### 2026-02-22 EST (session 8) - Teleport bug fix
 - **Machine:** Windows desktop (Dweezil)
