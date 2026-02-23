@@ -21,7 +21,7 @@ const SHIP_NAMES := [
 	"Headstrong in the Gale",
 	"Lambent Saffron",
 	"Alleged Street Poet",
-	"Liberty She Pirouettes",
+	"Liberty She Pirouette",
 	"Abandon Propriety",
 	"Anomaly Point",
 	"Sacred Bullshit",
@@ -30,13 +30,24 @@ const SHIP_NAMES := [
 	"They're Everywhere",
 	"Phaistos",
 	"Jeirrut",
-	"A Searing Epiphany",
+	"Searing Epiphany",
 	"Squandered Fortune",
+	"Song of Many",
 	"Laziness in Action",
 	"Wandering Minstrel",
 	"Faith Like a Candle",
 	"Slurry",
 	"Dastardly Cur",
+	"Modest Ambitions",
+	"Known Issue",
+	"Salt and Tarnish",
+	"Norfleet",
+	"Borrowed Light",
+	"Belligerent Optimism",
+	"Cimmeria",
+	"Technically Profitable",
+	"Sing Forever",
+	"Of Distant Suns",
 ]
 
 const CLASS_PRICES := {
@@ -54,7 +65,7 @@ const CLASS_STATS := {
 		"cargo_volume": 54.0,      # m³ (volume limit)
 		"fuel_capacity": 46.5,     # fuel units (propellant equivalent)
 		"dry_mass": 73.4,          # tonnes (ship structural mass)
-		"min_crew": 2,
+		"min_crew": 3,
 		"max_equipment_slots": 3,
 	},
 	ShipClass.HAULER: {
@@ -63,7 +74,7 @@ const CLASS_STATS := {
 		"cargo_volume": 584.0,
 		"fuel_capacity": 237.0,
 		"dry_mass": 488.2,
-		"min_crew": 5,
+		"min_crew": 6,
 		"max_equipment_slots": 5,
 	},
 	ShipClass.PROSPECTOR: {
@@ -72,7 +83,7 @@ const CLASS_STATS := {
 		"cargo_volume": 143.0,
 		"fuel_capacity": 118.0,
 		"dry_mass": 214.8,
-		"min_crew": 3,
+		"min_crew": 4,
 		"max_equipment_slots": 4,
 	},
 	ShipClass.EXPLORER: {
@@ -81,7 +92,7 @@ const CLASS_STATS := {
 		"cargo_volume": 91.0,
 		"fuel_capacity": 192.0,
 		"dry_mass": 141.6,
-		"min_crew": 2,
+		"min_crew": 3,
 		"max_equipment_slots": 4,
 	},
 }

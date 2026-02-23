@@ -457,7 +457,7 @@ func _find_best_stockpile_asteroid(ship: Ship) -> AsteroidData:
 	return best
 
 func _try_deploy_units(ship: Ship, crew: Array[Worker], available: Array[Worker]) -> bool:
-	var asteroid := _pick_good_asteroid()
+	var asteroid := _pick_good_asteroid(ship)
 	if asteroid == null:
 		return false
 	var slots_avail := asteroid.get_max_mining_slots() - GameState.get_occupied_slots(asteroid.asteroid_name)
@@ -506,7 +506,7 @@ func _try_deploy_units(ship: Ship, crew: Array[Worker], available: Array[Worker]
 	return true
 
 func _send_mining_mission(ship: Ship, crew: Array[Worker]) -> void:
-	var asteroid: AsteroidData = _pick_good_asteroid()
+	var asteroid: AsteroidData = _pick_good_asteroid(ship)
 	if asteroid == null:
 		return
 	GameState.start_mission(ship, asteroid, crew)
@@ -588,7 +588,7 @@ func _handle_idle_remote(ship: Ship) -> void:
 		var crew: Array[Worker] = []
 		for i in range(ship.min_crew):
 			crew.append(available[i])
-		var asteroid: AsteroidData = _pick_good_asteroid()
+		var asteroid: AsteroidData = _pick_good_asteroid(ship)
 		if asteroid:
 			GameState.dispatch_idle_ship(ship, asteroid, crew)
 			return
@@ -612,7 +612,7 @@ func _try_redirect_missions() -> void:
 			continue
 		if randf() > 0.3:  # 30% chance (increased from 15%)
 			continue
-		var better := _pick_good_asteroid()
+		var better := _pick_good_asteroid(ship)
 		if better == null or better == m.asteroid:
 			continue
 		GameState.redirect_mission(m, better)
@@ -644,7 +644,7 @@ func _queue_next_missions() -> void:
 		if ship.current_mission != null:
 			var m := ship.current_mission
 			if m.mission_type == Mission.MissionType.MINING and m.status == Mission.Status.TRANSIT_BACK:
-				var next_asteroid := _pick_good_asteroid()
+				var next_asteroid := _pick_good_asteroid(ship)
 				if next_asteroid != null:
 					var crew := ship.last_crew.duplicate() if not ship.last_crew.is_empty() else _get_crew_for_ship(ship)
 					if crew.size() >= ship.min_crew:
@@ -654,7 +654,7 @@ func _queue_next_missions() -> void:
 		# Queue for ships idle at remote destinations
 		elif ship.is_idle_remote:
 			if randf() < 0.5:  # 50% chance to queue instead of immediate dispatch
-				var next_asteroid := _pick_good_asteroid()
+				var next_asteroid := _pick_good_asteroid(ship)
 				if next_asteroid != null:
 					var crew := _get_crew_for_ship(ship)
 					if crew.size() >= ship.min_crew:
@@ -671,19 +671,22 @@ func _get_crew_for_ship(ship: Ship) -> Array[Worker]:
 			crew.append(avail[i])
 	return crew
 
-func _pick_good_asteroid() -> AsteroidData:
+func _pick_good_asteroid(ship: Ship = null) -> AsteroidData:
 	if GameState.asteroids.is_empty():
 		return null
-	var pool_size := mini(30, GameState.asteroids.size())
 	var best: AsteroidData = null
 	var best_score := -1.0
-	for i in range(pool_size):
-		var a: AsteroidData = GameState.asteroids[i]
-		var score := 0.0
-		for ore_type in a.ore_yields:
-			score += float(a.ore_yields[ore_type]) * MarketData.get_ore_price(ore_type)
-		score /= maxf(a.orbit_au, 0.5)
-		score *= randf_range(0.5, 1.5)
+	for a in GameState.asteroids:
+		var score: float
+		if ship != null:
+			score = Simulation._score_mining_trip(ship, a, ship.position_au)
+		else:
+			# Fallback when no ship context: value density / orbit radius
+			score = 0.0
+			for ore_type in a.ore_yields:
+				score += float(a.ore_yields[ore_type]) * MarketData.get_ore_price(ore_type)
+			score /= maxf(a.orbit_au, 0.5)
+		score *= randf_range(0.8, 1.2)  # Small noise to avoid deterministic ties
 		if score > best_score:
 			best_score = score
 			best = a

@@ -27,6 +27,13 @@ const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at co
 @export var derelict_reason: String = ""  # "out_of_fuel" or "breakdown"
 @export var base_mass: float = 0.0  # tons, auto-calculated if zero
 
+# Per-ship policy overrides (-1 = inherit company default)
+@export var thrust_policy_override: int = -1
+@export var supply_policy_override: int = -1
+@export var collection_policy_override: int = -1
+@export var encounter_policy_override: int = -1
+@export var repair_policy_override: int = -1
+
 # Station properties
 @export var is_stationed: bool = false
 @export var station_colony: Colony = null
@@ -51,6 +58,7 @@ var queued_workers: Array[Worker] = []
 var queued_transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE
 var queued_mining_duration: float = 86400.0
 var queued_slingshot_route = null  # GravityAssist.SlingshotRoute or null
+var queued_mission_type: int = Mission.MissionType.MINING
 
 var is_at_earth: bool:
 	get:
@@ -250,6 +258,7 @@ func clear_queued_mission() -> void:
 	queued_transit_mode = Mission.TransitMode.BRACHISTOCHRONE
 	queued_mining_duration = 86400.0
 	queued_slingshot_route = null
+	queued_mission_type = Mission.MissionType.MINING
 
 ## Calculate life support duration based on crew size
 ## Assumes standard rations: food, water, O2 for N crew members
@@ -274,9 +283,10 @@ func add_station_log(message: String, type: String = "info") -> void:
 	if station_log.size() > 50:
 		station_log.resize(50)
 
-func queue_mission(destination: Variant, workers: Array[Worker], transit_mode: int, mining_dur: float = 86400.0, slingshot_route = null) -> void:
+func queue_mission(destination: Variant, workers: Array[Worker], transit_mode: int, mining_dur: float = 86400.0, slingshot_route = null, mission_type: int = Mission.MissionType.MINING) -> void:
 	queued_destination = destination
 	queued_workers = workers.duplicate()
 	queued_transit_mode = transit_mode
 	queued_mining_duration = mining_dur
 	queued_slingshot_route = slingshot_route
+	queued_mission_type = mission_type

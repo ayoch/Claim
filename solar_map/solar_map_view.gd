@@ -87,7 +87,16 @@ func _ready() -> void:
 	EventBus.mission_completed.connect(func(_m: Mission) -> void: _refresh_ships())
 	EventBus.trade_mission_started.connect(func(_tm: TradeMission) -> void: _refresh_ships())
 	EventBus.trade_mission_completed.connect(func(_tm: TradeMission) -> void: _refresh_ships())
-	EventBus.ship_derelict.connect(func(_s: Ship) -> void: _refresh_ships())
+	EventBus.ship_derelict.connect(func(s: Ship) -> void:
+		if _map_selected_ship and s == _map_selected_ship:
+			_set_map_selected_ship(null)
+		_refresh_ships()
+	)
+	EventBus.ship_destroyed.connect(func(s: Ship, _b: String) -> void:
+		if _map_selected_ship and s == _map_selected_ship:
+			_set_map_selected_ship(null)
+		_refresh_ships()
+	)
 	EventBus.rescue_mission_started.connect(func(_s: Ship, _c: int) -> void: _refresh_ships())
 	EventBus.rescue_mission_completed.connect(func(_s: Ship) -> void: _refresh_ships())
 	EventBus.refuel_mission_started.connect(func(_s: Ship, _c: int, _f: float) -> void: _refresh_ships())
@@ -204,6 +213,9 @@ func _draw() -> void:
 		var p4 := Vector2(cos(angle), sin(angle)) * outer_r
 		draw_colored_polygon(PackedVector2Array([p1, p2, p3, p4]), Color(0.5, 0.4, 0.3, 0.08))
 
+	# Draw ghost ship observations (rival corps, fog-of-war)
+	_draw_ghost_observations()
+
 	# Draw trajectory preview if active
 	if _preview_active:
 		# Calculate blink alpha (oscillates between 0.3 and 1.0)
@@ -281,6 +293,49 @@ func _draw_orbit_ellipse(el: Dictionary, color: Color, width: float) -> void:
 		to = to.rotated(w_rad) * AU_PIXELS
 
 		draw_line(from, to, color, width)
+
+func _draw_ghost_observations() -> void:
+	var current_ticks := GameState.total_ticks
+	for contact in GameState.ghost_contacts:
+		var confidence: float = contact.get_current_confidence(current_ticks)
+		if confidence <= 0.0:
+			continue
+
+		var est_pos: Vector2 = contact.get_estimated_position(current_ticks) * AU_PIXELS
+		var color: Color = contact.contact_color
+
+		# Uncertainty halo: tight = fresh, large and faint = stale
+		var halo_radius: float = lerpf(40.0, 6.0, confidence)
+		_draw_circle_outline(est_pos, halo_radius, Color(color.r, color.g, color.b, confidence * 0.4), 1.0)
+
+		# Core dot
+		var dot_radius: float = lerpf(2.0, 5.0, confidence)
+		draw_circle(est_pos, dot_radius, Color(color.r, color.g, color.b, confidence * 0.85))
+
+		# Velocity arrow when observation is fresh enough to be directionally meaningful
+		var obs_vel: Vector2 = contact.latest_obs.observed_velocity_au_per_tick
+		if confidence > 0.35 and obs_vel.length_squared() > 1e-10:
+			var vel_screen := obs_vel * AU_PIXELS * 3600.0  # Scale to 1 game-hour of travel
+			var arrow_end := est_pos + vel_screen.limit_length(50.0)
+			draw_line(est_pos, arrow_end, Color(color.r, color.g, color.b, confidence * 0.6), 1.5)
+			var arrow_dir := (arrow_end - est_pos).normalized()
+			var arrow_perp := Vector2(-arrow_dir.y, arrow_dir.x)
+			draw_line(arrow_end, arrow_end - arrow_dir * 6.0 + arrow_perp * 4.0,
+				Color(color.r, color.g, color.b, confidence * 0.6), 1.5)
+			draw_line(arrow_end, arrow_end - arrow_dir * 6.0 - arrow_perp * 4.0,
+				Color(color.r, color.g, color.b, confidence * 0.6), 1.5)
+
+		# Label: contact ID + inferred corp (or "?" if unknown/low confidence)
+		var label: String
+		if contact.inferred_corp.is_empty() or contact.corp_confidence < 0.20:
+			label = "Contact %d" % contact.contact_id
+		elif contact.corp_confidence < 0.50:
+			label = "Contact %d (?)" % contact.contact_id
+		else:
+			label = "Contact %d\n%s" % [contact.contact_id, contact.inferred_corp.left(14)]
+		draw_string(ThemeDB.fallback_font, est_pos + Vector2(halo_radius + 4.0, -6.0),
+			label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10,
+			Color(color.r, color.g, color.b, confidence * 0.7))
 
 func _setup_zoom_buttons() -> void:
 	# Big zoom row (3× step) — sits above

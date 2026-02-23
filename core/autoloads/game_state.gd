@@ -19,6 +19,7 @@ var upgrade_inventory: Array[ShipUpgrade] = []  # Purchased but not yet installe
 var fabrication_queue: Array[Equipment] = []  # Equipment being fabricated
 var asteroids: Array[AsteroidData] = []
 var rival_corps: Array[RivalCorp] = []
+var ghost_contacts: Array = []  # Array[GhostContact]
 
 # Lightspeed communication delay
 const LIGHT_SECONDS_PER_AU: float = 499.0
@@ -37,6 +38,22 @@ var thrust_policy: int = CompanyPolicy.ThrustPolicy.BALANCED
 var supply_policy: int = CompanyPolicy.SupplyPolicy.ROUTINE
 var collection_policy: int = CompanyPolicy.CollectionPolicy.ROUTINE
 var encounter_policy: int = CompanyPolicy.EncounterPolicy.COEXIST
+var repair_policy: int = CompanyPolicy.RepairPolicy.ALWAYS
+
+func get_thrust_policy(ship: Ship) -> int:
+	return ship.thrust_policy_override if ship.thrust_policy_override >= 0 else thrust_policy
+
+func get_supply_policy(ship: Ship) -> int:
+	return ship.supply_policy_override if ship.supply_policy_override >= 0 else supply_policy
+
+func get_collection_policy(ship: Ship) -> int:
+	return ship.collection_policy_override if ship.collection_policy_override >= 0 else collection_policy
+
+func get_encounter_policy(ship: Ship) -> int:
+	return ship.encounter_policy_override if ship.encounter_policy_override >= 0 else encounter_policy
+
+func get_repair_policy(ship: Ship) -> int:
+	return ship.repair_policy_override if ship.repair_policy_override >= 0 else repair_policy
 
 # Game clock: total elapsed game-seconds (ticks) since game start
 var total_ticks: float = 0.0
@@ -159,7 +176,7 @@ var deployed_crews: Array[Dictionary] = []
 var mining_unit_inventory: Array[MiningUnit] = []  # Purchased, not yet deployed
 var deployed_mining_units: Array[MiningUnit] = []  # On asteroids, mining autonomously
 var ore_stockpiles: Dictionary = {}  # asteroid_name -> { OreType -> float }
-var asteroid_supplies: Dictionary = {}  # asteroid_name -> { "food": float, "repair_parts": float }
+var asteroid_supplies: Dictionary = {}  # asteroid_name -> { "food": float, "water": float, "oxygen": float, "repair_parts": float }
 
 # Security zones created by patrolling ships
 # Each: { "center_au": Vector2, "radius_au": float, "ship_name": String, "expires_at": float }
@@ -423,8 +440,11 @@ func _apply_redirect_trade_mission(trade_mission: TradeMission, new_colony: Colo
 
 func _init_starter_crew() -> void:
 	# Hire starter crew with guaranteed specialty coverage: pilot, engineer, miner
-	# Extra workers for testing ship purchases (12 total allows buying multiple ships)
-	var total_workers := 12
+	# Scale total workers to staff all starting ships plus a buffer of 3 spares
+	var total_min_crew := 0
+	for ship in ships:
+		total_min_crew += ship.min_crew
+	var total_workers := total_min_crew + 3
 
 	# First 3 workers get guaranteed primary specialties
 	var primaries := [0, 1, 2]  # pilot, engineer, mining
@@ -676,11 +696,11 @@ func collect_from_stockpile(asteroid_name: String, ship: Ship) -> float:
 	return total_collected
 
 func get_asteroid_supplies(asteroid_name: String) -> Dictionary:
-	return asteroid_supplies.get(asteroid_name, {"food": 0.0, "repair_parts": 0.0})
+	return asteroid_supplies.get(asteroid_name, {"food": 0.0, "water": 0.0, "oxygen": 0.0, "repair_parts": 0.0})
 
 func add_to_asteroid_supplies(asteroid_name: String, supply_key: String, amount: float) -> void:
 	if not asteroid_supplies.has(asteroid_name):
-		asteroid_supplies[asteroid_name] = {"food": 0.0, "repair_parts": 0.0}
+		asteroid_supplies[asteroid_name] = {"food": 0.0, "water": 0.0, "oxygen": 0.0, "repair_parts": 0.0}
 	asteroid_supplies[asteroid_name][supply_key] = asteroid_supplies[asteroid_name].get(supply_key, 0.0) + amount
 
 func consume_asteroid_supply(asteroid_name: String, supply_key: String, amount: float) -> float:
@@ -928,6 +948,9 @@ func repair_engine(ship: Ship) -> bool:
 	return true
 
 func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+	if assigned_workers.size() < ship.min_crew:
+		push_warning("start_mission: not enough crew for %s (need %d, got %d)" % [ship.ship_name, ship.min_crew, assigned_workers.size()])
+		return null
 	# Clean up any lingering idle mission so its stale worker list doesn't cause mismatches
 	if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
 		ship.current_mission.ship = null
@@ -1130,10 +1153,7 @@ func complete_mission(mission: Mission) -> void:
 	# Stationed ships don't use queued missions — station logic handles next job
 	if mission.ship.is_stationed:
 		return
-
-	# Check for queued mission and auto-start it
-	if mission.ship.has_queued_mission():
-		_start_queued_mission(mission.ship)
+	# Queued missions are launched in simulation.gd after provision/repair completes
 
 func _name_for_position(pos: Vector2) -> String:
 	# Find nearest colony
@@ -1278,6 +1298,8 @@ func _apply_dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_work
 		w.assigned_trade_mission = null
 
 	var mission := start_mission(ship, asteroid, assigned_workers, transit_mode, slingshot_route)
+	if mission == null:
+		return
 	mission.origin_is_earth = false
 	mission.origin_name = origin_asteroid_name if origin_asteroid_name != "" else "deep space"
 
@@ -1311,6 +1333,8 @@ func _apply_dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned
 		w.assigned_trade_mission = null
 
 	var tm := start_trade_mission(ship, colony_target, assigned_workers, cargo_to_load, transit_mode)
+	if tm == null:
+		return
 	tm.origin_is_earth = false
 	tm.origin_name = origin_loc_name if origin_loc_name != "" else "deep space"
 
@@ -1431,6 +1455,102 @@ func start_rescue(ship: Ship) -> bool:
 
 	EventBus.rescue_mission_started.emit(ship, cost)
 	return true
+
+func start_fleet_rescue(ferry_ship: Ship, target_ship: Ship, rescue_crew: Array[Worker], food_units: float, parts_units: float) -> Mission:
+	# ferry_ship: the docked ship being dispatched to help
+	# target_ship: the derelict fleet ship
+	# rescue_crew: workers who will stay on target_ship on arrival
+	# food_units, parts_units: supplies to commit from ferry_ship now and transfer on arrival
+
+	# Build worker list from ferry's last crew + available workers.
+	# Rescue missions require only 1 crew — the ship will fly understaffed
+	# and head straight to the nearest crew pickup on return.
+	var all_workers: Array[Worker] = rescue_crew.duplicate()
+	for w in ferry_ship.last_crew:
+		if w not in all_workers and w.is_available:
+			all_workers.append(w)
+	# Top up to 2 from available workers if needed (minimum for rescue: 1 stays on derelict, 1 flies back)
+	if all_workers.size() < 2:
+		for w in get_available_workers():
+			if w not in all_workers:
+				all_workers.append(w)
+			if all_workers.size() >= 2:
+				break
+	if all_workers.size() < 2:
+		push_warning("start_fleet_rescue: need at least 2 crew for %s" % ferry_ship.ship_name)
+		return null
+
+	var dist := ferry_ship.position_au.distance_to(target_ship.position_au)
+	var transit_t := Brachistochrone.transit_time(dist, ferry_ship.get_effective_thrust())
+
+	var mission := Mission.new()
+	mission.mission_type = Mission.MissionType.CREW_FERRY
+	mission.is_derelict_rescue = true
+	mission.rescue_crew = rescue_crew.duplicate()
+	mission.supplies_to_transfer = {"food": food_units, "repair_parts": parts_units}
+	mission.ship = ferry_ship
+	mission.workers = all_workers
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.origin_position_au = ferry_ship.position_au
+	mission.return_position_au = ferry_ship.position_au
+	mission.origin_is_earth = ferry_ship.is_at_earth
+	if mission.origin_is_earth:
+		mission.origin_name = "Earth"
+	elif ferry_ship.docked_at_colony:
+		mission.origin_name = ferry_ship.docked_at_colony.colony_name
+	mission.destination_position_au = target_ship.position_au
+	mission.destination_name = target_ship.ship_name
+	mission.station_job_duration = 3600.0  # 1 hour for crew + supply transfer
+	mission.transit_time = transit_t
+	mission.fuel_per_tick = ferry_ship.calc_fuel_for_distance(dist) / transit_t if transit_t > 0 else 0.0
+
+	ferry_ship.current_mission = mission
+	ferry_ship.last_crew = all_workers.duplicate()
+	for w in all_workers:
+		w.assigned_mission = mission
+
+	# Commit supplies from ferry ship (deducted now; transferred on arrival)
+	ferry_ship.supplies["food"] = maxf(0.0, ferry_ship.supplies.get("food", 0.0) - food_units)
+	ferry_ship.supplies["repair_parts"] = maxf(0.0, ferry_ship.supplies.get("repair_parts", 0.0) - parts_units)
+
+	missions.append(mission)
+	EventBus.mission_started.emit(mission)
+	return mission
+
+## Find the fleet rescue ferry currently heading to a derelict ship (if any).
+func find_fleet_rescue_ferry(derelict_ship: Ship) -> Ship:
+	for s in ships:
+		if s.current_mission == null:
+			continue
+		if s.current_mission.mission_type != Mission.MissionType.CREW_FERRY:
+			continue
+		if not s.current_mission.is_derelict_rescue:
+			continue
+		if s.current_mission.destination_name == derelict_ship.ship_name or \
+			s.current_mission.destination_position_au.distance_to(derelict_ship.position_au) < 0.1:
+			return s
+	return null
+
+## Cancel a fleet rescue in progress — recalls the ferry, workers return with it.
+func cancel_fleet_rescue(derelict_ship: Ship) -> void:
+	var ferry := find_fleet_rescue_ferry(derelict_ship)
+	if ferry == null or ferry.current_mission == null:
+		return
+	var mission := ferry.current_mission
+	var earth_pos := CelestialData.get_earth_position_au()
+	var dist := ferry.position_au.distance_to(earth_pos)
+	# Flip mission to TRANSIT_BACK to Earth, keeping current position and momentum
+	mission.return_position_au = earth_pos
+	mission.return_to_station = false
+	mission.transit_time = Brachistochrone.transit_time(dist, ferry.get_effective_thrust())
+	mission.elapsed_ticks = 0.0
+	var cargo_mass := ferry.get_cargo_total()
+	mission.fuel_per_tick = ferry.calc_fuel_for_distance(dist, cargo_mass) / mission.transit_time \
+		if mission.transit_time > 0 else 0.0
+	mission.status = Mission.Status.TRANSIT_BACK
+	# Restore mission workers to the ferry's last_crew so they return with the ship
+	ferry.last_crew = mission.workers.duplicate()
+	EventBus.mission_phase_changed.emit(mission)
 
 func start_refuel(ship: Ship, fuel_amount: float) -> bool:
 	# Can refuel ships that are out of fuel, but not broken down ships (those need rescue)
@@ -1762,6 +1882,9 @@ func fulfill_contract_from_ship(contract: Contract, ship: Ship, amount: float) -
 # --- Trade mission methods ---
 
 func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Array[Worker], cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
+	if assigned_workers.size() < ship.min_crew:
+		push_warning("start_trade_mission: not enough crew for %s (need %d, got %d)" % [ship.ship_name, ship.min_crew, assigned_workers.size()])
+		return null
 	var tm := TradeMission.new()
 	tm.ship = ship
 	tm.colony = colony_target
@@ -1913,35 +2036,58 @@ func complete_trade_mission(tm: TradeMission) -> void:
 	# Stationed ships don't use queued missions — station logic handles next job
 	if tm.ship.is_stationed:
 		return
-
-	# Check for queued mission and auto-start it
-	if tm.ship.has_queued_mission():
-		_start_queued_mission(tm.ship)
+	# Queued missions are launched in simulation.gd after provision/repair completes
 
 func _start_queued_mission(ship: Ship) -> void:
-	# Automatically start a queued mission
+	# Automatically start a player-planned mission after the current one completes.
+	# Falls back to policy dispatch if the queued mission is no longer feasible.
 	if not ship.has_queued_mission():
 		return
 
 	var dest = ship.queued_destination
-	var workers_array = ship.queued_workers
+	var mission_type = ship.queued_mission_type
 	var transit_mode = ship.queued_transit_mode
 	var slingshot_route = ship.queued_slingshot_route
+	var mining_dur = ship.queued_mining_duration
 
-	# Clear the queue before starting (to avoid recursion)
+	# Validate and assemble crew — prefer queued workers, top up from available pool if needed
+	var workers_array: Array[Worker] = []
+	for w in ship.queued_workers:
+		if w in workers and w.is_available:
+			workers_array.append(w)
+	if workers_array.size() < ship.min_crew:
+		var available := get_available_workers()
+		for w in available:
+			if w not in workers_array:
+				workers_array.append(w)
+			if workers_array.size() >= ship.min_crew:
+				break
+
+	# Clear the queue before starting (avoids recursion if start_mission re-emits signals)
 	ship.clear_queued_mission()
 
-	# Start the appropriate mission type based on destination
+	if workers_array.size() < ship.min_crew:
+		# Can't crew the planned mission — fall through to policy on next tick
+		return
+
 	if dest is AsteroidData:
-		# Mining mission
-		start_mission(ship, dest, workers_array, transit_mode, slingshot_route)
-	elif dest is Colony:
-		# Trade mission (if ship has cargo)
-		if ship.get_cargo_total() > 0:
-			start_trade_mission(ship, dest, workers_array, transit_mode, slingshot_route)
-		else:
-			# No cargo, can't trade - mission cancelled
-			print("Queued trade mission cancelled: ship has no cargo")
+		var asteroid := dest as AsteroidData
+		# Feasibility: enough fuel for round trip?
+		var dist := ship.position_au.distance_to(asteroid.get_position_au())
+		var fuel_out := ship.calc_fuel_for_distance(dist, ship.get_cargo_total())
+		var fuel_back := ship.calc_fuel_for_distance(dist, ship.get_effective_cargo_capacity())
+		if fuel_out + fuel_back > ship.fuel:
+			# Not enough fuel — fall through to policy on next tick
+			return
+		match mission_type:
+			Mission.MissionType.COLLECT_ORE:
+				var m := start_collect_mission(ship, asteroid, workers_array, transit_mode, slingshot_route)
+				if m:
+					ship.last_crew = workers_array
+			_:  # Default: MINING
+				var m := start_mission(ship, asteroid, workers_array, transit_mode, slingshot_route)
+				if m:
+					ship.last_crew = workers_array
 
 # Save/Load
 func save_game() -> void:
@@ -1952,6 +2098,7 @@ func save_game() -> void:
 		"supply_policy": supply_policy,
 		"collection_policy": collection_policy,
 		"encounter_policy": encounter_policy,
+		"repair_policy": repair_policy,
 		"resources": {},
 		"workers": [],
 		"ships": [],
@@ -2020,6 +2167,12 @@ func save_game() -> void:
 			ship_data["station_colony_name"] = s.station_colony.colony_name if s.station_colony else ""
 			ship_data["station_jobs"] = s.station_jobs.duplicate()
 			ship_data["station_log"] = s.station_log.duplicate()
+		# Policy overrides
+		ship_data["thrust_policy_override"] = s.thrust_policy_override
+		ship_data["supply_policy_override"] = s.supply_policy_override
+		ship_data["collection_policy_override"] = s.collection_policy_override
+		ship_data["encounter_policy_override"] = s.encounter_policy_override
+		ship_data["repair_policy_override"] = s.repair_policy_override
 		# Supplies
 		if not s.supplies.is_empty():
 			ship_data["supplies"] = s.supplies.duplicate()
@@ -2303,6 +2456,7 @@ func load_game() -> bool:
 	supply_policy = int(data.get("supply_policy", CompanyPolicy.SupplyPolicy.ROUTINE))
 	collection_policy = int(data.get("collection_policy", CompanyPolicy.CollectionPolicy.ROUTINE))
 	encounter_policy = int(data.get("encounter_policy", CompanyPolicy.EncounterPolicy.COEXIST))
+	repair_policy = int(data.get("repair_policy", CompanyPolicy.RepairPolicy.ALWAYS))
 	settings["autoplay"] = data.get("autoplay", false)
 	settings["auto_sell_at_earth"] = data.get("auto_sell_at_earth", true)
 	settings["auto_sell_at_markets"] = data.get("auto_sell_at_markets", false)
@@ -2386,6 +2540,12 @@ func load_game() -> bool:
 		var supplies_data: Dictionary = sd.get("supplies", {})
 		for key in supplies_data:
 			s.supplies[key] = float(supplies_data[key])
+		# Restore policy overrides
+		s.thrust_policy_override = int(sd.get("thrust_policy_override", -1))
+		s.supply_policy_override = int(sd.get("supply_policy_override", -1))
+		s.collection_policy_override = int(sd.get("collection_policy_override", -1))
+		s.encounter_policy_override = int(sd.get("encounter_policy_override", -1))
+		s.repair_policy_override = int(sd.get("repair_policy_override", -1))
 		# Restore station data (colony ref reconnected after colonies are loaded)
 		s.is_stationed = sd.get("is_stationed", false)
 		if s.is_stationed:
