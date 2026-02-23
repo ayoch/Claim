@@ -752,7 +752,6 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, units: Array[Minin
 	var mission := Mission.new()
 	mission.ship = ship
 	mission.asteroid = asteroid
-	mission.workers = ship.crew.duplicate()
 	mission.mission_type = Mission.MissionType.DEPLOY_UNIT
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
@@ -830,7 +829,6 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int
 	var mission := Mission.new()
 	mission.ship = ship
 	mission.asteroid = asteroid
-	mission.workers = ship.crew.duplicate()
 	mission.mission_type = Mission.MissionType.COLLECT_ORE
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
@@ -967,7 +965,6 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 	var mission := Mission.new()
 	mission.ship = ship
 	mission.asteroid = asteroid
-	mission.workers = ship.crew.duplicate()
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
 	mission.return_position_au = ship.position_au  # default return to origin
@@ -1485,7 +1482,7 @@ func start_fleet_rescue(ferry_ship: Ship, target_ship: Ship, rescue_crew: Array[
 	mission.rescue_crew = rescue_crew.duplicate()
 	mission.supplies_to_transfer = {"food": food_units, "repair_parts": parts_units}
 	mission.ship = ferry_ship
-	mission.workers = all_workers
+	ferry_ship.crew = all_workers
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ferry_ship.position_au
 	mission.return_position_au = ferry_ship.position_au
@@ -1875,7 +1872,6 @@ func start_trade_mission(ship: Ship, colony_target: Colony, cargo_to_load: Dicti
 	var tm := TradeMission.new()
 	tm.ship = ship
 	tm.colony = colony_target
-	tm.workers = ship.crew.duplicate()
 	tm.status = TradeMission.Status.TRANSIT_TO_COLONY
 	tm.origin_position_au = ship.position_au
 	tm.return_position_au = ship.position_au  # default return to origin
@@ -2177,7 +2173,6 @@ func save_game() -> void:
 			"destination_name": m.destination_name,
 			"return_position_au_x": m.return_position_au.x,
 			"return_position_au_y": m.return_position_au.y,
-			"workers": m.workers.map(func(w): return w.worker_name),
 			"outbound_waypoint_types": m.outbound_waypoint_types,
 			"outbound_waypoint_fuel_amounts": m.outbound_waypoint_fuel_amounts,
 			"outbound_waypoint_fuel_costs": m.outbound_waypoint_fuel_costs,
@@ -2207,7 +2202,6 @@ func save_game() -> void:
 			"return_position_au": {"x": tm.return_position_au.x, "y": tm.return_position_au.y},
 			"transit_mode": tm.transit_mode,
 			"revenue": tm.revenue,
-			"workers": tm.workers.map(func(w): return w.worker_name),
 			"outbound_waypoint_types": tm.outbound_waypoint_types,
 			"outbound_waypoint_fuel_amounts": tm.outbound_waypoint_fuel_amounts,
 			"outbound_waypoint_fuel_costs": tm.outbound_waypoint_fuel_costs,
@@ -2595,13 +2589,6 @@ func load_game() -> bool:
 			float(md.get("return_position_au_x", m.return_position_au.x)),
 			float(md.get("return_position_au_y", m.return_position_au.y))
 		)
-		# Reconnect workers
-		var worker_names: Array = md.get("workers", [])
-		for wname in worker_names:
-			for w in workers:
-				if w.worker_name == wname:
-					m.workers.append(w)
-					break
 		# Load waypoint metadata
 		m.outbound_waypoint_types = md.get("outbound_waypoint_types", [])
 		m.outbound_waypoint_fuel_amounts = md.get("outbound_waypoint_fuel_amounts", [])
@@ -2668,14 +2655,6 @@ func load_game() -> bool:
 		var cargo_data: Dictionary = tmd.get("cargo", {})
 		for key in cargo_data:
 			tm.cargo[int(key)] = float(cargo_data[key])
-
-		# Restore workers
-		var worker_names: Array = tmd.get("workers", [])
-		for worker_name in worker_names:
-			for w in workers:
-				if w.worker_name == worker_name:
-					tm.workers.append(w)
-					break
 
 		# Load waypoint metadata
 		tm.outbound_waypoint_types = tmd.get("outbound_waypoint_types", [])

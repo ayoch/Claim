@@ -219,7 +219,7 @@ func _process_missions(dt: float) -> void:
 				# Grant pilot XP to best pilot (they're flying)
 				var best_pilot: Worker = null
 				var best_pilot_skill := -1.0
-				for w in mission.workers:
+				for w in mission.ship.crew:
 					if w.pilot_skill > best_pilot_skill:
 						best_pilot = w
 						best_pilot_skill = w.pilot_skill
@@ -242,7 +242,6 @@ func _process_missions(dt: float) -> void:
 									else:
 										mission.status = Mission.Status.IDLE_AT_DESTINATION
 										mission.ship.position_au = mission.asteroid.get_position_au()
-										mission.workers.clear()
 										EventBus.ship_idle_at_destination.emit(mission.ship, mission)
 								else:
 									mission.status = Mission.Status.MINING
@@ -283,7 +282,7 @@ func _process_missions(dt: float) -> void:
 
 			Mission.Status.MINING:
 				# Grant mining XP to crew during mining
-				for w in mission.workers:
+				for w in mission.ship.crew:
 					w.add_xp(2, dt)  # 2 = mining skill
 				_mine_tick(mission, dt)
 				# Stay until hold is full; safety timeout at 2x estimated duration
@@ -298,7 +297,6 @@ func _process_missions(dt: float) -> void:
 						# Set ship position to asteroid location
 						mission.ship.position_au = mission.asteroid.get_position_au()
 						# Free workers so they're available for next dispatch
-						mission.workers.clear()
 						EventBus.mission_phase_changed.emit(mission)
 						EventBus.ship_idle_at_destination.emit(mission.ship, mission)
 
@@ -335,7 +333,7 @@ func _process_missions(dt: float) -> void:
 				# Grant pilot XP to best pilot (they're flying)
 				var best_pilot: Worker = null
 				var best_pilot_skill := -1.0
-				for w in mission.workers:
+				for w in mission.ship.crew:
 					if w.pilot_skill > best_pilot_skill:
 						best_pilot = w
 						best_pilot_skill = w.pilot_skill
@@ -383,7 +381,7 @@ func _process_missions(dt: float) -> void:
 							if mission.mission_type == Mission.MissionType.CREW_FERRY:
 								var station_name: String = mission.ship.station_colony.colony_name
 								var station_pos: Vector2 = mission.ship.station_colony.get_position_au()
-								for w in mission.workers:
+								for w in mission.ship.crew:
 									if w not in mission.ship.crew and w.needs_rotation:
 										GameState.add_to_hitchhike_pool(w, station_name, station_pos)
 						GameState.complete_mission(mission)
@@ -509,7 +507,6 @@ func _complete_refuel_stop(mission: Mission, is_outbound: bool) -> void:
 		mission.status = Mission.Status.IDLE_AT_DESTINATION
 		mission.elapsed_ticks = 0.0
 		# Free workers
-		mission.workers.clear()
 		EventBus.mission_phase_changed.emit(mission)
 		# Notify player (could add a specific event for this)
 		print("Mission aborted: next waypoint unreachable from fuel stop (orbital drift)")
@@ -683,7 +680,7 @@ func _mine_tick(mission: Mission, dt: float) -> void:
 
 	var mining_skill_total := 0.0
 	var best_engineer := 0.0
-	for w in mission.workers:
+	for w in mission.ship.crew:
 		mining_skill_total += w.mining_skill
 		if w.engineer_skill > best_engineer:
 			best_engineer = w.engineer_skill
@@ -698,13 +695,13 @@ func _mine_tick(mission: Mission, dt: float) -> void:
 
 	# Loyalty modifier: average across mission workers (0.9x to 1.0x range)
 	var loyalty_total := 0.0
-	var worker_count := mission.workers.size()
-	for w in mission.workers:
+	var worker_count := mission.ship.crew.size()
+	for w in mission.ship.crew:
 		loyalty_total += w.loyalty_modifier
 	var avg_loyalty_mod := loyalty_total / float(worker_count) if worker_count > 0 else 1.0
 
-	var personality_mining_mult := _get_personality_mining_multiplier(mission.workers)
-	var leader_mining_mult := _get_leader_mining_modifier(mission.workers)
+	var personality_mining_mult := _get_personality_mining_multiplier(mission.ship.crew)
+	var leader_mining_mult := _get_leader_mining_modifier(mission.ship.crew)
 
 	for ore_type in mission.asteroid.ore_yields:
 		var base_yield: float = mission.asteroid.ore_yields[ore_type]
@@ -747,7 +744,7 @@ func _process_trade_missions(dt: float) -> void:
 				# Grant pilot XP to best pilot (they're flying)
 				var best_pilot: Worker = null
 				var best_pilot_skill := -1.0
-				for w in tm.workers:
+				for w in tm.ship.crew:
 					if w.pilot_skill > best_pilot_skill:
 						best_pilot = w
 						best_pilot_skill = w.pilot_skill
@@ -830,7 +827,7 @@ func _process_trade_missions(dt: float) -> void:
 				# Grant pilot XP to best pilot (they're flying)
 				var best_pilot: Worker = null
 				var best_pilot_skill := -1.0
-				for w in tm.workers:
+				for w in tm.ship.crew:
 					if w.pilot_skill > best_pilot_skill:
 						best_pilot = w
 						best_pilot_skill = w.pilot_skill
@@ -1044,7 +1041,7 @@ func _check_breakdowns(dt: float) -> void:
 		if mission.status == Mission.Status.TRANSIT_OUT or mission.status == Mission.Status.TRANSIT_BACK:
 			# Find best engineer skill in crew for wear reduction
 			var best_engineer := 0.0
-			for w in mission.workers:
+			for w in mission.ship.crew:
 				if w.engineer_skill > best_engineer:
 					best_engineer = w.engineer_skill
 			var eng_factor := 1.0 - (best_engineer * 0.3)
@@ -1075,11 +1072,7 @@ func _check_breakdowns(dt: float) -> void:
 
 func _trigger_breakdown(ship: Ship, reason: String) -> void:
 	# Check for engineer self-repair before declaring breakdown
-	var crew: Array[Worker] = []
-	if ship.current_mission:
-		crew = ship.current_mission.workers
-	elif ship.current_trade_mission:
-		crew = ship.current_trade_mission.workers
+	var crew: Array[Worker] = ship.crew
 
 	# Find best engineer
 	var best_engineer := 0.0
@@ -1110,10 +1103,8 @@ func _trigger_breakdown(ship: Ship, reason: String) -> void:
 	if ship.current_mission:
 		ship.current_mission.status = Mission.Status.COMPLETED
 		GameState.missions.erase(ship.current_mission)
-		ship.current_mission.workers.clear()
 		ship.current_mission = null
 	if ship.current_trade_mission:
-		ship.current_trade_mission.workers.clear()
 		ship.current_trade_mission.status = TradeMission.Status.COMPLETED
 		GameState.trade_missions.erase(ship.current_trade_mission)
 		ship.current_trade_mission = null
@@ -1129,10 +1120,8 @@ func _trigger_fuel_depletion(ship: Ship) -> void:
 	if ship.current_mission:
 		ship.current_mission.status = Mission.Status.COMPLETED
 		GameState.missions.erase(ship.current_mission)
-		ship.current_mission.workers.clear()
 		ship.current_mission = null
 	if ship.current_trade_mission:
-		ship.current_trade_mission.workers.clear()
 		ship.current_trade_mission.status = TradeMission.Status.COMPLETED
 		GameState.trade_missions.erase(ship.current_trade_mission)
 		ship.current_trade_mission = null
@@ -1627,7 +1616,6 @@ func _station_try_repair(ship: Ship) -> bool:
 	var mission := Mission.new()
 	mission.mission_type = Mission.MissionType.REPAIR
 	mission.ship = ship
-	mission.workers = workers
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
 	mission.origin_is_earth = false
@@ -1688,7 +1676,6 @@ func _station_try_parts_delivery(ship: Ship) -> bool:
 	var mission := Mission.new()
 	mission.mission_type = Mission.MissionType.SUPPLY_RUN
 	mission.ship = ship
-	mission.workers = workers
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
 	mission.origin_is_earth = false
@@ -1763,7 +1750,6 @@ func _station_try_provisioning(ship: Ship) -> bool:
 	var mission := Mission.new()
 	mission.mission_type = Mission.MissionType.SUPPLY_RUN
 	mission.ship = ship
-	mission.workers = crew
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
 	mission.origin_is_earth = false
@@ -1872,7 +1858,7 @@ func _station_try_crew_ferry(ship: Ship) -> bool:
 			continue
 		# Check if any crew need rotation
 		var tired: int = 0
-		for w in other_ship.current_mission.workers:
+		for w in other_ship.crew:
 			if w.needs_rotation:
 				tired += 1
 		if tired == 0:
@@ -1906,7 +1892,6 @@ func _station_try_crew_ferry(ship: Ship) -> bool:
 	var mission := Mission.new()
 	mission.mission_type = Mission.MissionType.CREW_FERRY
 	mission.ship = ship
-	mission.workers = crew
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
 	mission.origin_is_earth = false
@@ -1952,7 +1937,6 @@ func _station_try_patrol(ship: Ship) -> bool:
 	mission.mission_type = Mission.MissionType.PATROL
 	mission.ship = ship
 	mission.asteroid = best_asteroid  # Use asteroid for position tracking
-	mission.workers = workers
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
 	mission.origin_is_earth = false
@@ -2038,7 +2022,7 @@ func _process_worker_fatigue(dt: float) -> void:
 			# On mission: fatigue increases, modified by personality and leader aura
 			var fatigue_mult: float = w.get_fatigue_multiplier()
 			if w.personality != Worker.Personality.LEADER:
-				fatigue_mult *= _get_leader_fatigue_modifier(w.assigned_mission.workers)
+				fatigue_mult *= _get_leader_fatigue_modifier(w.assigned_mission.ship.crew)
 			var fatigue_delta: float = days * fatigue_mult
 			w.fatigue = minf(w.fatigue + fatigue_delta, 100.0)
 			w.days_deployed += days
@@ -2229,11 +2213,11 @@ func _complete_boarding_job(mission: Mission) -> void:
 
 			# Auto-determine rescue crew: give target ship as many as possible while
 			# keeping at least 1 on the ferry.
-			if mission.rescue_crew.is_empty() and mission.workers.size() > 1:
-				var rescue_count := mini(mission.workers.size() - 1, target_ship.min_crew)
+			if mission.rescue_crew.is_empty() and ferry_ship.crew.size() > 1:
+				var rescue_count := mini(ferry_ship.crew.size() - 1, target_ship.min_crew)
 				rescue_count = maxi(rescue_count, 1)
 				for i in rescue_count:
-					mission.rescue_crew.append(mission.workers[i])
+					mission.rescue_crew.append(ferry_ship.crew[i])
 
 			if mission.rescue_crew.size() > 0:
 				# Apply loyalty penalty to rescue crew (they're replacing people the corp let die)
@@ -2259,7 +2243,7 @@ func _complete_boarding_job(mission: Mission) -> void:
 
 				# Remove rescue crew from ferry (they ride on the target ship now)
 				for w in mission.rescue_crew:
-					mission.workers.erase(w)
+					ferry_ship.crew.erase(w)
 
 				var sent_count := mission.rescue_crew.size()
 				ferry_ship.add_station_log("Rescued %s: %d crew transferred, both returning for more crew" % [target_ship.ship_name, sent_count], "crew_ferry")
@@ -2297,14 +2281,14 @@ func _complete_boarding_job(mission: Mission) -> void:
 		var target_mission := target_ship_rot.current_mission
 		# Find fatigued workers on target
 		var fatigued: Array[Worker] = []
-		for w in target_mission.workers:
+		for w in target_ship_rot.crew:
 			if w.needs_rotation:
 				fatigued.append(w)
 
-		# Find fresh workers on ferry (not part of ferry's own crew)
+		# Find fresh workers on ferry
 		var fresh: Array[Worker] = []
-		for w in mission.workers:
-			if w not in ferry_ship.crew and not w.needs_rotation:
+		for w in ferry_ship.crew:
+			if not w.needs_rotation:
 				fresh.append(w)
 
 		# Swap: remove fatigued from target, add fresh; fatigued board ferry
@@ -2312,21 +2296,21 @@ func _complete_boarding_job(mission: Mission) -> void:
 			var tired_w: Worker = fatigued[i]
 			var fresh_w: Worker = fresh[i]
 
-			# Remove tired from target mission
-			target_mission.workers.erase(tired_w)
+			# Remove tired from target ship
+			target_ship_rot.crew.erase(tired_w)
 			tired_w.assigned_mission = null
 
-			# Add fresh to target mission
-			target_mission.workers.append(fresh_w)
+			# Add fresh to target ship
+			target_ship_rot.crew.append(fresh_w)
 			fresh_w.assigned_mission = target_mission
 
-			# Tired worker joins ferry for return trip
-			if tired_w not in mission.workers:
-				mission.workers.append(tired_w)
+			# Tired worker boards ferry for return trip
+			if tired_w not in ferry_ship.crew:
+				ferry_ship.crew.append(tired_w)
 			tired_w.assigned_mission = mission
 
-			# Remove fresh from ferry passenger list (they stay on target)
-			mission.workers.erase(fresh_w)
+			# Remove fresh from ferry (they stay on target)
+			ferry_ship.crew.erase(fresh_w)
 
 			swapped += 1
 
@@ -2349,10 +2333,10 @@ func _complete_deploy(mission: Mission) -> void:
 			if w.assigned_mining_unit == null and unit_crew.size() < unit.workers_required:
 				unit_crew.append(w)
 		GameState.deploy_mining_unit(unit, mission.asteroid, unit_crew)
-	# Remove deployed workers from mission crew (they stay at the asteroid)
+	# Remove deployed workers from ship crew (they stay at the asteroid)
 	for w in mission.workers_to_deploy:
 		if w.assigned_mining_unit != null:
-			mission.workers.erase(w)
+			mission.ship.crew.erase(w)
 
 	mission.mining_units_to_deploy.clear()
 	mission.workers_to_deploy.clear()
@@ -2383,7 +2367,6 @@ func _complete_deploy(mission: Mission) -> void:
 	else:
 		mission.status = Mission.Status.IDLE_AT_DESTINATION
 		mission.elapsed_ticks = 0.0
-		mission.workers.clear()
 		EventBus.mission_phase_changed.emit(mission)
 		EventBus.ship_idle_at_destination.emit(mission.ship, mission)
 
@@ -2399,7 +2382,6 @@ func _complete_collection(mission: Mission) -> void:
 	else:
 		mission.status = Mission.Status.IDLE_AT_DESTINATION
 		mission.elapsed_ticks = 0.0
-		mission.workers.clear()
 		EventBus.mission_phase_changed.emit(mission)
 		EventBus.ship_idle_at_destination.emit(mission.ship, mission)
 
@@ -2639,14 +2621,14 @@ func _process_food_consumption(dt: float) -> void:
 
 	# Process ships on missions
 	for mission in GameState.missions:
-		if mission.workers.is_empty():
+		if mission.ship.crew.is_empty():
 			continue
 		var ship := mission.ship
 		if ship.is_derelict:
 			continue
 
 		# Calculate food consumption in kg, then convert to units
-		var food_needed_kg := mission.workers.size() * food_per_worker_per_day_kg * days
+		var food_needed_kg := mission.ship.crew.size() * food_per_worker_per_day_kg * days
 		var food_needed_units := food_needed_kg / KG_PER_FOOD_UNIT
 		var current_food_units: float = ship.supplies.get("food", 0.0)
 
@@ -2658,13 +2640,13 @@ func _process_food_consumption(dt: float) -> void:
 
 	# Process trade missions
 	for tm in GameState.trade_missions:
-		if tm.workers.is_empty():
+		if tm.ship.crew.is_empty():
 			continue
 		var ship := tm.ship
 		if ship.is_derelict:
 			continue
 
-		var food_needed_kg := tm.workers.size() * food_per_worker_per_day_kg * days
+		var food_needed_kg := tm.ship.crew.size() * food_per_worker_per_day_kg * days
 		var food_needed_units := food_needed_kg / KG_PER_FOOD_UNIT
 		var current_food_units: float = ship.supplies.get("food", 0.0)
 
@@ -2677,16 +2659,13 @@ func _trigger_food_depletion(ship: Ship, mission: Mission = null, trade_mission:
 	# Crew starve to death when food runs out
 	ship.supplies["food"] = 0.0
 
-	var dead_workers: Array[Worker] = []
+	var dead_workers: Array[Worker] = ship.crew.duplicate()
+	ship.crew.clear()
 	if mission:
-		dead_workers = mission.workers.duplicate()
-		mission.workers.clear()
 		mission.status = Mission.Status.COMPLETED
 		GameState.missions.erase(mission)
 		ship.current_mission = null
 	elif trade_mission:
-		dead_workers = trade_mission.workers.duplicate()
-		trade_mission.workers.clear()
 		trade_mission.status = TradeMission.Status.COMPLETED
 		GameState.trade_missions.erase(trade_mission)
 		ship.current_trade_mission = null
