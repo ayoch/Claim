@@ -30,7 +30,7 @@ var settings: Dictionary = {
 	"show_unreachable_destinations": false,
 	"auto_sell_at_markets": false,
 	"auto_sell_at_earth": true,
-	"autoplay": false,
+	"autoplay": true,
 }
 
 # Company policies
@@ -207,7 +207,13 @@ func _init_starter_ship() -> void:
 	var classes := ShipData.ShipClass.values()
 	for i in range(3):
 		var ship_class: ShipData.ShipClass = classes[randi() % classes.size()]
-		ships.append(ShipData.create_ship(ship_class))
+		var new_ship := ShipData.create_ship(ship_class)
+		ships.append(new_ship)
+		# Provision immediately with 30 days of supplies
+		var crew_size := new_ship.min_crew
+		new_ship.supplies["food"] = crew_size * 30.0 * 2.8
+		new_ship.supplies["water"] = crew_size * 30.0 * 0.25 / 20.0
+		new_ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
 
 func purchase_ship(ship_class: ShipData.ShipClass) -> Ship:
 	var price: int = ShipData.CLASS_PRICES[ship_class]
@@ -216,6 +222,11 @@ func purchase_ship(ship_class: ShipData.ShipClass) -> Ship:
 	money -= price
 	var new_ship := ShipData.create_ship(ship_class)
 	ships.append(new_ship)
+	# Provision new ship with 30 days of supplies (uses min_crew for calculation)
+	var crew_size := new_ship.min_crew
+	new_ship.supplies["food"] = crew_size * 30.0 * 2.8
+	new_ship.supplies["water"] = crew_size * 30.0 * 0.25 / 20.0
+	new_ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
 	EventBus.ship_purchased.emit(new_ship, price)
 	return new_ship
 
@@ -813,6 +824,15 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, units: Array[Minin
 		mining_unit_inventory.erase(u)
 
 	ship.current_mission = mission
+
+	# Provision supplies before departure (if at Earth or colony)
+	var at_earth_deploy := ship.position_au.distance_to(earth_pos) < 0.05
+	if at_earth_deploy or ship.docked_at_colony:
+		var crew_size := ship.crew.size() if ship.crew.size() > 0 else ship.min_crew
+		ship.supplies["food"] = crew_size * 30.0 * 2.8
+		ship.supplies["water"] = crew_size * 30.0 * 0.25 / 20.0
+		ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
+
 	ship.docked_at_colony = null
 	ship.reset_life_support(ship.crew.size())
 
@@ -876,6 +896,15 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int
 	mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
 
 	ship.current_mission = mission
+
+	# Provision supplies before departure (if at Earth or colony)
+	var at_earth_collect := ship.position_au.distance_to(earth_pos) < 0.05
+	if at_earth_collect or ship.docked_at_colony:
+		var crew_size := ship.crew.size() if ship.crew.size() > 0 else ship.min_crew
+		ship.supplies["food"] = crew_size * 30.0 * 2.8
+		ship.supplies["water"] = crew_size * 30.0 * 0.25 / 20.0
+		ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
+
 	ship.docked_at_colony = null
 	ship.reset_life_support(ship.crew.size())
 
@@ -1111,6 +1140,16 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 	# Stationed ships keep existing cargo (they accumulate over multiple mining runs)
 	if not ship.is_stationed:
 		ship.current_cargo.clear()
+
+	# Provision supplies before departure (if at Earth or colony)
+	var _earth_pos_check := CelestialData.get_earth_position_au()
+	var at_earth := ship.position_au.distance_to(_earth_pos_check) < 0.05
+	if at_earth or ship.docked_at_colony:
+		var crew_size := ship.crew.size() if ship.crew.size() > 0 else ship.min_crew
+		ship.supplies["food"] = crew_size * 30.0 * 2.8
+		ship.supplies["water"] = crew_size * 30.0 * 0.25 / 20.0
+		ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
+
 	ship.docked_at_colony = null  # Ship is departing
 	ship.reset_life_support(ship.crew.size())
 
@@ -1983,6 +2022,15 @@ func start_trade_mission(ship: Ship, colony_target: Colony, cargo_to_load: Dicti
 
 	ship.current_trade_mission = tm
 	ship.current_cargo = tm.cargo.duplicate()
+
+	# Provision supplies before departure (if at Earth or colony)
+	var at_earth_trade := ship.position_au.distance_to(_tm_earth_pos) < 0.05
+	if at_earth_trade or ship.docked_at_colony:
+		var crew_size := ship.crew.size() if ship.crew.size() > 0 else ship.min_crew
+		ship.supplies["food"] = crew_size * 30.0 * 2.8
+		ship.supplies["water"] = crew_size * 30.0 * 0.25 / 20.0
+		ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
+
 	ship.docked_at_colony = null  # Ship is departing
 	ship.reset_life_support(ship.crew.size())
 
@@ -2043,6 +2091,10 @@ func _start_queued_mission(ship: Ship) -> void:
 		match mission_type:
 			Mission.MissionType.COLLECT_ORE:
 				start_collect_mission(ship, asteroid, transit_mode, slingshot_route)
+			Mission.MissionType.REPOSITION:
+				var mission := start_mission(ship, asteroid, transit_mode, slingshot_route)
+				if mission:
+					mission.mission_type = Mission.MissionType.REPOSITION
 			_:  # Default: MINING
 				start_mission(ship, asteroid, transit_mode, slingshot_route)
 

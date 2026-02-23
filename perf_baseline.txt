@@ -1,0 +1,42 @@
+=== PERFORMANCE BASELINE ===
+Timestamp: 2026-02-23T11:54:19
+Game time: 0.0 days
+
+--- Game Objects ---
+Ships: 6
+Workers: 41
+Missions: 0
+Trade Missions: 0
+Deployed Mining Units: 0
+Asteroids: 196
+Colonies: 9
+Contracts (available): 0
+Contracts (active): 0
+Market Events: 0
+
+Rival Corps: 5
+Rival Ships: 21
+
+--- Ships Detail ---
+On mining mission: 0
+On trade mission: 0
+Idle: 6
+Derelict: 0
+Total crew assigned: 0
+
+--- Scene Tree ---
+Total nodes: 1864
+
+--- Performance ---
+FPS: 60
+Process time: 22.23 ms
+Physics time: 0.01 ms
+Current speed: 1x
+
+--- Memory ---
+Static: 110.64 MB
+Dynamic: 117.31 MB
+Objects: 6769
+Resources: 57
+Nodes: 2311
+

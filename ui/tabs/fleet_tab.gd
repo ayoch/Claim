@@ -514,14 +514,7 @@ func _rebuild_ships() -> void:
 			vbox.add_child(policy_grid)
 
 		# Crew toggle button + inline crew panel
-		var ship_crew: Array[Worker] = []
-		for w in GameState.workers:
-			if ship.current_mission != null and w.assigned_mission == ship.current_mission:
-				ship_crew.append(w)
-			elif ship.current_trade_mission != null and w.assigned_trade_mission == ship.current_trade_mission:
-				ship_crew.append(w)
-			elif w.assigned_ship == ship:
-				ship_crew.append(w)
+		var ship_crew: Array[Worker] = ship.crew.duplicate()
 
 		var crew_panel := VBoxContainer.new()
 		crew_panel.add_theme_constant_override("separation", 3)

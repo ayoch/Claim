@@ -84,6 +84,14 @@ const LEAVE_CHECK_INTERVAL: float = 86400.0  # Check once per game-day
 var _greedy_wage_accumulator: float = 0.0
 const GREEDY_WAGE_INTERVAL: float = 86400.0 * 30.0  # Every 30 game-days
 
+# Life support, food, and fatigue throttling
+var _life_support_accumulator: float = 0.0
+const LIFE_SUPPORT_INTERVAL: float = 3600.0  # Every game-hour
+var _food_consumption_accumulator: float = 0.0
+const FOOD_CONSUMPTION_INTERVAL: float = 3600.0  # Every game-hour
+var _worker_fatigue_accumulator: float = 0.0
+const WORKER_FATIGUE_INTERVAL: float = 86400.0  # Every game-day
+
 const TARDINESS_REASONS: Array[String] = [
 	"Got drunk at a station bar and missed the shuttle",
 	"Family emergency back home — needed extra time",
@@ -246,6 +254,13 @@ func _process_missions(dt: float) -> void:
 								else:
 									mission.status = Mission.Status.MINING
 									mission.elapsed_ticks = 0.0
+							Mission.MissionType.REPOSITION:
+								# Just move to destination and idle
+								mission.status = Mission.Status.IDLE_AT_DESTINATION
+								mission.elapsed_ticks = 0.0
+								if mission.asteroid:
+									mission.ship.position_au = mission.asteroid.get_position_au()
+								EventBus.ship_idle_at_destination.emit(mission.ship, mission)
 							Mission.MissionType.REPAIR:
 								mission.status = Mission.Status.REPAIRING
 								mission.elapsed_ticks = 0.0
@@ -1048,6 +1063,11 @@ func _check_breakdowns(dt: float) -> void:
 
 			# Degrade engine during transit (reduced by engineer skill)
 			ship.engine_condition = maxf(ship.engine_condition - ship.engine_wear_per_tick * eng_factor * dt, 0.0)
+
+			# Grant engineer XP during transit (active maintenance while under thrust)
+			for w in mission.ship.crew:
+				w.add_xp(1, dt)  # 1 = engineer skill
+
 			# Roll for breakdown (reduced by engineer skill)
 			var chance := ship.get_breakdown_chance_per_tick() * eng_factor
 			if chance > 0 and randf() < chance * dt:
@@ -1066,6 +1086,11 @@ func _check_breakdowns(dt: float) -> void:
 			var eng_factor := 1.0 - (best_engineer * 0.3)
 
 			ship.engine_condition = maxf(ship.engine_condition - ship.engine_wear_per_tick * eng_factor * dt, 0.0)
+
+			# Grant engineer XP during transit (active maintenance while under thrust)
+			for w in ship.crew:
+				w.add_xp(1, dt)  # 1 = engineer skill
+
 			var chance := ship.get_breakdown_chance_per_tick() * eng_factor
 			if chance > 0 and randf() < chance * dt:
 				_trigger_breakdown(ship, "Engine failure during transit")
@@ -1354,6 +1379,10 @@ func _process_stationed_ships(dt: float) -> void:
 		ship.crew = valid_crew
 		if ship.crew.size() < ship.min_crew:
 			continue  # Not enough crew to do anything
+
+		# Grant passive engineer XP to stationed crew (reduced rate for passive maintenance)
+		for w in ship.crew:
+			w.add_xp(1, STATION_CHECK_INTERVAL * 0.5)  # 1 = engineer skill, half rate
 
 		# Walk station_jobs in priority order, take first actionable job
 		for job in ship.station_jobs:
@@ -1990,8 +2019,8 @@ func _process_deployed_crews(dt: float) -> void:
 		if worker_count == 0:
 			continue
 
-		# Consume food: 0.5 units per worker per game-day
-		var food_consumed := worker_count * 0.5 * days
+		# Consume food: 2.8 kg per worker per game-day
+		var food_consumed := worker_count * 2.8 * days
 		var food_remaining: float = supplies.get("food", 0.0)
 		food_remaining = maxf(food_remaining - food_consumed, 0.0)
 		supplies["food"] = food_remaining
@@ -2009,10 +2038,6 @@ func _process_deployed_crews(dt: float) -> void:
 				EventBus.worker_fatigued.emit(w)
 
 func _process_worker_fatigue(dt: float) -> void:
-	# Piggyback on payroll interval (every game-day)
-	# We use payroll accumulator which already tracks this
-	# So this is called every tick but only acts when payroll fires
-	# Actually, let's just track per-tick since dt can be large
 	var days := dt / 86400.0
 	if days < 0.001:
 		return  # Skip tiny increments
@@ -2472,7 +2497,7 @@ func _process_asteroid_supplies(dt: float) -> void:
 
 		# Consume food
 		if workers > 0:
-			var food_needed: float = workers * 0.028 * days
+			var food_needed: float = workers * 2.8 * days
 			GameState.consume_asteroid_supply(asteroid_name, "food", food_needed)
 			# Alert if low — throttled to once per game-day
 			var food_days := GameState.get_asteroid_supply_days(asteroid_name, "food")
@@ -2609,7 +2634,11 @@ func _process_payroll(dt: float) -> void:
 func _process_food_consumption(dt: float) -> void:
 	var days := dt / 86400.0
 	var food_per_worker_per_day_kg := 2.8  # kg, from SupplyData
-	const KG_PER_FOOD_UNIT := 100.0  # SupplyData: 0.1t = 100kg per unit
+
+	# Grace periods after supplies run out (in game-seconds)
+	const FOOD_GRACE_PERIOD: float = 17.0 * 86400.0   # 17 days
+	const WATER_GRACE_PERIOD: float = 3.0 * 86400.0   # 3 days
+	const OXYGEN_GRACE_PERIOD: float = 1.0 * 86400.0  # 1 day
 
 	# Process deployed mining units
 	for unit in GameState.deployed_mining_units:
@@ -2627,16 +2656,28 @@ func _process_food_consumption(dt: float) -> void:
 		if ship.is_derelict:
 			continue
 
-		# Calculate food consumption in kg, then convert to units
-		var food_needed_kg := mission.ship.crew.size() * food_per_worker_per_day_kg * days
-		var food_needed_units := food_needed_kg / KG_PER_FOOD_UNIT
-		var current_food_units: float = ship.supplies.get("food", 0.0)
+		# Calculate food consumption in kg
+		var food_needed_kg := ship.crew.size() * food_per_worker_per_day_kg * days
+		var current_food_kg: float = ship.supplies.get("food", 0.0)
 
-		if current_food_units >= food_needed_units:
-			ship.supplies["food"] = current_food_units - food_needed_units
+		if current_food_kg >= food_needed_kg:
+			ship.supplies["food"] = current_food_kg - food_needed_kg
+			ship.food_depleted_at = -1.0  # Reset if resupplied
 		else:
-			# Out of food - workers abandon the mission
-			_trigger_food_depletion(ship, mission)
+			# Food depleted - start grace period or check if expired
+			ship.supplies["food"] = 0.0
+			if ship.food_depleted_at < 0:
+				ship.food_depleted_at = GameState.total_ticks
+
+			# Loyalty degradation while without food (-0.5 loyalty per half-day)
+			const LOYALTY_CHECK_INTERVAL: float = 43200.0  # 0.5 game-days
+			if GameState.total_ticks - ship.last_supply_loyalty_penalty >= LOYALTY_CHECK_INTERVAL:
+				ship.last_supply_loyalty_penalty = GameState.total_ticks
+				for worker in ship.crew:
+					worker.loyalty = maxf(0.0, worker.loyalty - 0.5)
+
+			if GameState.total_ticks - ship.food_depleted_at > FOOD_GRACE_PERIOD:
+				_trigger_starvation(ship, mission)
 
 	# Process trade missions
 	for tm in GameState.trade_missions:
@@ -2646,17 +2687,29 @@ func _process_food_consumption(dt: float) -> void:
 		if ship.is_derelict:
 			continue
 
-		var food_needed_kg := tm.ship.crew.size() * food_per_worker_per_day_kg * days
-		var food_needed_units := food_needed_kg / KG_PER_FOOD_UNIT
-		var current_food_units: float = ship.supplies.get("food", 0.0)
+		var food_needed_kg := ship.crew.size() * food_per_worker_per_day_kg * days
+		var current_food_kg: float = ship.supplies.get("food", 0.0)
 
-		if current_food_units >= food_needed_units:
-			ship.supplies["food"] = current_food_units - food_needed_units
+		if current_food_kg >= food_needed_kg:
+			ship.supplies["food"] = current_food_kg - food_needed_kg
+			ship.food_depleted_at = -1.0  # Reset if resupplied
 		else:
-			_trigger_food_depletion(ship, null, tm)
+			ship.supplies["food"] = 0.0
+			if ship.food_depleted_at < 0:
+				ship.food_depleted_at = GameState.total_ticks
 
-func _trigger_food_depletion(ship: Ship, mission: Mission = null, trade_mission: TradeMission = null) -> void:
-	# Crew starve to death when food runs out
+			# Loyalty degradation while without food (-0.5 loyalty per half-day)
+			const LOYALTY_CHECK_INTERVAL: float = 43200.0  # 0.5 game-days
+			if GameState.total_ticks - ship.last_supply_loyalty_penalty >= LOYALTY_CHECK_INTERVAL:
+				ship.last_supply_loyalty_penalty = GameState.total_ticks
+				for worker in ship.crew:
+					worker.loyalty = maxf(0.0, worker.loyalty - 0.5)
+
+			if GameState.total_ticks - ship.food_depleted_at > FOOD_GRACE_PERIOD:
+				_trigger_starvation(ship, null, tm)
+
+func _trigger_starvation(ship: Ship, mission: Mission = null, trade_mission: TradeMission = null) -> void:
+	# Crew starve to death after grace period expires
 	ship.supplies["food"] = 0.0
 
 	var dead_workers: Array[Worker] = ship.crew.duplicate()
@@ -2876,25 +2929,57 @@ func _auto_provision_at_location(ship: Ship) -> void:
 	var crew_size := ship.crew.size() if ship.crew.size() > 0 else ship.min_crew
 
 	# ── Food ──────────────────────────────────────────────────────────────────
-	# 2.8 kg/person/day; 1 crate = 100 kg
-	var target_food_units := crew_size * DAYS_BUFFER * 2.8 / 100.0
+	# 2.8 kg/person/day
+	var target_food_kg := crew_size * DAYS_BUFFER * 2.8
 	var current_food: float = ship.supplies.get("food", 0.0)
-	if current_food < target_food_units:
-		GameState.buy_supplies(ship, "food", target_food_units - current_food)
+	if current_food < target_food_kg:
+		var needed := target_food_kg - current_food
+		var success := GameState.buy_supplies(ship, "food", needed)
+		if not success:
+			_log_provision_failure(ship, "food", needed, crew_size)
 
 	# ── Water (recycled) ──────────────────────────────────────────────────────
 	# 0.25 L/person/day makeup with 90% recycling; 1 tank = 20 L
 	var target_water_units := crew_size * DAYS_BUFFER * 0.25 / 20.0
 	var current_water: float = ship.supplies.get("water", 0.0)
 	if current_water < target_water_units:
-		GameState.buy_supplies(ship, "water", target_water_units - current_water)
+		var needed := target_water_units - current_water
+		var success := GameState.buy_supplies(ship, "water", needed)
+		if not success:
+			_log_provision_failure(ship, "water", needed, crew_size)
 
 	# ── Oxygen (recycled) ─────────────────────────────────────────────────────
 	# 0.05 kg/person/day makeup with CO2 scrubbing; 1 canister = 2 kg
 	var target_o2_units := crew_size * DAYS_BUFFER * 0.05 / 2.0
 	var current_o2: float = ship.supplies.get("oxygen", 0.0)
 	if current_o2 < target_o2_units:
-		GameState.buy_supplies(ship, "oxygen", target_o2_units - current_o2)
+		var needed := target_o2_units - current_o2
+		var success := GameState.buy_supplies(ship, "oxygen", needed)
+		if not success:
+			_log_provision_failure(ship, "oxygen", needed, crew_size)
+
+func _log_provision_failure(ship: Ship, supply_key: String, amount: float, crew_size: int) -> void:
+	# Log why auto-provisioning failed (for debugging starvation issues)
+	var log := FileAccess.open("res://provision_failures.txt", FileAccess.READ_WRITE)
+	if log:
+		log.seek_end()
+		var unit_label := SupplyData.get_unit_label_from_key(supply_key)
+		var cargo_remaining := ship.get_cargo_remaining()
+		var cargo_volume_remaining := ship.get_cargo_volume_remaining()
+		log.store_line("[%.1f] %s failed to provision %s %.2f %s for %d crew" % [
+			GameState.game_clock_ticks / 86400.0,
+			ship.ship_name,
+			supply_key,
+			amount,
+			unit_label,
+			crew_size
+		])
+		log.store_line("  Money: $%d | Cargo: %.1ft remaining | Volume: %.1fm³ remaining" % [
+			GameState.money,
+			cargo_remaining,
+			cargo_volume_remaining
+		])
+		log.close()
 
 # ─── Rival Corporations ───────────────────────────────────────────────────────
 

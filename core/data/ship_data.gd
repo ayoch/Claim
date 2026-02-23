@@ -143,9 +143,7 @@ static func create_ship(ship_class: ShipClass, ship_name: String = "") -> Ship:
 	ship.position_au = CelestialData.get_earth_position_au()
 	ship.engine_condition = 100.0
 
-	# Start with basic provisions (1 unit = 100kg)
-	ship.supplies["food"] = 3.0  # ~30 days for 3 crew (0.084 units/day)
-	ship.supplies["repair_parts"] = 10.0
+	# Supplies will be provisioned after purchase (GameState.purchase_ship calls auto_provision)
 
 	return ship
 

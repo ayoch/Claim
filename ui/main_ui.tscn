@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" path="res://ui/tabs/workers_tab.tscn" id="4"]
 [ext_resource type="PackedScene" path="res://ui/tabs/ship_outfitting_tab.tscn" id="5"]
 [ext_resource type="PackedScene" path="res://ui/tabs/solar_map_tab.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://ui/tabs/market_tab.tscn" id="7"]
 ;[ext_resource type="PackedScene" path="res://ui/tabs/finances_tab.tscn" id="10"]
 ;[ext_resource type="Shader" path="res://ui/shaders/crt_static.gdshader" id="9"]
 
@@ -166,10 +167,13 @@ layout_mode = 2
 [node name="Fleet" parent="VBox/TabContainer" instance=ExtResource("3")]
 layout_mode = 2
 
+[node name="Shipyard" parent="VBox/TabContainer" instance=ExtResource("5")]
+layout_mode = 2
+
 [node name="Crew" parent="VBox/TabContainer" instance=ExtResource("4")]
 layout_mode = 2
 
-[node name="Ships" parent="VBox/TabContainer" instance=ExtResource("5")]
+[node name="Market" parent="VBox/TabContainer" instance=ExtResource("7")]
 layout_mode = 2
 
 ;[node name="Finances" parent="VBox/TabContainer" instance=ExtResource("10")]
