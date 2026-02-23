@@ -86,6 +86,29 @@ const COLLECTION_POLICY_THRESHOLDS := {
 	CollectionPolicy.MANUAL: 0.0,  # Never triggers
 }
 
+# --- Repair Policy ---
+# Controls whether ships auto-repair their engine when docked at a location with repair services.
+enum RepairPolicy {
+	ALWAYS,    # Always repair to 100% before departing
+	AS_NEEDED, # Repair only if engine condition is low enough to risk trouble next mission
+	NEVER,     # No auto-repairs — player handles manually
+}
+
+const REPAIR_POLICY_NAMES := {
+	RepairPolicy.ALWAYS: "Always",
+	RepairPolicy.AS_NEEDED: "As Needed",
+	RepairPolicy.NEVER: "Never",
+}
+
+const REPAIR_POLICY_DESCRIPTIONS := {
+	RepairPolicy.ALWAYS: "Repair engine to 100% every time the ship docks at a facility with repair services. Highest cost, lowest breakdown risk.",
+	RepairPolicy.AS_NEEDED: "Repair only if engine condition is below 60% — likely to cause trouble on the next mission. Balances cost and safety.",
+	RepairPolicy.NEVER: "Never auto-repair. You manage all maintenance manually.",
+}
+
+# Engine condition threshold for AS_NEEDED policy
+const REPAIR_AS_NEEDED_THRESHOLD: float = 60.0
+
 # --- Encounter Policy ---
 # Controls how workers behave when rival crews are present at the same asteroid.
 # (Currently informational — encounter resolution activates in Phase 4.)

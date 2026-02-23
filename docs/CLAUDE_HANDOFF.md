@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-21 ~22:45 EST
+**Last Updated:** 2026-02-22 EST (session 8)
 **Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
-**Session Context:** Lightspeed comms delay, rival corporations, food starvation fix, ore-loss fix, auto-sell at Earth
-**Next Session Priority:** Rival corp visibility on solar map (show rival ships as faint markers); or lightspeed delay UX polish (live countdown timer on ship cards)
+**Session Context:** Teleport bug fix (autoplay guard restored)
+**Next Session Priority:** Test "Plan Next Mission": dispatch ship → wait for return → verify ship docks at Earth, gets provisioned (food+water+O2), repaired, THEN launches queued mission. Test fleet rescue cancel. Orbital pathing bug fix still pending (ships path to where destination IS not where it WILL BE — was mid-implementation when interrupted).
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -12,6 +12,77 @@
 ## Session Log
 *(Most recent first)*
 
+### 2026-02-22 EST (session 8) - Teleport bug fix
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Teleport bug fixed**: Session 7 removed autoplay guards from two `_policy_dispatch_idle_ship` call sites in `simulation.gd`. Ships auto-dispatched via policy even when autoplay was off, causing them to immediately leave Earth on return. Fixed: restored `and GameState.settings.get("autoplay", false)` guard in signal handler and changed `else` to `elif autoplay` in idle ship loop. Queued missions (`_start_queued_mission`) still launch regardless of autoplay setting.
+- **Files Modified:** `core/autoloads/simulation.gd`
+
+### 2026-02-22 EST (session 7) - Plan Next Mission redesign; Water/O2 supplies
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Plan Next Mission completely redesigned**: Previous implementation called `_start_queued_mission` inside `complete_mission`, which fires before `_auto_provision` and `_auto_repair` — ship left immediately without being restocked or repaired. Now: queued mission launches AFTER refuel+provision+repair in the transit-back completion block in `simulation.gd`. Also fixed in trade mission completion path. Per-tick idle ship loop now calls `_start_queued_mission` (not `_policy_dispatch_idle_ship`) when ship has queued mission. Removed early return from `_policy_dispatch_idle_ship`. Removed incorrect `return_to_station = true` on queued missions.
+  - **Bugfix in `_queue_mission`**: Called nonexistent `asteroid.get_total_ore()` and `worker.mining_rate` — replaced with `AsteroidData.estimate_mission()` for correct mining duration.
+  - **Water and Oxygen supply types**: Added `WATER` (tank = 20 L makeup water, $40, 0.02 t) and `OXYGEN` (canister = 2 kg O2, $120, 0.002 t) to `SupplyData`. Reflects recycled life support — small amounts, realistic. Added `unit_label` to all supply types (crate/kit/tank/canister) and helper functions `get_unit_label()`, `get_unit_label_from_key()`. `_auto_provision_at_location` now stocks water and O2 alongside food. UI displays all three with unit labels.
+- **Files Modified:** `core/autoloads/game_state.gd`, `core/autoloads/simulation.gd`, `core/data/supply_data.gd`, `ui/tabs/fleet_market_tab.gd`
+
+### 2026-02-22 EST (session 6) - Crew assign fix; Plan Next Mission; Rescue cancel
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:** (see session 6 in WORK_LOG)
+  - Horizontal stretching fix in assign crew screens
+  - Plan Next Mission initial implementation (later redesigned in session 7)
+  - Fleet rescue cancel button
+
+### 2026-02-22 EST (session 5) - UI polish, policy override fix
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Per-ship policy overrides UI fixed**: Was implemented in dead `fleet_tab.gd`; ported to `fleet_market_tab.gd`. Each non-derelict ship card now shows Thrust/Supply/Collection/Encounter OptionButtons with "Company Default" as item 0 (-1) and all enum values as subsequent items. Pre-selects current override on rebuild.
+  - **Nebula background**: Replaced procedural starfield in `ui/starfield_bg.gd` with `StarfieldNebula1.png` that drifts slowly in a randomized arc. Direction curves at random angular velocity, steers back toward center when approaching edges.
+  - **Wrench repair icons**: Added `_get_wrench_texture(ship)` to fleet tab — red (≤20%), orange (≤50%), yellow (≤70%) based on worst of engine_condition and equipment durability. 20×20px icon in name row header, 35° tilt. Wrapped in plain Control to prevent HBoxContainer from overriding rotation.
+  - **Asset folders moved**: `wrenches/` → `ui/wrenches/`, `starfields/` → `ui/starfields/`
+- **Files Modified:** `ui/starfield_bg.gd`, `ui/tabs/fleet_market_tab.gd`
+- **Files Moved:** `wrenches/` → `ui/wrenches/`, `starfields/` → `ui/starfields/`
+
+### 2026-02-22 EST (session 4) - Food death, ship names, git
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Food depletion now kills crew**: `_trigger_food_depletion()` in `simulation.gd` now removes dead workers from `GameState.workers` permanently, marks ship derelict (breakdown), and emits `ship_derelict`. Previously workers just abandoned ship with a loyalty hit.
+  - **EventBus**: `ship_food_depleted` parameter renamed from `workers_abandoned` to `workers_killed`.
+  - **Ship names**: Added 11 new names — Modest Ambitions, Known Issue, Salt and Tarnish, Norfleet, Borrowed Light, Belligerent Optimism, Cimmeria, Technically Profitable, Song of Many, Sing Forever, Of Distant Suns. Pool is now 30 names.
+  - **Git**: Removed `docs/WORK_LOG.txt` from tracking (`git rm --cached`). Already covered by `/docs/` in `.gitignore`.
+- **Files Modified:** `core/autoloads/simulation.gd`, `core/autoloads/event_bus.gd`, `core/data/ship_data.gd`
+
+### 2026-02-22 EST (session 3) - Fleet Assist / Crew Rescue System
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Fleet assist system**: Any docked fleet ship can now be dispatched to rescue a derelict fleet ship. Delivers crew + supplies on arrival; rescue crew suffer -20 loyalty penalty.
+  - **`core/models/mission.gd`**: Added `is_derelict_rescue: bool`, `rescue_crew: Array[Worker]`, `supplies_to_transfer: Dictionary`.
+  - **`core/autoloads/game_state.gd`**: Added `start_fleet_rescue(ferry_ship, target_ship, rescue_crew, food_units, parts_units) -> Mission`.
+  - **`core/autoloads/simulation.gd`**: `_complete_boarding_job()` now handles `is_derelict_rescue` branch: transfers supplies, applies loyalty penalty, clears derelict status, triggers rescue_mission_completed.
+  - **`ui/tabs/fleet_market_tab.gd`**: Supplies now shown in dedicated "Supplies (Xt):" label with food-days estimate (separate from "Ore" label). Added "Supplies" button for all docked ships. Added "FLEET SHIPS NEEDING HELP" section in dispatch popup. Added `_show_fleet_rescue_dispatch()` with supply spinboxes and rescue crew checkboxes.
+- **Files Modified:** `core/models/mission.gd`, `core/autoloads/game_state.gd`, `core/autoloads/simulation.gd`, `ui/tabs/fleet_market_tab.gd`
+
+### 2026-02-22 EST (session 2) - Per-Ship Policy Overrides
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Per-ship policy overrides**: Each ship can now override any of the 4 company policies (Thrust, Supply, Collection, Encounter) independently. Override of -1 means "use company default."
+  - **`core/models/ship.gd`**: Added 4 `@export` int fields defaulting to -1.
+  - **`core/autoloads/game_state.gd`**: Added `get_thrust_policy(ship)`, `get_supply_policy(ship)`, `get_collection_policy(ship)`, `get_encounter_policy(ship)` resolvers. Override fields persisted in save/load.
+  - **`core/autoloads/simulation.gd`**: All direct `GameState.*_policy` reads replaced with resolver calls in `_autoplay_jobs(ship)`, `_policy_dispatch_idle_ship`, `_station_try_provisioning`, `_station_try_collect_ore`. `_autoplay_jobs` now takes a `ship` param.
+  - **`ui/tabs/fleet_tab.gd`**: Added "Policy Overrides" section to each non-derelict ship card — 4 OptionButtons with "Company Default" as item 0 and all enum values as subsequent items. Pre-selects current override on open.
+- **Files Modified:** `core/models/ship.gd`, `core/autoloads/game_state.gd`, `core/autoloads/simulation.gd`, `ui/tabs/fleet_tab.gd`
+
+### 2026-02-22 EST - Ghost Ship Observation System
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Ghost ship system**: Rival corp ships are now visible on the solar map as faint color-coded markers, subject to light-speed delay, fusion exhaust cone visibility, and confidence decay.
+  - **NEW `core/models/ghost_observation.gd`**: Data class. `get_estimated_position(ticks)` extrapolates forward along last known velocity. `get_current_confidence(ticks)` decays linearly over 2 game-days. `is_expired()` returns true at <2% confidence.
+  - **MODIFIED `core/models/rival_ship.gd`**: Added `get_thrust_direction()` (brachistochrone: first half = accelerate, second half = decelerate), `get_velocity_au_per_tick()` (average AU/tick for delay back-calculation), `get_visibility_from(observer_pos)` (dot product of exhaust direction vs ship→observer, 0–1).
+  - **MODIFIED `core/autoloads/game_state.gd`**: Added `ghost_observations: Array[GhostObservation]`.
+  - **MODIFIED `core/autoloads/simulation.gd`**: Added `_update_rival_observations()` running every 60 game-seconds. Collects all player observers (Earth/HQ + all non-derelict ships). For each rival ship, finds best-visibility observer, computes full light-speed delay (rival→observer→HQ), back-calculates observed position, creates/replaces `GhostObservation`. Prunes expired. 5-color `CORP_COLORS` array by corp index.
+  - **MODIFIED `solar_map/solar_map_view.gd`**: Added `_draw_ghost_observations()`. Draws corp-colored dot (radius and alpha scale with confidence), uncertainty halo (radius grows as confidence fades), velocity arrow when confidence > 0.35.
+- **Files Modified/Created:** `core/models/ghost_observation.gd` (new), `core/models/rival_ship.gd`, `core/autoloads/game_state.gd`, `core/autoloads/simulation.gd`, `solar_map/solar_map_view.gd`
+- **Tuning notes:** MIN_VISIBILITY = 0.15 (ships must have exhaust cone facing at least 15% toward an observer). CONFIDENCE_LIFETIME = 2 game-days. Arrow length capped at 50px = 1 game-hour of travel. These can be adjusted during playtesting.
 
 ### 2026-02-21 ~22:00-22:30 EST - Auto-Sell at Earth
 - **Machine:** Windows desktop (Dweezil)

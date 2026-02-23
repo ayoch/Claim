@@ -1,65 +1,66 @@
 extends Control
 
-const STAR_COUNT: int = 300
-const TWINKLE_SPEED: float = 1.5
+const TEXTURE_PATH: String = "res://ui/starfields/StarfieldNebula1.png"
+const PAN_SPEED: float = 12.0        # pixels per second
+const SCALE_FACTOR: float = 1.4      # extra scale beyond cover — sets panning room
+const ARC_CHANGE_INTERVAL_MIN: float = 4.0
+const ARC_CHANGE_INTERVAL_MAX: float = 10.0
+const MAX_ANGULAR_VEL: float = 0.4   # radians/s max curve rate
 
-var _stars: Array[Dictionary] = []
-var _time: float = 0.0
+var _texture: Texture2D = null
+var _offset: Vector2 = Vector2.ZERO
+var _direction: float = 0.0          # current travel angle (radians)
+var _angular_vel: float = 0.0        # how fast the arc curves
+var _arc_timer: float = 0.0
 
 func _ready() -> void:
-	_generate_stars()
-
-func _generate_stars() -> void:
-	_stars.clear()
-	for i in range(STAR_COUNT):
-		_stars.append({
-			"pos": Vector2(randf(), randf()),  # normalized 0-1
-			"size": randf_range(0.5, 2.5),
-			"brightness": randf_range(0.3, 1.0),
-			"twinkle_phase": randf() * TAU,
-			"twinkle_amount": randf_range(0.0, 0.4),
-		})
+	_texture = load(TEXTURE_PATH)
+	_direction = randf() * TAU
+	_angular_vel = randf_range(-MAX_ANGULAR_VEL, MAX_ANGULAR_VEL)
+	_arc_timer = randf_range(ARC_CHANGE_INTERVAL_MIN, ARC_CHANGE_INTERVAL_MAX)
 
 func _process(delta: float) -> void:
-	_time += delta * TWINKLE_SPEED
+	if not _texture:
+		return
+
+	# Slowly curve the travel direction
+	_direction += _angular_vel * delta
+
+	# Occasionally pick a new arc curvature
+	_arc_timer -= delta
+	if _arc_timer <= 0.0:
+		_angular_vel = randf_range(-MAX_ANGULAR_VEL, MAX_ANGULAR_VEL)
+		_arc_timer = randf_range(ARC_CHANGE_INTERVAL_MIN, ARC_CHANGE_INTERVAL_MAX)
+
+	# Move offset along current direction
+	_offset += Vector2(cos(_direction), sin(_direction)) * PAN_SPEED * delta
+
+	# Steer back toward center when drifting too far
+	var max_off := (_get_draw_size() - size) * 0.5
+	if max_off.x > 0.0 and max_off.y > 0.0:
+		var norm := Vector2(_offset.x / max_off.x, _offset.y / max_off.y)
+		if norm.length() > 0.65:
+			var toward_center := (-_offset).angle()
+			var diff := angle_difference(_direction, toward_center)
+			# Steer harder the further out we are
+			var steer := norm.length() * 2.0
+			_direction += sign(diff) * steer * delta
+			_offset.x = clampf(_offset.x, -max_off.x, max_off.x)
+			_offset.y = clampf(_offset.y, -max_off.y, max_off.y)
+
 	queue_redraw()
 
+func _get_draw_size() -> Vector2:
+	if not _texture:
+		return size
+	var tex_size := Vector2(_texture.get_width(), _texture.get_height())
+	var cover_scale := maxf(size.x / tex_size.x, size.y / tex_size.y)
+	return tex_size * cover_scale * SCALE_FACTOR
+
 func _draw() -> void:
-	# Deep space background - almost black with hint of cold blue
-	draw_rect(Rect2(Vector2.ZERO, size), Color(0.01, 0.015, 0.02))
-
-	# Subtle nebula glow - cold blue-greys, muted
-	var center := size * 0.3
-	for i in range(3):
-		var nebula_pos := Vector2(
-			size.x * (0.2 + i * 0.3),
-			size.y * (0.3 + i * 0.15)
-		)
-		var nebula_radius := size.x * 0.4
-		var nebula_color := Color(0.02, 0.04, 0.06, 0.10) if i % 2 == 0 else Color(0.03, 0.05, 0.08, 0.08)
-		draw_circle(nebula_pos, nebula_radius, nebula_color)
-
-	# Stars
-	for star in _stars:
-		var pos := Vector2(star["pos"].x * size.x, star["pos"].y * size.y)
-		var base_bright: float = star["brightness"]
-		var twinkle: float = star["twinkle_amount"]
-		var phase: float = star["twinkle_phase"]
-		var bright: float = base_bright + sin(_time + phase) * twinkle
-		bright = clampf(bright, 0.1, 1.0)
-
-		var star_size: float = star["size"]
-
-		# Cold color variation - cooler tones to match industrial aesthetic
-		var color: Color
-		if base_bright > 0.8:
-			color = Color(0.8, 0.85, 1.0, bright)  # blue-white (bright stars)
-		elif base_bright > 0.5:
-			color = Color(0.85, 0.9, 1.0, bright)   # cool white
-		else:
-			color = Color(0.6, 0.65, 0.75, bright)     # dim cool blue-grey
-
-		if star_size > 1.8:
-			# Larger stars get a soft glow
-			draw_circle(pos, star_size * 2.0, Color(color.r, color.g, color.b, bright * 0.15))
-		draw_circle(pos, star_size, color)
+	if not _texture:
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.01, 0.015, 0.02))
+		return
+	var draw_size := _get_draw_size()
+	var top_left := (size - draw_size) * 0.5 + _offset
+	draw_texture_rect(_texture, Rect2(top_left, draw_size), false)

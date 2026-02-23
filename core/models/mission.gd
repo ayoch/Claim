@@ -60,6 +60,11 @@ enum TransitMode {
 @export var workers_to_deploy: Array[Worker] = []
 @export var deploy_duration: float = 3600.0  # 1 hour per unit being deployed
 
+# Derelict rescue support (CREW_FERRY targeting a derelict fleet ship)
+@export var is_derelict_rescue: bool = false
+@export var rescue_crew: Array[Worker] = []
+@export var supplies_to_transfer: Dictionary = {}
+
 # Gravity assist / multi-leg journey support
 @export var outbound_waypoints: Array[Vector2] = []      # intermediate positions (e.g., planet flyby)
 @export var outbound_waypoint_planet_ids: Array[int] = []  # which planets for gravity assists
@@ -186,6 +191,19 @@ func _get_origin_pos_live() -> Vector2:
 		return CelestialData.get_earth_position_au()
 	return origin_position_au
 
+func _get_live_outbound_waypoint(idx: int) -> Vector2:
+	# Use live colony position for refuel stops; stored position for gravity assists
+	if idx < outbound_waypoint_types.size() and outbound_waypoint_types[idx] == WaypointType.REFUEL_STOP:
+		if idx < outbound_waypoint_colony_refs.size() and outbound_waypoint_colony_refs[idx]:
+			return outbound_waypoint_colony_refs[idx].get_position_au()
+	return outbound_waypoints[idx]
+
+func _get_live_return_waypoint(idx: int) -> Vector2:
+	if idx < return_waypoint_types.size() and return_waypoint_types[idx] == WaypointType.REFUEL_STOP:
+		if idx < return_waypoint_colony_refs.size() and return_waypoint_colony_refs[idx]:
+			return return_waypoint_colony_refs[idx].get_position_au()
+	return return_waypoints[idx]
+
 func get_current_leg_start_pos() -> Vector2:
 	# Get the starting position for the current transit leg
 	match status:
@@ -193,14 +211,14 @@ func get_current_leg_start_pos() -> Vector2:
 			if outbound_waypoint_index == 0:
 				return _get_origin_pos_live()
 			elif outbound_waypoint_index > 0 and outbound_waypoint_index <= outbound_waypoints.size():
-				return outbound_waypoints[outbound_waypoint_index - 1]
+				return _get_live_outbound_waypoint(outbound_waypoint_index - 1)
 			return _get_origin_pos_live()
 		Status.TRANSIT_BACK:
 			if return_waypoint_index == 0:
-				return asteroid.get_position_au() if asteroid else origin_position_au
+				return asteroid.get_position_au() if asteroid else destination_position_au
 			elif return_waypoint_index > 0 and return_waypoint_index <= return_waypoints.size():
-				return return_waypoints[return_waypoint_index - 1]
-			return asteroid.get_position_au() if asteroid else origin_position_au
+				return _get_live_return_waypoint(return_waypoint_index - 1)
+			return asteroid.get_position_au() if asteroid else destination_position_au
 		_:
 			return _get_origin_pos_live()
 
@@ -209,12 +227,12 @@ func get_current_leg_end_pos() -> Vector2:
 	match status:
 		Status.TRANSIT_OUT:
 			if outbound_waypoint_index < outbound_waypoints.size():
-				return outbound_waypoints[outbound_waypoint_index]
+				return _get_live_outbound_waypoint(outbound_waypoint_index)
 			else:
-				return asteroid.get_position_au() if asteroid else origin_position_au
+				return asteroid.get_position_au() if asteroid else destination_position_au
 		Status.TRANSIT_BACK:
 			if return_waypoint_index < return_waypoints.size():
-				return return_waypoints[return_waypoint_index]
+				return _get_live_return_waypoint(return_waypoint_index)
 			else:
 				# Use live position — return_position_au goes stale as bodies orbit
 				if return_to_station and ship and ship.station_colony:

@@ -1,4 +1,4 @@
-extends Node
+﻿extends Node
 
 # Note: game_speed is now controlled by TimeScale autoload (1/2 keys)
 # Default is 1.0, but speeds up to 5x for development
@@ -37,6 +37,7 @@ const MAX_DT_PER_STEP: float = 500.0  # Max ticks batched into one step (random 
 # Life support warning thresholds (percentage) — only fire once per threshold per ship
 const LIFE_SUPPORT_WARN_THRESHOLDS: Array[float] = [0.75, 0.50, 0.25, 0.10]
 var _life_support_warnings_fired: Dictionary = {}  # Ship -> Array of thresholds already fired
+var _supply_alert_last_fired: Dictionary = {}  # "asteroid:supply_key" -> game_tick of last alert
 
 # Reusable buffers to avoid per-tick allocations
 var _missions_buf: Array = []
@@ -55,6 +56,23 @@ const STATION_RADIUS_AU: float = 1.0  # Ships consider targets within this radiu
 var _rival_accumulator: float = 0.0
 const RIVAL_CHECK_INTERVAL: float = 3600.0   # AI decisions every game-hour
 const RIVAL_BASE_MINING_DURATION: float = 86400.0  # 1 game-day of mining per run
+
+# Ghost contact tracking system
+var _observation_accumulator: float = 0.0
+const OBSERVATION_INTERVAL: float = 60.0    # Scan for observations once per game-minute
+const MIN_VISIBILITY: float = 0.15           # Minimum exhaust-cone visibility to record
+const CONTACT_MATCH_RADIUS: float = 0.15     # AU — max distance to match observation to existing contact
+var _next_contact_id: int = 0
+const CONTACT_COLORS: Array = [
+	Color(1.0, 0.30, 0.30),  # Red
+	Color(1.0, 0.60, 0.10),  # Orange
+	Color(1.0, 1.00, 0.20),  # Yellow
+	Color(0.3, 1.00, 0.45),  # Green
+	Color(0.3, 0.80, 1.00),  # Cyan
+	Color(0.5, 0.30, 1.00),  # Violet
+	Color(1.0, 0.30, 0.80),  # Magenta
+	Color(0.8, 1.00, 0.55),  # Lime
+]
 
 # Worker fatigue (piggybacks on payroll accumulator interval)
 
@@ -96,15 +114,16 @@ func _ready() -> void:
 	EventBus.ship_breakdown.connect(func(_s: Ship, _r: String) -> void: TimeScale.slow_for_critical_event())
 	EventBus.stranger_rescue_offered.connect(func(_s: Ship, _n: String) -> void: TimeScale.slow_for_critical_event())
 	EventBus.ship_destroyed.connect(func(_s: Ship, _b: String) -> void: TimeScale.slow_for_critical_event())
-	# Autoplay: immediately re-evaluate Earth ships when a mission completes
+	# Policy dispatch: re-evaluate idle Earth ships immediately when a mission completes
 	EventBus.mission_completed.connect(func(mission: Mission) -> void:
-		if not GameState.settings.get("autoplay", false):
-			return
 		var ship := mission.ship
 		if ship == null or ship.is_derelict or ship.is_stationed:
 			return
+		# Queued missions are launched after provision/repair in the transit completion block.
+		# Only policy-dispatch ships with no queued plan.
 		if ship.is_at_earth and ship.current_mission == null and ship.current_trade_mission == null:
-			_autoplay_dispatch_from_earth(ship)
+			if not ship.has_queued_mission() and GameState.settings.get("autoplay", false):
+				_policy_dispatch_idle_ship(ship)
 	)
 
 func _process(delta: float) -> void:
@@ -334,27 +353,33 @@ func _process_missions(dt: float) -> void:
 						_process_waypoint_transition(mission, false)  # false = return
 					else:
 						# Reached final destination — use current Earth position (Earth orbits!)
+						var _mission_ship := mission.ship
+						var _provision_after_complete := false
 						if mission.ship.is_stationed and mission.ship.station_colony:
 							mission.ship.position_au = mission.ship.station_colony.get_position_au()
 						elif not mission.return_to_station:
 							mission.ship.position_au = CelestialData.get_earth_position_au()
 							mission.ship.docked_at_colony = null  # Returning to Earth, not a colony
 							_auto_refuel_at_earth(mission.ship)
-							_auto_provision_at_location(mission.ship)
+							# Provision AFTER complete_mission clears ore cargo (so food fits)
+							_provision_after_complete = true
 						else:
 							if mission.ship.station_colony == null:
 								mission.ship.position_au = CelestialData.get_earth_position_au()
 								_auto_refuel_at_earth(mission.ship)
-								_auto_provision_at_location(mission.ship)
+								# Provision AFTER complete_mission clears ore cargo (so food fits)
+								_provision_after_complete = true
 							else:
 								mission.ship.position_au = mission.return_position_au
 							if not mission.ship.is_stationed:
 								mission.ship.docked_at_colony = null
-						# Stationed ships: dock at colony and refuel
+						# Stationed ships: dock at colony, refuel and provision before complete_mission
+						# (stationed ships keep cargo; complete_mission won't clear it)
 						if mission.ship.is_stationed and mission.ship.station_colony:
 							mission.ship.docked_at_colony = mission.ship.station_colony
 							_auto_refuel_at_colony(mission.ship)
 							_auto_provision_at_location(mission.ship)
+							_auto_repair_at_location(mission.ship)
 							var cargo := mission.ship.get_cargo_total()
 							if cargo > 0.1:
 								mission.ship.add_station_log("Returned with %.0ft cargo" % cargo, "mining")
@@ -366,6 +391,13 @@ func _process_missions(dt: float) -> void:
 									if w not in mission.ship.last_crew and w.needs_rotation:
 										GameState.add_to_hitchhike_pool(w, station_name, station_pos)
 						GameState.complete_mission(mission)
+						# Provision and repair after cargo is cleared for Earth returns
+						if _provision_after_complete:
+							_auto_provision_at_location(_mission_ship)
+							_auto_repair_at_location(_mission_ship)
+						# Launch queued mission only after all prep work (refuel/provision/repair)
+						if not _mission_ship.is_stationed and _mission_ship.has_queued_mission():
+							GameState._start_queued_mission(_mission_ship)
 
 func _process_waypoint_transition(mission: Mission, is_outbound: bool) -> void:
 	# Handle transition to next leg of multi-waypoint journey
@@ -763,8 +795,9 @@ func _process_trade_missions(dt: float) -> void:
 							tm.ship.position_au = tm.colony.get_position_au()
 							if tm.colony.has_rescue_ops:
 								tm.ship.docked_at_colony = tm.colony
-							# Auto-refuel at colony
+							# Auto-refuel and provision at colony
 							_auto_refuel_at_colony(tm.ship)
+							_auto_provision_at_location(tm.ship)
 							EventBus.trade_mission_phase_changed.emit(tm)
 							EventBus.ship_idle_at_colony.emit(tm.ship, tm)
 
@@ -827,7 +860,10 @@ func _process_trade_missions(dt: float) -> void:
 							tm.ship.docked_at_colony = null  # Returning to Earth, not a colony
 							_auto_refuel_at_earth(tm.ship)
 							_auto_provision_at_location(tm.ship)
+						var _trade_ship := tm.ship
 						GameState.complete_trade_mission(tm)
+						if not _trade_ship.is_stationed and _trade_ship.has_queued_mission():
+							GameState._start_queued_mission(_trade_ship)
 
 func _update_ship_positions(dt: float) -> void:
 	# Real-time throttle - only update 10 times per second for mobile performance
@@ -1199,17 +1235,21 @@ func _process_life_support(dt: float) -> void:
 		# Consume life support
 		ship.life_support_remaining -= dt
 
-		# Check warning thresholds
+		# Check warning thresholds — skip if player has already responded
+		var player_responded := ship in GameState.rescue_missions \
+			or ship in GameState.refuel_missions \
+			or ship in GameState.stranger_offers
 		var max_life_support := ship.calculate_life_support_duration(maxi(ship.last_crew.size(), 1))
 		var pct := ship.life_support_remaining / max_life_support
 		var fired: Array = _life_support_warnings_fired[ship]
 		for threshold in LIFE_SUPPORT_WARN_THRESHOLDS:
 			if pct <= threshold and threshold not in fired:
 				fired.append(threshold)
-				EventBus.life_support_warning.emit(ship, pct)
-				# Auto-pause at 10% to give player time to react
-				if threshold <= 0.10:
-					TimeScale.slow_for_critical_event()
+				if not player_responded:
+					EventBus.life_support_warning.emit(ship, pct)
+					# Auto-pause at 10% to give player time to react
+					if threshold <= 0.10:
+						TimeScale.slow_for_critical_event()
 
 		# Check if crew has died
 		if ship.life_support_remaining <= 0:
@@ -1304,15 +1344,23 @@ func _process_stationed_ships(dt: float) -> void:
 	_station_accumulator -= STATION_CHECK_INTERVAL
 	_cleanup_expired_security_zones()
 
-	# Autoplay: station colony-docked ships; directly dispatch Earth-docked ships
+	# Autoplay: station colony-docked ships
 	if GameState.settings.get("autoplay", false):
 		for ship in GameState.ships:
 			if ship.is_derelict or ship.is_stationed:
 				continue
 			if ship.docked_at_colony != null:
-				GameState.station_ship(ship, ship.docked_at_colony, _autoplay_jobs())
-			elif ship.is_at_earth and ship.current_mission == null and ship.current_trade_mission == null:
-				_autoplay_dispatch_from_earth(ship)
+				GameState.station_ship(ship, ship.docked_at_colony, _autoplay_jobs(ship))
+
+	# Policy dispatch: idle Earth-docked ships find work (autoplay only; queued missions always launch)
+	for ship in GameState.ships:
+		if ship.is_derelict or ship.is_stationed:
+			continue
+		if ship.is_at_earth and ship.current_mission == null and ship.current_trade_mission == null:
+			if ship.has_queued_mission():
+				GameState._start_queued_mission(ship)
+			elif GameState.settings.get("autoplay", false):
+				_policy_dispatch_idle_ship(ship)
 
 	for ship in GameState.ships:
 		if not ship.is_stationed_idle:
@@ -1351,19 +1399,126 @@ func _process_stationed_ships(dt: float) -> void:
 			if took_job:
 				break  # Only do one job at a time
 
-func _autoplay_jobs() -> Array[String]:
-	# Build a priority-ordered job list from current company policies.
+func _autoplay_jobs(ship: Ship) -> Array[String]:
+	# Build a priority-ordered job list from effective policies (respects per-ship overrides).
 	# Jobs whose policy is MANUAL are excluded -- the player handles those manually.
 	var jobs: Array[String] = []
 	jobs.append("mining")  # Core operation -- always included
-	if GameState.collection_policy != CompanyPolicy.CollectionPolicy.MANUAL:
+	if GameState.get_collection_policy(ship) != CompanyPolicy.CollectionPolicy.MANUAL:
 		jobs.append("collect_ore")
-	if GameState.supply_policy != CompanyPolicy.SupplyPolicy.MANUAL:
+	if GameState.get_supply_policy(ship) != CompanyPolicy.SupplyPolicy.MANUAL:
 		jobs.append("provisioning")
 	jobs.append("parts_delivery")
-	if GameState.encounter_policy in [CompanyPolicy.EncounterPolicy.CONFRONT, CompanyPolicy.EncounterPolicy.DEFEND]:
+	if GameState.get_encounter_policy(ship) in [CompanyPolicy.EncounterPolicy.CONFRONT, CompanyPolicy.EncounterPolicy.DEFEND]:
 		jobs.append("patrol")
 	return jobs
+
+func _policy_dispatch_idle_ship(ship: Ship) -> void:
+	# Policy-driven dispatch for idle Earth-docked ships. Always active.
+	# Priority 1: collect ore stockpiles (if CollectionPolicy allows)
+	# Priority 2: mine the best reachable asteroid
+
+	if ship.get_cargo_remaining() < 1.0:
+		return  # No room for anything
+
+	var crew := _get_policy_crew(ship)
+	if crew.size() < ship.min_crew:
+		return  # Not enough workers
+
+	# Priority 1: collect stockpiles
+	if GameState.get_collection_policy(ship) != CompanyPolicy.CollectionPolicy.MANUAL:
+		var threshold: float = CompanyPolicy.COLLECTION_POLICY_THRESHOLDS[GameState.get_collection_policy(ship)]
+		var trigger_tons: float = ship.get_effective_cargo_capacity() * threshold
+		var best_collect: AsteroidData = null
+		var best_tons: float = 0.0
+		for asteroid in GameState.asteroids:
+			var pile: Dictionary = GameState.get_ore_stockpile(asteroid.asteroid_name)
+			var pile_tons: float = 0.0
+			for _ot in pile:
+				pile_tons += float(pile[_ot])
+			if pile_tons < trigger_tons or pile_tons <= best_tons:
+				continue
+			var dist := ship.position_au.distance_to(asteroid.get_position_au())
+			var fuel_needed := ship.calc_fuel_for_distance(dist, 0.0) \
+				+ ship.calc_fuel_for_distance(dist, minf(pile_tons, ship.get_effective_cargo_capacity()))
+			if fuel_needed > ship.fuel:
+				continue
+			best_tons = pile_tons
+			best_collect = asteroid
+		if best_collect != null:
+			var m := GameState.start_collect_mission(ship, best_collect, crew)
+			if m:
+				m.return_to_station = true
+				ship.last_crew = crew
+				return
+
+	# Priority 2: mine
+	if ship.get_cargo_remaining() < ship.get_effective_cargo_capacity() * 0.1:
+		return
+	var ship_pos := ship.position_au
+	var best_asteroid: AsteroidData = null
+	var best_score: float = -1.0
+	for asteroid in GameState.asteroids:
+		var score := _score_mining_trip(ship, asteroid, ship_pos)
+		if score > best_score:
+			best_score = score
+			best_asteroid = asteroid
+	if best_asteroid == null:
+		return
+	var mission := GameState.start_mission(ship, best_asteroid, crew)
+	if mission:
+		mission.return_to_station = true
+		ship.last_crew = crew
+		EventBus.station_job_started.emit(ship, "mining", best_asteroid.asteroid_name)
+
+## Score an asteroid for a mining trip from origin_pos with the given ship.
+## Returns expected net profit per game-second, or -1 if the trip is infeasible.
+func _score_mining_trip(ship: Ship, asteroid: AsteroidData, origin_pos: Vector2, mining_duration: float = 86400.0) -> float:
+	if asteroid.ore_yields.is_empty():
+		return -1.0
+	var slots_left := asteroid.get_max_mining_slots() - GameState.get_occupied_slots(asteroid.asteroid_name)
+	if slots_left <= 0:
+		return -1.0
+	var dist := origin_pos.distance_to(asteroid.get_position_au())
+	if dist <= 0.0:
+		return -1.0
+	var fuel_out := ship.calc_fuel_for_distance(dist, ship.get_cargo_total())
+	var fuel_back := ship.calc_fuel_for_distance(dist, ship.get_effective_cargo_capacity())
+	if fuel_out + fuel_back > ship.fuel:
+		return -1.0
+	# Estimated haul: yield rate × duration, capped at cargo capacity
+	var haul_tons := 0.0
+	var haul_value := 0.0
+	for ore_type in asteroid.ore_yields:
+		var rate: float = float(asteroid.ore_yields[ore_type])  # tons/day
+		var tons := minf(rate * (mining_duration / 86400.0), ship.get_effective_cargo_capacity())
+		haul_tons += tons
+		haul_value += tons * float(GameState.market.current_prices.get(ore_type, 1000.0))
+	haul_tons = minf(haul_tons, ship.get_effective_cargo_capacity())
+	# Revenue minus fuel cost
+	var fuel_cost := (fuel_out + fuel_back) * Ship.FUEL_COST_PER_UNIT
+	var net_profit := haul_value - fuel_cost
+	if net_profit <= 0.0:
+		return -1.0
+	# Divide by total trip time to get profit/second
+	var thrust := ship.get_effective_thrust()
+	if thrust <= 0.0:
+		return -1.0
+	var one_way_time := Brachistochrone.transit_time(dist, thrust)
+	var total_time := 2.0 * one_way_time + mining_duration
+	return net_profit / total_time
+
+func _get_policy_crew(ship: Ship) -> Array[Worker]:
+	var crew: Array[Worker] = []
+	for w in ship.last_crew:
+		if w in GameState.workers and w.is_available:
+			crew.append(w)
+	if crew.size() < ship.min_crew:
+		crew.clear()
+		var available := GameState.get_available_workers()
+		for i in mini(ship.min_crew, available.size()):
+			crew.append(available[i])
+	return crew
 
 func _autoplay_dispatch_from_earth(ship: Ship) -> void:
 	# For ships docked at Earth, pick the best reachable asteroid and send them mining.
@@ -1379,24 +1534,7 @@ func _autoplay_dispatch_from_earth(ship: Ship) -> void:
 	var best_score: float = -1.0
 
 	for asteroid in GameState.asteroids:
-		if asteroid.ore_yields.is_empty():
-			continue
-		var slots_left := asteroid.get_max_mining_slots() - GameState.get_occupied_slots(asteroid.asteroid_name)
-		if slots_left <= 0:
-			continue
-		var dist := ship_pos.distance_to(asteroid.get_position_au())
-		if dist <= 0.0:
-			continue
-		# Need enough fuel for round trip (loaded out, full cargo back)
-		var fuel_needed := ship.calc_fuel_for_distance(dist, ship.get_cargo_total()) \
-			+ ship.calc_fuel_for_distance(dist, ship.get_effective_cargo_capacity())
-		if fuel_needed > ship.fuel:
-			continue
-		# Score = ore value density / distance
-		var yield_sum := 0.0
-		for ore_type in asteroid.ore_yields:
-			yield_sum += float(asteroid.ore_yields[ore_type]) * float(GameState.market.current_prices.get(ore_type, 1000.0))
-		var score := yield_sum / dist
+		var score := _score_mining_trip(ship, asteroid, ship_pos)
 		if score > best_score:
 			best_score = score
 			best_asteroid = asteroid
@@ -1430,19 +1568,17 @@ func _station_try_mining(ship: Ship) -> bool:
 
 	var station_pos: Vector2 = ship.station_colony.get_position_au()
 
-	# Find nearest mineable asteroid within station radius
+	# Find best-return mineable asteroid within station radius
 	var best_asteroid: AsteroidData = null
-	var best_dist: float = INF
+	var best_score: float = -1.0
 	for asteroid in GameState.asteroids:
-		if asteroid.ore_yields.is_empty():
-			continue
 		var dist := station_pos.distance_to(asteroid.get_position_au())
-		if dist < STATION_RADIUS_AU and dist < best_dist:
-			# Check if we have fuel for round-trip
-			var candidate_fuel := ship.calc_fuel_for_distance(dist, ship.get_cargo_total()) + ship.calc_fuel_for_distance(dist, ship.get_effective_cargo_capacity())
-			if candidate_fuel <= ship.fuel:
-				best_asteroid = asteroid
-				best_dist = dist
+		if dist >= STATION_RADIUS_AU:
+			continue
+		var score := _score_mining_trip(ship, asteroid, station_pos)
+		if score > best_score:
+			best_score = score
+			best_asteroid = asteroid
 
 	if best_asteroid == null:
 		return false
@@ -1594,10 +1730,10 @@ func _station_try_parts_delivery(ship: Ship) -> bool:
 
 func _station_try_provisioning(ship: Ship) -> bool:
 	# Skip if player has disabled auto-supply
-	if GameState.supply_policy == CompanyPolicy.SupplyPolicy.MANUAL:
+	if GameState.get_supply_policy(ship) == CompanyPolicy.SupplyPolicy.MANUAL:
 		return false
 
-	var threshold_days: float = CompanyPolicy.SUPPLY_POLICY_THRESHOLDS[GameState.supply_policy]
+	var threshold_days: float = CompanyPolicy.SUPPLY_POLICY_THRESHOLDS[GameState.get_supply_policy(ship)]
 	var station_pos: Vector2 = ship.station_colony.get_position_au()
 	var food_on_ship: float = ship.supplies.get("food", 0.0)
 
@@ -1670,10 +1806,10 @@ func _station_try_provisioning(ship: Ship) -> bool:
 
 func _station_try_collect_ore(ship: Ship) -> bool:
 	# Auto-collect stockpiled ore when stockpile meets collection policy threshold
-	if GameState.collection_policy == CompanyPolicy.CollectionPolicy.MANUAL:
+	if GameState.get_collection_policy(ship) == CompanyPolicy.CollectionPolicy.MANUAL:
 		return false
 
-	var threshold_fraction: float = CompanyPolicy.COLLECTION_POLICY_THRESHOLDS[GameState.collection_policy]
+	var threshold_fraction: float = CompanyPolicy.COLLECTION_POLICY_THRESHOLDS[GameState.get_collection_policy(ship)]
 	var threshold_tons: float = ship.get_effective_cargo_capacity() * threshold_fraction
 	if threshold_tons <= 0.0:
 		return false
@@ -2055,23 +2191,135 @@ func _complete_delivery_job(mission: Mission) -> void:
 
 	_start_station_return(mission)
 
+func _find_nearest_crew_location(from_pos: Vector2) -> Vector2:
+	# Returns position of nearest place where crew can be hired (Earth or any colony).
+	var best_pos := CelestialData.get_earth_position_au()
+	var best_dist := from_pos.distance_to(best_pos)
+	for colony in GameState.colonies:
+		var colony_pos := colony.get_position_au()
+		var d := from_pos.distance_to(colony_pos)
+		if d < best_dist:
+			best_dist = d
+			best_pos = colony_pos
+	return best_pos
+
+func _start_return_for_crew(ship: Ship, crew: Array[Worker]) -> void:
+	# Creates a TRANSIT_BACK mission for a ship carrying a skeleton crew,
+	# heading to the nearest place to pick up more crew.
+	var target_pos := _find_nearest_crew_location(ship.position_au)
+	var dist := ship.position_au.distance_to(target_pos)
+
+	var m := Mission.new()
+	m.mission_type = Mission.MissionType.CREW_FERRY
+	m.ship = ship
+	m.workers = crew.duplicate()
+	m.status = Mission.Status.TRANSIT_BACK
+	m.origin_position_au = ship.position_au
+	m.return_position_au = target_pos
+	m.origin_is_earth = false
+	m.return_to_station = false  # Go to Earth / nearest location, not a station
+	m.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+	m.elapsed_ticks = 0.0
+	var fuel_needed := ship.calc_fuel_for_distance(dist)
+	m.fuel_per_tick = fuel_needed / m.transit_time if m.transit_time > 0.0 else 0.0
+
+	for w in crew:
+		w.assigned_mission = m
+	ship.last_crew = crew.duplicate()
+	ship.current_mission = m
+	GameState.missions.append(m)
+	EventBus.mission_started.emit(m)
+	EventBus.mission_phase_changed.emit(m)
+
 func _complete_boarding_job(mission: Mission) -> void:
-	# Find the target ship at this location
 	var ferry_ship := mission.ship
+
+	# Derelict rescue: drop off rescue crew + supplies, clear derelict status
+	if mission.is_derelict_rescue:
+		var target_ship: Ship = null
+		var target_name := mission.destination_name
+		for other in GameState.ships:
+			if other == ferry_ship:
+				continue
+			if other.ship_name == target_name or other.position_au.distance_to(mission.destination_position_au) < 0.05:
+				target_ship = other
+				break
+
+		if target_ship != null and target_ship.is_derelict:
+			# Transfer supplies
+			var food_xfer: float = mission.supplies_to_transfer.get("food", 0.0)
+			var parts_xfer: float = mission.supplies_to_transfer.get("repair_parts", 0.0)
+			target_ship.supplies["food"] = target_ship.supplies.get("food", 0.0) + food_xfer
+			target_ship.supplies["repair_parts"] = target_ship.supplies.get("repair_parts", 0.0) + parts_xfer
+
+			# Auto-determine rescue crew: give target ship as many as possible while
+			# keeping at least 1 on the ferry.
+			if mission.rescue_crew.is_empty() and mission.workers.size() > 1:
+				var rescue_count := mini(mission.workers.size() - 1, target_ship.min_crew)
+				rescue_count = maxi(rescue_count, 1)
+				for i in rescue_count:
+					mission.rescue_crew.append(mission.workers[i])
+
+			if mission.rescue_crew.size() > 0:
+				# Apply loyalty penalty to rescue crew (they're replacing people the corp let die)
+				const DERELICT_TAKEOVER_LOYALTY_PENALTY: float = -20.0
+				for w in mission.rescue_crew:
+					w.loyalty = clampf(w.loyalty + DERELICT_TAKEOVER_LOYALTY_PENALTY, 0.0, 100.0)
+					w.assigned_mission = null
+
+				# Assign rescue crew as skeleton crew on target ship
+				target_ship.last_crew = mission.rescue_crew.duplicate()
+
+				# Restore engine and fuel so the ship can make it home
+				# (rescue crew perform emergency repairs using transferred parts)
+				target_ship.engine_condition = maxf(target_ship.engine_condition, 50.0)
+				target_ship.fuel = maxf(target_ship.fuel, target_ship.get_effective_fuel_capacity() * 0.5)
+
+				# Clear derelict status
+				target_ship.is_derelict = false
+				target_ship.derelict_reason = ""
+				GameState.rescue_missions.erase(target_ship)
+				GameState.refuel_missions.erase(target_ship)
+				GameState.stranger_offers.erase(target_ship)
+
+				# Remove rescue crew from ferry (they ride on the target ship now)
+				for w in mission.rescue_crew:
+					mission.workers.erase(w)
+
+				var sent_count := mission.rescue_crew.size()
+				ferry_ship.add_station_log("Rescued %s: %d crew transferred, both returning for more crew" % [target_ship.ship_name, sent_count], "crew_ferry")
+				EventBus.station_job_completed.emit(ferry_ship, "crew_ferry", "Rescued %s" % target_ship.ship_name)
+				EventBus.rescue_mission_completed.emit(target_ship)
+
+				# Target ship heads to nearest crew pickup location with its skeleton crew
+				_start_return_for_crew(target_ship, mission.rescue_crew.duplicate())
+			else:
+				# Ferry arrived with only 1 crew — supplies transferred but no one can be left behind
+				ferry_ship.add_station_log("Rescue of %s: ferry crew lost in transit, supplies transferred — send another ferry" % target_ship.ship_name, "crew_ferry")
+				EventBus.station_job_completed.emit(ferry_ship, "crew_ferry", "Partial rescue: no crew to leave")
+		else:
+			ferry_ship.add_station_log("Fleet rescue: target not found or already recovered", "crew_ferry")
+			EventBus.station_job_completed.emit(ferry_ship, "crew_ferry", "Target not found")
+
+		# Ferry also returns home to pick up more crew
+		_start_station_return(mission)
+		return
+
+	# Standard crew rotation ferry
 	var target_pos := mission.destination_position_au
-	var target_ship: Ship = null
+	var target_ship_rot: Ship = null
 
 	for other in GameState.ships:
 		if other == ferry_ship:
 			continue
 		if other.position_au.distance_to(target_pos) < 0.01:
 			if other.current_mission != null:
-				target_ship = other
+				target_ship_rot = other
 				break
 
 	var swapped := 0
-	if target_ship != null and target_ship.current_mission != null:
-		var target_mission := target_ship.current_mission
+	if target_ship_rot != null and target_ship_rot.current_mission != null:
+		var target_mission := target_ship_rot.current_mission
 		# Find fatigued workers on target
 		var fatigued: Array[Worker] = []
 		for w in target_mission.workers:
@@ -2273,19 +2521,27 @@ func _process_asteroid_supplies(dt: float) -> void:
 		if workers > 0:
 			var food_needed: float = workers * 0.028 * days
 			GameState.consume_asteroid_supply(asteroid_name, "food", food_needed)
-			# Alert if low
+			# Alert if low — throttled to once per game-day
 			var food_days := GameState.get_asteroid_supply_days(asteroid_name, "food")
 			if food_days < SUPPLY_ALERT_DAYS and food_days > 0.0:
-				EventBus.asteroid_supplies_low.emit(asteroid_name, "food", food_days)
+				var food_key: String = asteroid_name + ":food"
+				var last: float = _supply_alert_last_fired.get(food_key, -86400.0)
+				if GameState.total_ticks - last >= 86400.0:
+					_supply_alert_last_fired[food_key] = GameState.total_ticks
+					EventBus.asteroid_supplies_low.emit(asteroid_name, "food", food_days)
 
 		# Consume repair parts
 		if units > 0:
 			var parts_needed: float = units * 0.05 * days
 			GameState.consume_asteroid_supply(asteroid_name, "repair_parts", parts_needed)
-			# Alert if low
+			# Alert if low — throttled to once per game-day
 			var parts_days := GameState.get_asteroid_supply_days(asteroid_name, "repair_parts")
 			if parts_days < SUPPLY_ALERT_DAYS and parts_days > 0.0:
-				EventBus.asteroid_supplies_low.emit(asteroid_name, "repair_parts", parts_days)
+				var parts_key: String = asteroid_name + ":repair_parts"
+				var last: float = _supply_alert_last_fired.get(parts_key, -86400.0)
+				if GameState.total_ticks - last >= 86400.0:
+					_supply_alert_last_fired[parts_key] = GameState.total_ticks
+					EventBus.asteroid_supplies_low.emit(asteroid_name, "repair_parts", parts_days)
 
 		# Clean up entries for asteroids with no deployed units
 		if workers <= 0 and units <= 0:
@@ -2447,37 +2703,41 @@ func _process_food_consumption(dt: float) -> void:
 			_trigger_food_depletion(ship, null, tm)
 
 func _trigger_food_depletion(ship: Ship, mission: Mission = null, trade_mission: TradeMission = null) -> void:
-	# Workers abandon the ship when food runs out
+	# Crew starve to death when food runs out
 	ship.supplies["food"] = 0.0
 
-	# Free workers
-	var abandoned_workers: Array[Worker] = []
+	var dead_workers: Array[Worker] = []
 	if mission:
-		abandoned_workers = mission.workers.duplicate()
+		dead_workers = mission.workers.duplicate()
 		for w in mission.workers:
 			w.assigned_mission = null
-			w.loyalty = maxf(w.loyalty - 20.0 + w.get_injury_loyalty_delta(), 0.0)  # Major loyalty hit, modified by personality
 		mission.workers.clear()
 		mission.status = Mission.Status.COMPLETED
 		GameState.missions.erase(mission)
 		ship.current_mission = null
 	elif trade_mission:
-		abandoned_workers = trade_mission.workers.duplicate()
+		dead_workers = trade_mission.workers.duplicate()
 		for w in trade_mission.workers:
 			w.assigned_trade_mission = null
-			w.loyalty = maxf(w.loyalty - 20.0 + w.get_injury_loyalty_delta(), 0.0)
 		trade_mission.workers.clear()
 		trade_mission.status = TradeMission.Status.COMPLETED
 		GameState.trade_missions.erase(trade_mission)
 		ship.current_trade_mission = null
 
-	# Ship becomes idle at current position
+	# Remove dead workers from the game entirely
+	for w in dead_workers:
+		GameState.workers.erase(w)
+
+	# Ship becomes derelict — no crew to fly it back
+	ship.is_derelict = true
+	ship.derelict_reason = "breakdown"
 	ship.docked_at_colony = null
 
-	var worker_names := ", ".join(abandoned_workers.map(func(w: Worker) -> String: return w.worker_name))
-	EventBus.ship_breakdown.emit(ship, "Food depleted - crew abandoned ship")
-	EventBus.ship_food_depleted.emit(ship, abandoned_workers.size())
-	print("Ship %s: Food depleted, %d workers abandoned (%s)" % [ship.ship_name, abandoned_workers.size(), worker_names])
+	var worker_names := ", ".join(dead_workers.map(func(w: Worker) -> String: return w.worker_name))
+	EventBus.ship_breakdown.emit(ship, "Food depleted — crew starved")
+	EventBus.ship_derelict.emit(ship)
+	EventBus.ship_food_depleted.emit(ship, dead_workers.size())
+	print("Ship %s: Food depleted — %d crew starved (%s)" % [ship.ship_name, dead_workers.size(), worker_names])
 
 func _process_survey_events(dt: float) -> void:
 	# Accumulate game-time even when throttled
@@ -2629,31 +2889,66 @@ func _auto_refuel_at_colony(ship: Ship) -> void:
 		if fuel_cost > 0:
 			GameState.record_transaction(-fuel_cost, "Refuel at colony", ship.ship_name)
 
+func _auto_repair_at_location(ship: Ship) -> void:
+	# Auto-repair engine based on company/ship repair policy.
+	# Check location directly rather than is_docked — this is called during mission
+	# completion when current_mission may still be set (timing artifact).
+	if ship.engine_condition >= 100.0:
+		return
+	var at_service := ship.is_at_earth or \
+		(ship.docked_at_colony != null and ship.docked_at_colony.has_rescue_ops)
+	if not at_service:
+		return
+	var policy := GameState.get_repair_policy(ship)
+	var should_repair := false
+	match policy:
+		CompanyPolicy.RepairPolicy.ALWAYS:
+			should_repair = true
+		CompanyPolicy.RepairPolicy.AS_NEEDED:
+			should_repair = ship.engine_condition < CompanyPolicy.REPAIR_AS_NEEDED_THRESHOLD
+		CompanyPolicy.RepairPolicy.NEVER:
+			should_repair = false
+	if not should_repair:
+		return
+	var cost := ship.get_engine_repair_cost()
+	if cost <= 0:
+		return
+	if GameState.money < cost:
+		ship.add_station_log("Cannot afford engine repair ($%d)" % cost, "repair")
+		return
+	GameState.money -= cost
+	GameState.record_transaction(-cost, "Engine repair", ship.ship_name)
+	ship.engine_condition = 100.0
+	ship.add_station_log("Engine repaired ($%d)" % cost, "repair")
+	EventBus.station_job_completed.emit(ship, "repair", "Engine repaired")
+
 func _auto_provision_at_location(ship: Ship) -> void:
-	# Automatically buy food when ship is docked (at colony or Earth)
-	const DAYS_BUFFER := 30.0  # Maintain 30 days of food
-	const KG_PER_WORKER_PER_DAY := 2.8  # From SupplyData
-	const KG_PER_FOOD_UNIT := 100.0  # SupplyData: 0.1t = 100kg per unit
+	# Automatically stock food, water, and O2 when ship is docked (at colony or Earth)
+	const DAYS_BUFFER := 30.0  # Maintain 30 days of life support supplies
 
 	# Determine crew size (use min_crew if no crew assigned)
 	var crew_size := ship.last_crew.size() if ship.last_crew.size() > 0 else ship.min_crew
 
-	# Calculate target food level (in kg, then convert to units)
-	var target_food_kg := crew_size * DAYS_BUFFER * KG_PER_WORKER_PER_DAY
-	var target_food_units := target_food_kg / KG_PER_FOOD_UNIT
+	# ── Food ──────────────────────────────────────────────────────────────────
+	# 2.8 kg/person/day; 1 crate = 100 kg
+	var target_food_units := crew_size * DAYS_BUFFER * 2.8 / 100.0
+	var current_food: float = ship.supplies.get("food", 0.0)
+	if current_food < target_food_units:
+		GameState.buy_supplies(ship, "food", target_food_units - current_food)
 
-	# Current food (in units)
-	var current_food_units: float = ship.supplies.get("food", 0.0)
+	# ── Water (recycled) ──────────────────────────────────────────────────────
+	# 0.25 L/person/day makeup with 90% recycling; 1 tank = 20 L
+	var target_water_units := crew_size * DAYS_BUFFER * 0.25 / 20.0
+	var current_water: float = ship.supplies.get("water", 0.0)
+	if current_water < target_water_units:
+		GameState.buy_supplies(ship, "water", target_water_units - current_water)
 
-	# Only buy if below target
-	if current_food_units >= target_food_units:
-		return
-
-	# Calculate amount to buy (in units)
-	var amount_to_buy := target_food_units - current_food_units
-
-	# Use GameState.buy_supplies which handles payment and cargo checks
-	GameState.buy_supplies(ship, "food", amount_to_buy)
+	# ── Oxygen (recycled) ─────────────────────────────────────────────────────
+	# 0.05 kg/person/day makeup with CO2 scrubbing; 1 canister = 2 kg
+	var target_o2_units := crew_size * DAYS_BUFFER * 0.05 / 2.0
+	var current_o2: float = ship.supplies.get("oxygen", 0.0)
+	if current_o2 < target_o2_units:
+		GameState.buy_supplies(ship, "oxygen", target_o2_units - current_o2)
 
 # ─── Rival Corporations ───────────────────────────────────────────────────────
 
@@ -2663,6 +2958,9 @@ func _process_rival_corps(dt: float) -> void:
 		for ship: RivalShip in corp.ships:
 			_advance_rival_ship(corp, ship, dt)
 
+	# Ghost contact tracking update every OBSERVATION_INTERVAL
+	_update_ghost_contacts(dt)
+
 	# AI decision logic runs every RIVAL_CHECK_INTERVAL
 	_rival_accumulator += dt
 	if _rival_accumulator < RIVAL_CHECK_INTERVAL:
@@ -2670,6 +2968,126 @@ func _process_rival_corps(dt: float) -> void:
 	_rival_accumulator -= RIVAL_CHECK_INTERVAL
 	for corp: RivalCorp in GameState.rival_corps:
 		_update_rival_corp_decisions(corp)
+
+func _update_ghost_contacts(dt: float) -> void:
+	_observation_accumulator += dt
+	if _observation_accumulator < OBSERVATION_INTERVAL:
+		return
+	_observation_accumulator -= OBSERVATION_INTERVAL
+
+	var current_ticks := GameState.total_ticks
+	var earth_pos := CelestialData.get_earth_position_au()
+
+	# Observer list: Earth/HQ + all non-derelict player ships
+	var observers: Array[Vector2] = [earth_pos]
+	for ship: Ship in GameState.ships:
+		if not ship.is_derelict:
+			observers.append(ship.position_au)
+
+	for corp: RivalCorp in GameState.rival_corps:
+		for ship_idx in range(corp.ships.size()):
+			var rship: RivalShip = corp.ships[ship_idx]
+			var ship_pos := rship.get_position_au()
+
+			# Best observer: highest exhaust-cone visibility from any player asset
+			var best_visibility: float = 0.0
+			var best_observer: Vector2 = earth_pos
+			for obs_pos: Vector2 in observers:
+				var vis := rship.get_visibility_from(obs_pos)
+				if vis > best_visibility:
+					best_visibility = vis
+					best_observer = obs_pos
+
+			if best_visibility < MIN_VISIBILITY:
+				continue  # Exhaust not facing any observer — invisible this interval
+
+			# Full light-speed delay: rival ship → observer → HQ
+			var dist_to_obs: float = ship_pos.distance_to(best_observer)
+			var dist_obs_to_hq: float = best_observer.distance_to(earth_pos)
+			var total_delay: float = (dist_to_obs + dist_obs_to_hq) * GameState.LIGHT_SECONDS_PER_AU
+
+			# Back-calculate position: where was the ship when photons left it?
+			var velocity := rship.get_velocity_au_per_tick()
+			var observed_pos := ship_pos - velocity * total_delay
+
+			var obs := GhostObservation.new()
+			obs.observed_position_au = observed_pos
+			obs.observed_velocity_au_per_tick = velocity
+			obs.received_at_ticks = current_ticks
+			obs.initial_confidence = best_visibility
+
+			# Match to existing contact or create a new one
+			var contact = _find_matching_contact(observed_pos, velocity, current_ticks)
+			if contact == null:
+				contact = GhostContact.new()  # class_name defined in ghost_contact.gd
+				contact.contact_id = _next_contact_id
+				_next_contact_id += 1
+				contact.contact_color = CONTACT_COLORS[contact.contact_id % CONTACT_COLORS.size()]
+				contact.first_seen_ticks = current_ticks
+				GameState.ghost_contacts.append(contact)
+
+			contact.update_obs(obs, current_ticks)
+			_infer_contact_corp(contact)
+
+	# Prune contacts that have decayed past the display threshold
+	var pruned: Array = []  # Array[GhostContact]
+	for c in GameState.ghost_contacts:
+		if not c.is_expired(current_ticks):
+			pruned.append(c)
+	GameState.ghost_contacts = pruned
+
+## Find an existing contact whose predicted position matches obs_pos and whose
+## velocity direction is consistent. Returns null if no match found.
+func _find_matching_contact(obs_pos: Vector2, velocity: Vector2, current_ticks: float):  # -> GhostContact
+	var best = null
+	var best_dist: float = CONTACT_MATCH_RADIUS
+	for contact in GameState.ghost_contacts:
+		var predicted: Vector2 = contact.get_estimated_position(current_ticks)
+		var dist: float = obs_pos.distance_to(predicted)
+		if dist > CONTACT_MATCH_RADIUS:
+			continue
+		# Velocity direction check — reject if headings are more than ~60° apart
+		var prev_vel: Vector2 = contact.latest_obs.observed_velocity_au_per_tick
+		if velocity.length_squared() > 1e-10 and prev_vel.length_squared() > 1e-10:
+			if velocity.normalized().dot(prev_vel.normalized()) < 0.5:
+				continue
+		if dist < best_dist:
+			best_dist = dist
+			best = contact
+	return best
+
+## Infer which corp owns a contact based on velocity direction relative to known home positions.
+## A ship heading toward or away from a corp's home scores highly for that corp.
+## False attributions happen naturally when trajectories are ambiguous.
+func _infer_contact_corp(contact) -> void:  # contact: GhostContact
+	if contact.latest_obs == null:
+		return
+	var vel: Vector2 = contact.latest_obs.observed_velocity_au_per_tick
+	if vel.length_squared() < 1e-10:
+		return  # No velocity — can't infer direction
+	var vel_dir := vel.normalized()
+	var pos: Vector2 = contact.latest_obs.observed_position_au
+
+	var best_corp: String = ""
+	var best_score: float = 0.0
+	for corp: RivalCorp in GameState.rival_corps:
+		var to_home := corp.home_position_au - pos
+		if to_home.length_squared() < 1e-6:
+			continue
+		var to_home_dir := to_home.normalized()
+		# Inbound (heading toward home) or outbound (heading away) both count
+		var score := maxf(vel_dir.dot(to_home_dir), vel_dir.dot(-to_home_dir))
+		if score > best_score:
+			best_score = score
+			best_corp = corp.corp_name
+
+	if best_score >= 0.70:
+		contact.inferred_corp = best_corp
+		contact.corp_confidence = remap(best_score, 0.70, 1.0, 0.35, 0.90)
+	elif best_score >= 0.50:
+		contact.inferred_corp = best_corp
+		contact.corp_confidence = remap(best_score, 0.50, 0.70, 0.10, 0.35)
+	# else: leave as unknown — happens when ship heading is nearly perpendicular to all home vectors
 
 func _advance_rival_ship(corp: RivalCorp, ship: RivalShip, dt: float) -> void:
 	match ship.status:

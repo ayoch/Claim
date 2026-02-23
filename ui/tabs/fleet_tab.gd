@@ -441,6 +441,143 @@ func _rebuild_ships() -> void:
 
 				vbox.add_child(equip_row)
 
+		# Policy overrides section (non-derelict ships only)
+		if not ship.is_derelict:
+			var policy_header := Label.new()
+			policy_header.text = "Policy Overrides"
+			policy_header.add_theme_font_size_override("font_size", 11)
+			policy_header.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+			vbox.add_child(policy_header)
+
+			var policy_grid := GridContainer.new()
+			policy_grid.columns = 2
+			policy_grid.add_theme_constant_override("h_separation", 8)
+			policy_grid.add_theme_constant_override("v_separation", 4)
+
+			var policy_defs := [
+				{
+					"label": "Thrust",
+					"names": CompanyPolicy.THRUST_POLICY_NAMES,
+					"get": func() -> int: return ship.thrust_policy_override,
+					"set": func(v: int) -> void: ship.thrust_policy_override = v,
+				},
+				{
+					"label": "Supply",
+					"names": CompanyPolicy.SUPPLY_POLICY_NAMES,
+					"get": func() -> int: return ship.supply_policy_override,
+					"set": func(v: int) -> void: ship.supply_policy_override = v,
+				},
+				{
+					"label": "Collection",
+					"names": CompanyPolicy.COLLECTION_POLICY_NAMES,
+					"get": func() -> int: return ship.collection_policy_override,
+					"set": func(v: int) -> void: ship.collection_policy_override = v,
+				},
+				{
+					"label": "Encounter",
+					"names": CompanyPolicy.ENCOUNTER_POLICY_NAMES,
+					"get": func() -> int: return ship.encounter_policy_override,
+					"set": func(v: int) -> void: ship.encounter_policy_override = v,
+				},
+			]
+
+			for pd in policy_defs:
+				var lbl := Label.new()
+				lbl.text = pd["label"] + ":"
+				lbl.add_theme_font_size_override("font_size", 11)
+				lbl.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+				policy_grid.add_child(lbl)
+
+				var opt := OptionButton.new()
+				opt.custom_minimum_size = Vector2(0, 32)
+				opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				opt.add_theme_font_size_override("font_size", 11)
+				opt.add_item("Company Default")
+				opt.set_item_metadata(0, -1)
+				var enum_names: Dictionary = pd["names"]
+				for i in enum_names.size():
+					opt.add_item(enum_names[i])
+					opt.set_item_metadata(i + 1, i)
+
+				var current_override: int = pd["get"].call()
+				if current_override < 0:
+					opt.selected = 0
+				else:
+					opt.selected = current_override + 1
+
+				var set_fn: Callable = pd["set"]
+				opt.item_selected.connect(func(idx: int) -> void:
+					set_fn.call(opt.get_item_metadata(idx))
+				)
+				policy_grid.add_child(opt)
+
+			vbox.add_child(policy_grid)
+
+		# Crew toggle button + inline crew panel
+		var ship_crew: Array[Worker] = []
+		for w in GameState.workers:
+			if ship.current_mission != null and w.assigned_mission == ship.current_mission:
+				ship_crew.append(w)
+			elif ship.current_trade_mission != null and w.assigned_trade_mission == ship.current_trade_mission:
+				ship_crew.append(w)
+			elif w.assigned_station_ship == ship:
+				ship_crew.append(w)
+
+		var crew_panel := VBoxContainer.new()
+		crew_panel.add_theme_constant_override("separation", 3)
+		crew_panel.visible = false
+
+		for w in ship_crew:
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 8)
+
+			var name_lbl := Label.new()
+			name_lbl.text = w.worker_name
+			name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			name_lbl.clip_text = true
+			name_lbl.add_theme_font_size_override("font_size", 12)
+			row.add_child(name_lbl)
+
+			var skills_lbl := Label.new()
+			var parts: Array[String] = []
+			if w.pilot_skill >= 0.05:
+				parts.append("P%.2f" % w.pilot_skill)
+			if w.engineer_skill >= 0.05:
+				parts.append("E%.2f" % w.engineer_skill)
+			if w.mining_skill >= 0.05:
+				parts.append("M%.2f" % w.mining_skill)
+			skills_lbl.text = " ".join(parts) if parts.size() > 0 else "—"
+			skills_lbl.add_theme_font_size_override("font_size", 12)
+			skills_lbl.add_theme_color_override("font_color", Color(0.6, 0.85, 1.0))
+			row.add_child(skills_lbl)
+
+			var fatigue_lbl := Label.new()
+			fatigue_lbl.text = "Fatigue %d%%" % int(w.fatigue)
+			fatigue_lbl.add_theme_font_size_override("font_size", 11)
+			if w.fatigue >= 80.0:
+				fatigue_lbl.add_theme_color_override("font_color", Color(0.9, 0.4, 0.2))
+			else:
+				fatigue_lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+			row.add_child(fatigue_lbl)
+
+			crew_panel.add_child(row)
+
+		if ship_crew.is_empty():
+			var empty_lbl := Label.new()
+			empty_lbl.text = "No crew assigned"
+			empty_lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+			empty_lbl.add_theme_font_size_override("font_size", 12)
+			crew_panel.add_child(empty_lbl)
+
+		var crew_btn := Button.new()
+		crew_btn.text = "Crew (%d)" % ship_crew.size()
+		crew_btn.custom_minimum_size = Vector2(0, 36)
+		crew_btn.pressed.connect(func() -> void:
+			crew_panel.visible = not crew_panel.visible
+		)
+		vbox.add_child(crew_btn)
+		vbox.add_child(crew_panel)
+
 		panel.add_child(vbox)
 		ships_list.add_child(panel)
 
@@ -912,10 +1049,12 @@ func _show_worker_selection() -> void:
 	dest_label.text = "Destination: %s (%s)" % [
 		_selected_asteroid.asteroid_name, _selected_asteroid.get_type_name()
 	]
+	dest_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dispatch_content.add_child(dest_label)
 
 	var ore_label := Label.new()
 	ore_label.text = "Resources: %s" % _get_ore_summary(_selected_asteroid)
+	ore_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dispatch_content.add_child(ore_label)
 
 	# Distance from ship position
@@ -946,7 +1085,10 @@ func _show_worker_selection() -> void:
 		# Create scrollable crew list container
 		var crew_scroll := ScrollContainer.new()
 		crew_scroll.custom_minimum_size = Vector2(0, 200)  # Fixed height, scrollable
+		crew_scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		crew_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		var crew_vbox := VBoxContainer.new()
+		crew_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		crew_vbox.add_theme_constant_override("separation", 4)
 
 		# Auto-select: pre-select last crew, or first min_crew workers
@@ -964,6 +1106,8 @@ func _show_worker_selection() -> void:
 
 			var check := CheckBox.new()
 			check.custom_minimum_size = Vector2(0, 36)
+			check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			check.clip_text = true
 			check.text = "%s  |  %s  |  $%d/pay" % [
 				worker.worker_name, worker.get_specialties_text(), worker.wage
 			]

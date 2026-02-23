@@ -566,6 +566,13 @@ func _setup_policies_ui() -> void:
 		func() -> int: return GameState.encounter_policy,
 		func(idx: int) -> void: GameState.encounter_policy = idx
 	)
+	_add_policy_row.call(
+		"Repair:",
+		CompanyPolicy.REPAIR_POLICY_NAMES,
+		CompanyPolicy.REPAIR_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.repair_policy,
+		func(idx: int) -> void: GameState.repair_policy = idx
+	)
 
 	policies_vbox.add_child(policies_content)
 	policies_card.add_child(policies_vbox)
