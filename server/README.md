@@ -2,6 +2,17 @@
 
 FastAPI-based simulation server for the Claim space mining game.
 
+## Quick Start
+
+**IMPORTANT:** Test the server locally before applying production hardening changes!
+
+1. Follow setup instructions below
+2. Start server: `uvicorn server.main:app --reload`
+3. Run automated tests: `python test_local.py`
+4. See `TESTING_CHECKLIST.md` for manual verification steps
+
+Once all tests pass, you can apply production hardening from `PRODUCTION_HARDENING.md`.
+
 ## Requirements
 
 - Python 3.11+ — download from https://www.python.org/downloads/ (check "Add to PATH")
@@ -129,6 +140,7 @@ Event types emitted:
 - `mission_status_changed` — any status transition
 - `market_update` — ore price change (>0.5% move)
 - `payroll_deducted` — daily wages deducted
+- `worker_skill_leveled` — worker skill increased (pilot/engineer/mining)
 
 ### Admin endpoints
 | Method | Path | Description |
@@ -172,8 +184,9 @@ The simulation runs as a background asyncio task at 1 real second = 1 game secon
 
 Each tick:
 1. **Missions** — advance elapsed time; transition TRANSIT_OUT -> MINING -> TRANSIT_BACK -> COMPLETED
-2. **Market** — random-walk ore prices (±0.1%/tick, clamped to ±40% of base)
-3. **Payroll** — deduct daily wages once per 86,400 ticks
+2. **Worker Skill Progression** — crew gain XP during activities (pilot/engineer during transit, mining during extraction); skills level up with exponential XP curve
+3. **Market** — random-walk ore prices (±0.1%/tick, clamped to ±40% of base)
+4. **Payroll** — deduct daily wages once per 86,400 ticks
 
 Speed can be changed by setting `TICK_INTERVAL` in `.env` (e.g., `0.1` = 10x speed).
 

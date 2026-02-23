@@ -1,0 +1,168 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/leaderboards_screen.gd" id="1"]
+
+[node name="LeaderboardsScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1")
+
+[node name="ColorRect" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.1, 0.1, 0.12, 1)
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBox" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 16
+
+[node name="Header" type="HBoxContainer" parent="MarginContainer/VBox"]
+layout_mode = 2
+
+[node name="BackButton" type="Button" parent="MarginContainer/VBox/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 40)
+layout_mode = 2
+text = "← Back"
+
+[node name="Spacer" type="Control" parent="MarginContainer/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Title" type="Label" parent="MarginContainer/VBox/Header"]
+layout_mode = 2
+text = "LEADERBOARDS"
+theme_override_font_sizes/font_size = 32
+horizontal_alignment = 1
+
+[node name="Spacer2" type="Control" parent="MarginContainer/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TabContainer" type="TabContainer" parent="MarginContainer/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Single Player" type="MarginContainer" parent="MarginContainer/VBox/TabContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBox" type="VBoxContainer" parent="MarginContainer/VBox/TabContainer/Single Player"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HeaderRow" type="HBoxContainer" parent="MarginContainer/VBox/TabContainer/Single Player/VBox"]
+layout_mode = 2
+
+[node name="RankLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Single Player/VBox/HeaderRow"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+text = "Rank"
+theme_override_font_sizes/font_size = 14
+
+[node name="PlayerLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Single Player/VBox/HeaderRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Player"
+theme_override_font_sizes/font_size = 14
+
+[node name="NetWorthLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Single Player/VBox/HeaderRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "Net Worth"
+theme_override_font_sizes/font_size = 14
+horizontal_alignment = 2
+
+[node name="Separator" type="HSeparator" parent="MarginContainer/VBox/TabContainer/Single Player/VBox"]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBox/TabContainer/Single Player/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SPEntriesContainer" type="VBoxContainer" parent="MarginContainer/VBox/TabContainer/Single Player/VBox/ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="Multiplayer" type="MarginContainer" parent="MarginContainer/VBox/TabContainer"]
+visible = false
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBox" type="VBoxContainer" parent="MarginContainer/VBox/TabContainer/Multiplayer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="HeaderRow" type="HBoxContainer" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox"]
+layout_mode = 2
+
+[node name="RankLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox/HeaderRow"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+text = "Rank"
+theme_override_font_sizes/font_size = 14
+
+[node name="PlayerLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox/HeaderRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Player"
+theme_override_font_sizes/font_size = 14
+
+[node name="NetWorthLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox/HeaderRow"]
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+text = "Net Worth"
+theme_override_font_sizes/font_size = 14
+horizontal_alignment = 2
+
+[node name="Separator" type="HSeparator" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox"]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MPEntriesContainer" type="VBoxContainer" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox/ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="DisabledOverlay" type="CenterContainer" parent="MarginContainer/VBox/TabContainer/Multiplayer"]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBox/TabContainer/Multiplayer/DisabledOverlay"]
+layout_mode = 2
+text = "Multiplayer Coming Soon"
+theme_override_font_sizes/font_size = 24

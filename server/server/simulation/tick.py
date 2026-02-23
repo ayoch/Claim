@@ -21,6 +21,95 @@ _market_prices: dict[str, float] = dict(BASE_ORE_PRICES)
 _payroll_accum: dict[int, float] = {}
 _total_ticks: int = 0
 
+# Worker skill progression constants
+BASE_XP: float = 86400.0  # 1 game-day at skill 0.0
+SKILL_CAP: float = 2.0
+SKILL_INCREMENT: float = 0.05
+
+def _get_xp_for_next_level(current_skill: float) -> float:
+    """Calculate XP needed for next level. Returns 0 if at cap."""
+    if current_skill >= SKILL_CAP:
+        return 0.0
+    return BASE_XP * pow(current_skill + 1.0, 2.0)
+
+def _add_worker_xp(worker: Worker, skill_type: int, amount: float) -> list[dict]:
+    """
+    Add XP to a worker's skill and check for level-up.
+    skill_type: 0=pilot, 1=engineer, 2=mining
+    Returns list of events (worker_skill_leveled if level-up occurred).
+    """
+    if amount <= 0.0:
+        return []
+
+    # Get current skill and XP
+    if skill_type == 0:
+        current_skill = worker.pilot_skill
+        current_xp = worker.pilot_xp
+    elif skill_type == 1:
+        current_skill = worker.engineer_skill
+        current_xp = worker.engineer_xp
+    elif skill_type == 2:
+        current_skill = worker.mining_skill
+        current_xp = worker.mining_xp
+    else:
+        return []
+
+    # Cap at max skill
+    if current_skill >= SKILL_CAP:
+        return []
+
+    # Add XP
+    current_xp += amount
+    events: list[dict] = []
+
+    # Check for level-up (can level multiple times if large XP grant)
+    xp_needed = _get_xp_for_next_level(current_skill)
+    while current_xp >= xp_needed and xp_needed > 0.0 and current_skill < SKILL_CAP:
+        current_xp -= xp_needed
+        current_skill += SKILL_INCREMENT
+        current_skill = min(current_skill, SKILL_CAP)
+
+        # Update skill value
+        if skill_type == 0:
+            worker.pilot_skill = current_skill
+        elif skill_type == 1:
+            worker.engineer_skill = current_skill
+        elif skill_type == 2:
+            worker.mining_skill = current_skill
+
+        # Recalculate XP needed for next level
+        xp_needed = _get_xp_for_next_level(current_skill)
+
+        # Recalculate wage based on new total skill
+        total_skill = worker.pilot_skill + worker.engineer_skill + worker.mining_skill
+        worker.wage = int(80 + total_skill * 40)
+
+        # Small loyalty boost for career development
+        worker.loyalty = min(worker.loyalty + 2.0, 100.0)
+
+        # Emit event
+        skill_names = ["pilot", "engineer", "mining"]
+        events.append({
+            'type': 'worker_skill_leveled',
+            'worker_id': worker.id,
+            'player_id': worker.player_id,
+            'skill_type': skill_names[skill_type],
+            'new_value': round(current_skill, 2),
+            'worker_name': worker.full_name,
+        })
+        logger.info('Worker %d (%s): %s skill leveled to %.2f',
+                    worker.id, worker.full_name, skill_names[skill_type], current_skill)
+
+    # Store updated XP
+    if skill_type == 0:
+        worker.pilot_xp = current_xp
+    elif skill_type == 1:
+        worker.engineer_xp = current_xp
+    elif skill_type == 2:
+        worker.mining_xp = current_xp
+
+    return events
+
 def get_market_prices() -> dict[str, float]:
     return dict(_market_prices)
 
@@ -68,16 +157,30 @@ async def _process_missions(db: AsyncSession, dt: float) -> list[dict]:
 def _advance_transit_out(mission: Mission, ship: Ship, dt: float) -> list[dict]:
     mission.elapsed_ticks += dt
     ship.fuel = max(0.0, ship.fuel - mission.fuel_per_tick * dt)
+
+    # Grant pilot and engineer XP to all crew during transit
+    events: list[dict] = []
+    for worker in ship.workers:
+        events += _add_worker_xp(worker, 0, dt)  # 0 = pilot skill
+        events += _add_worker_xp(worker, 1, dt)  # 1 = engineer skill
+
     if mission.elapsed_ticks >= mission.transit_time:
         mission.status = STATUS_MINING
         mission.elapsed_ticks = 0.0
         ship.is_stationed = False
         logger.info('Mission %d: arrived, starting mining', mission.id)
-        return [{'type': 'mission_arrived', 'mission_id': mission.id, 'player_id': mission.player_id}]
-    return []
+        events.append({'type': 'mission_arrived', 'mission_id': mission.id, 'player_id': mission.player_id})
+
+    return events
 
 def _advance_mining(mission: Mission, ship: Ship, dt: float) -> list[dict]:
     mission.elapsed_ticks += dt
+    events: list[dict] = []
+
+    # Grant mining XP to all crew during mining
+    for worker in ship.workers:
+        events += _add_worker_xp(worker, 2, dt)  # 2 = mining skill
+
     if mission.asteroid and mission.asteroid.ore_yields:
         cargo = dict(ship.current_cargo or {})
         cap = ship.cargo_capacity - sum(cargo.values())
@@ -88,16 +191,25 @@ def _advance_mining(mission: Mission, ship: Ship, dt: float) -> list[dict]:
             cargo[ore_type] = cargo.get(ore_type, 0.0) + mined
             cap -= mined
         ship.current_cargo = cargo
+
     if mission.elapsed_ticks >= mission.mining_duration:
         mission.status = STATUS_TRANSIT_BACK
         mission.elapsed_ticks = 0.0
         logger.info('Mission %d: mining complete, heading back', mission.id)
-        return [{'type': 'mission_mining_complete', 'mission_id': mission.id, 'player_id': mission.player_id}]
-    return []
+        events.append({'type': 'mission_mining_complete', 'mission_id': mission.id, 'player_id': mission.player_id})
+
+    return events
 
 def _advance_transit_back(mission: Mission, ship: Ship, dt: float) -> list[dict]:
     mission.elapsed_ticks += dt
     ship.fuel = max(0.0, ship.fuel - mission.fuel_per_tick * dt)
+
+    # Grant pilot and engineer XP to all crew during transit
+    events: list[dict] = []
+    for worker in ship.workers:
+        events += _add_worker_xp(worker, 0, dt)  # 0 = pilot skill
+        events += _add_worker_xp(worker, 1, dt)  # 1 = engineer skill
+
     if mission.elapsed_ticks >= mission.transit_time:
         mission.status = STATUS_COMPLETED
         ship.is_stationed = True
@@ -109,8 +221,9 @@ def _advance_transit_back(mission: Mission, ship: Ship, dt: float) -> list[dict]
               'player_id': mission.player_id, 'ship_id': mission.ship_id}
         if total_value > 0:
             ev['cargo_value'] = total_value
-        return [ev]
-    return []
+        events.append(ev)
+
+    return events
 
 def _sell_cargo(ship: Ship) -> float:
     if not ship.current_cargo:

@@ -5,8 +5,11 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.errors import RateLimitExceeded
 
+from server.config import settings
 from server.database import init_db
+from server.rate_limit import limiter, rate_limit_handler
 from server.routers import admin, auth, events, game
 from server.simulation.runner import simulation_loop
 
@@ -22,13 +25,18 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# CORS — allow all origins for local dev
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
+
+# CORS — configured via environment variables
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    max_age=3600,  # Cache preflight for 1 hour
 )
 
 # Routers
@@ -44,9 +52,19 @@ _sim_task: asyncio.Task | None = None
 async def on_startup() -> None:
     global _sim_task
     logger.info("Claim Server starting up...")
+
+    # Validate production settings
+    if settings.ENVIRONMENT == "production":
+        try:
+            settings.validate_production()
+            logger.info("Production settings validated successfully")
+        except ValueError as e:
+            logger.error(f"Production validation failed: {e}")
+            raise
+
     await init_db()
     _sim_task = asyncio.create_task(simulation_loop(world_id=1), name="simulation_loop")
-    logger.info("Simulation loop started.")
+    logger.info("Simulation loop started for world: %s", settings.WORLD_NAME)
 
 
 @app.on_event("shutdown")

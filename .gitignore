@@ -2,12 +2,20 @@
 .godot/
 /android/
 
-# Documentation (machine-local, synced separately)
-/docs/
+# Logs
 perf_log.txt
-perf_log.txt
-docs/CLAUDE_HANDOFF.md
-perf_log.txt
-docs/CLAUDE_HANDOFF.md
-docs/GDD.md
-docs/CLAUDE_HANDOFF.md
+
+# Python server
+server/.env
+server/.env.*
+!server/.env.example
+server/__pycache__/
+server/**/__pycache__/
+server/.venv/
+server/venv/
+server/*.log
+server/.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+.Python

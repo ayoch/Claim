@@ -1,6 +1,7 @@
 from datetime import datetime
+import re
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # ── Ship ──────────────────────────────────────────────────────────────────────
@@ -93,13 +94,25 @@ class GameState(BaseModel):
 # ── Action requests ───────────────────────────────────────────────────────────
 
 class DispatchRequest(BaseModel):
-    ship_id: int
+    ship_id: int = Field(..., gt=0, description="Ship ID must be positive")
     mission_type: int = Field(..., ge=0, le=5)
     # Target: provide exactly one of asteroid_id or colony_id
-    asteroid_id: int | None = None
-    colony_id: int | None = None
-    mining_duration: float = Field(86400.0, gt=0)
+    asteroid_id: int | None = Field(None, gt=0)
+    colony_id: int | None = Field(None, gt=0)
+    mining_duration: float = Field(
+        86400.0,
+        ge=3600.0,  # Min 1 hour
+        le=604800.0,  # Max 7 game-days
+        description="Mining duration in game-seconds"
+    )
     return_to_station: bool = True
+
+    @field_validator("mining_duration")
+    @classmethod
+    def reasonable_duration(cls, v: float) -> float:
+        if v > 86400.0 * 14:  # 14 game-days
+            raise ValueError("Mining duration too long (max 14 days)")
+        return v
 
 
 class HireRequest(BaseModel):
@@ -107,9 +120,17 @@ class HireRequest(BaseModel):
 
 
 class BuyShipRequest(BaseModel):
-    ship_class: int = Field(..., ge=0, le=3)
+    ship_class: int = Field(..., ge=0, le=3, description="Ship class: 0=Courier, 1=Hauler, 2=Prospector, 3=Explorer")
     ship_name: str = Field(..., min_length=1, max_length=64)
-    colony_id: int  # where to deliver / station the ship
+    colony_id: int = Field(..., gt=0)
+
+    @field_validator("ship_name")
+    @classmethod
+    def valid_ship_name(cls, v: str) -> str:
+        # Allow alphanumeric, spaces, hyphens, apostrophes
+        if not re.match(r'^[a-zA-Z0-9\s\'-]+$', v):
+            raise ValueError("Ship name must be alphanumeric (spaces, hyphens, apostrophes allowed)")
+        return v.strip()
 
 
 class AssignWorkerRequest(BaseModel):

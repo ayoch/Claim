@@ -33,6 +33,11 @@ var settings: Dictionary = {
 	"autoplay": true,
 }
 
+# Leaderboard system
+var player_name: String = "Player"  # Default player name
+var local_leaderboard: Array[Dictionary] = []  # Single-player leaderboard entries
+const MAX_LEADERBOARD_ENTRIES: int = 100
+
 # Company policies
 var thrust_policy: int = CompanyPolicy.ThrustPolicy.BALANCED
 var supply_policy: int = CompanyPolicy.SupplyPolicy.ROUTINE
@@ -2098,6 +2103,64 @@ func _start_queued_mission(ship: Ship) -> void:
 			_:  # Default: MINING
 				start_mission(ship, asteroid, transit_mode, slingshot_route)
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LEADERBOARD SYSTEM
+# ══════════════════════════════════════════════════════════════════════════════
+
+## Calculate current net worth (money + ship values + cargo values)
+func calculate_net_worth() -> int:
+	var total := money
+
+	# Add ship values (using purchase price as estimate)
+	for ship in ships:
+		var price: int = ShipData.CLASS_PRICES.get(ship.ship_class, 0)
+		total += price
+
+	# Add cargo value (ore in ships)
+	if market:
+		for ship in ships:
+			for ore_type in ship.cargo:
+				var price: float = market.current_prices.get(ore_type, 0.0)
+				total += int(ship.cargo[ore_type] * price)
+
+	# Add ore in storage
+	if market:
+		for ore_type in resources:
+			var price: float = market.current_prices.get(ore_type, 0.0)
+			total += int(resources[ore_type] * price)
+
+	return total
+
+
+## Submit current game state to local leaderboard
+func submit_leaderboard_entry() -> void:
+	var net_worth := calculate_net_worth()
+	var entry := {
+		"player_name": player_name,
+		"net_worth": net_worth,
+		"timestamp": Time.get_unix_time_from_system(),
+		"game_date": get_game_date_string(),
+		"ships_count": ships.size(),
+		"workers_count": workers.size(),
+	}
+
+	local_leaderboard.append(entry)
+
+	# Sort by net worth descending
+	local_leaderboard.sort_custom(func(a, b): return a["net_worth"] > b["net_worth"])
+
+	# Keep only top entries
+	if local_leaderboard.size() > MAX_LEADERBOARD_ENTRIES:
+		local_leaderboard = local_leaderboard.slice(0, MAX_LEADERBOARD_ENTRIES)
+
+
+## Get local leaderboard sorted by net worth
+func get_local_leaderboard() -> Array:
+	# Return copy so UI can't modify original
+	return local_leaderboard.duplicate(true)
+
+
 # Save/Load
 func save_game() -> void:
 	var save_data := {
@@ -2126,6 +2189,8 @@ func save_game() -> void:
 		"rescue_missions": {},
 		"refuel_missions": {},
 		"stranger_offers": {},
+		"player_name": player_name,
+		"local_leaderboard": local_leaderboard,
 	}
 	for ore_type in resources:
 		save_data["resources"][str(ore_type)] = resources[ore_type]
@@ -2447,6 +2512,9 @@ func save_game() -> void:
 			})
 		rival_data.append(corp_entry)
 	save_data["rival_corps"] = rival_data
+
+	# Submit to leaderboard before saving
+	submit_leaderboard_entry()
 
 	var file := FileAccess.open("user://save_game.json", FileAccess.WRITE)
 	file.store_string(JSON.stringify(save_data, "\t"))
@@ -2994,5 +3062,11 @@ func load_game() -> bool:
 			ship.elapsed_ticks = float(shipd.get("elapsed_ticks", 0.0))
 			ship.mining_elapsed = float(shipd.get("mining_elapsed", 0.0))
 			ship.mining_duration = float(shipd.get("mining_duration", 86400.0))
+
+	# Load leaderboard data
+	player_name = data.get("player_name", "Player")
+	local_leaderboard.clear()
+	for entry_data in data.get("local_leaderboard", []):
+		local_leaderboard.append(entry_data.duplicate())
 
 	return true
