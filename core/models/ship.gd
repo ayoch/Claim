@@ -50,11 +50,11 @@ var engine_wear_per_tick: float = 0.00003
 
 var current_mission: Mission = null
 var current_trade_mission: TradeMission = null
-var last_crew: Array[Worker] = []  # Remember last crew used
+var crew: Array[Worker] = []  # Workers permanently assigned to this ship
+var last_crew: Array[Worker] = []  # Last crew used for dispatch (for pre-selection)
 
 # Queued mission data (set destination while ship is busy)
 var queued_destination: Variant = null  # AsteroidData or Colony
-var queued_workers: Array[Worker] = []
 var queued_transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE
 var queued_mining_duration: float = 86400.0
 var queued_slingshot_route = null  # GravityAssist.SlingshotRoute or null
@@ -254,7 +254,6 @@ func has_queued_mission() -> bool:
 
 func clear_queued_mission() -> void:
 	queued_destination = null
-	queued_workers.clear()
 	queued_transit_mode = Mission.TransitMode.BRACHISTOCHRONE
 	queued_mining_duration = 86400.0
 	queued_slingshot_route = null
@@ -283,9 +282,8 @@ func add_station_log(message: String, type: String = "info") -> void:
 	if station_log.size() > 50:
 		station_log.resize(50)
 
-func queue_mission(destination: Variant, workers: Array[Worker], transit_mode: int, mining_dur: float = 86400.0, slingshot_route = null, mission_type: int = Mission.MissionType.MINING) -> void:
+func queue_mission(destination: Variant, transit_mode: int, mining_dur: float = 86400.0, slingshot_route = null, mission_type: int = Mission.MissionType.MINING) -> void:
 	queued_destination = destination
-	queued_workers = workers.duplicate()
 	queued_transit_mode = transit_mode
 	queued_mining_duration = mining_dur
 	queued_slingshot_route = slingshot_route

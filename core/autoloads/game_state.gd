@@ -472,15 +472,27 @@ func hire_worker(worker: Worker) -> void:
 	workers.append(worker)
 	EventBus.worker_hired.emit(worker)
 
+func assign_worker_to_ship(worker: Worker, ship: Ship) -> void:
+	if worker.assigned_ship == ship:
+		return
+	if worker.assigned_ship:
+		worker.assigned_ship.crew.erase(worker)
+	worker.assigned_ship = ship
+	if ship and worker not in ship.crew:
+		ship.crew.append(worker)
+
+func remove_worker_from_ship(worker: Worker, ship: Ship) -> void:
+	ship.crew.erase(worker)
+	if worker.assigned_ship == ship:
+		worker.assigned_ship = null
+
 func fire_worker(worker: Worker) -> void:
 	Worker.release_name(worker.worker_name)
 	workers.erase(worker)
-	worker.assigned_mission = null
-	worker.assigned_trade_mission = null
-	# Remove from any stationed ship's crew
-	if worker.assigned_station_ship:
-		worker.assigned_station_ship.last_crew.erase(worker)
-	worker.assigned_station_ship = null
+	# Remove from ship crew
+	if worker.assigned_ship:
+		worker.assigned_ship.crew.erase(worker)
+	worker.assigned_ship = null
 	# Remove from any mining unit — check all deployed units in case pointer is out of sync
 	if worker.assigned_mining_unit and is_instance_valid(worker.assigned_mining_unit):
 		worker.assigned_mining_unit.assigned_workers.erase(worker)
@@ -736,11 +748,11 @@ func get_asteroid_supply_days(asteroid_name: String, supply_key: String) -> floa
 			return supply / (unit_count * 0.05)
 	return INF
 
-func start_deploy_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worker], units: Array[MiningUnit], deploy_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+func start_deploy_mission(ship: Ship, asteroid: AsteroidData, units: Array[MiningUnit], deploy_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
 	var mission := Mission.new()
 	mission.ship = ship
 	mission.asteroid = asteroid
-	mission.workers = crew
+	mission.workers = ship.crew.duplicate()
 	mission.mission_type = Mission.MissionType.DEPLOY_UNIT
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
@@ -775,7 +787,7 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worker
 
 	# Apply pilot skill modifier
 	var best_pilot := 0.0
-	for w in crew:
+	for w in ship.crew:
 		if w.pilot_skill > best_pilot:
 			best_pilot = w.pilot_skill
 	var pilot_factor := 1.15 - (best_pilot * 0.2)
@@ -803,15 +815,13 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worker
 
 	ship.current_mission = mission
 	ship.docked_at_colony = null
-	ship.reset_life_support(crew.size())
-	for w in crew:
-		w.assigned_mission = mission
+	ship.reset_life_support(ship.crew.size())
 
 	missions.append(mission)
 	EventBus.mission_started.emit(mission)
 	return mission
 
-func start_collect_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
 	# Clean up any lingering idle mission so its stale worker list doesn't cause mismatches
 	if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
 		ship.current_mission.ship = null
@@ -820,7 +830,7 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worke
 	var mission := Mission.new()
 	mission.ship = ship
 	mission.asteroid = asteroid
-	mission.workers = crew
+	mission.workers = ship.crew.duplicate()
 	mission.mission_type = Mission.MissionType.COLLECT_ORE
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
@@ -850,7 +860,7 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worke
 			mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 
 	var best_pilot := 0.0
-	for w in crew:
+	for w in ship.crew:
 		if w.pilot_skill > best_pilot:
 			best_pilot = w.pilot_skill
 	var pilot_factor := 1.15 - (best_pilot * 0.2)
@@ -869,9 +879,7 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, crew: Array[Worke
 
 	ship.current_mission = mission
 	ship.docked_at_colony = null
-	ship.reset_life_support(crew.size())
-	for w in crew:
-		w.assigned_mission = mission
+	ship.reset_life_support(ship.crew.size())
 
 	missions.append(mission)
 	EventBus.mission_started.emit(mission)
@@ -947,9 +955,9 @@ func repair_engine(ship: Ship) -> bool:
 	ship.engine_condition = 100.0
 	return true
 
-func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
-	if assigned_workers.size() < ship.min_crew:
-		push_warning("start_mission: not enough crew for %s (need %d, got %d)" % [ship.ship_name, ship.min_crew, assigned_workers.size()])
+func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+	if ship.crew.size() < ship.min_crew:
+		push_warning("start_mission: not enough crew for %s (need %d, got %d)" % [ship.ship_name, ship.min_crew, ship.crew.size()])
 		return null
 	# Clean up any lingering idle mission so its stale worker list doesn't cause mismatches
 	if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
@@ -959,7 +967,7 @@ func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[W
 	var mission := Mission.new()
 	mission.ship = ship
 	mission.asteroid = asteroid
-	mission.workers = assigned_workers
+	mission.workers = ship.crew.duplicate()
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
 	mission.return_position_au = ship.position_au  # default return to origin
@@ -1058,7 +1066,7 @@ func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[W
 
 	# Apply pilot skill modifier to transit time
 	var best_pilot := 0.0
-	for w in assigned_workers:
+	for w in ship.crew:
 		if w.pilot_skill > best_pilot:
 			best_pilot = w.pilot_skill
 	var pilot_factor := 1.15 - (best_pilot * 0.2)  # 0.0 = 1.15x slower, 1.0 = 0.95x, 1.5 = 0.85x
@@ -1068,7 +1076,7 @@ func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[W
 
 	# Calculate mining duration: time to fill cargo hold (uses mining_skill)
 	var skill_total := 0.0
-	for w in assigned_workers:
+	for w in ship.crew:
 		skill_total += w.mining_skill
 	if skill_total < 0.1:
 		skill_total = 0.1
@@ -1107,9 +1115,7 @@ func start_mission(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[W
 	if not ship.is_stationed:
 		ship.current_cargo.clear()
 	ship.docked_at_colony = null  # Ship is departing
-	ship.reset_life_support(assigned_workers.size())  # Reset life support based on crew
-	for w in assigned_workers:
-		w.assigned_mission = mission
+	ship.reset_life_support(ship.crew.size())
 
 	missions.append(mission)
 	EventBus.mission_started.emit(mission)
@@ -1142,10 +1148,6 @@ func complete_mission(mission: Mission) -> void:
 		mission.ship.current_cargo.clear()
 
 	mission.ship.current_mission = null
-
-	for w in mission.workers:
-		w.assigned_mission = null
-
 	mission.status = Mission.Status.COMPLETED
 	EventBus.mission_completed.emit(mission)
 	missions.erase(mission)
@@ -1268,12 +1270,12 @@ func _apply_order_return_to_earth(ship: Ship) -> void:
 		missions.append(mission)
 		EventBus.mission_started.emit(mission)
 
-func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
 	var label := "Dispatch to " + asteroid.asteroid_name
-	queue_ship_order(ship, label, func(): _apply_dispatch_idle_ship(ship, asteroid, assigned_workers, transit_mode, slingshot_route))
+	queue_ship_order(ship, label, func(): _apply_dispatch_idle_ship(ship, asteroid, transit_mode, slingshot_route))
 	return null  # Callers should not rely on the return value when ship is remote
 
-func _apply_dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_workers: Array[Worker], transit_mode: int, slingshot_route) -> void:
+func _apply_dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, transit_mode: int, slingshot_route) -> void:
 	if not ship.is_idle_remote:
 		return  # Ship state changed while signal was in transit
 	# Capture origin name before clearing missions
@@ -1293,22 +1295,18 @@ func _apply_dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, assigned_work
 		trade_missions.erase(ship.current_trade_mission)
 		ship.current_trade_mission = null
 
-	for w in ship.last_crew:
-		w.assigned_mission = null
-		w.assigned_trade_mission = null
-
-	var mission := start_mission(ship, asteroid, assigned_workers, transit_mode, slingshot_route)
+	var mission := start_mission(ship, asteroid, transit_mode, slingshot_route)
 	if mission == null:
 		return
 	mission.origin_is_earth = false
 	mission.origin_name = origin_asteroid_name if origin_asteroid_name != "" else "deep space"
 
-func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned_workers: Array[Worker], cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
+func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
 	var label := "Trade mission to " + colony_target.colony_name
-	queue_ship_order(ship, label, func(): _apply_dispatch_idle_ship_trade(ship, colony_target, assigned_workers, cargo_to_load, transit_mode))
+	queue_ship_order(ship, label, func(): _apply_dispatch_idle_ship_trade(ship, colony_target, cargo_to_load, transit_mode))
 	return null  # Callers should not rely on the return value when ship is remote
 
-func _apply_dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned_workers: Array[Worker], cargo_to_load: Dictionary, transit_mode: int) -> void:
+func _apply_dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, cargo_to_load: Dictionary, transit_mode: int) -> void:
 	if not ship.is_idle_remote:
 		return  # Ship state changed while signal was in transit
 	# Capture origin name before clearing missions
@@ -1328,11 +1326,7 @@ func _apply_dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, assigned
 		trade_missions.erase(ship.current_trade_mission)
 		ship.current_trade_mission = null
 
-	for w in ship.last_crew:
-		w.assigned_mission = null
-		w.assigned_trade_mission = null
-
-	var tm := start_trade_mission(ship, colony_target, assigned_workers, cargo_to_load, transit_mode)
+	var tm := start_trade_mission(ship, colony_target, cargo_to_load, transit_mode)
 	if tm == null:
 		return
 	tm.origin_is_earth = false
@@ -1448,7 +1442,7 @@ func start_rescue(ship: Ship) -> bool:
 	rescue_missions[ship] = {
 		"elapsed_ticks": 0.0,
 		"transit_time": rescue_info["time"],
-		"workers": ship.last_crew.duplicate(),
+		"workers": ship.crew.duplicate(),
 		"source_name": source["name"],
 		"source_pos": source["pos"],
 	}
@@ -1465,9 +1459,11 @@ func start_fleet_rescue(ferry_ship: Ship, target_ship: Ship, rescue_crew: Array[
 	# Build worker list from ferry's last crew + available workers.
 	# Rescue missions require only 1 crew — the ship will fly understaffed
 	# and head straight to the nearest crew pickup on return.
-	var all_workers: Array[Worker] = rescue_crew.duplicate()
-	for w in ferry_ship.last_crew:
-		if w not in all_workers and w.is_available:
+	# Use ferry's crew for the rescue mission; rescue_crew will be left on the target ship
+	var all_workers: Array[Worker] = ferry_ship.crew.duplicate()
+	# Add rescue crew if not already on ship (they may be from a different source)
+	for w in rescue_crew:
+		if w not in all_workers:
 			all_workers.append(w)
 	# Top up to 2 from available workers if needed (minimum for rescue: 1 stays on derelict, 1 flies back)
 	if all_workers.size() < 2:
@@ -1505,9 +1501,6 @@ func start_fleet_rescue(ferry_ship: Ship, target_ship: Ship, rescue_crew: Array[
 	mission.fuel_per_tick = ferry_ship.calc_fuel_for_distance(dist) / transit_t if transit_t > 0 else 0.0
 
 	ferry_ship.current_mission = mission
-	ferry_ship.last_crew = all_workers.duplicate()
-	for w in all_workers:
-		w.assigned_mission = mission
 
 	# Commit supplies from ferry ship (deducted now; transferred on arrival)
 	ferry_ship.supplies["food"] = maxf(0.0, ferry_ship.supplies.get("food", 0.0) - food_units)
@@ -1548,8 +1541,6 @@ func cancel_fleet_rescue(derelict_ship: Ship) -> void:
 	mission.fuel_per_tick = ferry.calc_fuel_for_distance(dist, cargo_mass) / mission.transit_time \
 		if mission.transit_time > 0 else 0.0
 	mission.status = Mission.Status.TRANSIT_BACK
-	# Restore mission workers to the ferry's last_crew so they return with the ship
-	ferry.last_crew = mission.workers.duplicate()
 	EventBus.mission_phase_changed.emit(mission)
 
 func start_refuel(ship: Ship, fuel_amount: float) -> bool:
@@ -1625,22 +1616,18 @@ func station_ship(ship: Ship, colony: Colony, jobs: Array[String]) -> void:
 	ship.station_colony = colony
 	ship.station_jobs = jobs.duplicate()
 	ship.station_log.clear()
-	# Ensure ship has a crew assigned (use last_crew or auto-assign from available)
-	if ship.last_crew.is_empty() or ship.last_crew.size() < ship.min_crew:
+	# Ensure ship has a crew assigned (use existing crew or auto-assign from available)
+	if ship.crew.is_empty() or ship.crew.size() < ship.min_crew:
 		var available := get_available_workers()
-		ship.last_crew.clear()
-		for i in range(mini(ship.min_crew, available.size())):
-			available[i].assigned_station_ship = ship
-			ship.last_crew.append(available[i])
+		for i in range(mini(ship.min_crew - ship.crew.size(), available.size())):
+			assign_worker_to_ship(available[i], ship)
 	else:
-		for w in ship.last_crew:
-			w.assigned_station_ship = ship
+		for w in ship.crew:
+			w.assigned_ship = ship
 	ship.add_station_log("Stationed at %s" % colony.colony_name, "system")
 	EventBus.ship_stationed.emit(ship, colony)
 
 func unstation_ship(ship: Ship) -> void:
-	for w in ship.last_crew:
-		w.assigned_station_ship = null
 	ship.is_stationed = false
 	ship.add_station_log("Unstationed", "system")
 	ship.station_colony = null
@@ -1692,7 +1679,7 @@ func buy_supplies(ship: Ship, supply_key: String, amount: float) -> bool:
 func deploy_crew(asteroid: AsteroidData, crew_workers: Array[Worker], initial_supplies: Dictionary) -> void:
 	# Remove workers from available pool
 	for w in crew_workers:
-		w.assigned_mission = null  # They're deployed, not on a mission
+		pass  # Workers assigned to mining units are tracked via assigned_mining_unit
 	var entry: Dictionary = {
 		"asteroid": asteroid,
 		"workers": crew_workers.duplicate(),
@@ -1881,14 +1868,14 @@ func fulfill_contract_from_ship(contract: Contract, ship: Ship, amount: float) -
 
 # --- Trade mission methods ---
 
-func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Array[Worker], cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
-	if assigned_workers.size() < ship.min_crew:
-		push_warning("start_trade_mission: not enough crew for %s (need %d, got %d)" % [ship.ship_name, ship.min_crew, assigned_workers.size()])
+func start_trade_mission(ship: Ship, colony_target: Colony, cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
+	if ship.crew.size() < ship.min_crew:
+		push_warning("start_trade_mission: not enough crew for %s (need %d, got %d)" % [ship.ship_name, ship.min_crew, ship.crew.size()])
 		return null
 	var tm := TradeMission.new()
 	tm.ship = ship
 	tm.colony = colony_target
-	tm.workers = assigned_workers
+	tm.workers = ship.crew.duplicate()
 	tm.status = TradeMission.Status.TRANSIT_TO_COLONY
 	tm.origin_position_au = ship.position_au
 	tm.return_position_au = ship.position_au  # default return to origin
@@ -1977,11 +1964,7 @@ func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Ar
 
 	# Apply pilot skill modifier to transit time
 	var best_pilot := 0.0
-	for w in assigned_workers:
-		if w.pilot_skill > best_pilot:
-			best_pilot = w.pilot_skill
-	# Also check last_crew for trade missions (workers aren't locked)
-	for w in ship.last_crew:
+	for w in ship.crew:
 		if w.pilot_skill > best_pilot:
 			best_pilot = w.pilot_skill
 	var pilot_factor := 1.15 - (best_pilot * 0.2)
@@ -2005,9 +1988,7 @@ func start_trade_mission(ship: Ship, colony_target: Colony, assigned_workers: Ar
 	ship.current_trade_mission = tm
 	ship.current_cargo = tm.cargo.duplicate()
 	ship.docked_at_colony = null  # Ship is departing
-	ship.reset_life_support(assigned_workers.size())  # Reset life support based on crew
-	for w in assigned_workers:
-		w.assigned_trade_mission = tm
+	ship.reset_life_support(ship.crew.size())
 
 	trade_missions.append(tm)
 	EventBus.trade_mission_started.emit(tm)
@@ -2027,8 +2008,6 @@ func complete_trade_mission(tm: TradeMission) -> void:
 		tm.cargo.clear()
 	tm.ship.current_cargo.clear()
 	tm.ship.current_trade_mission = null
-	for w in tm.workers:
-		w.assigned_trade_mission = null
 	tm.status = TradeMission.Status.COMPLETED
 	EventBus.trade_mission_completed.emit(tm)
 	trade_missions.erase(tm)
@@ -2048,26 +2027,12 @@ func _start_queued_mission(ship: Ship) -> void:
 	var mission_type = ship.queued_mission_type
 	var transit_mode = ship.queued_transit_mode
 	var slingshot_route = ship.queued_slingshot_route
-	var mining_dur = ship.queued_mining_duration
-
-	# Validate and assemble crew — prefer queued workers, top up from available pool if needed
-	var workers_array: Array[Worker] = []
-	for w in ship.queued_workers:
-		if w in workers and w.is_available:
-			workers_array.append(w)
-	if workers_array.size() < ship.min_crew:
-		var available := get_available_workers()
-		for w in available:
-			if w not in workers_array:
-				workers_array.append(w)
-			if workers_array.size() >= ship.min_crew:
-				break
 
 	# Clear the queue before starting (avoids recursion if start_mission re-emits signals)
 	ship.clear_queued_mission()
 
-	if workers_array.size() < ship.min_crew:
-		# Can't crew the planned mission — fall through to policy on next tick
+	if ship.crew.size() < ship.min_crew:
+		# Not enough crew — fall through to policy on next tick
 		return
 
 	if dest is AsteroidData:
@@ -2081,13 +2046,9 @@ func _start_queued_mission(ship: Ship) -> void:
 			return
 		match mission_type:
 			Mission.MissionType.COLLECT_ORE:
-				var m := start_collect_mission(ship, asteroid, workers_array, transit_mode, slingshot_route)
-				if m:
-					ship.last_crew = workers_array
+				start_collect_mission(ship, asteroid, transit_mode, slingshot_route)
 			_:  # Default: MINING
-				var m := start_mission(ship, asteroid, workers_array, transit_mode, slingshot_route)
-				if m:
-					ship.last_crew = workers_array
+				start_mission(ship, asteroid, transit_mode, slingshot_route)
 
 # Save/Load
 func save_game() -> void:
@@ -2167,6 +2128,8 @@ func save_game() -> void:
 			ship_data["station_colony_name"] = s.station_colony.colony_name if s.station_colony else ""
 			ship_data["station_jobs"] = s.station_jobs.duplicate()
 			ship_data["station_log"] = s.station_log.duplicate()
+		# Crew
+		ship_data["crew"] = s.crew.map(func(w: Worker) -> String: return w.worker_name)
 		# Policy overrides
 		ship_data["thrust_policy_override"] = s.thrust_policy_override
 		ship_data["supply_policy_override"] = s.supply_policy_override
@@ -2568,11 +2531,23 @@ func load_game() -> bool:
 	# Restore game clock
 	total_ticks = float(data.get("total_ticks", 0.0))
 
+	# Reconnect ship crew from saved worker names
+	var ship_save_array: Array = data.get("ships", [])
+	for sd in ship_save_array:
+		var ship_name_str: String = sd.get("name", "")
+		for ship in ships:
+			if ship.ship_name == ship_name_str:
+				for wname in sd.get("crew", []):
+					for w in workers:
+						if w.worker_name == wname:
+							assign_worker_to_ship(w, ship)
+							break
+				break
+
 	# Reconnect station colony references (colonies loaded at _ready)
 	for ship in ships:
 		if ship.is_stationed:
-			var sd_array: Array = data.get("ships", [])
-			for sd in sd_array:
+			for sd in ship_save_array:
 				if sd.get("name", "") == ship.ship_name:
 					var colony_name: String = sd.get("station_colony_name", "")
 					if colony_name != "":
@@ -2581,9 +2556,6 @@ func load_game() -> bool:
 								ship.station_colony = colony
 								break
 					break
-			# Mark stationed crew as assigned to this ship
-			for w in ship.last_crew:
-				w.assigned_station_ship = ship
 
 	# Restore reputation
 	if data.has("reputation"):
@@ -2629,7 +2601,6 @@ func load_game() -> bool:
 			for w in workers:
 				if w.worker_name == wname:
 					m.workers.append(w)
-					w.assigned_mission = m
 					break
 		# Load waypoint metadata
 		m.outbound_waypoint_types = md.get("outbound_waypoint_types", [])
@@ -2704,7 +2675,6 @@ func load_game() -> bool:
 			for w in workers:
 				if w.worker_name == worker_name:
 					tm.workers.append(w)
-					w.assigned_trade_mission = tm
 					break
 
 		# Load waypoint metadata
@@ -2813,7 +2783,7 @@ func load_game() -> bool:
 				rescue_missions[ship] = {
 					"elapsed_ticks": float(rd.get("elapsed", 0.0)),
 					"transit_time": float(rd.get("transit", 0.0)),
-					"workers": ship.last_crew.duplicate(),
+					"workers": ship.crew.duplicate(),
 					"source_name": rd.get("source", "Earth"),
 					"source_pos": CelestialData.get_earth_position_au(),  # Approximate
 				}

@@ -680,7 +680,8 @@ func _start_trade(colony: Colony) -> void:
 	for i in range(mini(ship.min_crew, workers.size())):
 		assigned.append(workers[i])
 
-	GameState.start_trade_mission(ship, colony, assigned, cargo)
+	ship.crew = assigned
+	GameState.start_trade_mission(ship, colony, cargo)
 	_refresh_colony()
 	_refresh_sell()
 
@@ -704,8 +705,7 @@ func _start_remote_trade(colony: Colony, ship: Ship) -> void:
 		ship.fuel = ship.fuel_capacity
 		GameState.money -= fuel_cost
 
-	var assigned: Array[Worker] = []
-	GameState.dispatch_idle_ship_trade(ship, colony, assigned, cargo)
+	GameState.dispatch_idle_ship_trade(ship, colony, cargo)
 	_refresh_colony()
 	_refresh_sell()
 
