@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-23 EST (session 13)
-**Updated By:** Instance on Machine 2 (Mac laptop - HK-47)
-**Session Context:** Backend abstraction layer & local leaderboards implemented
-**Next Session Priority:** Phase 3 - Implement ServerBackend HTTP wrapper, server leaderboard endpoint, login/register screen
+**Last Updated:** 2026-02-23 EST (session 14)
+**Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
+**Session Context:** Bug fixes — starting ships count, refuel teleport, profit estimates, Market tab width
+**Next Session Priority:** Continued playtesting and polish; Phase 3 (ServerBackend HTTP wrapper) still pending from session 13
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -13,6 +13,27 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-23 EST (session 14) - Bug Fixes: Starting Ships, Refuel Teleport, Ore Prices, Market Tab
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Starting ships = 6 bug fixed**: `title_screen.gd` called `GameState._ready()` manually, but Godot already auto-calls `_ready()` on autoload init — doubled `_init_starter_ship()`. Added `new_game()` to `game_state.gd` (clears all state, resets scalars, re-runs init). `_ready()` now delegates to it. `title_screen.gd` calls `new_game()`. Fixed `reputation_score = 0.0` in `new_game()` → `Reputation.score = 0.0`.
+  - **Ship teleport after refueling fixed**: `Mission.Status.REFUELING` completion always called `_complete_refuel_stop(mission, true)` — hardcoded `is_outbound=true` meant return-trip fuel stops resumed `TRANSIT_OUT` using exhausted `outbound_legs`. Added `refueling_is_return: bool` to `Mission` and `TradeMission`, set in `_process_waypoint_transition`. Completion now passes `not mission.refueling_is_return`.
+  - **Profit estimates negative — ore price rebalance**: Worker wages ($80-200/day × 4-6 crew × 60+ day missions) overwhelmed revenue at Earth-commodity prices. Scaled base ore prices ~8x in `market_data.gd`: Iron $400, Nickel $1000, Platinum $6500, Water Ice $1600, Carbon $1200. Also wired in: scroll-to-map-selected-ship in fleet tab (EventBus signal + `_ship_panels` dict + `NOTIFICATION_VISIBILITY_CHANGED`), and live signal countdown in fleet_market_tab.gd (`_signal_labels` dict, updates in `_on_tick()`).
+  - **Market tab width fixed**: Added `size_flags_horizontal = 3` to `ScrollContainer` in `market_tab.tscn`.
+
+- **Files Modified:**
+  - `core/autoloads/game_state.gd` (new_game() function)
+  - `ui/title_screen.gd` (new_game() call)
+  - `core/models/mission.gd` (refueling_is_return field)
+  - `core/models/trade_mission.gd` (refueling_is_return field)
+  - `core/autoloads/simulation.gd` (refuel direction fix)
+  - `core/data/market_data.gd` (ore price rebalance)
+  - `ui/tabs/market_tab.tscn` (size_flags_horizontal fix)
+  - `core/autoloads/event_bus.gd` (map_ship_selected signal)
+  - `solar_map/solar_map_view.gd` (emits map_ship_selected)
+  - `ui/tabs/fleet_tab.gd` (scroll-to-ship)
+  - `ui/tabs/fleet_market_tab.gd` (live signal countdown)
 
 ### 2026-02-23 EST (session 13) - Backend Abstraction & Leaderboards
 - **Machine:** Mac laptop (HK-47)

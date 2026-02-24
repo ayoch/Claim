@@ -27,6 +27,7 @@ var _status_labels: Dictionary = {}
 var _detail_labels: Dictionary = {}
 var _location_labels: Dictionary = {}
 var _cargo_labels: Dictionary = {}  # Ship -> Label for cargo display
+var _signal_labels: Dictionary = {}  # Ship -> Label for pending order countdown
 var _crew_expanded: Dictionary = {}  # Ship -> bool, persists across rebuilds
 var _policy_overrides_expanded: Dictionary = {}  # Ship -> bool, persists across rebuilds
 var _ship_stats_expanded: Dictionary = {}  # Ship -> bool, persists across rebuilds
@@ -214,6 +215,19 @@ func _on_tick(_dt: float) -> void:
 		var label: Label = _location_labels[ship]
 		if is_instance_valid(label):
 			label.text = _get_location_text(ship)
+	# Update signal-in-transit countdown labels
+	for ship: Ship in _signal_labels:
+		var label: Label = _signal_labels[ship]
+		if is_instance_valid(label):
+			var pending_order := GameState.get_pending_order(ship)
+			if pending_order.is_empty():
+				label.visible = false
+			else:
+				var remaining_secs: float = pending_order["fires_at"] - GameState.total_ticks
+				var mins := int(remaining_secs / 60.0)
+				var secs := int(fmod(remaining_secs, 60.0))
+				var countdown_str := "%dm %02ds" % [mins, secs] if mins > 0 else "%ds" % secs
+				label.text = "📡 Signal in transit: %s (%s remaining)" % [pending_order["label"], countdown_str]
 
 func _get_wrench_texture(ship: Ship) -> Texture2D:
 	# Returns the appropriate wrench texture based on worst component condition,
@@ -236,6 +250,7 @@ func _rebuild_ships() -> void:
 	_detail_labels.clear()
 	_cargo_labels.clear()
 	_location_labels.clear()
+	_signal_labels.clear()
 	_free_children(ships_list)
 
 	for ship: Ship in GameState.ships:
@@ -702,6 +717,7 @@ func _rebuild_ships() -> void:
 				signal_lbl.add_theme_font_size_override("font_size", 13)
 				signal_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 				vbox.add_child(signal_lbl)
+				_signal_labels[ship] = signal_lbl
 
 			var action_row := HBoxContainer.new()
 			action_row.add_theme_constant_override("separation", 8)

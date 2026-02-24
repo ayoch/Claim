@@ -831,6 +831,7 @@ func _set_map_selected_ship(ship: Ship) -> void:
 		_apply_selection_border(_ship_buttons[s], s == ship)
 	if _dispatch_hint_label:
 		_dispatch_hint_label.visible = ship != null
+	EventBus.map_ship_selected.emit(ship)
 
 func _try_dispatch_to(screen_pos: Vector2) -> void:
 	var world_pos := camera.position + (screen_pos - get_viewport_rect().size / 2.0) / camera.zoom

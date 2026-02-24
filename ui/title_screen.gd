@@ -30,7 +30,7 @@ func _on_new_game() -> void:
 		DirAccess.remove_absolute("user://save_game.json")
 
 	# Reset GameState to fresh start
-	GameState._ready()
+	GameState.new_game()
 
 	# Load main game scene
 	get_tree().change_scene_to_file("res://ui/main_ui.tscn")

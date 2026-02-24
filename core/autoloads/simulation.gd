@@ -234,9 +234,9 @@ func _process_missions(dt: float) -> void:
 				if best_pilot:
 					best_pilot.add_xp(0, dt)  # 0 = pilot skill
 				_burn_fuel(mission, dt)
-				if mission.elapsed_ticks >= mission.transit_time:
-					# Check if using slingshot with more waypoints
-					if mission.outbound_waypoint_index < mission.outbound_waypoints.size():
+				if mission.elapsed_ticks >= mission.get_current_phase_duration():
+					# Check if more intermediate waypoints remain
+					if mission.outbound_waypoint_index < mission.outbound_legs.size():
 						# Reached waypoint - transition to next leg
 						_process_waypoint_transition(mission, true)  # true = outbound
 					else:
@@ -293,7 +293,7 @@ func _process_missions(dt: float) -> void:
 
 			Mission.Status.REFUELING:
 				if mission.elapsed_ticks >= Mission.REFUEL_DURATION:
-					_complete_refuel_stop(mission, true)  # true = outbound
+					_complete_refuel_stop(mission, not mission.refueling_is_return)
 
 			Mission.Status.MINING:
 				# Grant mining XP to crew during mining
@@ -355,9 +355,9 @@ func _process_missions(dt: float) -> void:
 				if best_pilot:
 					best_pilot.add_xp(0, dt)  # 0 = pilot skill
 				_burn_fuel(mission, dt)
-				if mission.elapsed_ticks >= mission.transit_time:
+				if mission.elapsed_ticks >= mission.get_current_phase_duration():
 					# Check if using slingshot with more waypoints
-					if mission.return_waypoint_index < mission.return_waypoints.size():
+					if mission.return_waypoint_index < mission.return_legs.size():
 						# Reached waypoint - transition to next leg
 						_process_waypoint_transition(mission, false)  # false = return
 					else:
@@ -409,268 +409,146 @@ func _process_missions(dt: float) -> void:
 							GameState._start_queued_mission(_mission_ship)
 
 func _process_waypoint_transition(mission: Mission, is_outbound: bool) -> void:
-	# Handle transition to next leg of multi-waypoint journey
-	if is_outbound:
-		# Get waypoint type
-		var waypoint_type := Mission.WaypointType.GRAVITY_ASSIST
-		if mission.outbound_waypoint_types.size() > mission.outbound_waypoint_index:
-			waypoint_type = mission.outbound_waypoint_types[mission.outbound_waypoint_index] as Mission.WaypointType
+	var legs := mission.outbound_legs if is_outbound else mission.return_legs
+	var idx := mission.outbound_waypoint_index if is_outbound else mission.return_waypoint_index
+	var leg: WaypointLeg = legs[idx]
 
-		# Get waypoint position (may be updated colony position)
-		var waypoint_pos := mission.outbound_waypoints[mission.outbound_waypoint_index]
+	mission.ship.position_au = leg.get_live_position()
 
-		# If refuel stop, update to colony's CURRENT position (handles drift)
-		if waypoint_type == Mission.WaypointType.REFUEL_STOP:
-			var colony := mission.outbound_waypoint_colony_refs[mission.outbound_waypoint_index]
-			if colony:
-				waypoint_pos = colony.get_position_au()
-
-		mission.ship.position_au = waypoint_pos
-
-		# Handle based on type
-		match waypoint_type:
-			Mission.WaypointType.REFUEL_STOP:
-				# Transition to REFUELING status
-				mission.status = Mission.Status.REFUELING
-				mission.elapsed_ticks = 0.0
-				mission.outbound_waypoint_index += 1  # Advance now
-				EventBus.mission_phase_changed.emit(mission)
-				return  # Don't set transit_time yet
-
-			Mission.WaypointType.GRAVITY_ASSIST:
-				# Existing gravity assist behavior
+	match leg.waypoint_type:
+		WaypointLeg.WaypointType.REFUEL_STOP:
+			mission.status = Mission.Status.REFUELING
+			mission.refueling_is_return = not is_outbound
+			mission.elapsed_ticks = 0.0
+			if is_outbound:
 				mission.outbound_waypoint_index += 1
-				mission.elapsed_ticks = 0.0
-
-				# Set transit time for next leg
-				if mission.outbound_waypoint_index < mission.outbound_leg_times.size():
-					mission.transit_time = mission.outbound_leg_times[mission.outbound_waypoint_index]
-				else:
-					# Last leg to destination
-					var dist := mission.ship.position_au.distance_to(mission.asteroid.get_position_au())
-					mission.transit_time = Brachistochrone.transit_time(dist, mission.ship.get_effective_thrust())
-	else:
-		# Return journey
-		var waypoint_type := Mission.WaypointType.GRAVITY_ASSIST
-		if mission.return_waypoint_types.size() > mission.return_waypoint_index:
-			waypoint_type = mission.return_waypoint_types[mission.return_waypoint_index] as Mission.WaypointType
-
-		var waypoint_pos := mission.return_waypoints[mission.return_waypoint_index]
-
-		if waypoint_type == Mission.WaypointType.REFUEL_STOP:
-			var colony := mission.return_waypoint_colony_refs[mission.return_waypoint_index]
-			if colony:
-				waypoint_pos = colony.get_position_au()
-
-		mission.ship.position_au = waypoint_pos
-
-		match waypoint_type:
-			Mission.WaypointType.REFUEL_STOP:
-				mission.status = Mission.Status.REFUELING
-				mission.elapsed_ticks = 0.0
+			else:
 				mission.return_waypoint_index += 1
-				EventBus.mission_phase_changed.emit(mission)
-				return
+			EventBus.mission_phase_changed.emit(mission)
+			return
 
-			Mission.WaypointType.GRAVITY_ASSIST:
+		WaypointLeg.WaypointType.GRAVITY_ASSIST:
+			mission.elapsed_ticks = 0.0
+			if is_outbound:
+				mission.outbound_waypoint_index += 1
+				var next_idx := mission.outbound_waypoint_index
+				if next_idx < mission.outbound_legs.size():
+					mission.transit_time = mission.outbound_legs[next_idx].transit_time
+				# else: transit_time already holds the final leg time
+			else:
 				mission.return_waypoint_index += 1
-				mission.elapsed_ticks = 0.0
-
-				if mission.return_waypoint_index < mission.return_leg_times.size():
-					mission.transit_time = mission.return_leg_times[mission.return_waypoint_index]
-				else:
-					# Last leg to destination
-					var dist := mission.ship.position_au.distance_to(mission.return_position_au)
-					mission.transit_time = Brachistochrone.transit_time(dist, mission.ship.get_effective_thrust())
+				var next_idx := mission.return_waypoint_index
+				if next_idx < mission.return_legs.size():
+					mission.transit_time = mission.return_legs[next_idx].transit_time
 
 	EventBus.mission_phase_changed.emit(mission)
 
 func _complete_refuel_stop(mission: Mission, is_outbound: bool) -> void:
-	# Complete refueling at a waypoint and resume transit
-	var waypoint_idx := mission.outbound_waypoint_index - 1 if is_outbound else mission.return_waypoint_index - 1
+	var legs := mission.outbound_legs if is_outbound else mission.return_legs
+	var cur_idx := (mission.outbound_waypoint_index if is_outbound else mission.return_waypoint_index) - 1
+	var next_idx := mission.outbound_waypoint_index if is_outbound else mission.return_waypoint_index
 
-	# Add fuel to ship
-	var fuel_amount: float = 0.0
-	if is_outbound and waypoint_idx >= 0 and waypoint_idx < mission.outbound_waypoint_fuel_amounts.size():
-		fuel_amount = mission.outbound_waypoint_fuel_amounts[waypoint_idx]
-	elif not is_outbound and waypoint_idx >= 0 and waypoint_idx < mission.return_waypoint_fuel_amounts.size():
-		fuel_amount = mission.return_waypoint_fuel_amounts[waypoint_idx]
+	# Add purchased fuel
+	if cur_idx >= 0 and cur_idx < legs.size():
+		mission.ship.fuel = minf(mission.ship.fuel + legs[cur_idx].fuel_amount, mission.ship.get_effective_fuel_capacity())
 
-	mission.ship.fuel = minf(mission.ship.fuel + fuel_amount, mission.ship.get_effective_fuel_capacity())
-
-	# Check if NEXT leg is reachable (only validate immediate next destination)
+	# Determine next destination position
 	var next_dest_pos: Vector2
-	if is_outbound:
-		if mission.outbound_waypoint_index < mission.outbound_waypoints.size():
-			# More waypoints ahead - check if we can reach the next one
-			next_dest_pos = mission.outbound_waypoints[mission.outbound_waypoint_index]
-		else:
-			# No more waypoints - check if we can reach final destination
-			next_dest_pos = mission.asteroid.get_position_au()
+	if next_idx < legs.size():
+		next_dest_pos = legs[next_idx].get_live_position()
+	elif is_outbound:
+		next_dest_pos = mission.asteroid.get_position_au()
 	else:
-		if mission.return_waypoint_index < mission.return_waypoints.size():
-			next_dest_pos = mission.return_waypoints[mission.return_waypoint_index]
-		else:
-			next_dest_pos = mission.return_position_au
+		next_dest_pos = mission.return_position_au
 
-	var cargo_mass := mission.ship.get_cargo_total()
 	var dist_to_next := mission.ship.position_au.distance_to(next_dest_pos)
-	var fuel_needed := mission.ship.calc_fuel_for_distance(dist_to_next, cargo_mass)
+	var fuel_needed := mission.ship.calc_fuel_for_distance(dist_to_next, mission.ship.get_cargo_total())
 
 	if fuel_needed > mission.ship.fuel:
-		# Next leg unreachable - abort mission at this fuel stop
 		mission.status = Mission.Status.IDLE_AT_DESTINATION
 		mission.elapsed_ticks = 0.0
-		# Free workers
 		EventBus.mission_phase_changed.emit(mission)
-		# Notify player (could add a specific event for this)
 		print("Mission aborted: next waypoint unreachable from fuel stop (orbital drift)")
 		return
 
-	# Resume transit
 	mission.elapsed_ticks = 0.0
 	mission.status = Mission.Status.TRANSIT_OUT if is_outbound else Mission.Status.TRANSIT_BACK
 
 	# Set next leg transit time
-	if is_outbound:
-		if mission.outbound_waypoint_index < mission.outbound_leg_times.size():
-			mission.transit_time = mission.outbound_leg_times[mission.outbound_waypoint_index]
-		else:
-			# Last leg to destination
-			var dist := mission.ship.position_au.distance_to(mission.asteroid.get_position_au())
-			mission.transit_time = Brachistochrone.transit_time(dist, mission.ship.get_effective_thrust())
-	else:
-		if mission.return_waypoint_index < mission.return_leg_times.size():
-			mission.transit_time = mission.return_leg_times[mission.return_waypoint_index]
-		else:
-			# Last leg to destination
-			var dist := mission.ship.position_au.distance_to(mission.return_position_au)
-			mission.transit_time = Brachistochrone.transit_time(dist, mission.ship.get_effective_thrust())
+	if next_idx < legs.size():
+		mission.transit_time = legs[next_idx].transit_time
+	# else: transit_time already holds the final leg time
 
 	EventBus.mission_phase_changed.emit(mission)
 
 func _process_trade_waypoint_transition(tm: TradeMission, is_outbound: bool) -> void:
-	# Handle transition to next leg of multi-waypoint trade journey
-	if is_outbound:
-		var waypoint_type := TradeMission.WaypointType.GRAVITY_ASSIST
-		if tm.outbound_waypoint_types.size() > tm.outbound_waypoint_index:
-			waypoint_type = tm.outbound_waypoint_types[tm.outbound_waypoint_index] as TradeMission.WaypointType
+	var legs := tm.outbound_legs if is_outbound else tm.return_legs
+	var idx := tm.outbound_waypoint_index if is_outbound else tm.return_waypoint_index
+	var leg: WaypointLeg = legs[idx]
 
-		var waypoint_pos := tm.outbound_waypoints[tm.outbound_waypoint_index]
+	tm.ship.position_au = leg.get_live_position()
 
-		if waypoint_type == TradeMission.WaypointType.REFUEL_STOP:
-			var colony := tm.outbound_waypoint_colony_refs[tm.outbound_waypoint_index]
-			if colony:
-				waypoint_pos = colony.get_position_au()
-
-		tm.ship.position_au = waypoint_pos
-
-		match waypoint_type:
-			TradeMission.WaypointType.REFUEL_STOP:
-				tm.status = TradeMission.Status.REFUELING
-				tm.elapsed_ticks = 0.0
+	match leg.waypoint_type:
+		WaypointLeg.WaypointType.REFUEL_STOP:
+			tm.status = TradeMission.Status.REFUELING
+			tm.refueling_is_return = not is_outbound
+			tm.elapsed_ticks = 0.0
+			if is_outbound:
 				tm.outbound_waypoint_index += 1
-				EventBus.trade_mission_phase_changed.emit(tm)
-				return
+			else:
+				tm.return_waypoint_index += 1
+			EventBus.trade_mission_phase_changed.emit(tm)
+			return
 
-			TradeMission.WaypointType.GRAVITY_ASSIST:
+		WaypointLeg.WaypointType.GRAVITY_ASSIST:
+			tm.elapsed_ticks = 0.0
+			if is_outbound:
 				tm.outbound_waypoint_index += 1
-				tm.elapsed_ticks = 0.0
-
-				if tm.outbound_waypoint_index < tm.outbound_leg_times.size():
-					tm.transit_time = tm.outbound_leg_times[tm.outbound_waypoint_index]
-				else:
-					var dist := tm.ship.position_au.distance_to(tm.colony.get_position_au())
-					tm.transit_time = Brachistochrone.transit_time(dist, tm.ship.get_effective_thrust())
-	else:
-		var waypoint_type := TradeMission.WaypointType.GRAVITY_ASSIST
-		if tm.return_waypoint_types.size() > tm.return_waypoint_index:
-			waypoint_type = tm.return_waypoint_types[tm.return_waypoint_index] as TradeMission.WaypointType
-
-		var waypoint_pos := tm.return_waypoints[tm.return_waypoint_index]
-
-		if waypoint_type == TradeMission.WaypointType.REFUEL_STOP:
-			var colony := tm.return_waypoint_colony_refs[tm.return_waypoint_index]
-			if colony:
-				waypoint_pos = colony.get_position_au()
-
-		tm.ship.position_au = waypoint_pos
-
-		match waypoint_type:
-			TradeMission.WaypointType.REFUEL_STOP:
-				tm.status = TradeMission.Status.REFUELING
-				tm.elapsed_ticks = 0.0
+				var next_idx := tm.outbound_waypoint_index
+				if next_idx < tm.outbound_legs.size():
+					tm.transit_time = tm.outbound_legs[next_idx].transit_time
+			else:
 				tm.return_waypoint_index += 1
-				EventBus.trade_mission_phase_changed.emit(tm)
-				return
-
-			TradeMission.WaypointType.GRAVITY_ASSIST:
-				tm.return_waypoint_index += 1
-				tm.elapsed_ticks = 0.0
-
-				if tm.return_waypoint_index < tm.return_leg_times.size():
-					tm.transit_time = tm.return_leg_times[tm.return_waypoint_index]
-				else:
-					var dist := tm.ship.position_au.distance_to(tm.return_position_au)
-					tm.transit_time = Brachistochrone.transit_time(dist, tm.ship.get_effective_thrust())
+				var next_idx := tm.return_waypoint_index
+				if next_idx < tm.return_legs.size():
+					tm.transit_time = tm.return_legs[next_idx].transit_time
 
 	EventBus.trade_mission_phase_changed.emit(tm)
 
 func _complete_trade_refuel_stop(tm: TradeMission, is_outbound: bool) -> void:
-	# Complete refueling at a waypoint and resume transit
-	var waypoint_idx := tm.outbound_waypoint_index - 1 if is_outbound else tm.return_waypoint_index - 1
+	var legs := tm.outbound_legs if is_outbound else tm.return_legs
+	var cur_idx := (tm.outbound_waypoint_index if is_outbound else tm.return_waypoint_index) - 1
+	var next_idx := tm.outbound_waypoint_index if is_outbound else tm.return_waypoint_index
 
-	# Add fuel to ship
-	var fuel_amount: float = 0.0
-	if is_outbound and waypoint_idx >= 0 and waypoint_idx < tm.outbound_waypoint_fuel_amounts.size():
-		fuel_amount = tm.outbound_waypoint_fuel_amounts[waypoint_idx]
-	elif not is_outbound and waypoint_idx >= 0 and waypoint_idx < tm.return_waypoint_fuel_amounts.size():
-		fuel_amount = tm.return_waypoint_fuel_amounts[waypoint_idx]
+	# Add purchased fuel
+	if cur_idx >= 0 and cur_idx < legs.size():
+		tm.ship.fuel = minf(tm.ship.fuel + legs[cur_idx].fuel_amount, tm.ship.get_effective_fuel_capacity())
 
-	tm.ship.fuel = minf(tm.ship.fuel + fuel_amount, tm.ship.get_effective_fuel_capacity())
-
-	# Check if NEXT leg is reachable
+	# Determine next destination position
 	var next_dest_pos: Vector2
-	if is_outbound:
-		if tm.outbound_waypoint_index < tm.outbound_waypoints.size():
-			next_dest_pos = tm.outbound_waypoints[tm.outbound_waypoint_index]
-		else:
-			next_dest_pos = tm.colony.get_position_au()
+	if next_idx < legs.size():
+		next_dest_pos = legs[next_idx].get_live_position()
+	elif is_outbound:
+		next_dest_pos = tm.colony.get_position_au()
 	else:
-		if tm.return_waypoint_index < tm.return_waypoints.size():
-			next_dest_pos = tm.return_waypoints[tm.return_waypoint_index]
-		else:
-			next_dest_pos = tm.return_position_au
+		next_dest_pos = tm.return_position_au
 
-	var cargo_mass := tm.ship.get_cargo_total()
 	var dist_to_next := tm.ship.position_au.distance_to(next_dest_pos)
-	var fuel_needed := tm.ship.calc_fuel_for_distance(dist_to_next, cargo_mass)
+	var fuel_needed := tm.ship.calc_fuel_for_distance(dist_to_next, tm.ship.get_cargo_total())
 
 	if fuel_needed > tm.ship.fuel:
-		# Next leg unreachable - abort mission at this fuel stop
 		tm.status = TradeMission.Status.IDLE_AT_COLONY
 		tm.elapsed_ticks = 0.0
 		EventBus.trade_mission_phase_changed.emit(tm)
 		print("Trade mission aborted: next waypoint unreachable from fuel stop (orbital drift)")
 		return
 
-	# Resume transit
 	tm.elapsed_ticks = 0.0
 	tm.status = TradeMission.Status.TRANSIT_TO_COLONY if is_outbound else TradeMission.Status.TRANSIT_BACK
 
-	# Set next leg transit time
-	if is_outbound:
-		if tm.outbound_waypoint_index < tm.outbound_leg_times.size():
-			tm.transit_time = tm.outbound_leg_times[tm.outbound_waypoint_index]
-		else:
-			var dist := tm.ship.position_au.distance_to(tm.colony.get_position_au())
-			tm.transit_time = Brachistochrone.transit_time(dist, tm.ship.get_effective_thrust())
-	else:
-		if tm.return_waypoint_index < tm.return_leg_times.size():
-			tm.transit_time = tm.return_leg_times[tm.return_waypoint_index]
-		else:
-			var dist := tm.ship.position_au.distance_to(tm.return_position_au)
-			tm.transit_time = Brachistochrone.transit_time(dist, tm.ship.get_effective_thrust())
+	if next_idx < legs.size():
+		tm.transit_time = legs[next_idx].transit_time
+	# else: transit_time already holds the final leg time
 
 	EventBus.trade_mission_phase_changed.emit(tm)
 
@@ -769,9 +647,9 @@ func _process_trade_missions(dt: float) -> void:
 				# Check for fuel depletion
 				if tm.ship.fuel <= 0 and not tm.ship.is_derelict:
 					_trigger_fuel_depletion(tm.ship)
-				if tm.elapsed_ticks >= tm.transit_time:
+				if tm.elapsed_ticks >= tm.get_current_phase_duration():
 					# Check if using waypoints with more stops
-					if tm.outbound_waypoint_index < tm.outbound_waypoints.size():
+					if tm.outbound_waypoint_index < tm.outbound_legs.size():
 						# Reached waypoint - transition to next leg
 						_process_trade_waypoint_transition(tm, true)  # true = outbound
 					else:
@@ -809,7 +687,7 @@ func _process_trade_missions(dt: float) -> void:
 
 			TradeMission.Status.REFUELING:
 				if tm.elapsed_ticks >= TradeMission.REFUEL_DURATION:
-					_complete_trade_refuel_stop(tm, tm.status == TradeMission.Status.REFUELING and tm.outbound_waypoint_index > 0)
+					_complete_trade_refuel_stop(tm, not tm.refueling_is_return)
 
 			TradeMission.Status.SELLING:
 				if tm.elapsed_ticks >= TradeMission.SELL_DURATION:
@@ -852,9 +730,9 @@ func _process_trade_missions(dt: float) -> void:
 				# Check for fuel depletion
 				if tm.ship.fuel <= 0 and not tm.ship.is_derelict:
 					_trigger_fuel_depletion(tm.ship)
-				if tm.elapsed_ticks >= tm.transit_time:
+				if tm.elapsed_ticks >= tm.get_current_phase_duration():
 					# Check if using waypoints with more stops
-					if tm.return_waypoint_index < tm.return_waypoints.size():
+					if tm.return_waypoint_index < tm.return_legs.size():
 						# Reached waypoint - transition to next leg
 						_process_trade_waypoint_transition(tm, false)  # false = return
 					else:
