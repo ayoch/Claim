@@ -1,0 +1,487 @@
+class_name ServerBackend
+extends BackendInterface
+
+## Server-based multiplayer backend implementation
+## Makes HTTP requests to Python/FastAPI server
+
+var base_url: String = "http://localhost:3000"
+var auth_token: String = ""
+var player_id: int = 0
+
+# Reference to BackendManager (Node) for adding HTTP nodes to tree
+var _backend_manager: Node = null
+
+# HTTP request queue (reuse nodes for efficiency)
+var _http_pool: Array[HTTPRequest] = []
+const MAX_POOL_SIZE: int = 5
+
+
+func set_backend_manager(manager: Node) -> void:
+	_backend_manager = manager
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTHENTICATION
+# ══════════════════════════════════════════════════════════════════════════════
+
+func login(username: String, password: String) -> Dictionary:
+	var http := _get_http_request()
+	# OAuth2 expects form data, not JSON
+	var headers := ["Content-Type: application/x-www-form-urlencoded"]
+	var body := "username=%s&password=%s" % [username.uri_encode(), password.uri_encode()]
+
+	var result := await _http_request_async(http, base_url + "/auth/login", headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if result["success"]:
+		var data: Dictionary = result["data"]
+		var token_value = data.get("access_token", "")
+		auth_token = str(token_value) if token_value != null else ""
+		# Extract player_id from token or fetch from /auth/me
+		# For now, we'll fetch the player info after login
+		await _fetch_player_info()
+		return {
+			"success": true,
+			"token": auth_token,
+			"player_id": player_id,
+			"error": ""
+		}
+	else:
+		return {
+			"success": false,
+			"token": "",
+			"player_id": 0,
+			"error": result.get("error", "Login failed")
+		}
+
+
+func register(username: String, password: String) -> Dictionary:
+	var http := _get_http_request()
+	var headers := ["Content-Type: application/json"]
+	var body := JSON.stringify({"username": username, "password": password})
+
+	var result := await _http_request_async(http, base_url + "/auth/register", headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if result["success"]:
+		var data: Dictionary = result["data"]
+		return {
+			"success": true,
+			"player_id": data.get("id", 0),
+			"error": ""
+		}
+	else:
+		return {
+			"success": false,
+			"player_id": 0,
+			"error": result.get("error", "Registration failed")
+		}
+
+
+func logout() -> void:
+	auth_token = ""
+	player_id = 0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GAME STATE
+# ══════════════════════════════════════════════════════════════════════════════
+
+func get_game_state() -> Dictionary:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var result := await _http_request_async(http, base_url + "/api/game/state", headers, HTTPClient.METHOD_GET)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to get game state: " + str(err))
+		return {}
+
+
+func save_game() -> void:
+	# Server saves continuously - this is a no-op for server mode
+	# In multiplayer, state is always on server
+	pass
+
+
+func load_game(save_name: String) -> bool:
+	# Server mode doesn't have local save files
+	# Game state is always loaded from server on login
+	push_warning("load_game() not supported in server mode")
+	return false
+
+
+func get_save_files() -> Array:
+	# No local save files in server mode
+	return []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SHIPS & MISSIONS
+# ══════════════════════════════════════════════════════════════════════════════
+
+func dispatch_mission(ship_id: int, asteroid_id: int, mission_type: int, mining_duration: float, return_to_station: bool):
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var body := JSON.stringify({
+		"ship_id": ship_id,
+		"asteroid_id": asteroid_id,
+		"mission_type": mission_type,
+		"mining_duration": mining_duration,
+		"return_to_station": return_to_station
+	})
+
+	var result := await _http_request_async(http, base_url + "/api/missions", headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to dispatch mission: " + str(err))
+		return null
+
+
+func buy_ship(ship_class: int, ship_name: String, colony_id: int):
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var body := JSON.stringify({
+		"ship_class": ship_class,
+		"ship_name": ship_name,
+		"colony_id": colony_id
+	})
+
+	var result := await _http_request_async(http, base_url + "/api/ships", headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to buy ship: " + str(err))
+		return null
+
+
+func sell_ship(ship_id: int) -> void:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var result := await _http_request_async(http, base_url + "/api/ships/%d" % ship_id, headers, HTTPClient.METHOD_DELETE)
+	_return_http_request(http)
+
+	if not result["success"]:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to sell ship: " + str(err))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WORKERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+func hire_worker(colony_id: int):
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var body := JSON.stringify({"colony_id": colony_id})
+
+	var result := await _http_request_async(http, base_url + "/api/workers", headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to hire worker: " + str(err))
+		return null
+
+
+func fire_worker(worker_id: int) -> void:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var result := await _http_request_async(http, base_url + "/api/workers/%d" % worker_id, headers, HTTPClient.METHOD_DELETE)
+	_return_http_request(http)
+
+	if not result["success"]:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to fire worker: " + str(err))
+
+
+func assign_worker(worker_id: int, ship_id: int) -> void:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var body := JSON.stringify({"ship_id": ship_id})
+
+	var result := await _http_request_async(http, base_url + "/api/workers/%d/assign" % worker_id, headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if not result["success"]:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to assign worker: " + str(err))
+
+
+func unassign_worker(worker_id: int) -> void:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var result := await _http_request_async(http, base_url + "/api/workers/%d/unassign" % worker_id, headers, HTTPClient.METHOD_POST)
+	_return_http_request(http)
+
+	if not result["success"]:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to unassign worker: " + str(err))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# WORLD DATA
+# ══════════════════════════════════════════════════════════════════════════════
+
+func get_colonies() -> Array:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var result := await _http_request_async(http, base_url + "/api/colonies", headers, HTTPClient.METHOD_GET)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to get colonies: " + str(err))
+		return []
+
+
+func get_asteroids() -> Array:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var result := await _http_request_async(http, base_url + "/api/asteroids", headers, HTTPClient.METHOD_GET)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to get asteroids: " + str(err))
+		return []
+
+
+func get_market_prices() -> Dictionary:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var result := await _http_request_async(http, base_url + "/api/market/prices", headers, HTTPClient.METHOD_GET)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to get market prices: " + str(err))
+		return {}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# POLICIES
+# ══════════════════════════════════════════════════════════════════════════════
+
+func update_policies(policies: Dictionary) -> void:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var body := JSON.stringify(policies)
+
+	var result := await _http_request_async(http, base_url + "/api/policies", headers, HTTPClient.METHOD_PUT, body)
+	_return_http_request(http)
+
+	if not result["success"]:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to update policies: " + str(err))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# REAL-TIME EVENTS (SSE - Server-Sent Events)
+# ══════════════════════════════════════════════════════════════════════════════
+
+func subscribe_events(callback: Callable) -> void:
+	# TODO: Implement SSE (Server-Sent Events) connection
+	# For now, client will poll get_game_state() periodically
+	push_warning("subscribe_events() not yet implemented - will poll instead")
+
+
+func unsubscribe_events() -> void:
+	# TODO: Close SSE connection
+	pass
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UTILITY
+# ══════════════════════════════════════════════════════════════════════════════
+
+func is_backend_ready() -> bool:
+	# Quick sync check - assumes server is ready if we have a token
+	# For a real check, would need to ping /health endpoint
+	return auth_token != ""
+
+
+func get_backend_type() -> String:
+	return "server"
+
+
+## Fetch current player info from /auth/me
+func _fetch_player_info() -> void:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var result := await _http_request_async(http, base_url + "/auth/me", headers, HTTPClient.METHOD_GET)
+	_return_http_request(http)
+
+	if result["success"]:
+		var data: Dictionary = result["data"]
+		player_id = data.get("id", 0)
+
+
+## Get leaderboard entries sorted by net worth
+## Returns: Array of { rank, player_id, username, net_worth, money, ship_value, ships_count, workers_count }
+func get_leaderboard(limit: int = 100, offset: int = 0) -> Dictionary:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var url := base_url + "/api/leaderboard?limit=%d&offset=%d" % [limit, offset]
+
+	var result := await _http_request_async(http, url, headers, HTTPClient.METHOD_GET)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to get leaderboard: " + str(err))
+		return {"entries": [], "total_players": 0}
+
+
+## Get player's rank and stats
+## Returns: { rank, player_id, username, net_worth, money, ship_value, ships_count, workers_count }
+func get_player_rank(player_id: int) -> Dictionary:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var url := base_url + "/api/leaderboard/player/%d" % player_id
+
+	var result := await _http_request_async(http, url, headers, HTTPClient.METHOD_GET)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to get player rank: " + str(err))
+		return {}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# INTERNAL HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+func _auth_headers() -> Array:
+	var headers := ["Content-Type: application/json"]
+	if auth_token != "":
+		headers.append("Authorization: Bearer " + auth_token)
+	return headers
+
+
+func _get_http_request() -> HTTPRequest:
+	if _http_pool.is_empty():
+		var http := HTTPRequest.new()
+		# Don't add to tree - we'll manage lifecycle manually
+		return http
+	else:
+		return _http_pool.pop_back()
+
+
+func _return_http_request(http: HTTPRequest) -> void:
+	if _http_pool.size() < MAX_POOL_SIZE:
+		_http_pool.append(http)
+	else:
+		http.queue_free()
+
+
+## Make async HTTP request and return result
+## Returns: { "success": bool, "data": Variant, "error": String }
+func _http_request_async(http: HTTPRequest, url: String, headers: Array, method: int, body: String = "") -> Dictionary:
+	if not _backend_manager:
+		push_error("ServerBackend: _backend_manager not set!")
+		return {
+			"success": false,
+			"data": null,
+			"error": "Backend manager not initialized"
+		}
+
+	# Add to tree temporarily for request
+	_backend_manager.add_child(http)
+
+	var error := http.request(url, headers, method, body)
+	if error != OK:
+		_backend_manager.remove_child(http)
+		http.queue_free()
+		return {
+			"success": false,
+			"data": null,
+			"error": "HTTP request failed: %d" % error
+		}
+
+	# Wait for completion
+	var response: Array = await http.request_completed
+
+	# Remove from tree
+	_backend_manager.remove_child(http)
+
+	var result: int = response[0]
+	var response_code: int = response[1]
+	var response_headers: PackedStringArray = response[2]
+	var response_body: PackedByteArray = response[3]
+
+	if result != HTTPRequest.RESULT_SUCCESS:
+		return {
+			"success": false,
+			"data": null,
+			"error": "HTTP request failed with result: %d" % result
+		}
+
+	if response_code < 200 or response_code >= 300:
+		var error_msg: String = "HTTP %d" % response_code
+		var body_text := response_body.get_string_from_utf8()
+		if body_text != "":
+			var json := JSON.new()
+			if json.parse(body_text) == OK:
+				if json.data is Dictionary:
+					var detail = json.data.get("detail", null)
+					if detail != null and detail is String:
+						error_msg = detail
+					elif detail != null:
+						error_msg = str(detail)
+				elif json.data is String:
+					error_msg = json.data
+		return {
+			"success": false,
+			"data": null,
+			"error": error_msg
+		}
+
+	# Parse JSON response
+	var body_text := response_body.get_string_from_utf8()
+	if body_text == "":
+		return {"success": true, "data": null, "error": ""}
+
+	var json := JSON.new()
+	if json.parse(body_text) != OK:
+		return {
+			"success": false,
+			"data": null,
+			"error": "Failed to parse JSON response"
+		}
+
+	return {
+		"success": true,
+		"data": json.data,
+		"error": ""
+	}

@@ -10,7 +10,7 @@ from slowapi.errors import RateLimitExceeded
 from server.config import settings
 from server.database import init_db
 from server.rate_limit import limiter, rate_limit_handler
-from server.routers import admin, auth, events, game
+from server.routers import admin, auth, events, game, leaderboard
 from server.simulation.runner import simulation_loop
 
 logging.basicConfig(
@@ -44,6 +44,7 @@ app.include_router(auth.router)
 app.include_router(game.router)
 app.include_router(events.router)
 app.include_router(admin.router)
+app.include_router(leaderboard.router)
 
 _sim_task: asyncio.Task | None = None
 

@@ -4,10 +4,12 @@ extends Control
 const TESTING_MODE: bool = true
 
 @onready var money_display: Label = %MoneyDisplay
+@onready var net_worth_display: Label = %NetWorthDisplay
 @onready var tab_container: TabContainer = %TabContainer
-@onready var top_bar_hbox: HBoxContainer = $VBox/TopBar/HBox
+@onready var top_bar_button_row: HBoxContainer = $VBox/TopBar/VBox/ButtonRow
 @onready var speed_bar: PanelContainer = $VBox/SpeedBar
 @onready var date_display: Label = %DateDisplay
+@onready var save_btn: Button = $VBox/TopBar/VBox/ButtonRow/SaveBtn
 
 var _settings_popup: PanelContainer = null
 var _speed_input: LineEdit = null
@@ -15,6 +17,9 @@ var _stored_speed: float = 0.0
 var _is_speed_paused: bool = false
 var _date_update_timer: float = 0.0
 const DATE_UPDATE_INTERVAL: float = 0.2  # Update date 5 times per second
+var _net_worth_update_timer: float = 0.0
+const NET_WORTH_UPDATE_INTERVAL: float = 1.0  # Update net worth once per second
+var _save_load_dialog: PopupPanel = null
 
 func _ready() -> void:
 	# Position window lower on screen
@@ -29,6 +34,37 @@ func _ready() -> void:
 	EventBus.money_changed.connect(_on_money_changed)
 	_on_money_changed(GameState.money)
 
+	# Update net worth when relevant changes occur
+	EventBus.ship_purchased.connect(func(_s: Ship, _c: int) -> void: _update_net_worth())
+	EventBus.ship_sold.connect(func(_id: int) -> void: _update_net_worth())
+	EventBus.resource_changed.connect(func(_type, _amount) -> void: _update_net_worth())
+	EventBus.mission_completed.connect(func(_m: Mission) -> void: _update_net_worth())
+	EventBus.trade_mission_completed.connect(func(_tm: TradeMission) -> void: _update_net_worth())
+
+	_update_net_worth()
+
+	# Wire up Main Menu button
+	var main_menu_btn: Button = top_bar_button_row.get_node("MainMenuBtn")
+	if main_menu_btn:
+		main_menu_btn.pressed.connect(_on_main_menu)
+
+	# Wire up Save button (only visible in LOCAL mode)
+	if save_btn:
+		save_btn.pressed.connect(_on_save_pressed)
+		# Hide save button in multiplayer mode
+		save_btn.visible = (BackendManager.current_mode == BackendManager.BackendMode.LOCAL)
+
+	# Listen for backend mode changes
+	EventBus.backend_mode_changed.connect(_on_backend_mode_changed)
+
+	# Set up save/load dialog
+	var dialog_scene := load("res://ui/save_load_dialog.tscn")
+	if dialog_scene:
+		_save_load_dialog = dialog_scene.instantiate()
+		add_child(_save_load_dialog)
+		_save_load_dialog.save_confirmed.connect(_on_save_confirmed)
+		_save_load_dialog.load_confirmed.connect(_on_load_confirmed)
+
 	if TESTING_MODE:
 		_setup_speed_bar()
 	else:
@@ -42,6 +78,12 @@ func _process(delta: float) -> void:
 	if _date_update_timer >= DATE_UPDATE_INTERVAL:
 		_update_date_display()
 		_date_update_timer = 0.0
+
+	# Throttle net worth updates - once per second is enough
+	_net_worth_update_timer += delta
+	if _net_worth_update_timer >= NET_WORTH_UPDATE_INTERVAL:
+		_update_net_worth()
+		_net_worth_update_timer = 0.0
 
 	# Update speed display continuously to catch keyboard shortcuts
 	if _speed_input and TimeScale.get_speed_display() != _speed_input.text:
@@ -127,8 +169,42 @@ func _update_speed_display() -> void:
 func _on_money_changed(amount: int) -> void:
 	money_display.text = "$%s" % _format_number(amount)
 
+
+func _update_net_worth() -> void:
+	if net_worth_display:
+		var net_worth := GameState.calculate_net_worth()
+		net_worth_display.text = "Net Worth: $%s" % _format_number(net_worth)
+
+
+func _on_main_menu() -> void:
+	# Return to title screen
+	# Note: Does NOT change backend mode - player can return to same mode
+	get_tree().change_scene_to_file("res://ui/title_screen.tscn")
+
+
+func _on_backend_mode_changed(mode: int) -> void:
+	# Show/hide Save button based on mode
+	if save_btn:
+		save_btn.visible = (mode == BackendManager.BackendMode.LOCAL)
+
 func _on_save_pressed() -> void:
-	GameState.save_game()
+	if _save_load_dialog:
+		_save_load_dialog.open_save_dialog()
+
+
+func _on_save_confirmed(save_name: String) -> void:
+	GameState.save_game(save_name)
+	print("Game saved as: ", save_name)
+
+
+func _on_load_confirmed(file_name: String) -> void:
+	if GameState.load_game(file_name):
+		print("Game loaded from: ", file_name)
+		# Refresh UI after loading
+		EventBus.money_changed.emit(GameState.money)
+		_update_net_worth()
+	else:
+		print("Failed to load: ", file_name)
 
 func _on_settings_pressed() -> void:
 	_show_settings()

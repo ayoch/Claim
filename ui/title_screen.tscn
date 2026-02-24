@@ -98,8 +98,7 @@ text = "Leaderboards"
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
-disabled = true
-text = "Online (Coming Soon)"
+text = "Play Online"
 
 [node name="SettingsButton" type="Button" parent="VBox"]
 unique_name_in_owner = true

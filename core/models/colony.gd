@@ -9,6 +9,13 @@ extends Resource
 @export var parent_planet_index: int = -1  # if >= 0, orbits this planet from CelestialData.PLANETS
 @export var has_rescue_ops: bool = false  # Large colonies can dispatch rescue missions
 
+# Criminal ban system
+@export var violations: Array[Dictionary] = []  # [{timestamp: float, reason: String}]
+@export var player_banned: bool = false
+
+const VIOLATION_THRESHOLD: int = 4
+const VIOLATION_DECAY_DAYS: float = 30.0
+
 func get_ore_price(ore_type: ResourceTypes.OreType, market: MarketState) -> float:
 	var base_market_price: float = market.get_price(ore_type)
 	var mult: float = price_multipliers.get(ore_type, 1.0)
@@ -65,3 +72,38 @@ func get_orbital_period() -> float:
 	# Bodies orbiting Sun: Kepler's third law T = a^1.5 years
 	var period_years := pow(orbit_au, 1.5)
 	return period_years * SECONDS_PER_YEAR
+
+
+## Record a criminal violation against the player
+func add_violation(reason: String, current_ticks: float) -> void:
+	violations.append({
+		"timestamp": current_ticks,
+		"reason": reason
+	})
+
+	# Clean up old violations (older than 30 days)
+	decay_violations(current_ticks)
+
+	# Check if player should be banned
+	if get_active_violation_count(current_ticks) >= VIOLATION_THRESHOLD:
+		player_banned = true
+		print("%s has BANNED the player! (%d violations)" % [colony_name, violations.size()])
+
+
+## Remove violations older than 30 days
+func decay_violations(current_ticks: float) -> void:
+	const DECAY_TICKS := 86400.0 * 30.0  # 30 game-days
+	var cutoff_time := current_ticks - DECAY_TICKS
+
+	violations = violations.filter(func(v): return v["timestamp"] > cutoff_time)
+
+
+## Get number of active (non-decayed) violations
+func get_active_violation_count(current_ticks: float) -> int:
+	decay_violations(current_ticks)
+	return violations.size()
+
+
+## Check if player can interact with this colony
+func can_interact() -> bool:
+	return not player_banned

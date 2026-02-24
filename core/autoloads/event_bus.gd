@@ -130,4 +130,8 @@ signal asteroid_supplies_low(asteroid_name: String, supply_key: String, days_rem
 signal backend_mode_changed(mode: int)  # BackendManager.BackendMode enum
 signal ship_sold(ship_id: int)
 
+# Criminal ban system
+signal violation_recorded(colony: Colony, reason: String)
+signal game_over(reason: String)
+
 @warning_ignore_restore("unused_signal")

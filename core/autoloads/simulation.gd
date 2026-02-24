@@ -10,6 +10,10 @@ const PAYROLL_INTERVAL: float = 86400.0  # pay wages every game-day (86400 ticks
 var _survey_accumulator: float = 0.0
 const SURVEY_INTERVAL: float = 120.0  # check for survey events every 120 ticks
 
+# Criminal ban status check
+var _ban_check_accumulator: float = 0.0
+const BAN_CHECK_INTERVAL: float = 86400.0  # check ban status once per game-day
+
 # Market price drift
 var _market_accumulator: float = 0.0
 const MARKET_INTERVAL: float = 90.0  # drift prices every 90 ticks
@@ -193,6 +197,7 @@ func _process_tick(dt: float, emit_event: bool = true) -> void:
 	_process_market_events(dt)
 	_process_contracts(dt)
 	_process_rival_corps(dt)
+	_check_ban_status(dt)
 	GameState.process_pending_orders()
 
 func _process_orbits(dt: float) -> void:
@@ -1144,6 +1149,14 @@ func _process_life_support(dt: float) -> void:
 	for ship in _ships_to_destroy_buf:
 		var crew_count := ship.crew.size()
 		print("Ship %s: crew of %d died from life support failure" % [ship.ship_name, crew_count])
+
+		# Record violations for each crew death
+		for worker in ship.crew:
+			GameState.record_worker_death_violation(worker, "Crew died from life support failure aboard %s" % ship.ship_name)
+
+		# Check if a rescue was en route but arrived too late
+		if ship in GameState.rescue_missions:
+			GameState.record_rescue_failure_violation(ship, "Rescue mission failed - %s crew died before rescue arrived" % ship.ship_name)
 
 		# Clean up mission tracking
 		if ship.current_mission:
@@ -2604,6 +2617,10 @@ func _trigger_starvation(ship: Ship, mission: Mission = null, trade_mission: Tra
 		GameState.trade_missions.erase(trade_mission)
 		ship.current_trade_mission = null
 
+	# Record violations for starvation deaths
+	for w in dead_workers:
+		GameState.record_worker_death_violation(w, "Crew starved aboard %s (food depleted)" % ship.ship_name)
+
 	# Remove dead workers from the game entirely
 	for w in dead_workers:
 		GameState.workers.erase(w)
@@ -3154,3 +3171,16 @@ func _find_asteroid(name: String) -> AsteroidData:
 		if asteroid.asteroid_name == name:
 			return asteroid
 	return null
+
+# ─── Criminal Ban Status Check ────────────────────────────────────────────────
+
+func _check_ban_status(dt: float) -> void:
+	_ban_check_accumulator += dt
+	if _ban_check_accumulator < BAN_CHECK_INTERVAL:
+		return
+	_ban_check_accumulator -= BAN_CHECK_INTERVAL
+
+	# Check if player is banned from all colonies (game over condition)
+	if GameState.check_game_over_banned():
+		# Pause the game when game over is triggered
+		TimeScale.set_speed(1.0)
