@@ -153,7 +153,25 @@ func _refresh_all() -> void:
 		stats_grid.add_theme_constant_override("v_separation", 4)
 
 		_add_stat_row(stats_grid, "Thrust:", "%.2fg max" % ship.max_thrust_g, ship.get_effective_thrust())
-		_add_stat_row(stats_grid, "Fuel Capacity:", "%.0f" % ship.fuel_capacity, ship.get_effective_fuel_capacity())
+		_add_stat_row(stats_grid, "Fuel:", "%.0ft" % ship.fuel_capacity, ship.get_effective_fuel_capacity())
+		var dv_base := ship.get_delta_v(ship.fuel_capacity)
+		var dv_eff := ship.get_delta_v(ship.get_effective_fuel_capacity())
+		var dv_lbl := Label.new()
+		dv_lbl.text = "Δv (full):"
+		dv_lbl.clip_text = true
+		dv_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		dv_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		stats_grid.add_child(dv_lbl)
+		var dv_val := Label.new()
+		if abs(dv_eff - dv_base) > 0.05:
+			dv_val.text = "%.1f km/s → %.1f km/s" % [dv_base, dv_eff]
+			dv_val.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+		else:
+			dv_val.text = "%.1f km/s" % dv_base
+			dv_val.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		dv_val.clip_text = true
+		dv_val.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		stats_grid.add_child(dv_val)
 		_add_stat_row(stats_grid, "Cargo Capacity:", "%.0ft" % ship.cargo_capacity, ship.get_effective_cargo_capacity())
 		_add_stat_row(stats_grid, "Cargo Volume:", "%.0fm³" % ship.cargo_volume, ship.get_effective_cargo_volume())
 		_add_stat_row(stats_grid, "Base Mass:", "%.0ft" % (ship.base_mass if ship.base_mass > 0 else ship.cargo_capacity * 2.0), ship.get_base_mass())
@@ -460,7 +478,7 @@ func _build_buy_ship_ui() -> void:
 		var spec_lines: Array[String] = []
 		spec_lines.append("Thrust: %.2fg" % stats["thrust_g"])
 		spec_lines.append("Cargo: %.0ft / %.0fm³" % [stats["cargo_capacity"], stats["cargo_volume"]])
-		spec_lines.append("Fuel: %.0f units" % stats["fuel_capacity"])
+		spec_lines.append("Fuel: %.0ft" % stats["fuel_capacity"])
 		spec_lines.append("Min Crew: %d" % stats["min_crew"])
 		spec_lines.append("Equipment Slots: %d" % stats["max_equipment_slots"])
 		specs.text = " • ".join(spec_lines)

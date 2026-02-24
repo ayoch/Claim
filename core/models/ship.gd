@@ -1,7 +1,8 @@
 class_name Ship
 extends Resource
 
-const FUEL_COST_PER_UNIT: float = 5.0  # $ per unit of fuel
+const FUEL_COST_PER_UNIT: float = 5.0       # $ per tonne of propellant
+const FUSION_EXHAUST_VELOCITY: float = 29430.0  # m/s — fusion drive at Isp 3000s
 const EARTH_PROXIMITY_AU: float = 0.05  # within this distance counts as "at Earth"
 const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at colony"
 
@@ -26,6 +27,7 @@ const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at co
 @export var is_derelict: bool = false
 @export var derelict_reason: String = ""  # "out_of_fuel" or "breakdown"
 @export var base_mass: float = 0.0  # tons, auto-calculated if zero
+@export var docked_at_earth: bool = true  # explicit flag; position follows Earth while true
 
 # Per-ship policy overrides (-1 = inherit company default)
 @export var thrust_policy_override: int = -1
@@ -68,7 +70,7 @@ var queued_mission_type: int = Mission.MissionType.MINING
 
 var is_at_earth: bool:
 	get:
-		return position_au.distance_to(CelestialData.get_earth_position_au()) < EARTH_PROXIMITY_AU
+		return docked_at_earth or position_au.distance_to(CelestialData.get_earth_position_au()) < EARTH_PROXIMITY_AU
 
 var is_stationed_idle: bool:
 	get:
@@ -190,6 +192,15 @@ func get_effective_fuel_capacity() -> float:
 	for upgrade in upgrades:
 		effective += upgrade.fuel_capacity_bonus
 	return effective
+
+## Tsiolkovsky Δv (km/s) for a given propellant load against current dry mass.
+## Pass propellant < 0 to use current fuel level; omit for full tank.
+func get_delta_v(propellant: float = -1.0) -> float:
+	var prop := propellant if propellant >= 0.0 else fuel
+	var dry := get_base_mass()
+	if dry <= 0.0 or prop <= 0.0:
+		return 0.0
+	return FUSION_EXHAUST_VELOCITY * log(1.0 + prop / dry) / 1000.0
 
 func get_effective_cargo_capacity() -> float:
 	var effective := cargo_capacity

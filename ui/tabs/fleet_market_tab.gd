@@ -487,7 +487,27 @@ func _rebuild_ships() -> void:
 
 		# Add stat rows
 		_add_fleet_stat_row(stats_grid, "Thrust:", "%.2fg" % ship.max_thrust_g, ship.get_effective_thrust())
-		_add_fleet_stat_row(stats_grid, "Fuel:", "%.0f" % ship.fuel_capacity, ship.get_effective_fuel_capacity())
+		_add_fleet_stat_row(stats_grid, "Fuel:", "%.0ft" % ship.fuel_capacity, ship.get_effective_fuel_capacity())
+		var dv_base := ship.get_delta_v(ship.fuel_capacity)
+		var dv_eff := ship.get_delta_v(ship.get_effective_fuel_capacity())
+		var dv_label := Label.new()
+		dv_label.text = "Δv (full):"
+		dv_label.clip_text = true
+		dv_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		dv_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		dv_label.add_theme_font_size_override("font_size", 12)
+		stats_grid.add_child(dv_label)
+		var dv_value := Label.new()
+		if abs(dv_eff - dv_base) > 0.05:
+			dv_value.text = "%.1f km/s → %.1f km/s" % [dv_base, dv_eff]
+			dv_value.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+		else:
+			dv_value.text = "%.1f km/s" % dv_base
+			dv_value.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		dv_value.clip_text = true
+		dv_value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		dv_value.add_theme_font_size_override("font_size", 12)
+		stats_grid.add_child(dv_value)
 		_add_fleet_stat_row(stats_grid, "Cargo:", "%.0ft" % ship.cargo_capacity, ship.get_effective_cargo_capacity())
 		_add_fleet_stat_row(stats_grid, "Volume:", "%.0fm³" % ship.cargo_volume, ship.get_effective_cargo_volume())
 		_add_fleet_stat_row(stats_grid, "Min Crew:", "%d" % ship.min_crew, ship.min_crew)
@@ -1287,7 +1307,7 @@ func _show_asteroid_selection() -> void:
 
 			var rescue_btn := Button.new()
 			var reason := "(out of fuel)" if derelict.derelict_reason == "out_of_fuel" else "(breakdown)"
-			rescue_btn.text = "%s %s — %s, fuel: %.0f/%.0f" % [
+			rescue_btn.text = "%s %s — %s, fuel: %.0ft/%.0ft" % [
 				derelict.ship_name, reason,
 				TimeScale.format_time(transit_d),
 				fuel_needed_d, _selected_ship.fuel
@@ -1389,7 +1409,7 @@ func _show_asteroid_selection() -> void:
 			else:
 				fuel_status = " [NEEDS REFUEL]"
 		elif fuel_needed > available_fuel * 0.9:
-			fuel_status = " [CRITICAL - %.0f/%.0f fuel]" % [available_fuel, fuel_needed]
+			fuel_status = " [CRITICAL - %.0ft/%.0ft fuel (t)]" % [available_fuel, fuel_needed]
 
 		# Create row container for destination + jettison buttons
 		var colony_row := VBoxContainer.new()
@@ -1745,7 +1765,7 @@ func _show_asteroid_selection() -> void:
 			else:
 				fuel_warning = " [NEEDS REFUEL]"
 		elif total_fuel_needed > available_fuel * 0.9:
-			fuel_warning = " [CRITICAL - %.0f/%.0f fuel]" % [available_fuel, total_fuel_needed]
+			fuel_warning = " [CRITICAL - %.0ft/%.0ft fuel (t)]" % [available_fuel, total_fuel_needed]
 
 		# Create row container for destination + jettison buttons
 		var dest_row := VBoxContainer.new()
@@ -3396,7 +3416,7 @@ func _show_fleet_rescue_dispatch(target_ship: Ship) -> void:
 
 	var info := Label.new()
 	var reason_str := "out of fuel" if target_ship.derelict_reason == "out_of_fuel" else "breakdown"
-	info.text = "Target: %s (%s)\nTransit: %s  |  Fuel round-trip: %.0f / %.0f available" % [
+	info.text = "Target: %s (%s)\nTransit: %s  |  Fuel round-trip: %.0ft / %.0ft available" % [
 		target_ship.ship_name, reason_str,
 		TimeScale.format_time(transit_t), fuel_rt, ferry.fuel
 	]
@@ -3899,9 +3919,9 @@ func _add_contract_fulfillment_ui(container: VBoxContainer, ship: Ship, contract
 		var discount := (1.0 - (contract_price_per_ton / spot_price)) * 100.0
 		price_comparison = " (-%.0f%% vs spot)" % discount
 
-	info.text = "%s: %s %.1ft/%.1ft - $%.0f/t%s - %.0f ticks\nYou have: %.1ft | Can deliver: %.1ft" % [
+	info.text = "%s: %s %.1ft/%.1ft - $%.0f/t%s - %s remaining\nYou have: %.1ft | Can deliver: %.1ft" % [
 		contract.issuer_name, ore_name, contract.quantity_delivered, contract.quantity,
-		contract_price_per_ton, price_comparison, contract.deadline_ticks,
+		contract_price_per_ton, price_comparison, _format_time(contract.deadline_ticks),
 		ship_has, can_deliver
 	]
 	info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
