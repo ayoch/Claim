@@ -10,21 +10,33 @@ extends Control
 @onready var status_label: Label = %StatusLabel
 
 var http_request: HTTPRequest
+var _save_load_dialog: PopupPanel = null
 
 func _ready() -> void:
-	# Check if save file exists to enable/disable Load button
-	load_game_btn.disabled = not FileAccess.file_exists("user://save_game.json")
+	# Set up save/load dialog
+	var dialog_scene := load("res://ui/save_load_dialog.tscn")
+	if dialog_scene:
+		_save_load_dialog = dialog_scene.instantiate()
+		add_child(_save_load_dialog)
+		_save_load_dialog.load_confirmed.connect(_on_load_confirmed)
+
+	# Check if any save files exist to enable/disable Load button
+	load_game_btn.disabled = not _has_any_saves()
 
 	# Connect buttons
 	new_game_btn.pressed.connect(_on_new_game)
 	load_game_btn.pressed.connect(_on_load_game)
 	leaderboards_btn.pressed.connect(_on_leaderboards)
+	online_btn.pressed.connect(_on_online)
 	quit_btn.pressed.connect(_on_quit)
 
 	# Check server status
 	_check_server_status()
 
 func _on_new_game() -> void:
+	# CRITICAL: Switch to LOCAL mode for offline single-player
+	BackendManager.switch_mode(BackendManager.BackendMode.LOCAL)
+
 	# Delete existing save if any
 	if FileAccess.file_exists("user://save_game.json"):
 		DirAccess.remove_absolute("user://save_game.json")
@@ -36,16 +48,42 @@ func _on_new_game() -> void:
 	get_tree().change_scene_to_file("res://ui/main_ui.tscn")
 
 func _on_load_game() -> void:
-	# Load the save file
-	if GameState.load_game():
+	# CRITICAL: Switch to LOCAL mode for offline single-player
+	BackendManager.switch_mode(BackendManager.BackendMode.LOCAL)
+
+	# Open load dialog to select save
+	if _save_load_dialog:
+		_save_load_dialog.open_load_dialog()
+
+
+func _on_load_confirmed(file_name: String) -> void:
+	if GameState.load_game(file_name):
 		# Load main game scene
 		get_tree().change_scene_to_file("res://ui/main_ui.tscn")
 	else:
-		# Show error (for now just disable the button)
-		load_game_btn.disabled = true
+		print("Failed to load save: ", file_name)
+
+
+func _has_any_saves() -> bool:
+	var dir := DirAccess.open("user://")
+	if not dir:
+		return false
+
+	dir.list_dir_begin()
+	var file_name := dir.get_next()
+	while file_name != "":
+		if file_name.ends_with(".json") and (file_name.begins_with("save_") or file_name == "save_game.json"):
+			dir.list_dir_end()
+			return true
+		file_name = dir.get_next()
+	dir.list_dir_end()
+	return false
 
 func _on_leaderboards() -> void:
 	get_tree().change_scene_to_file("res://ui/leaderboards_screen.tscn")
+
+func _on_online() -> void:
+	get_tree().change_scene_to_file("res://ui/login_screen.tscn")
 
 func _on_quit() -> void:
 	get_tree().quit()

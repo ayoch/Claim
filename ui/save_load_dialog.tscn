@@ -1,0 +1,73 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/save_load_dialog.gd" id="1"]
+
+[node name="SaveLoadDialog" type="PopupPanel"]
+title = "Save/Load Game"
+initial_position = 2
+size = Vector2i(600, 500)
+script = ExtResource("1")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+offset_right = 600.0
+offset_bottom = 500.0
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 20
+theme_override_constants/margin_bottom = 20
+
+[node name="VBox" type="VBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="TitleLabel" type="Label" parent="MarginContainer/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Save Game"
+theme_override_font_sizes/font_size = 24
+horizontal_alignment = 1
+
+[node name="NameContainer" type="HBoxContainer" parent="MarginContainer/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Label" type="Label" parent="MarginContainer/VBox/NameContainer"]
+layout_mode = 2
+text = "Save Name:"
+
+[node name="NameInput" type="LineEdit" parent="MarginContainer/VBox/NameContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Enter save name..."
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SaveList" type="VBoxContainer" parent="MarginContainer/VBox/ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="ButtonRow" type="HBoxContainer" parent="MarginContainer/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Spacer" type="Control" parent="MarginContainer/VBox/ButtonRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="CancelButton" type="Button" parent="MarginContainer/VBox/ButtonRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 40)
+layout_mode = 2
+text = "Cancel"
+
+[node name="ConfirmButton" type="Button" parent="MarginContainer/VBox/ButtonRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 40)
+layout_mode = 2
+text = "Save"

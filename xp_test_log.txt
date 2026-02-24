@@ -1,0 +1,164 @@
+=== Worker XP System Test Started ===
+Game time: 0.0 days
+Test duration: 432000 ticks (5.0 game-days)
+
+Initial Worker Stats:
+  Fatou Ivanov: P=1.25 E=0.45 M=0.00 wage=$148
+    XP: P=0 E=0 M=0
+  Viktor Eriksson: P=0.70 E=1.05 M=0.25 wage=$160
+    XP: P=0 E=0 M=0
+  Mei Park: P=0.15 E=0.70 M=1.40 wage=$170
+    XP: P=0 E=0 M=0
+  Kwame Hassan: P=1.45 E=0.90 M=0.20 wage=$182
+    XP: P=0 E=0 M=0
+  James Sato: P=0.20 E=0.45 M=1.40 wage=$162
+    XP: P=0 E=0 M=0
+  Fatou Jensen: P=0.75 E=0.05 M=1.15 wage=$158
+    XP: P=0 E=0 M=0
+  Ivan Lee: P=0.65 E=0.95 M=0.15 wage=$150
+    XP: P=0 E=0 M=0
+  Nadia Nakamura: P=1.10 E=0.10 M=0.70 wage=$156
+    XP: P=0 E=0 M=0
+  Akira Tanaka: P=1.25 E=0.60 M=0.25 wage=$164
+    XP: P=0 E=0 M=0
+  Olga Haugen: P=1.00 E=0.65 M=0.15 wage=$152
+    XP: P=0 E=0 M=0
+  Yuki Santos: P=1.30 E=0.65 M=0.20 wage=$166
+    XP: P=0 E=0 M=0
+  Ada Mwangi: P=1.50 E=0.00 M=0.45 wage=$158
+    XP: P=0 E=0 M=0
+  Sofia Otieno: P=0.50 E=0.95 M=0.20 wage=$146
+    XP: P=0 E=0 M=0
+  Fatou Johansson: P=0.15 E=1.10 M=0.55 wage=$152
+    XP: P=0 E=0 M=0
+  Dmitri Martinez: P=1.15 E=0.00 M=0.50 wage=$146
+    XP: P=0 E=0 M=0
+
+Active Missions: 0
+
+Deployed Mining Units: 0
+
+--- Test Running at high speed (use keyboard shortcuts to set 200000x) ---
+[Day 0.7] LEVEL UP: Fatou Ivanov's Engineer skill -> 0.50 (wage now $150)
+[Day 1.0] LEVEL UP: Mei Park's Engineer skill -> 0.75 (wage now $172)
+[Day 1.1] LEVEL UP: Fatou Jensen's Engineer skill -> 0.10 (wage now $160)
+[Day 1.4] LEVEL UP: Viktor Eriksson's Engineer skill -> 1.10 (wage now $162)
+[Day 1.5] LEVEL UP: Fatou Ivanov's Engineer skill -> 0.55 (wage now $152)
+[Day 2.0] LEVEL UP: Mei Park's Engineer skill -> 0.80 (wage now $174)
+[Day 2.1] LEVEL UP: James Sato's Engineer skill -> 0.50 (wage now $164)
+[Day 2.3] LEVEL UP: Fatou Ivanov's Engineer skill -> 0.60 (wage now $154)
+[Day 2.4] LEVEL UP: Fatou Jensen's Engineer skill -> 0.15 (wage now $162)
+[Day 2.6] LEVEL UP: Fatou Ivanov's Pilot skill -> 1.30 (wage now $156)
+[Day 2.9] LEVEL UP: Viktor Eriksson's Engineer skill -> 1.15 (wage now $164)
+[Day 3.1] LEVEL UP: Mei Park's Engineer skill -> 0.85 (wage now $176)
+[Day 3.2] LEVEL UP: Fatou Ivanov's Engineer skill -> 0.65 (wage now $158)
+[Day 3.7] LEVEL UP: Kwame Hassan's Engineer skill -> 0.95 (wage now $184)
+[Day 3.7] LEVEL UP: Fatou Jensen's Engineer skill -> 0.20 (wage now $164)
+[Day 4.1] LEVEL UP: Fatou Ivanov's Engineer skill -> 0.70 (wage now $160)
+[Day 4.2] LEVEL UP: Mei Park's Engineer skill -> 0.90 (wage now $178)
+[Day 4.4] LEVEL UP: James Sato's Engineer skill -> 0.55 (wage now $166)
+[Day 4.5] LEVEL UP: Viktor Eriksson's Engineer skill -> 1.20 (wage now $166)
+
+=== Test Complete ===
+Elapsed: 5.0 game-days
+Total level-ups recorded: 19
+
+Final Worker Stats:
+  Fatou Ivanov:
+    Pilot:    1.25 -> 1.30 (+0.05)
+    Engineer: 0.45 -> 0.70 (+0.25)
+    Mining:   0.00 -> 0.00 (+0.00)
+    Wage:     $148 -> $160 (+$12)
+    XP remaining: P=386382 E=211953 M=33641
+  Viktor Eriksson:
+    Pilot:    0.70 -> 0.70 (+0.00)
+    Engineer: 1.05 -> 1.20 (+0.15)
+    Mining:   0.25 -> 0.25 (+0.00)
+    Wage:     $160 -> $166 (+$6)
+    XP remaining: P=0 E=108489 M=33641
+  Mei Park:
+    Pilot:    0.15 -> 0.15 (+0.00)
+    Engineer: 0.70 -> 0.90 (+0.20)
+    Mining:   1.40 -> 1.40 (+0.00)
+    Wage:     $170 -> $178 (+$8)
+    XP remaining: P=0 E=162057 M=33641
+  Kwame Hassan:
+    Pilot:    1.45 -> 1.45 (+0.00)
+    Engineer: 0.90 -> 0.95 (+0.05)
+    Mining:   0.20 -> 0.20 (+0.00)
+    Wage:     $182 -> $184 (+$2)
+    XP remaining: P=428711 E=116807 M=0
+  James Sato:
+    Pilot:    0.20 -> 0.20 (+0.00)
+    Engineer: 0.45 -> 0.55 (+0.10)
+    Mining:   1.40 -> 1.40 (+0.00)
+    Wage:     $162 -> $166 (+$4)
+    XP remaining: P=0 E=52655 M=0
+  Fatou Jensen:
+    Pilot:    0.75 -> 0.75 (+0.00)
+    Engineer: 0.05 -> 0.20 (+0.15)
+    Mining:   1.15 -> 1.15 (+0.00)
+    Wage:     $158 -> $164 (+$6)
+    XP remaining: P=0 E=114647 M=0
+  Ivan Lee:
+    Pilot:    0.65 -> 0.65 (+0.00)
+    Engineer: 0.95 -> 0.95 (+0.00)
+    Mining:   0.15 -> 0.15 (+0.00)
+    Wage:     $150 -> $150 (+$0)
+    XP remaining: P=0 E=0 M=0
+  Nadia Nakamura:
+    Pilot:    1.10 -> 1.10 (+0.00)
+    Engineer: 0.10 -> 0.10 (+0.00)
+    Mining:   0.70 -> 0.70 (+0.00)
+    Wage:     $156 -> $156 (+$0)
+    XP remaining: P=0 E=0 M=0
+  Akira Tanaka:
+    Pilot:    1.25 -> 1.25 (+0.00)
+    Engineer: 0.60 -> 0.60 (+0.00)
+    Mining:   0.25 -> 0.25 (+0.00)
+    Wage:     $164 -> $164 (+$0)
+    XP remaining: P=0 E=0 M=0
+  Olga Haugen:
+    Pilot:    1.00 -> 1.00 (+0.00)
+    Engineer: 0.65 -> 0.65 (+0.00)
+    Mining:   0.15 -> 0.15 (+0.00)
+    Wage:     $152 -> $152 (+$0)
+    XP remaining: P=0 E=0 M=0
+  Yuki Santos:
+    Pilot:    1.30 -> 1.30 (+0.00)
+    Engineer: 0.65 -> 0.65 (+0.00)
+    Mining:   0.20 -> 0.20 (+0.00)
+    Wage:     $166 -> $166 (+$0)
+    XP remaining: P=0 E=0 M=0
+  Ada Mwangi:
+    Pilot:    1.50 -> 1.50 (+0.00)
+    Engineer: 0.00 -> 0.00 (+0.00)
+    Mining:   0.45 -> 0.45 (+0.00)
+    Wage:     $158 -> $158 (+$0)
+    XP remaining: P=0 E=0 M=0
+  Sofia Otieno:
+    Pilot:    0.50 -> 0.50 (+0.00)
+    Engineer: 0.95 -> 0.95 (+0.00)
+    Mining:   0.20 -> 0.20 (+0.00)
+    Wage:     $146 -> $146 (+$0)
+    XP remaining: P=0 E=0 M=0
+  Fatou Johansson:
+    Pilot:    0.15 -> 0.15 (+0.00)
+    Engineer: 1.10 -> 1.10 (+0.00)
+    Mining:   0.55 -> 0.55 (+0.00)
+    Wage:     $152 -> $152 (+$0)
+    XP remaining: P=0 E=0 M=0
+  Dmitri Martinez:
+    Pilot:    1.15 -> 1.15 (+0.00)
+    Engineer: 0.00 -> 0.00 (+0.00)
+    Mining:   0.50 -> 0.50 (+0.00)
+    Wage:     $146 -> $146 (+$0)
+    XP remaining: P=0 E=0 M=0
+
+=== Validation ===
+✓ Total skill gains: 0.95
+✓ Level-ups detected: 19
+
+✓✓✓ All checks passed! XP system is working correctly. ✓✓✓
+
+=== End of Test ===

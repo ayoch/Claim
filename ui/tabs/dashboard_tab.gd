@@ -34,6 +34,7 @@ var _dirty_contracts: bool = false
 var _dirty_resources: bool = false
 var _dirty_workers: bool = false
 var _dirty_balance_history: bool = false
+var _dirty_colony_standing: bool = false
 
 # Section collapse state: key -> true means collapsed
 var _section_collapsed: Dictionary = {}
@@ -203,6 +204,16 @@ func _ready() -> void:
 		_queue_activity("%s tardiness resolved: %s" % [w.worker_name, action], Color(0.3, 0.8, 0.9))
 		_dirty_discipline = true
 	)
+
+	# Criminal ban system
+	EventBus.violation_recorded.connect(func(colony: Colony, reason: String) -> void:
+		_queue_alert("VIOLATION recorded at %s: %s" % [colony.colony_name, reason], Color(0.9, 0.2, 0.2))
+		_dirty_colony_standing = true
+	)
+	EventBus.game_over.connect(func(reason: String) -> void:
+		_queue_alert("===== GAME OVER: %s =====" % reason, Color(1.0, 0.0, 0.0))
+	)
+
 	EventBus.order_queued.connect(func(ship: Ship, label: String, delay_secs: float) -> void:
 		var mins := int(delay_secs / 60.0)
 		var secs := int(fmod(delay_secs, 60.0))
@@ -231,6 +242,7 @@ func _ready() -> void:
 	_setup_reputation_display()
 	_setup_balance_history()
 	_setup_discipline_panel()
+	_setup_colony_standing_panel()
 	_setup_collapsible_sections()
 
 func _setup_stationed_ships_panel() -> void:
@@ -472,6 +484,108 @@ func _refresh_discipline() -> void:
 		entry_vbox.add_child(btn_row)
 		entries_list_node.add_child(entry_vbox)
 
+func _setup_colony_standing_panel() -> void:
+	var scroll := get_node("ScrollContainer")
+	var vbox := scroll.get_node("VBox")
+
+	var card := PanelContainer.new()
+	card.name = "ColonyStandingCard"
+	var card_vbox := VBoxContainer.new()
+	card_vbox.add_theme_constant_override("separation", 8)
+
+	var title := Label.new()
+	title.text = "COLONY STANDING"
+	title.name = "Title"
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(1.0, 0.6, 0.1))
+	card_vbox.add_child(title)
+
+	var entries_list := VBoxContainer.new()
+	entries_list.name = "ColonyStandingEntries"
+	entries_list.add_theme_constant_override("separation", 12)
+	card_vbox.add_child(entries_list)
+
+	card.add_child(card_vbox)
+
+	# Insert after DisciplineCard
+	var discipline_card := vbox.get_node_or_null("DisciplineCard")
+	if discipline_card:
+		var idx := discipline_card.get_index() + 1
+		vbox.add_child(card)
+		vbox.move_child(card, idx)
+	else:
+		vbox.add_child(card)
+
+	# Make collapsible and start collapsed
+	_make_collapsible("colony_standing", title, entries_list, true)
+
+	_refresh_colony_standing()
+
+func _refresh_colony_standing() -> void:
+	var card := get_node_or_null("ScrollContainer/VBox/ColonyStandingCard")
+	if not card:
+		return
+
+	var entries_list_node := card.find_child("ColonyStandingEntries", true, false)
+	if not entries_list_node:
+		return
+
+	_free_children(entries_list_node)
+
+	# Collect colonies with violations
+	var colonies_with_violations: Array[Colony] = []
+	for colony in GameState.colonies:
+		if colony.get_active_violation_count(GameState.total_ticks) > 0 or colony.player_banned:
+			colonies_with_violations.append(colony)
+
+	if colonies_with_violations.is_empty():
+		card.visible = false
+		return
+
+	card.visible = true
+
+	for colony in colonies_with_violations:
+		var entry_vbox := VBoxContainer.new()
+		entry_vbox.add_theme_constant_override("separation", 6)
+
+		# Colony name
+		var name_label := Label.new()
+		name_label.text = colony.colony_name
+		name_label.add_theme_font_size_override("font_size", 16)
+		var color := Color(1.0, 0.2, 0.2) if colony.player_banned else Color(1.0, 0.6, 0.1)
+		name_label.add_theme_color_override("font_color", color)
+		entry_vbox.add_child(name_label)
+
+		# Status
+		var active_count := colony.get_active_violation_count(GameState.total_ticks)
+		var status_label := Label.new()
+		if colony.player_banned:
+			status_label.text = "❌ BANNED"
+			status_label.add_theme_color_override("font_color", Color(1.0, 0.0, 0.0))
+		else:
+			status_label.text = "⚠️ Violations: %d/%d (Ban at %d)" % [active_count, Colony.VIOLATION_THRESHOLD, Colony.VIOLATION_THRESHOLD]
+			status_label.add_theme_color_override("font_color", Color(1.0, 0.6, 0.1))
+		entry_vbox.add_child(status_label)
+
+		# Show recent violations
+		var recent_violations := colony.violations.duplicate()
+		recent_violations.reverse()  # Most recent first
+		var shown_count := 0
+		for violation in recent_violations:
+			if shown_count >= 3:  # Only show 3 most recent
+				break
+			var reason: String = violation["reason"]
+			var days_ago := (GameState.total_ticks - float(violation["timestamp"])) / 86400.0
+			var v_label := Label.new()
+			v_label.text = "  • %s (%.1f days ago)" % [reason, days_ago]
+			v_label.add_theme_color_override("font_color", Color(0.8, 0.5, 0.5))
+			v_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			v_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			entry_vbox.add_child(v_label)
+			shown_count += 1
+
+		entries_list_node.add_child(entry_vbox)
+
 func _setup_policies_ui() -> void:
 	# Find the main VBox in the dashboard
 	var scroll := get_node("ScrollContainer")
@@ -631,6 +745,9 @@ func _on_tick(_dt: float) -> void:
 	if _dirty_discipline:
 		_dirty_discipline = false
 		_refresh_discipline()
+	if _dirty_colony_standing:
+		_dirty_colony_standing = false
+		_refresh_colony_standing()
 	if _dirty_contracts:
 		_dirty_contracts = false
 		_refresh_contracts()

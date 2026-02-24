@@ -529,6 +529,61 @@ func fire_worker(worker: Worker) -> void:
 	worker.assigned_mining_unit = null
 	EventBus.worker_fired.emit(worker)
 
+## Criminal Ban System: Record violations at colonies
+func record_worker_death_violation(worker: Worker, reason: String) -> void:
+	# Record death at worker's home colony
+	var colony_name: String = worker.home_colony if worker.home_colony != "" else "Earth"
+	var colony: Colony = _find_colony_by_name(colony_name)
+	if colony:
+		colony.add_violation(reason, total_ticks)
+		print("VIOLATION recorded at %s: %s" % [colony_name, reason])
+		EventBus.violation_recorded.emit(colony, reason)
+
+func record_abandonment_violation(worker: Worker, reason: String) -> void:
+	# Record abandonment at worker's home colony
+	var colony_name: String = worker.home_colony if worker.home_colony != "" else "Earth"
+	var colony: Colony = _find_colony_by_name(colony_name)
+	if colony:
+		colony.add_violation(reason, total_ticks)
+		print("VIOLATION recorded at %s: %s" % [colony_name, reason])
+		EventBus.violation_recorded.emit(colony, reason)
+
+func record_rescue_failure_violation(ship: Ship, reason: String) -> void:
+	# Record rescue failure at ship's last known colony (or Earth if never docked)
+	var colony: Colony = null
+	if ship.docked_at_colony:
+		colony = ship.docked_at_colony
+	else:
+		# Default to Earth if ship has no colony association
+		colony = _find_colony_by_name("Earth")
+
+	if colony:
+		colony.add_violation(reason, total_ticks)
+		print("VIOLATION recorded at %s: %s" % [colony.colony_name, reason])
+		EventBus.violation_recorded.emit(colony, reason)
+
+func _find_colony_by_name(name: String) -> Colony:
+	# Search all colonies for matching name
+	for col in ColonyData.COLONIES:
+		if col.colony_name == name:
+			return col
+	return null
+
+func check_game_over_banned() -> bool:
+	# Check if player is banned from ALL colonies
+	var banned_count: int = 0
+	for colony in ColonyData.COLONIES:
+		if colony.player_banned:
+			banned_count += 1
+
+	# Game over if banned from all colonies
+	if banned_count >= ColonyData.COLONIES.size():
+		print("GAME OVER: Banned from all colonies (%d/%d)" % [banned_count, ColonyData.COLONIES.size()])
+		EventBus.game_over.emit("Banned from all colonies")
+		return true
+
+	return false
+
 func get_available_workers() -> Array[Worker]:
 	var available: Array[Worker] = []
 	for w in workers:
@@ -1834,6 +1889,9 @@ func dock_pay_tardy_worker(worker: Worker) -> void:
 	EventBus.worker_tardiness_resolved.emit(worker, "docked")
 
 func fire_tardy_worker(worker: Worker) -> void:
+	# Record abandonment violation before firing
+	record_abandonment_violation(worker, "Worker %s abandoned (fired while tardy)" % worker.worker_name)
+
 	for i in range(tardy_workers.size() - 1, -1, -1):
 		if tardy_workers[i]["worker"] == worker:
 			tardy_workers.remove_at(i)
@@ -2132,9 +2190,9 @@ func calculate_net_worth() -> int:
 	# Add cargo value (ore in ships)
 	if market:
 		for ship in ships:
-			for ore_type in ship.cargo:
+			for ore_type in ship.current_cargo:
 				var price: float = market.current_prices.get(ore_type, 0.0)
-				total += int(ship.cargo[ore_type] * price)
+				total += int(ship.current_cargo[ore_type] * price)
 
 	# Add ore in storage
 	if market:
@@ -2174,8 +2232,18 @@ func get_local_leaderboard() -> Array:
 
 
 # Save/Load
-func save_game() -> void:
+func save_game(save_name: String = "") -> void:
+	# Generate file name from save name
+	var file_name := "save_game.json"  # Default for backwards compatibility
+	if save_name != "":
+		# Create safe filename from save name
+		var safe_name := save_name.to_lower().replace(" ", "_").replace("/", "_").replace("\\", "_")
+		file_name = "save_%s.json" % safe_name
+
 	var save_data := {
+		"save_name": save_name if save_name != "" else "Quicksave",
+		"save_timestamp": Time.get_unix_time_from_system(),
+		"net_worth": calculate_net_worth(),
 		"money": money,
 		"total_ticks": total_ticks,
 		"thrust_policy": thrust_policy,
@@ -2518,16 +2586,26 @@ func save_game() -> void:
 		rival_data.append(corp_entry)
 	save_data["rival_corps"] = rival_data
 
+	# Save colony criminal ban data
+	var colony_data: Array[Dictionary] = []
+	for colony in colonies:
+		colony_data.append({
+			"name": colony.colony_name,
+			"violations": colony.violations.duplicate(),
+			"player_banned": colony.player_banned,
+		})
+	save_data["colonies"] = colony_data
+
 	# Submit to leaderboard before saving
 	submit_leaderboard_entry()
 
-	var file := FileAccess.open("user://save_game.json", FileAccess.WRITE)
+	var file := FileAccess.open("user://" + file_name, FileAccess.WRITE)
 	file.store_string(JSON.stringify(save_data, "\t"))
 
-func load_game() -> bool:
-	if not FileAccess.file_exists("user://save_game.json"):
+func load_game(file_name: String = "save_game.json") -> bool:
+	if not FileAccess.file_exists("user://" + file_name):
 		return false
-	var file := FileAccess.open("user://save_game.json", FileAccess.READ)
+	var file := FileAccess.open("user://" + file_name, FileAccess.READ)
 	var json := JSON.new()
 	if json.parse(file.get_as_text()) != OK:
 		return false
@@ -3034,6 +3112,17 @@ func load_game() -> bool:
 			ship.elapsed_ticks = float(shipd.get("elapsed_ticks", 0.0))
 			ship.mining_elapsed = float(shipd.get("mining_elapsed", 0.0))
 			ship.mining_duration = float(shipd.get("mining_duration", 86400.0))
+
+	# Restore colony criminal ban data
+	var saved_colonies: Array = data.get("colonies", [])
+	for colony_data in saved_colonies:
+		var colony_name: String = colony_data.get("name", "")
+		# Find matching colony in colonies array
+		for colony in colonies:
+			if colony.colony_name == colony_name:
+				colony.violations = colony_data.get("violations", [])
+				colony.player_banned = colony_data.get("player_banned", false)
+				break
 
 	# Load leaderboard data
 	player_name = data.get("player_name", "Player")

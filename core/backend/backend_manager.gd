@@ -26,9 +26,10 @@ func _initialize_backends() -> void:
 	var LocalBackendScript = load("res://core/backend/local_backend.gd")
 	_local_backend = LocalBackendScript.new()
 
-	# Server backend will be created later
-	# var ServerBackendScript = load("res://core/backend/server_backend.gd")
-	# _server_backend = ServerBackendScript.new()
+	# Create server backend
+	var ServerBackendScript = load("res://core/backend/server_backend.gd")
+	_server_backend = ServerBackendScript.new()
+	_server_backend.set_backend_manager(self)  # Give it reference to this Node for HTTP requests
 
 	# Start with local mode
 	switch_mode(BackendMode.LOCAL)
@@ -68,17 +69,22 @@ func is_backend_ready() -> bool:
 	return false
 
 
+## Get server backend directly (for leaderboard access)
+func get_server_backend():
+	return _server_backend
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # DELEGATE ALL BACKEND OPERATIONS
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Auth
 func login(username: String, password: String) -> Dictionary:
-	return _active_backend.login(username, password)
+	return await _active_backend.login(username, password)
 
 
 func register(username: String, password: String) -> Dictionary:
-	return _active_backend.register(username, password)
+	return await _active_backend.register(username, password)
 
 
 func logout() -> void:
@@ -87,7 +93,7 @@ func logout() -> void:
 
 # Game State
 func get_game_state() -> Dictionary:
-	return _active_backend.get_game_state()
+	return await _active_backend.get_game_state()
 
 
 func save_game() -> void:
@@ -104,50 +110,50 @@ func get_save_files() -> Array:
 
 # Ships & Missions
 func dispatch_mission(ship_id: int, asteroid_id: int, mission_type: int, mining_duration: float, return_to_station: bool):
-	return _active_backend.dispatch_mission(ship_id, asteroid_id, mission_type, mining_duration, return_to_station)
+	return await _active_backend.dispatch_mission(ship_id, asteroid_id, mission_type, mining_duration, return_to_station)
 
 
 func buy_ship(ship_class: int, ship_name: String, colony_id: int):
-	return _active_backend.buy_ship(ship_class, ship_name, colony_id)
+	return await _active_backend.buy_ship(ship_class, ship_name, colony_id)
 
 
 func sell_ship(ship_id: int) -> void:
-	_active_backend.sell_ship(ship_id)
+	await _active_backend.sell_ship(ship_id)
 
 
 # Workers
 func hire_worker(colony_id: int):
-	return _active_backend.hire_worker(colony_id)
+	return await _active_backend.hire_worker(colony_id)
 
 
 func fire_worker(worker_id: int) -> void:
-	_active_backend.fire_worker(worker_id)
+	await _active_backend.fire_worker(worker_id)
 
 
 func assign_worker(worker_id: int, ship_id: int) -> void:
-	_active_backend.assign_worker(worker_id, ship_id)
+	await _active_backend.assign_worker(worker_id, ship_id)
 
 
 func unassign_worker(worker_id: int) -> void:
-	_active_backend.unassign_worker(worker_id)
+	await _active_backend.unassign_worker(worker_id)
 
 
 # World Data
 func get_colonies() -> Array:
-	return _active_backend.get_colonies()
+	return await _active_backend.get_colonies()
 
 
 func get_asteroids() -> Array:
-	return _active_backend.get_asteroids()
+	return await _active_backend.get_asteroids()
 
 
 func get_market_prices() -> Dictionary:
-	return _active_backend.get_market_prices()
+	return await _active_backend.get_market_prices()
 
 
 # Policies
 func update_policies(policies: Dictionary) -> void:
-	_active_backend.update_policies(policies)
+	await _active_backend.update_policies(policies)
 
 
 # Events
