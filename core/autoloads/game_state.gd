@@ -196,6 +196,32 @@ var hitchhike_pool: Array[Dictionary] = []
 var tardy_workers: Array[Dictionary] = []
 
 func _ready() -> void:
+	new_game()
+
+func new_game() -> void:
+	# Clear all state before initializing (safe to call on first launch or restart)
+	ships.clear()
+	workers.clear()
+	missions.clear()
+	trade_missions.clear()
+	rescue_missions.clear()
+	refuel_missions.clear()
+	stranger_offers.clear()
+	pending_orders.clear()
+	deployed_crews.clear()
+	mining_unit_inventory.clear()
+	deployed_mining_units.clear()
+	ore_stockpiles.clear()
+	asteroid_supplies.clear()
+	security_zones.clear()
+	hitchhike_pool.clear()
+	tardy_workers.clear()
+	available_contracts.clear()
+	active_contracts.clear()
+	active_market_events.clear()
+	money = 10000
+	total_ticks = 0.0
+	Reputation.score = 0.0
 	_init_resources()
 	_init_starter_ship()
 	_init_starter_crew()
@@ -298,13 +324,8 @@ func _apply_redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> vo
 	mission.asteroid = new_asteroid
 	mission.origin_is_earth = false
 	mission.status = Mission.Status.TRANSIT_OUT
-	mission.outbound_waypoints.clear()
+	mission.outbound_legs.clear()
 	mission.outbound_waypoint_index = 0
-	mission.outbound_leg_times.clear()
-	mission.outbound_waypoint_types.clear()
-	mission.outbound_waypoint_colony_refs.clear()
-	mission.outbound_waypoint_fuel_amounts.clear()
-	mission.outbound_waypoint_fuel_costs.clear()
 
 	var return_transit_time := Brachistochrone.transit_time(return_dist, thrust)
 
@@ -321,12 +342,9 @@ func _apply_redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> vo
 			if dfrac < 0.98:
 				adjusted_origin = (ship.position_au - waypoint * dfrac) / (1.0 - dfrac)
 		mission.origin_position_au = adjusted_origin
-		mission.outbound_waypoints.append(waypoint)
-		mission.outbound_leg_times.append(time1)
-		mission.outbound_leg_times.append(time2)
-		# outbound_waypoint_types left empty = GRAVITY_ASSIST default
+		mission.outbound_legs.append(WaypointLeg.make(waypoint, time1))
 		mission.elapsed_ticks = initial_t * time1
-		mission.transit_time = time1
+		mission.transit_time = time2
 		var total_time_arc := time1 + time2 + return_transit_time
 		mission.fuel_per_tick = fuel_needed / total_time_arc if total_time_arc > 0.0 else 0.0
 	else:
@@ -411,13 +429,8 @@ func _apply_redirect_trade_mission(trade_mission: TradeMission, new_colony: Colo
 
 	trade_mission.origin_is_earth = false
 	trade_mission.status = TradeMission.Status.TRANSIT_TO_COLONY
-	trade_mission.outbound_waypoints.clear()
+	trade_mission.outbound_legs.clear()
 	trade_mission.outbound_waypoint_index = 0
-	trade_mission.outbound_leg_times.clear()
-	trade_mission.outbound_waypoint_types.clear()
-	trade_mission.outbound_waypoint_colony_refs.clear()
-	trade_mission.outbound_waypoint_fuel_amounts.clear()
-	trade_mission.outbound_waypoint_fuel_costs.clear()
 
 	if use_arc:
 		var time1 := Brachistochrone.transit_time(dist1, thrust)
@@ -431,11 +444,9 @@ func _apply_redirect_trade_mission(trade_mission: TradeMission, new_colony: Colo
 			if dfrac < 0.98:
 				adjusted_origin = (ship.position_au - waypoint * dfrac) / (1.0 - dfrac)
 		trade_mission.origin_position_au = adjusted_origin
-		trade_mission.outbound_waypoints.append(waypoint)
-		trade_mission.outbound_leg_times.append(time1)
-		trade_mission.outbound_leg_times.append(time2)
+		trade_mission.outbound_legs.append(WaypointLeg.make(waypoint, time1))
 		trade_mission.elapsed_ticks = initial_t * time1
-		trade_mission.transit_time = time1
+		trade_mission.transit_time = time2
 		var total_time_arc := time1 + time2 + tm_return_transit_time
 		trade_mission.fuel_per_tick = fuel_needed / total_time_arc if total_time_arc > 0.0 else 0.0
 	else:
@@ -788,11 +799,9 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, units: Array[Minin
 	var dist := ship.position_au.distance_to(asteroid.get_position_au())
 
 	if slingshot_route:
-		mission.outbound_waypoints = [slingshot_route.waypoint_pos]
-		mission.outbound_waypoint_planet_ids = [slingshot_route.planet_index]
-		mission.outbound_leg_times = [slingshot_route.leg1_time, slingshot_route.leg2_time]
+		mission.outbound_legs = [WaypointLeg.make(slingshot_route.waypoint_pos, slingshot_route.leg1_time, WaypointLeg.WaypointType.GRAVITY_ASSIST, slingshot_route.planet_index)]
 		mission.outbound_waypoint_index = 0
-		mission.transit_time = slingshot_route.leg1_time
+		mission.transit_time = slingshot_route.leg2_time
 		dist = slingshot_route.leg1_distance
 	else:
 		if transit_mode == Mission.TransitMode.HOHMANN:
@@ -870,11 +879,9 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int
 	var dist := ship.position_au.distance_to(asteroid.get_position_au())
 
 	if slingshot_route:
-		mission.outbound_waypoints = [slingshot_route.waypoint_pos]
-		mission.outbound_waypoint_planet_ids = [slingshot_route.planet_index]
-		mission.outbound_leg_times = [slingshot_route.leg1_time, slingshot_route.leg2_time]
+		mission.outbound_legs = [WaypointLeg.make(slingshot_route.waypoint_pos, slingshot_route.leg1_time, WaypointLeg.WaypointType.GRAVITY_ASSIST, slingshot_route.planet_index)]
 		mission.outbound_waypoint_index = 0
-		mission.transit_time = slingshot_route.leg1_time
+		mission.transit_time = slingshot_route.leg2_time
 		dist = slingshot_route.leg1_distance
 	else:
 		if transit_mode == Mission.TransitMode.HOHMANN:
@@ -1017,11 +1024,9 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 
 	# Setup slingshot waypoints if using gravity assist
 	if slingshot_route:
-		mission.outbound_waypoints = [slingshot_route.waypoint_pos]
-		mission.outbound_waypoint_planet_ids = [slingshot_route.planet_index]
-		mission.outbound_leg_times = [slingshot_route.leg1_time, slingshot_route.leg2_time]
+		mission.outbound_legs = [WaypointLeg.make(slingshot_route.waypoint_pos, slingshot_route.leg1_time, WaypointLeg.WaypointType.GRAVITY_ASSIST, slingshot_route.planet_index)]
 		mission.outbound_waypoint_index = 0
-		mission.transit_time = slingshot_route.leg1_time  # First leg
+		mission.transit_time = slingshot_route.leg2_time
 		dist = slingshot_route.leg1_distance
 	else:
 		# Direct route
@@ -1040,35 +1045,25 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 	)
 
 	if outbound_fuel_route["feasible"] and outbound_fuel_route["waypoints"].size() > 0:
-		# Need fuel stops - add them to waypoint arrays
-		# If we already have slingshot waypoints, we need to merge them
+		var waypoints: Array = outbound_fuel_route["waypoints"]
+		var colonies: Array = outbound_fuel_route["colonies"]
+		var fuel_amounts: Array = outbound_fuel_route["fuel_amounts"]
+		var fuel_costs: Array = outbound_fuel_route["fuel_costs"]
+		var leg_times: Array = outbound_fuel_route["leg_times"]
 		if slingshot_route:
-			# For now, append fuel stops after slingshot (simple approach)
-			# TODO: Could optimize by interleaving based on positions
-			for i in range(outbound_fuel_route["waypoints"].size()):
-				mission.outbound_waypoints.append(outbound_fuel_route["waypoints"][i])
-				mission.outbound_waypoint_types.append(Mission.WaypointType.REFUEL_STOP)
-				mission.outbound_waypoint_colony_refs.append(outbound_fuel_route["colonies"][i])
-				mission.outbound_waypoint_fuel_amounts.append(outbound_fuel_route["fuel_amounts"][i])
-				mission.outbound_waypoint_fuel_costs.append(outbound_fuel_route["fuel_costs"][i])
-				mission.outbound_leg_times.append(outbound_fuel_route["leg_times"][i])
-			# Mark slingshot waypoints
-			for i in range(mission.outbound_waypoint_planet_ids.size()):
-				if i < mission.outbound_waypoint_types.size():
-					mission.outbound_waypoint_types[i] = Mission.WaypointType.GRAVITY_ASSIST
+			# Append fuel stops after slingshot waypoint
+			for i in range(waypoints.size()):
+				mission.outbound_legs.append(WaypointLeg.make(waypoints[i], leg_times[i], WaypointLeg.WaypointType.REFUEL_STOP, -1, colonies[i], fuel_amounts[i], fuel_costs[i]))
 		else:
-			# No slingshot, just fuel stops
-			mission.outbound_waypoints = outbound_fuel_route["waypoints"].duplicate()
-			mission.outbound_waypoint_colony_refs = outbound_fuel_route["colonies"].duplicate()
-			mission.outbound_waypoint_fuel_amounts = outbound_fuel_route["fuel_amounts"].duplicate()
-			mission.outbound_waypoint_fuel_costs = outbound_fuel_route["fuel_costs"].duplicate()
-			mission.outbound_leg_times = outbound_fuel_route["leg_times"].duplicate()
-			mission.outbound_waypoint_types = []
-			for i in range(outbound_fuel_route["waypoints"].size()):
-				mission.outbound_waypoint_types.append(Mission.WaypointType.REFUEL_STOP)
-
-			# Set initial transit time to first leg
-			mission.transit_time = mission.outbound_leg_times[0] if mission.outbound_leg_times.size() > 0 else mission.transit_time
+			# Fuel stops only — build legs from scratch
+			mission.outbound_legs.clear()
+			for i in range(waypoints.size()):
+				mission.outbound_legs.append(WaypointLeg.make(waypoints[i], leg_times[i], WaypointLeg.WaypointType.REFUEL_STOP, -1, colonies[i], fuel_amounts[i], fuel_costs[i]))
+			# Final leg time (from last stop to destination) stays in mission.transit_time
+			if leg_times.size() > waypoints.size():
+				mission.transit_time = leg_times[waypoints.size()]
+			elif outbound_fuel_route.has("final_leg_time"):
+				mission.transit_time = outbound_fuel_route["final_leg_time"]
 
 		# Deduct total fuel cost upfront
 		money -= outbound_fuel_route["total_cost"]
@@ -1083,14 +1078,14 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 	)
 
 	if return_fuel_route["feasible"] and return_fuel_route["waypoints"].size() > 0:
-		mission.return_waypoints = return_fuel_route["waypoints"].duplicate()
-		mission.return_waypoint_colony_refs = return_fuel_route["colonies"].duplicate()
-		mission.return_waypoint_fuel_amounts = return_fuel_route["fuel_amounts"].duplicate()
-		mission.return_waypoint_fuel_costs = return_fuel_route["fuel_costs"].duplicate()
-		mission.return_leg_times = return_fuel_route["leg_times"].duplicate()
-		mission.return_waypoint_types = []
-		for i in range(return_fuel_route["waypoints"].size()):
-			mission.return_waypoint_types.append(Mission.WaypointType.REFUEL_STOP)
+		var ret_waypoints: Array = return_fuel_route["waypoints"]
+		var ret_colonies: Array = return_fuel_route["colonies"]
+		var ret_fuel_amounts: Array = return_fuel_route["fuel_amounts"]
+		var ret_fuel_costs: Array = return_fuel_route["fuel_costs"]
+		var ret_leg_times: Array = return_fuel_route["leg_times"]
+		mission.return_legs.clear()
+		for i in range(ret_waypoints.size()):
+			mission.return_legs.append(WaypointLeg.make(ret_waypoints[i], ret_leg_times[i], WaypointLeg.WaypointType.REFUEL_STOP, -1, ret_colonies[i], ret_fuel_amounts[i], ret_fuel_costs[i]))
 
 		# Deduct return fuel cost upfront
 		money -= return_fuel_route["total_cost"]
@@ -1965,18 +1960,18 @@ func start_trade_mission(ship: Ship, colony_target: Colony, cargo_to_load: Dicti
 	)
 
 	if outbound_fuel_route["feasible"] and outbound_fuel_route["waypoints"].size() > 0:
-		# Need fuel stops
-		tm.outbound_waypoints = outbound_fuel_route["waypoints"].duplicate()
-		tm.outbound_waypoint_colony_refs = outbound_fuel_route["colonies"].duplicate()
-		tm.outbound_waypoint_fuel_amounts = outbound_fuel_route["fuel_amounts"].duplicate()
-		tm.outbound_waypoint_fuel_costs = outbound_fuel_route["fuel_costs"].duplicate()
-		tm.outbound_leg_times = outbound_fuel_route["leg_times"].duplicate()
-		tm.outbound_waypoint_types = []
-		for i in range(outbound_fuel_route["waypoints"].size()):
-			tm.outbound_waypoint_types.append(TradeMission.WaypointType.REFUEL_STOP)
-
-		# Set initial transit time to first leg
-		tm.transit_time = tm.outbound_leg_times[0] if tm.outbound_leg_times.size() > 0 else tm.transit_time
+		var tm_out_waypoints: Array = outbound_fuel_route["waypoints"]
+		var tm_out_colonies: Array = outbound_fuel_route["colonies"]
+		var tm_out_fuel_amounts: Array = outbound_fuel_route["fuel_amounts"]
+		var tm_out_fuel_costs: Array = outbound_fuel_route["fuel_costs"]
+		var tm_out_leg_times: Array = outbound_fuel_route["leg_times"]
+		tm.outbound_legs.clear()
+		for i in range(tm_out_waypoints.size()):
+			tm.outbound_legs.append(WaypointLeg.make(tm_out_waypoints[i], tm_out_leg_times[i], WaypointLeg.WaypointType.REFUEL_STOP, -1, tm_out_colonies[i], tm_out_fuel_amounts[i], tm_out_fuel_costs[i]))
+		if tm_out_leg_times.size() > tm_out_waypoints.size():
+			tm.transit_time = tm_out_leg_times[tm_out_waypoints.size()]
+		elif outbound_fuel_route.has("final_leg_time"):
+			tm.transit_time = outbound_fuel_route["final_leg_time"]
 
 		# Deduct total fuel cost upfront
 		money -= outbound_fuel_route["total_cost"]
@@ -1990,14 +1985,14 @@ func start_trade_mission(ship: Ship, colony_target: Colony, cargo_to_load: Dicti
 	)
 
 	if return_fuel_route["feasible"] and return_fuel_route["waypoints"].size() > 0:
-		tm.return_waypoints = return_fuel_route["waypoints"].duplicate()
-		tm.return_waypoint_colony_refs = return_fuel_route["colonies"].duplicate()
-		tm.return_waypoint_fuel_amounts = return_fuel_route["fuel_amounts"].duplicate()
-		tm.return_waypoint_fuel_costs = return_fuel_route["fuel_costs"].duplicate()
-		tm.return_leg_times = return_fuel_route["leg_times"].duplicate()
-		tm.return_waypoint_types = []
-		for i in range(return_fuel_route["waypoints"].size()):
-			tm.return_waypoint_types.append(TradeMission.WaypointType.REFUEL_STOP)
+		var tm_ret_waypoints: Array = return_fuel_route["waypoints"]
+		var tm_ret_colonies: Array = return_fuel_route["colonies"]
+		var tm_ret_fuel_amounts: Array = return_fuel_route["fuel_amounts"]
+		var tm_ret_fuel_costs: Array = return_fuel_route["fuel_costs"]
+		var tm_ret_leg_times: Array = return_fuel_route["leg_times"]
+		tm.return_legs.clear()
+		for i in range(tm_ret_waypoints.size()):
+			tm.return_legs.append(WaypointLeg.make(tm_ret_waypoints[i], tm_ret_leg_times[i], WaypointLeg.WaypointType.REFUEL_STOP, -1, tm_ret_colonies[i], tm_ret_fuel_amounts[i], tm_ret_fuel_costs[i]))
 
 		# Deduct return fuel cost upfront
 		money -= return_fuel_route["total_cost"]
@@ -2290,14 +2285,10 @@ func save_game() -> void:
 			"destination_name": m.destination_name,
 			"return_position_au_x": m.return_position_au.x,
 			"return_position_au_y": m.return_position_au.y,
-			"outbound_waypoint_types": m.outbound_waypoint_types,
-			"outbound_waypoint_fuel_amounts": m.outbound_waypoint_fuel_amounts,
-			"outbound_waypoint_fuel_costs": m.outbound_waypoint_fuel_costs,
-			"outbound_waypoint_colony_names": m.outbound_waypoint_colony_refs.map(func(c): return c.colony_name if c else ""),
-			"return_waypoint_types": m.return_waypoint_types,
-			"return_waypoint_fuel_amounts": m.return_waypoint_fuel_amounts,
-			"return_waypoint_fuel_costs": m.return_waypoint_fuel_costs,
-			"return_waypoint_colony_names": m.return_waypoint_colony_refs.map(func(c): return c.colony_name if c else ""),
+			"outbound_legs": m.outbound_legs.map(func(l: WaypointLeg) -> Dictionary: return l.to_dict()),
+			"outbound_waypoint_index": m.outbound_waypoint_index,
+			"return_legs": m.return_legs.map(func(l: WaypointLeg) -> Dictionary: return l.to_dict()),
+			"return_waypoint_index": m.return_waypoint_index,
 		})
 
 	# Save trade missions
@@ -2319,14 +2310,10 @@ func save_game() -> void:
 			"return_position_au": {"x": tm.return_position_au.x, "y": tm.return_position_au.y},
 			"transit_mode": tm.transit_mode,
 			"revenue": tm.revenue,
-			"outbound_waypoint_types": tm.outbound_waypoint_types,
-			"outbound_waypoint_fuel_amounts": tm.outbound_waypoint_fuel_amounts,
-			"outbound_waypoint_fuel_costs": tm.outbound_waypoint_fuel_costs,
-			"outbound_waypoint_colony_names": tm.outbound_waypoint_colony_refs.map(func(c): return c.colony_name if c else ""),
-			"return_waypoint_types": tm.return_waypoint_types,
-			"return_waypoint_fuel_amounts": tm.return_waypoint_fuel_amounts,
-			"return_waypoint_fuel_costs": tm.return_waypoint_fuel_costs,
-			"return_waypoint_colony_names": tm.return_waypoint_colony_refs.map(func(c): return c.colony_name if c else ""),
+			"outbound_legs": tm.outbound_legs.map(func(l: WaypointLeg) -> Dictionary: return l.to_dict()),
+			"outbound_waypoint_index": tm.outbound_waypoint_index,
+			"return_legs": tm.return_legs.map(func(l: WaypointLeg) -> Dictionary: return l.to_dict()),
+			"return_waypoint_index": tm.return_waypoint_index,
 		})
 
 	# Save contracts
@@ -2709,30 +2696,13 @@ func load_game() -> bool:
 			float(md.get("return_position_au_x", m.return_position_au.x)),
 			float(md.get("return_position_au_y", m.return_position_au.y))
 		)
-		# Load waypoint metadata
-		m.outbound_waypoint_types = md.get("outbound_waypoint_types", [])
-		m.outbound_waypoint_fuel_amounts = md.get("outbound_waypoint_fuel_amounts", [])
-		m.outbound_waypoint_fuel_costs = md.get("outbound_waypoint_fuel_costs", [])
-		m.return_waypoint_types = md.get("return_waypoint_types", [])
-		m.return_waypoint_fuel_amounts = md.get("return_waypoint_fuel_amounts", [])
-		m.return_waypoint_fuel_costs = md.get("return_waypoint_fuel_costs", [])
-		# Reconnect colony references
-		var outbound_colony_names: Array = md.get("outbound_waypoint_colony_names", [])
-		for colony_name in outbound_colony_names:
-			var found_colony: Colony = null
-			for colony in colonies:
-				if colony.colony_name == colony_name:
-					found_colony = colony
-					break
-			m.outbound_waypoint_colony_refs.append(found_colony)
-		var return_colony_names: Array = md.get("return_waypoint_colony_names", [])
-		for colony_name in return_colony_names:
-			var found_colony: Colony = null
-			for colony in colonies:
-				if colony.colony_name == colony_name:
-					found_colony = colony
-					break
-			m.return_waypoint_colony_refs.append(found_colony)
+		# Restore waypoint legs
+		for leg_dict in md.get("outbound_legs", []):
+			m.outbound_legs.append(WaypointLeg.from_dict(leg_dict, colonies))
+		m.outbound_waypoint_index = int(md.get("outbound_waypoint_index", 0))
+		for leg_dict in md.get("return_legs", []):
+			m.return_legs.append(WaypointLeg.from_dict(leg_dict, colonies))
+		m.return_waypoint_index = int(md.get("return_waypoint_index", 0))
 		# Mining missions require an asteroid; other types may not have one
 		if m.ship and (m.asteroid or m.mission_type != Mission.MissionType.MINING):
 			missions.append(m)
@@ -2776,30 +2746,13 @@ func load_game() -> bool:
 		for key in cargo_data:
 			tm.cargo[int(key)] = float(cargo_data[key])
 
-		# Load waypoint metadata
-		tm.outbound_waypoint_types = tmd.get("outbound_waypoint_types", [])
-		tm.outbound_waypoint_fuel_amounts = tmd.get("outbound_waypoint_fuel_amounts", [])
-		tm.outbound_waypoint_fuel_costs = tmd.get("outbound_waypoint_fuel_costs", [])
-		tm.return_waypoint_types = tmd.get("return_waypoint_types", [])
-		tm.return_waypoint_fuel_amounts = tmd.get("return_waypoint_fuel_amounts", [])
-		tm.return_waypoint_fuel_costs = tmd.get("return_waypoint_fuel_costs", [])
-		# Reconnect colony references
-		var tm_outbound_colony_names: Array = tmd.get("outbound_waypoint_colony_names", [])
-		for tm_colony_name in tm_outbound_colony_names:
-			var tm_found_colony: Colony = null
-			for colony in colonies:
-				if colony.colony_name == tm_colony_name:
-					tm_found_colony = colony
-					break
-			tm.outbound_waypoint_colony_refs.append(tm_found_colony)
-		var tm_return_colony_names: Array = tmd.get("return_waypoint_colony_names", [])
-		for tm_colony_name in tm_return_colony_names:
-			var tm_found_colony: Colony = null
-			for colony in colonies:
-				if colony.colony_name == tm_colony_name:
-					tm_found_colony = colony
-					break
-			tm.return_waypoint_colony_refs.append(tm_found_colony)
+		# Restore waypoint legs
+		for leg_dict in tmd.get("outbound_legs", []):
+			tm.outbound_legs.append(WaypointLeg.from_dict(leg_dict, colonies))
+		tm.outbound_waypoint_index = int(tmd.get("outbound_waypoint_index", 0))
+		for leg_dict in tmd.get("return_legs", []):
+			tm.return_legs.append(WaypointLeg.from_dict(leg_dict, colonies))
+		tm.return_waypoint_index = int(tmd.get("return_waypoint_index", 0))
 
 		if tm.ship:
 			trade_missions.append(tm)

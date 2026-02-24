@@ -19,6 +19,8 @@ var _route_labels: Dictionary = {}   # Ship -> Label (overlaid on progress bar)
 var _status_labels: Dictionary = {}  # Ship -> Label
 var _detail_labels: Dictionary = {}  # Ship -> Label
 var _cargo_labels: Dictionary = {}   # Ship -> Label for cargo display
+var _ship_panels: Dictionary = {}    # Ship -> PanelContainer
+var _pending_scroll_ship: Ship = null  # Ship to scroll to when tab becomes visible
 const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catch up
 var _dispatch_refresh_timer: float = 0.0
 const DISPATCH_REFRESH_INTERVAL: float = 2.0  # Refresh dispatch popup every 2 seconds
@@ -53,10 +55,33 @@ func _ready() -> void:
 	EventBus.stranger_rescue_completed.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
 	EventBus.stranger_rescue_declined.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
 	EventBus.tick.connect(_on_tick)
+	EventBus.map_ship_selected.connect(_on_map_ship_selected)
 	_rebuild_ships()
 
 func _mark_dirty() -> void:
 	_needs_full_rebuild = true
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_VISIBILITY_CHANGED and visible and _pending_scroll_ship:
+		var ship := _pending_scroll_ship
+		_pending_scroll_ship = null
+		call_deferred("_scroll_to_ship", ship)
+
+func _on_map_ship_selected(ship: Ship) -> void:
+	if ship == null:
+		return
+	_pending_scroll_ship = ship
+	if visible:
+		call_deferred("_scroll_to_ship", ship)
+
+func _scroll_to_ship(ship: Ship) -> void:
+	if ship not in _ship_panels:
+		return
+	var panel: PanelContainer = _ship_panels[ship]
+	if not is_instance_valid(panel):
+		return
+	var scroll: ScrollContainer = ships_list.get_parent()
+	scroll.scroll_vertical = int(panel.position.y)
 
 func _process(delta: float) -> void:
 	# Smooth LERP for progress bars
@@ -127,6 +152,7 @@ func _rebuild_ships() -> void:
 	_status_labels.clear()
 	_detail_labels.clear()
 	_cargo_labels.clear()
+	_ship_panels.clear()
 	_free_children(ships_list)
 
 	for ship: Ship in GameState.ships:
@@ -281,7 +307,7 @@ func _rebuild_ships() -> void:
 					extra_text = "Hohmann transfer"
 				elif m.status == Mission.Status.REFUELING:
 					extra_text = m.get_status_text()
-				elif m.outbound_waypoint_planet_ids.size() > 0 or m.return_waypoint_planet_ids.size() > 0:
+				elif m.has_slingshot_outbound() or m.has_slingshot_return():
 					extra_text = "Gravity assist"
 			elif ship.current_trade_mission:
 				var tm := ship.current_trade_mission
@@ -573,6 +599,7 @@ func _rebuild_ships() -> void:
 
 		panel.add_child(vbox)
 		ships_list.add_child(panel)
+		_ship_panels[ship] = panel
 
 func _get_route_text(ship: Ship) -> String:
 	if ship.current_mission:
@@ -846,8 +873,14 @@ func _show_asteroid_selection() -> void:
 	mining_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mining_vbox.add_theme_constant_override("separation", 6)
 
-	# Build a dummy worker list for estimation (use available workers)
-	var est_workers := GameState.get_available_workers()
+	# Build a worker list for estimation — use last crew (realistic) or min_crew workers
+	var est_workers: Array[Worker]
+	if _selected_ship.last_crew.size() >= _selected_ship.min_crew:
+		est_workers.assign(_selected_ship.last_crew)
+	else:
+		var available := GameState.get_available_workers()
+		var crew_size := maxi(_selected_ship.min_crew, 1)
+		est_workers.assign(available.slice(0, crew_size))
 	if est_workers.is_empty():
 		var placeholder := Worker.new()
 		placeholder.mining_skill = 1.0

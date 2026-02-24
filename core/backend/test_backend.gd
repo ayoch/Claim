@@ -4,9 +4,9 @@ extends Node
 ## Attach to a test scene and run to verify Phase 1 works
 
 func _ready() -> void:
-	print("=" * 60)
+	print("============================================================")
 	print("BACKEND ABSTRACTION LAYER TEST")
-	print("=" * 60)
+	print("============================================================")
 
 	# Test 1: BackendManager exists
 	if BackendManager:
@@ -46,10 +46,10 @@ func _ready() -> void:
 	var prices := BackendManager.get_market_prices()
 	print("✓ Got market prices: %d ore types" % prices.size())
 
-	print("=" * 60)
+	print("============================================================")
 	print("ALL TESTS PASSED!")
 	print("Phase 1 backend abstraction is working correctly.")
-	print("=" * 60)
+	print("============================================================")
 
 	# Auto-quit after tests (remove this to keep running)
 	await get_tree().create_timer(1.0).timeout

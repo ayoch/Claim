@@ -290,11 +290,11 @@ func _update_trajectory_cache() -> void:
 			legs.append([leg_start, leg_end])
 			# Remaining legs after current waypoint
 			var wi := mission.outbound_waypoint_index
-			while wi < mission.outbound_waypoints.size():
-				var next_start := mission.outbound_waypoints[wi]
+			while wi < mission.outbound_legs.size():
+				var next_start := mission.outbound_legs[wi].get_live_position()
 				var next_end: Vector2
-				if wi + 1 < mission.outbound_waypoints.size():
-					next_end = mission.outbound_waypoints[wi + 1]
+				if wi + 1 < mission.outbound_legs.size():
+					next_end = mission.outbound_legs[wi + 1].get_live_position()
 				else:
 					next_end = mission.asteroid.get_position_au() if mission.asteroid else mission.origin_position_au
 				legs.append([next_start, next_end])
@@ -306,11 +306,11 @@ func _update_trajectory_cache() -> void:
 			var leg_end := mission.get_current_leg_end_pos()
 			legs.append([leg_start, leg_end])
 			var wi := mission.return_waypoint_index
-			while wi < mission.return_waypoints.size():
-				var next_start := mission.return_waypoints[wi]
+			while wi < mission.return_legs.size():
+				var next_start := mission.return_legs[wi].get_live_position()
 				var next_end: Vector2
-				if wi + 1 < mission.return_waypoints.size():
-					next_end = mission.return_waypoints[wi + 1]
+				if wi + 1 < mission.return_legs.size():
+					next_end = mission.return_legs[wi + 1].get_live_position()
 				else:
 					next_end = mission.return_position_au
 				legs.append([next_start, next_end])

@@ -83,8 +83,14 @@ static func estimate_mission(
 	if force_transit_mode == 1:
 		use_hohmann = true
 	elif force_transit_mode == -1:
-		# Auto-decide based on fuel availability
-		use_hohmann = Brachistochrone.should_use_hohmann(ship, dist, ship.cargo_capacity)
+		# Auto-decide based on fuel capacity (ship is always refueled before dispatch)
+		var fuel_cap := ship.get_effective_fuel_capacity()
+		var fuel_brach := ship.calc_fuel_for_distance(dist, ship.get_cargo_total()) \
+			+ ship.calc_fuel_for_distance(dist, ship.cargo_capacity)
+		if fuel_brach <= fuel_cap:
+			use_hohmann = false
+		else:
+			use_hohmann = (fuel_brach * Brachistochrone.hohmann_fuel_multiplier()) <= fuel_cap
 
 	var transit := hohmann_transit if use_hohmann else brach_transit
 

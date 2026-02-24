@@ -3,6 +3,25 @@
 
 ---
 
+## 2026-02-23 (session 14, Dweezil, time untracked)
+
+- **Starting ships = 6 bug fixed**: `title_screen.gd` was calling `GameState._ready()` for new game, but Godot already auto-calls `_ready()` on autoload init — doubled `_init_starter_ship()` to 6 ships. Fix: added `new_game()` to `game_state.gd` that clears all state arrays/dicts, resets money/ticks, then re-runs init. `_ready()` delegates to it. `title_screen.gd` now calls `new_game()` instead. Also fixed invalid `reputation_score = 0.0` in `new_game()` → `Reputation.score = 0.0`.
+- **Ship teleport after refueling fixed**: `Mission.Status.REFUELING` completion always called `_complete_refuel_stop(mission, true)` — hardcoded is_outbound=true. Return-trip fuel stops resumed wrong direction (TRANSIT_OUT using outbound_legs). Added `refueling_is_return: bool` to both `Mission` and `TradeMission`, set it in `_process_waypoint_transition`. Completion now uses `not mission.refueling_is_return`. Same fix applied to `TradeMission`.
+- **Profit estimates still negative — ore price rebalance**: Previous session fixed two code bugs (wrong fuel capacity, inflated worker count). But underlying balance was still broken: worker wages ($80-200/day × 4-6 crew × 60+ day missions) overwhelmed ore revenue at Earth-commodity prices. Scaled all base ore prices ~8x: Iron $50→$400, Nickel $120→$1000, Platinum $800→$6500, Water Ice $200→$1600, Carbon $150→$1200.
+- **Market tab horizontal overflow fixed**: Added `size_flags_horizontal = 3` to `ScrollContainer` node in `market_tab.tscn`, matching the pattern already applied to other tabs.
+
+---
+
+## 2026-02-23 (session 13, time untracked)
+
+- Fixed ship position bug from WaypointLeg refactor: simulation completion checks used `mission.transit_time` (final leg) for all legs; fixed to use `get_current_phase_duration()` in 4 places in simulation.gd
+- Fixed profit estimates all showing negative: two bugs — (1) Hohmann auto-decide used `ship.fuel` (current) not `ship.get_effective_fuel_capacity()` in asteroid_data.gd, (2) list view used all available workers inflating wages in fleet_tab.gd
+- Per-ship policy overrides: added 4 override fields to Ship, resolver functions in GameState, save/load support, and policy override UI section in fleet_tab.gd
+- Scroll-to-selected-ship in fleet tab: when player selects a ship on solar map then opens Fleet tab, auto-scrolls to that ship's panel
+- Signal transit time live countdown: fleet_market_tab.gd now updates the "Signal in transit" label every 100ms real-time tick rather than only on rebuild
+
+---
+
 ## 2026-02-23 (session 12, time untracked)
 
 - Architectural review of full codebase (55 files, ~10K LOC)

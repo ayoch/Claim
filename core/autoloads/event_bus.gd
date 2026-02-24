@@ -106,6 +106,7 @@ signal worker_tardiness_resolved(worker: Worker, action: String)
 # Solar map dispatch
 signal map_dispatch_to_asteroid(ship: Ship, asteroid: AsteroidData)
 signal map_dispatch_to_colony(ship: Ship, colony: Colony)
+signal map_ship_selected(ship: Ship)  # Emitted when player selects a ship on the solar map
 
 # Lightspeed communication delay
 signal order_queued(ship: Ship, label: String, delay_secs: float)

@@ -2,11 +2,11 @@ class_name MarketData
 extends RefCounted
 
 const ORE_PRICES: Dictionary = {
-	ResourceTypes.OreType.IRON: 50,
-	ResourceTypes.OreType.NICKEL: 120,
-	ResourceTypes.OreType.PLATINUM: 800,
-	ResourceTypes.OreType.WATER_ICE: 200,
-	ResourceTypes.OreType.CARBON_ORGANICS: 150,
+	ResourceTypes.OreType.IRON: 400,
+	ResourceTypes.OreType.NICKEL: 1000,
+	ResourceTypes.OreType.PLATINUM: 6500,
+	ResourceTypes.OreType.WATER_ICE: 1600,
+	ResourceTypes.OreType.CARBON_ORGANICS: 1200,
 }
 
 const EQUIPMENT_CATALOG: Array[Dictionary] = [
