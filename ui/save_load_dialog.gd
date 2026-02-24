@@ -1,9 +1,9 @@
 extends PopupPanel
 
 ## Save/Load dialog for managing multiple save files
-## Modes: SAVE (create/overwrite save) or LOAD (select and load save)
+## DialogModes: SAVE (create/overwrite save) or LOAD (select and load save)
 
-enum Mode { SAVE, LOAD }
+enum DialogMode { SAVE, LOAD }
 
 @onready var title_label: Label = %TitleLabel
 @onready var save_list: VBoxContainer = %SaveList
@@ -12,7 +12,7 @@ enum Mode { SAVE, LOAD }
 @onready var confirm_btn: Button = %ConfirmButton
 @onready var cancel_btn: Button = %CancelButton
 
-var current_mode: Mode = Mode.SAVE
+var current_mode: DialogMode = DialogMode.SAVE
 var selected_save: Dictionary = {}
 
 signal save_confirmed(save_name: String)
@@ -25,7 +25,7 @@ func _ready() -> void:
 
 
 func open_save_dialog() -> void:
-	current_mode = Mode.SAVE
+	current_mode = DialogMode.SAVE
 	title_label.text = "Save Game"
 	name_container.visible = true
 	name_input.text = _generate_default_name()
@@ -36,7 +36,7 @@ func open_save_dialog() -> void:
 
 
 func open_load_dialog() -> void:
-	current_mode = Mode.LOAD
+	current_mode = DialogMode.LOAD
 	title_label.text = "Load Game"
 	name_container.visible = false
 	confirm_btn.text = "Load"
@@ -98,7 +98,7 @@ func _create_save_entry(save_data: Dictionary) -> PanelContainer:
 	]
 
 	# In LOAD mode, clicking selects the save
-	if current_mode == Mode.LOAD:
+	if current_mode == DialogMode.LOAD:
 		btn.pressed.connect(func():
 			selected_save = save_data
 			confirm_btn.disabled = false
@@ -154,7 +154,7 @@ func _load_save_metadata(file_name: String) -> Dictionary:
 
 
 func _on_confirm() -> void:
-	if current_mode == Mode.SAVE:
+	if current_mode == DialogMode.SAVE:
 		var save_name := name_input.text.strip_edges()
 		if save_name.is_empty():
 			return

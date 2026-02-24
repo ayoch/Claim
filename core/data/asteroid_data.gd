@@ -56,6 +56,14 @@ func advance_orbit(dt: float) -> void:
 func get_position_au() -> Vector2:
 	return Vector2(cos(orbital_angle), sin(orbital_angle)) * orbit_au
 
+## Predict position at a future time (current time + dt_ticks)
+func get_position_at_time(dt_ticks: float) -> Vector2:
+	var period := get_orbital_period()
+	if period <= 0:
+		return get_position_au()
+	var future_angle := orbital_angle + (TAU / period) * dt_ticks
+	return Vector2(cos(future_angle), sin(future_angle)) * orbit_au
+
 ## Estimate profit for a mission to this body.
 ## Returns { revenue, wage_cost, profit, transit_time, mining_time, total_time, cargo_breakdown,
 ##           transit_mode, hohmann_available, hohmann_estimate }

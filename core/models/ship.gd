@@ -1,6 +1,12 @@
 class_name Ship
 extends Resource
 
+enum AggressionStance {
+	PEACEFUL,   # Never initiates combat, attempts to flee
+	DEFENSIVE,  # Only fights when attacked or defending claims
+	AGGRESSIVE, # Attacks vulnerable targets
+}
+
 const FUEL_COST_PER_UNIT: float = 5.0       # $ per tonne of propellant
 const FUSION_EXHAUST_VELOCITY: float = 29430.0  # m/s — fusion drive at Isp 3000s
 const EARTH_PROXIMITY_AU: float = 0.05  # within this distance counts as "at Earth"
@@ -35,6 +41,9 @@ const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at co
 @export var collection_policy_override: int = -1
 @export var encounter_policy_override: int = -1
 @export var repair_policy_override: int = -1
+
+# Combat stance
+@export var aggression_stance: int = AggressionStance.DEFENSIVE
 
 # Station properties
 @export var is_stationed: bool = false
@@ -309,3 +318,57 @@ func queue_mission(destination: Variant, transit_mode: int, mining_dur: float = 
 	queued_mining_duration = mining_dur
 	queued_slingshot_route = slingshot_route
 	queued_mission_type = mission_type
+
+## Combat helper functions
+
+## Get maximum weapon range from all equipped weapons
+func get_max_weapon_range() -> float:
+	var max_range := 0.0
+	for equip in equipment:
+		if equip.is_weapon() and equip.is_functional():
+			max_range = max(max_range, equip.weapon_range)
+	return max_range
+
+## Get total firepower from all equipped weapons
+func get_total_firepower() -> float:
+	var total_power := 0.0
+	for equip in equipment:
+		if equip.is_weapon() and equip.is_functional():
+			# Torpedoes only count if they have ammo
+			if equip.has_ammo():
+				if equip.current_ammo > 0:
+					total_power += equip.weapon_power
+			else:
+				total_power += equip.weapon_power
+
+	# Crew skill bonus (pilot for targeting/evasion)
+	var best_pilot := 0.0
+	for worker in crew:
+		best_pilot = max(best_pilot, worker.pilot_skill)
+
+	return total_power * (1.0 + best_pilot * 0.3)
+
+## Get all functional weapons in range of a target
+func get_weapons_in_range(distance: float) -> Array[Equipment]:
+	var weapons: Array[Equipment] = []
+	for equip in equipment:
+		if equip.is_weapon() and equip.is_functional():
+			if equip.weapon_range >= distance:
+				# Check ammo for torpedoes
+				if equip.has_ammo():
+					if equip.current_ammo > 0:
+						weapons.append(equip)
+				else:
+					weapons.append(equip)
+	return weapons
+
+## Check if ship is armed (has any functional weapons)
+func is_armed() -> bool:
+	for equip in equipment:
+		if equip.is_weapon() and equip.is_functional():
+			if equip.has_ammo():
+				if equip.current_ammo > 0:
+					return true
+			else:
+				return true
+	return false

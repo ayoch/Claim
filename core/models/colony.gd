@@ -53,6 +53,32 @@ func get_position_au() -> Vector2:
 	# No parent: orbit sun directly
 	return local_pos
 
+## Predict position at a future time (current time + dt_ticks)
+func get_position_at_time(dt_ticks: float) -> Vector2:
+	# Moons with tiny orbits follow their parent's predicted position
+	if parent_planet_index >= 0 and orbit_au < 0.05:
+		return CelestialData.get_planet_position_at_time(parent_planet_index, dt_ticks)
+
+	# Calculate future orbital angle
+	var period := get_orbital_period()
+	var future_angle := orbital_angle
+	if period > 0:
+		future_angle += (TAU / period) * dt_ticks
+
+	var local_pos := Vector2(cos(future_angle), sin(future_angle)) * orbit_au
+
+	# Predict parent planet position if applicable
+	if parent_planet_index >= 0:
+		var parent_pos := CelestialData.get_planet_position_at_time(parent_planet_index, dt_ticks)
+		return parent_pos + local_pos
+
+	# Legacy: orbits_earth flag
+	if orbits_earth:
+		return CelestialData.get_earth_position_at_time(dt_ticks) + local_pos
+
+	# No parent: orbit sun directly
+	return local_pos
+
 func advance_orbit(dt: float) -> void:
 	var period := get_orbital_period()
 	if period > 0:

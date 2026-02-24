@@ -134,4 +134,18 @@ signal ship_sold(ship_id: int)
 signal violation_recorded(colony: Colony, reason: String)
 signal game_over(reason: String)
 
+# Warning system
+signal warning_added(warning_id: String, message: String, severity: String)
+signal warning_dismissed(warning_id: String)
+
+# Combat system
+signal combat_initiated(attacker: Ship, defender: Ship, distance: float)
+signal combat_resolved(result: Dictionary)
+signal torpedo_fired(attacker: Ship, weapon_name: String, target: Ship)
+signal torpedo_intercepted(defender: Ship, weapon_name: String)
+signal torpedo_evaded(defender: Ship, weapon_name: String)
+signal fusion_weapon_used(attacker: Ship)
+signal ship_disabled_combat(ship: Ship, damage: float)
+signal crew_casualty_combat(ship: Ship, worker: Worker)
+
 @warning_ignore_restore("unused_signal")

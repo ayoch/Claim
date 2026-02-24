@@ -8,20 +8,24 @@ const TICK_INTERVAL: float = 1.0  # 1 second per tick at 1x speed
 var _payroll_accumulator: float = 0.0
 const PAYROLL_INTERVAL: float = 86400.0  # pay wages every game-day (86400 ticks = 24h at 1x)
 var _survey_accumulator: float = 0.0
-const SURVEY_INTERVAL: float = 120.0  # check for survey events every 120 ticks
+const SURVEY_INTERVAL: float = 21600.0  # check for survey events every 6 game-hours
 
 # Criminal ban status check
 var _ban_check_accumulator: float = 0.0
 const BAN_CHECK_INTERVAL: float = 86400.0  # check ban status once per game-day
 
+# Warning system check
+var _warning_check_accumulator: float = 0.0
+const WARNING_CHECK_INTERVAL: float = 3600.0  # check warnings every game-hour
+
 # Market price drift
 var _market_accumulator: float = 0.0
-const MARKET_INTERVAL: float = 90.0  # drift prices every 90 ticks
+const MARKET_INTERVAL: float = 3600.0  # drift prices every game-hour
 const MARKET_EVENT_CHANCE: float = 0.08  # 8% chance of scripted event per interval
 
 # Contract generation
 var _contract_accumulator: float = 0.0
-const CONTRACT_INTERVAL: float = 150.0
+const CONTRACT_INTERVAL: float = 14400.0  # check every 4 game-hours
 const CONTRACT_CHANCE: float = 0.40  # 40% chance per interval
 
 # Mining yield varies randomly each tick by this factor (0.7x to 1.3x)
@@ -63,10 +67,16 @@ const RIVAL_BASE_MINING_DURATION: float = 86400.0  # 1 game-day of mining per ru
 
 # Ghost contact tracking system
 var _observation_accumulator: float = 0.0
-const OBSERVATION_INTERVAL: float = 60.0    # Scan for observations once per game-minute
+const OBSERVATION_INTERVAL: float = 300.0   # Scan for observations every 5 game-minutes
 const MIN_VISIBILITY: float = 0.15           # Minimum exhaust-cone visibility to record
 const CONTACT_MATCH_RADIUS: float = 0.15     # AU — max distance to match observation to existing contact
 var _next_contact_id: int = 0
+
+# Combat encounter system
+var _combat_accumulator: float = 0.0
+const COMBAT_CHECK_INTERVAL: float = 60.0    # Check for combat encounters every game-minute
+const COMBAT_ENCOUNTER_RANGE: float = 0.08   # AU — ships within this distance can potentially fight
+const TORPEDO_INTERCEPT_MODIFIER: float = 0.6  # Lasers shoot down torpedoes at 60% accuracy
 const CONTACT_COLORS: Array = [
 	Color(1.0, 0.30, 0.30),  # Red
 	Color(1.0, 0.60, 0.10),  # Orange
@@ -198,6 +208,8 @@ func _process_tick(dt: float, emit_event: bool = true) -> void:
 	_process_contracts(dt)
 	_process_rival_corps(dt)
 	_check_ban_status(dt)
+	_check_warnings(dt)
+	_check_combat_encounters(dt)
 	GameState.process_pending_orders()
 
 func _process_orbits(dt: float) -> void:
@@ -590,6 +602,12 @@ func _mine_tick(mission: Mission, dt: float) -> void:
 	var equip_mult := ship.get_mining_multiplier()
 	var engineer_wear_factor := 1.0 - (best_engineer * 0.3)  # 1.0 = 0.7x wear, 1.5 = 0.55x
 
+	# Mining laser speed bonus (dual-purpose weapon)
+	var mining_laser_bonus := 0.0
+	for equip in ship.equipment:
+		if equip.is_functional() and equip.mining_speed_bonus > 0:
+			mining_laser_bonus += equip.mining_speed_bonus
+
 	# Random variance on this tick's output
 	var luck := randf_range(MINING_VARIANCE_MIN, MINING_VARIANCE_MAX)
 
@@ -605,7 +623,7 @@ func _mine_tick(mission: Mission, dt: float) -> void:
 
 	for ore_type in mission.asteroid.ore_yields:
 		var base_yield: float = mission.asteroid.ore_yields[ore_type]
-		var mined: float = base_yield * mining_skill_total * equip_mult * luck * avg_loyalty_mod * personality_mining_mult * leader_mining_mult * BASE_MINING_RATE * dt
+		var mined: float = base_yield * mining_skill_total * equip_mult * luck * avg_loyalty_mod * personality_mining_mult * leader_mining_mult * (1.0 + mining_laser_bonus) * BASE_MINING_RATE * dt
 		var remaining := ship.get_cargo_remaining()
 		mined = minf(mined, remaining)
 		if mined > 0:
@@ -1669,6 +1687,14 @@ func _station_try_provisioning(ship: Ship) -> bool:
 	if best_asteroid == null:
 		return false
 
+	# Calculate intercept trajectory to predict where asteroid will be at arrival
+	var intercept := GameState.calculate_asteroid_intercept(
+		station_pos, best_asteroid, ship.get_effective_thrust(), Mission.TransitMode.BRACHISTOCHRONE
+	)
+	var predicted_pos: Vector2 = intercept["intercept_position"]
+	var predicted_dist: float = intercept["distance"]
+	var predicted_time: float = intercept["transit_time"]
+
 	var crew: Array[Worker] = ship.crew.duplicate()
 	var mission := Mission.new()
 	mission.mission_type = Mission.MissionType.SUPPLY_RUN
@@ -1678,12 +1704,12 @@ func _station_try_provisioning(ship: Ship) -> bool:
 	mission.origin_is_earth = false
 	mission.return_position_au = ship.station_colony.get_position_au()
 	mission.return_to_station = true
-	mission.destination_position_au = best_asteroid.get_position_au()
-	mission.transit_time = Brachistochrone.transit_time(best_dist, ship.get_effective_thrust())
+	mission.destination_position_au = predicted_pos  # Use predicted intercept position
+	mission.transit_time = predicted_time
 	mission.station_job_duration = 1800.0
 	mission.elapsed_ticks = 0.0
 
-	var fuel_needed := ship.calc_fuel_for_distance(best_dist, 0.0) * 2.0
+	var fuel_needed := ship.calc_fuel_for_distance(predicted_dist, 0.0) * 2.0
 	mission.fuel_per_tick = fuel_needed / (mission.transit_time * 2.0) if mission.transit_time > 0 else 0.0
 
 	ship.current_mission = mission
@@ -2000,6 +2026,12 @@ func _complete_repair_job(mission: Mission) -> void:
 
 			mission.ship.add_station_log("Repaired %s" % other_ship.ship_name, "repair")
 			EventBus.station_job_completed.emit(mission.ship, "repair", "Repaired %s" % other_ship.ship_name)
+
+			# If repaired ship has crew and is a station ship, it can resume operations
+			# Station AI will pick it up on next check
+			# If it has no crew, player needs to ferry crew to it (it stays idle until then)
+			# If it's not a station ship, it stays idle waiting for player orders
+
 			break
 
 	_start_station_return(mission)
@@ -3184,3 +3216,323 @@ func _check_ban_status(dt: float) -> void:
 	if GameState.check_game_over_banned():
 		# Pause the game when game over is triggered
 		TimeScale.set_speed(1.0)
+
+# ─── Warning System Check ─────────────────────────────────────────────────────
+
+func _check_warnings(dt: float) -> void:
+	_warning_check_accumulator += dt
+	if _warning_check_accumulator < WARNING_CHECK_INTERVAL:
+		return
+	_warning_check_accumulator -= WARNING_CHECK_INTERVAL
+
+	# Check criminal violation warnings
+	_check_violation_warnings()
+
+	# Check crew warnings
+	_check_crew_warnings()
+
+func _check_violation_warnings() -> void:
+	# Check each colony for violation thresholds
+	for colony in GameState.colonies:
+		var count := colony.get_active_violation_count(GameState.total_ticks)
+		var warning_id_base := "violation_%s" % colony.colony_name
+
+		if colony.player_banned:
+			# Banned status warning
+			GameState.add_warning(
+				"❌ BANNED from %s" % colony.colony_name,
+				"critical",
+				"violation"
+			)
+			# Dismiss lower-level warnings for this colony
+			GameState.dismiss_warning(warning_id_base + "_2")
+			GameState.dismiss_warning(warning_id_base + "_3")
+
+		elif count >= 3:
+			# Final warning (3/4)
+			GameState.add_warning(
+				"🚨 FINAL WARNING: %s - one more = banned! (%d/%d)" % [colony.colony_name, count, Colony.VIOLATION_THRESHOLD],
+				"critical",
+				"violation"
+			)
+			# Dismiss 2/4 warning
+			GameState.dismiss_warning(warning_id_base + "_2")
+
+		elif count >= 2:
+			# Warning (2/4)
+			GameState.add_warning(
+				"⚠️ %s: %d violations (4 = BAN)" % [colony.colony_name, count],
+				"warning",
+				"violation"
+			)
+			# Dismiss final warning if violations decreased
+			GameState.dismiss_warning(warning_id_base + "_3")
+
+		else:
+			# No warnings needed, dismiss any existing
+			GameState.dismiss_warning(warning_id_base + "_2")
+			GameState.dismiss_warning(warning_id_base + "_3")
+
+func _check_crew_warnings() -> void:
+	var available_count := GameState.get_available_workers().size()
+	var total_count := GameState.workers.size()
+
+	# Warning: Only 1 worker remains
+	if total_count == 1:
+		GameState.add_warning(
+			"⚠️ Only 1 worker remains!",
+			"warning",
+			"crew"
+		)
+	else:
+		GameState.dismiss_warnings_by_category("crew_one_left")
+
+	# Warning: All crew deployed - no backup
+	if available_count == 0 and total_count > 0:
+		GameState.add_warning(
+			"⚠️ All crew deployed - no backup",
+			"warning",
+			"crew"
+		)
+	else:
+		GameState.dismiss_warnings_by_category("crew_all_deployed")
+
+## Combat encounter system
+
+func _check_combat_encounters(dt: float) -> void:
+	_combat_accumulator += dt
+	if _combat_accumulator < COMBAT_CHECK_INTERVAL:
+		return
+	_combat_accumulator -= COMBAT_CHECK_INTERVAL
+
+	# Check all pairs of ships for potential combat
+	var ships := GameState.ships
+	for i in range(ships.size()):
+		var ship_a := ships[i]
+		if ship_a.is_derelict or ship_a.is_docked:
+			continue
+
+		for j in range(i + 1, ships.size()):
+			var ship_b := ships[j]
+			if ship_b.is_derelict or ship_b.is_docked:
+				continue
+
+			var distance := ship_a.position_au.distance_to(ship_b.position_au)
+			if distance > COMBAT_ENCOUNTER_RANGE:
+				continue  # Too far apart
+
+			# Check if either ship can engage at this range
+			var a_range := ship_a.get_max_weapon_range()
+			var b_range := ship_b.get_max_weapon_range()
+
+			if distance > a_range and distance > b_range:
+				continue  # Neither ship has weapons in range
+
+			# Check aggression stance
+			var a_aggressive := ship_a.aggression_stance == Ship.AggressionStance.AGGRESSIVE
+			var b_aggressive := ship_b.aggression_stance == Ship.AggressionStance.AGGRESSIVE
+
+			if not a_aggressive and not b_aggressive:
+				continue  # Neither ship is aggressive
+
+			# Combat initiated!
+			var attacker: Ship = ship_a if a_aggressive else ship_b
+			var defender: Ship = ship_b if a_aggressive else ship_a
+
+			EventBus.combat_initiated.emit(attacker, defender, distance)
+			_resolve_combat(attacker, defender, distance)
+
+func _resolve_combat(attacker: Ship, defender: Ship, distance: float) -> void:
+	# Get weapons in range for both ships
+	var atk_weapons := attacker.get_weapons_in_range(distance)
+	var def_weapons := defender.get_weapons_in_range(distance)
+
+	if atk_weapons.is_empty():
+		# Attacker has no weapons in range - combat fizzles
+		EventBus.combat_resolved.emit({
+			"result": "no_engagement",
+			"reason": "Attacker weapons out of range",
+			"attacker": attacker.ship_name,
+			"defender": defender.ship_name
+		})
+		return
+
+	# Phase 1: Identify torpedoes and defensive weapons
+	var incoming_torpedoes: Array[Equipment] = []
+	var atk_damage := 0.0
+	var is_fusion_used := false
+	var is_emp_hit := false
+
+	for weapon in atk_weapons:
+		if weapon.fire_rate == "limited":  # Torpedo
+			if weapon.current_ammo > 0:
+				incoming_torpedoes.append(weapon)
+				weapon.current_ammo -= 1  # Expend torpedo
+				EventBus.torpedo_fired.emit(attacker, weapon.equipment_name, defender)
+
+				# Check for fusion torpedo
+				if weapon.equipment_name == "Fusion Torpedo Launcher":
+					is_fusion_used = true
+		else:
+			# Regular weapons (lasers, rail guns)
+			if randf() < weapon.weapon_accuracy:
+				atk_damage += weapon.weapon_power
+
+	# Phase 2: Torpedo defense (lasers shoot down torpedoes)
+	var defensive_lasers: Array[Equipment] = []
+	for weapon in def_weapons:
+		if weapon.weapon_role == "defensive" and weapon.fire_rate == "fast":
+			defensive_lasers.append(weapon)
+
+	var torpedoes_destroyed: Array[Equipment] = []
+	for torpedo in incoming_torpedoes:
+		for laser in defensive_lasers:
+			if randf() < laser.weapon_accuracy * TORPEDO_INTERCEPT_MODIFIER:
+				torpedoes_destroyed.append(torpedo)
+				EventBus.torpedo_intercepted.emit(defender, torpedo.equipment_name)
+				break
+
+	for t in torpedoes_destroyed:
+		incoming_torpedoes.erase(t)
+
+	# Phase 3: Evasion (pilot skill)
+	var defender_pilot_skill := 0.0
+	for worker in defender.crew:
+		defender_pilot_skill = max(defender_pilot_skill, worker.pilot_skill)
+
+	var evasion_chance := defender_pilot_skill * 0.4  # Up to 60% at skill 1.5
+	var torpedoes_evaded: Array[Equipment] = []
+	for torpedo in incoming_torpedoes:
+		if randf() < evasion_chance:
+			torpedoes_evaded.append(torpedo)
+			EventBus.torpedo_evaded.emit(defender, torpedo.equipment_name)
+
+	for t in torpedoes_evaded:
+		incoming_torpedoes.erase(t)
+
+	# Phase 4: Apply torpedo damage
+	for torpedo in incoming_torpedoes:
+		atk_damage += torpedo.weapon_power
+		if torpedo.equipment_name == "EMP Torpedo Launcher":
+			is_emp_hit = true
+
+	# Phase 5: Defender return fire
+	var def_damage := 0.0
+	for weapon in def_weapons:
+		if weapon.fire_rate == "limited":
+			continue  # Torpedoes don't fire in defense (no time)
+		if randf() < weapon.weapon_accuracy:
+			def_damage += weapon.weapon_power
+
+	# Phase 6: Apply damage
+	var defender_disabled := false
+	var attacker_damaged := false
+
+	if atk_damage > 0:
+		_apply_combat_damage(defender, atk_damage, is_emp_hit)
+		defender_disabled = defender.is_derelict
+
+	if def_damage > 0:
+		_apply_combat_damage(attacker, def_damage * 0.5, false)  # Return fire is less effective
+		attacker_damaged = true
+
+	# Phase 7: Criminal violations
+	if not defender.is_armed():
+		# Attacking unarmed ship - major violation
+		var nearest_colony := _find_nearest_colony(attacker.position_au)
+		if nearest_colony:
+			nearest_colony.add_violation("attacked_unarmed_ship", GameState.total_ticks)
+			nearest_colony.add_violation("attacked_unarmed_ship", GameState.total_ticks)
+	else:
+		# Attacking armed ship - minor violation
+		var nearest_colony := _find_nearest_colony(attacker.position_au)
+		if nearest_colony:
+			nearest_colony.add_violation("unprovoked_attack", GameState.total_ticks)
+
+	# Phase 8: Fusion torpedo consequences
+	if is_fusion_used:
+		_handle_fusion_torpedo_use(attacker)
+
+	# Emit combat resolved
+	EventBus.combat_resolved.emit({
+		"result": "combat_complete",
+		"attacker": attacker.ship_name,
+		"defender": defender.ship_name,
+		"attacker_damage": def_damage,
+		"defender_damage": atk_damage,
+		"defender_disabled": defender_disabled,
+		"fusion_used": is_fusion_used
+	})
+
+func _apply_combat_damage(ship: Ship, damage: float, is_emp: bool) -> void:
+	if is_emp:
+		# EMP disables without destroying
+		ship.is_derelict = true
+		ship.derelict_reason = "emp_disabled"
+		ship.engine_condition = 0.0
+		# Equipment disabled but not destroyed
+		for equip in ship.equipment:
+			equip.durability *= 0.5
+		EventBus.ship_disabled_combat.emit(ship, damage)
+		return
+
+	# Regular combat damage
+	var damage_per_equipment := damage / max(ship.equipment.size(), 1.0)
+
+	for equip in ship.equipment:
+		equip.durability -= damage_per_equipment * randf_range(0.8, 1.2)
+
+	ship.engine_condition -= damage * 2.0
+
+	# Crew casualties based on damage
+	var casualty_chance := clamp(damage / 50.0, 0.0, 0.8)
+	var dead_crew: Array[Worker] = []
+	for worker in ship.crew:
+		if randf() < casualty_chance:
+			dead_crew.append(worker)
+
+	# Remove dead crew
+	for worker in dead_crew:
+		ship.crew.erase(worker)
+		GameState.workers.erase(worker)
+		GameState.total_crew_deaths += 1
+		EventBus.crew_casualty_combat.emit(ship, worker)
+
+		# Add violation for causing death
+		var nearest_colony := _find_nearest_colony(ship.position_au)
+		if nearest_colony:
+			nearest_colony.add_violation("crew_death_combat", GameState.total_ticks)
+
+	# Ship destroyed if engine condition <= 0
+	if ship.engine_condition <= 0:
+		ship.is_derelict = true
+		ship.derelict_reason = "destroyed_in_combat"
+		EventBus.ship_disabled_combat.emit(ship, damage)
+
+func _handle_fusion_torpedo_use(attacker: Ship) -> void:
+	# Immediate reputation catastrophe
+	for colony in GameState.colonies:
+		# Add 4 violations to EVERY colony
+		for i in 4:
+			colony.add_violation("fusion_weapon_use", GameState.total_ticks)
+		colony.player_banned = true
+
+	EventBus.fusion_weapon_used.emit(attacker)
+	EventBus.game_over.emit("fusion_weapon")
+
+	# Add critical warning
+	GameState.add_warning(
+		"🚨 FUSION WEAPON USED - BANNED FROM ALL COLONIES",
+		"critical",
+		"combat"
+	)
+
+func _find_nearest_colony(position: Vector2) -> Colony:
+	var nearest: Colony = null
+	var min_dist := INF
+	for colony in GameState.colonies:
+		var dist := position.distance_to(colony.get_position_au())
+		if dist < min_dist:
+			min_dist = dist
+			nearest = colony
+	return nearest

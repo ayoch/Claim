@@ -215,6 +215,6 @@ layout_mode = 2
 [node name="Map" parent="VBox/TabContainer" instance=ExtResource("6")]
 layout_mode = 2
 
-[connection signal="pressed" from="VBox/TopBar/HBox/SettingsBtn" to="." method="_on_settings_pressed"]
-[connection signal="pressed" from="VBox/TopBar/HBox/SaveBtn" to="." method="_on_save_pressed"]
-[connection signal="pressed" from="VBox/TopBar/HBox/ExitBtn" to="." method="_on_exit_pressed"]
+[connection signal="pressed" from="VBox/TopBar/VBox/ButtonRow/SettingsBtn" to="." method="_on_settings_pressed"]
+[connection signal="pressed" from="VBox/TopBar/VBox/ButtonRow/SaveBtn" to="." method="_on_save_pressed"]
+[connection signal="pressed" from="VBox/TopBar/VBox/ButtonRow/ExitBtn" to="." method="_on_exit_pressed"]

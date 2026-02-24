@@ -26,8 +26,13 @@ static func make(pos: Vector2, time: float, type: int = WaypointType.GRAVITY_ASS
 	return leg
 
 func get_live_position() -> Vector2:
+	# Refuel stops: track colony's current orbital position
 	if waypoint_type == WaypointType.REFUEL_STOP and colony_ref:
 		return colony_ref.get_position_au()
+	# Gravity assists: track planet's current orbital position
+	if waypoint_type == WaypointType.GRAVITY_ASSIST and planet_id >= 0:
+		return CelestialData.get_planet_position_au(planet_id)
+	# Fallback: use static position
 	return position_au
 
 func to_dict() -> Dictionary:

@@ -195,6 +195,11 @@ var hitchhike_pool: Array[Dictionary] = []
 # Each: { "worker": Worker, "reason": String, "tardy_since": float }
 var tardy_workers: Array[Dictionary] = []
 
+# Persistent warnings system
+# Each: { "id": String, "message": String, "severity": String ("warning"/"critical"), "category": String }
+var active_warnings: Array[Dictionary] = []
+var _next_warning_id: int = 0
+
 func _ready() -> void:
 	new_game()
 
@@ -216,6 +221,8 @@ func new_game() -> void:
 	security_zones.clear()
 	hitchhike_pool.clear()
 	tardy_workers.clear()
+	active_warnings.clear()
+	_next_warning_id = 0
 	available_contracts.clear()
 	active_contracts.clear()
 	active_market_events.clear()
@@ -564,7 +571,7 @@ func record_rescue_failure_violation(ship: Ship, reason: String) -> void:
 
 func _find_colony_by_name(name: String) -> Colony:
 	# Search all colonies for matching name
-	for col in ColonyData.COLONIES:
+	for col in colonies:
 		if col.colony_name == name:
 			return col
 	return null
@@ -572,17 +579,59 @@ func _find_colony_by_name(name: String) -> Colony:
 func check_game_over_banned() -> bool:
 	# Check if player is banned from ALL colonies
 	var banned_count: int = 0
-	for colony in ColonyData.COLONIES:
+	for colony in colonies:
 		if colony.player_banned:
 			banned_count += 1
 
 	# Game over if banned from all colonies
-	if banned_count >= ColonyData.COLONIES.size():
-		print("GAME OVER: Banned from all colonies (%d/%d)" % [banned_count, ColonyData.COLONIES.size()])
+	if banned_count >= colonies.size():
+		print("GAME OVER: Banned from all colonies (%d/%d)" % [banned_count, colonies.size()])
 		EventBus.game_over.emit("Banned from all colonies")
 		return true
 
 	return false
+
+## Warning System: Persistent, dismissible warnings
+func add_warning(message: String, severity: String, category: String) -> String:
+	# Check if this warning already exists (avoid duplicates)
+	for warning in active_warnings:
+		if warning["message"] == message and warning["category"] == category:
+			return warning["id"]  # Already exists
+
+	# Create new warning
+	var warning_id := "warning_%d" % _next_warning_id
+	_next_warning_id += 1
+
+	active_warnings.append({
+		"id": warning_id,
+		"message": message,
+		"severity": severity,  # "warning" or "critical"
+		"category": category,  # "violation", "crew", "debt", "loan"
+	})
+
+	EventBus.warning_added.emit(warning_id, message, severity)
+	return warning_id
+
+func dismiss_warning(warning_id: String) -> void:
+	for i in range(active_warnings.size() - 1, -1, -1):
+		if active_warnings[i]["id"] == warning_id:
+			active_warnings.remove_at(i)
+			EventBus.warning_dismissed.emit(warning_id)
+			return
+
+func dismiss_warnings_by_category(category: String) -> void:
+	for i in range(active_warnings.size() - 1, -1, -1):
+		if active_warnings[i]["category"] == category:
+			var warning_id: String = active_warnings[i]["id"]
+			active_warnings.remove_at(i)
+			EventBus.warning_dismissed.emit(warning_id)
+
+func get_warnings_by_category(category: String) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for warning in active_warnings:
+		if warning["category"] == category:
+			result.append(warning)
+	return result
 
 func get_available_workers() -> Array[Worker]:
 	var available: Array[Worker] = []
@@ -1064,6 +1113,76 @@ func repair_engine(ship: Ship) -> bool:
 	ship.engine_condition = 100.0
 	return true
 
+## Restock torpedoes for all torpedo launchers on a ship
+func restock_torpedoes(ship: Ship) -> bool:
+	if not ship.is_docked:
+		return false
+
+	var total_cost := 0
+	var restock_list: Array[Equipment] = []
+
+	# Calculate total cost
+	for equip in ship.equipment:
+		if equip.has_ammo() and equip.needs_reload():
+			var needed := equip.ammo_capacity - equip.current_ammo
+			total_cost += needed * equip.ammo_cost
+			restock_list.append(equip)
+
+	if total_cost <= 0:
+		return false  # Nothing to restock
+
+	if money < total_cost:
+		return false  # Can't afford
+
+	# Deduct money and restock
+	money -= total_cost
+	for equip in restock_list:
+		var needed := equip.ammo_capacity - equip.current_ammo
+		equip.current_ammo = equip.ammo_capacity
+		record_transaction(-needed * equip.ammo_cost, "Torpedoes: %s" % equip.equipment_name, ship.ship_name)
+
+	return true
+
+## Get cost to restock all torpedoes on a ship
+func get_torpedo_restock_cost(ship: Ship) -> int:
+	var total_cost := 0
+	for equip in ship.equipment:
+		if equip.has_ammo() and equip.needs_reload():
+			var needed := equip.ammo_capacity - equip.current_ammo
+			total_cost += needed * equip.ammo_cost
+	return total_cost
+
+## Calculate intercept trajectory to a moving asteroid
+## Uses iterative prediction: estimate transit time, predict where asteroid will be, recalculate
+## Returns: { intercept_position: Vector2, distance: float, transit_time: float }
+func calculate_asteroid_intercept(start_pos: Vector2, asteroid: AsteroidData, thrust: float, transit_mode: int) -> Dictionary:
+	var iterations := 3  # Usually converges in 2-3 iterations
+	var target_pos := asteroid.get_position_au()  # Start with current position
+	var transit_time := 0.0
+
+	for i in iterations:
+		var dist := start_pos.distance_to(target_pos)
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			transit_time = Brachistochrone.hohmann_time(dist)
+		else:
+			transit_time = Brachistochrone.transit_time(dist, thrust)
+
+		# Predict where asteroid will be when ship arrives
+		target_pos = asteroid.get_position_at_time(transit_time)
+
+	# Final calculation with converged position
+	var final_dist := start_pos.distance_to(target_pos)
+	if transit_mode == Mission.TransitMode.HOHMANN:
+		transit_time = Brachistochrone.hohmann_time(final_dist)
+	else:
+		transit_time = Brachistochrone.transit_time(final_dist, thrust)
+
+	return {
+		"intercept_position": target_pos,
+		"distance": final_dist,
+		"transit_time": transit_time
+	}
+
 func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
 	if ship.crew.size() < ship.min_crew:
 		push_warning("start_mission: not enough crew for %s (need %d, got %d)" % [ship.ship_name, ship.min_crew, ship.crew.size()])
@@ -1075,7 +1194,7 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 		ship.current_mission = null
 	var mission := Mission.new()
 	mission.ship = ship
-	mission.asteroid = asteroid
+	mission.asteroid = asteroid  # Keep reference for mining/game logic
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
 	mission.return_position_au = ship.position_au  # default return to origin
@@ -1090,7 +1209,13 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 		mission.origin_name = ship.docked_at_colony.colony_name
 	# else: left blank; dispatch_idle_ship will fill it in from the previous mission
 
-	var dist := ship.position_au.distance_to(asteroid.get_position_au())
+	# Calculate intercept trajectory to predict where asteroid will be at arrival
+	var intercept := calculate_asteroid_intercept(ship.position_au, asteroid, ship.get_effective_thrust(), transit_mode)
+	var dist: float = intercept["distance"]
+	var predicted_position: Vector2 = intercept["intercept_position"]
+
+	# Store predicted position as static destination (used instead of dynamic asteroid position during transit)
+	mission.destination_position_au = predicted_position
 
 	# Setup slingshot waypoints if using gravity assist
 	if slingshot_route:
@@ -1105,11 +1230,11 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 		else:
 			mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 
-	# Check if fuel stops are needed for outbound journey
+	# Check if fuel stops are needed for outbound journey (use predicted intercept position)
 	var expected_cargo_out := ship.get_cargo_total()
 	var outbound_fuel_route := FuelRoutePlanner.plan_route_to_position(
 		ship,
-		asteroid.get_position_au(),
+		predicted_position,
 		expected_cargo_out,
 		3  # max stops
 	)
@@ -1138,7 +1263,29 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 		# Deduct total fuel cost upfront
 		money -= outbound_fuel_route["total_cost"]
 
-	# Calculate return fuel stops separately (assume full cargo)
+	# Calculate mining duration first (needed to predict return timing)
+	var skill_total := 0.0
+	for w in ship.crew:
+		skill_total += w.mining_skill
+	if skill_total < 0.1:
+		skill_total = 0.1
+	var equip_mult := ship.get_mining_multiplier()
+	var total_yield_per_tick := 0.0
+	for ore_type in asteroid.ore_yields:
+		var base_yield: float = asteroid.ore_yields[ore_type]
+		total_yield_per_tick += base_yield * skill_total * equip_mult * Simulation.BASE_MINING_RATE
+	if total_yield_per_tick > 0:
+		mission.mining_duration = ship.cargo_capacity / total_yield_per_tick
+	else:
+		mission.mining_duration = 86400.0  # Fallback: 1 day
+
+	# Predict where Earth will be when ship returns (if returning to Earth)
+	if mission.origin_is_earth:
+		var estimated_mission_time := mission.transit_time * 2.0 + mission.mining_duration
+		mission.return_position_au = CelestialData.get_earth_position_at_time(estimated_mission_time)
+	# else: return_position_au already set to ship.position_au for colony returns
+
+	# Calculate return fuel stops (assume full cargo, use predicted Earth position)
 	var expected_cargo_return := ship.cargo_capacity
 	var return_fuel_route := FuelRoutePlanner.plan_route_to_position(
 		ship,
@@ -1169,22 +1316,6 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 	mission.transit_time *= pilot_factor
 
 	mission.elapsed_ticks = 0.0
-
-	# Calculate mining duration: time to fill cargo hold (uses mining_skill)
-	var skill_total := 0.0
-	for w in ship.crew:
-		skill_total += w.mining_skill
-	if skill_total < 0.1:
-		skill_total = 0.1
-	var equip_mult := ship.get_mining_multiplier()
-	var total_yield_per_tick := 0.0
-	for ore_type in asteroid.ore_yields:
-		var base_yield: float = asteroid.ore_yields[ore_type]
-		total_yield_per_tick += base_yield * skill_total * equip_mult * Simulation.BASE_MINING_RATE
-	if total_yield_per_tick > 0:
-		mission.mining_duration = ship.cargo_capacity / total_yield_per_tick
-	else:
-		mission.mining_duration = 86400.0  # Fallback: 1 day
 
 	# Calculate fuel burn rate
 	if slingshot_route:
@@ -1337,6 +1468,11 @@ func _apply_order_return_to_earth(ship: Ship) -> void:
 	if not ship.is_idle_remote:
 		return  # State changed while signal was in transit
 
+	# CRITICAL: Update ship position to asteroid's current position before calculating distance
+	# This prevents the ancient teleporting bug where ships leave from wrong locations
+	if ship.current_mission and ship.current_mission.asteroid:
+		ship.position_au = ship.current_mission.asteroid.get_position_au()
+
 	var earth_pos := CelestialData.get_earth_position_au()
 	var dist := ship.position_au.distance_to(earth_pos)
 
@@ -1345,6 +1481,9 @@ func _apply_order_return_to_earth(ship: Ship) -> void:
 		ship.current_mission.return_position_au = earth_pos
 		ship.current_mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 		ship.current_mission.elapsed_ticks = 0.0
+		# CRITICAL: Clear return legs and reset index - prevents using stale waypoint positions
+		ship.current_mission.return_legs.clear()
+		ship.current_mission.return_waypoint_index = 0
 		var cargo_mass := ship.get_cargo_total()
 		var total_fuel := ship.calc_fuel_for_distance(dist, cargo_mass)
 		ship.current_mission.fuel_per_tick = total_fuel / ship.current_mission.transit_time if ship.current_mission.transit_time > 0 else 0.0
@@ -1354,6 +1493,9 @@ func _apply_order_return_to_earth(ship: Ship) -> void:
 		ship.current_trade_mission.return_position_au = earth_pos
 		ship.current_trade_mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
 		ship.current_trade_mission.elapsed_ticks = 0.0
+		# CRITICAL: Clear return legs and reset index - prevents using stale waypoint positions
+		ship.current_trade_mission.return_legs.clear()
+		ship.current_trade_mission.return_waypoint_index = 0
 		var cargo_mass := ship.get_cargo_total()
 		var total_fuel := ship.calc_fuel_for_distance(dist, cargo_mass)
 		ship.current_trade_mission.fuel_per_tick = total_fuel / ship.current_trade_mission.transit_time if ship.current_trade_mission.transit_time > 0 else 0.0
@@ -2329,6 +2471,7 @@ func save_game(save_name: String = "") -> void:
 		ship_data["collection_policy_override"] = s.collection_policy_override
 		ship_data["encounter_policy_override"] = s.encounter_policy_override
 		ship_data["repair_policy_override"] = s.repair_policy_override
+		ship_data["aggression_stance"] = s.aggression_stance
 		ship_data["docked_at_earth"] = s.docked_at_earth
 		# Supplies
 		if not s.supplies.is_empty():
@@ -2342,6 +2485,16 @@ func save_game(save_name: String = "") -> void:
 				"durability": e.durability,
 				"max_durability": e.max_durability,
 				"wear_per_tick": e.wear_per_tick,
+				"weapon_power": e.weapon_power,
+				"weapon_range": e.weapon_range,
+				"weapon_accuracy": e.weapon_accuracy,
+				"weapon_role": e.weapon_role,
+				"fire_rate": e.fire_rate,
+				"ammo_capacity": e.ammo_capacity,
+				"current_ammo": e.current_ammo,
+				"ammo_cost": e.ammo_cost,
+				"mining_speed_bonus": e.mining_speed_bonus,
+				"mass": e.mass,
 			})
 		# Save cargo if ship has any
 		if not s.current_cargo.is_empty():
@@ -2565,6 +2718,10 @@ func save_game(save_name: String = "") -> void:
 		})
 	save_data["tardy_workers"] = tardy_data
 
+	# Save active warnings
+	save_data["active_warnings"] = active_warnings.duplicate()
+	save_data["next_warning_id"] = _next_warning_id
+
 	# Save rival corps (ship states only — corp definitions recreated from RivalCorpData)
 	var rival_data: Array[Dictionary] = []
 	for corp: RivalCorp in rival_corps:
@@ -2706,6 +2863,7 @@ func load_game(file_name: String = "save_game.json") -> bool:
 		s.collection_policy_override = int(sd.get("collection_policy_override", -1))
 		s.encounter_policy_override = int(sd.get("encounter_policy_override", -1))
 		s.repair_policy_override = int(sd.get("repair_policy_override", -1))
+		s.aggression_stance = int(sd.get("aggression_stance", Ship.AggressionStance.DEFENSIVE))
 		s.docked_at_earth = bool(sd.get("docked_at_earth", true))
 		# Restore station data (colony ref reconnected after colonies are loaded)
 		s.is_stationed = sd.get("is_stationed", false)
@@ -2723,6 +2881,9 @@ func load_game(file_name: String = "save_game.json") -> bool:
 			e.durability = float(ed.get("durability", 100.0))
 			e.max_durability = float(ed.get("max_durability", 100.0))
 			e.fabrication_ticks = 0.0  # Already fabricated if saved
+			# Restore weapon ammo if saved (for torpedoes)
+			if ed.has("current_ammo"):
+				e.current_ammo = int(ed.get("current_ammo", e.ammo_capacity))
 			s.equipment.append(e)
 		ships.append(s)
 
@@ -3025,6 +3186,10 @@ func load_game(file_name: String = "save_game.json") -> bool:
 				"reason": td_data.get("reason", "Unknown"),
 				"tardy_since": float(td_data.get("tardy_since", 0.0)),
 			})
+
+	# Restore active warnings
+	active_warnings = data.get("active_warnings", [])
+	_next_warning_id = int(data.get("next_warning_id", 0))
 
 	# Restore mining unit inventory
 	const MU_VOL_DEFAULTS: Dictionary = {0: 11.4, 1: 16.8, 2: 27.3}

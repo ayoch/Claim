@@ -42,6 +42,18 @@ func get_position(body_name: String) -> Vector2:
 		_update_all_positions(ticks)
 	return _cached_positions.get(body_name, Vector2.ZERO)
 
+## Predict position at a future time (current time + dt_ticks)
+func get_position_at_time(body_name: String, dt_ticks: float) -> Vector2:
+	var ticks: float = GameState.total_ticks if GameState else 0.0
+	var future_ticks := ticks + dt_ticks
+
+	# Convert future ticks to Julian Date
+	var days_elapsed := future_ticks / SECONDS_PER_DAY
+	var jd := START_JD + days_elapsed
+	var T := (jd - J2000_JD) / DAYS_PER_CENTURY
+
+	return _compute_position(body_name, T)
+
 ## Update all planet positions for current game time
 func _update_all_positions(total_ticks: float) -> void:
 	_last_total_ticks = total_ticks

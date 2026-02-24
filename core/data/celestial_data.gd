@@ -80,6 +80,19 @@ static func get_planet_position_au(index: int) -> Vector2:
 	var planet_name: String = PLANETS[index]["name"]
 	return ephemeris.get_position(planet_name)
 
+## Predict planet position at a future time (current time + dt_ticks)
+static func get_planet_position_at_time(index: int, dt_ticks: float) -> Vector2:
+	_ensure_init()
+	if index < 0 or index >= PLANETS.size():
+		return Vector2.ZERO
+	var planet_name: String = PLANETS[index]["name"]
+	return ephemeris.get_position_at_time(planet_name, dt_ticks)
+
+## Predict Earth position at a future time (current time + dt_ticks)
+static func get_earth_position_at_time(dt_ticks: float) -> Vector2:
+	_ensure_init()
+	return ephemeris.get_position_at_time("Earth", dt_ticks)
+
 static func advance_planets(_dt: float) -> void:
 	# Positions are computed from GameState.total_ticks in EphemerisData
 	# No explicit advancing needed — just ensure init
