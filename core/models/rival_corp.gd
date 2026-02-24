@@ -17,3 +17,7 @@ enum Personality {
 @export var money: int = 0
 @export var total_ore_mined: float = 0.0
 @export var total_revenue: int = 0
+
+# AI ratings (0.0-1.0)
+@export var aggression: float = 0.5  # 0.0=peaceful defender, 1.0=ruthless attacker
+@export var skill: float = 0.5        # 0.0=incompetent, 1.0=expert (affects efficiency/decisions)

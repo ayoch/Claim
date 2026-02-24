@@ -781,8 +781,7 @@ func _update_ship_positions(dt: float) -> void:
 	# Save previous positions for collision detection (enter-radius check)
 	_prev_positions.clear()
 	for ship in GameState.ships:
-		_prev_positions[ship] = ship.position_au,
-			GameState.total_ticks
+		_prev_positions[ship] = ship.position_au
 
 	# Update ship positions and velocities during transit based on mission progress
 	for mission: Mission in GameState.missions:
@@ -820,8 +819,7 @@ func _update_ship_positions(dt: float) -> void:
 		if ship.speed_au_per_tick > 0.0 and ship.current_mission == null and ship.current_trade_mission == null:
 			# Symplectic Euler: update velocity first, then position
 			# Sun-only gravity (simple, fast, 90% accurate)
-			var r_sun := -ship.position_au,
-			GameState.total_ticks
+			var r_sun := -ship.position_au
 			var dist_sq := r_sun.length_squared()
 			var accel := Vector2.ZERO
 			if dist_sq > 1e-12:
@@ -854,8 +852,7 @@ func _check_ship_collisions(prev_positions: Dictionary) -> void:
 				"💥 SHIP DESTROYED: %s crashed into %s — all hands lost" % [ship.ship_name, body_name],
 				"critical",
 				"destruction",
-				ship.position_au,
-			GameState.total_ticks
+				ship.position_au
 			)
 
 	for ship in _destroyed_ships_buf:
@@ -917,8 +914,7 @@ func _update_ship_transit_physics(ship: Ship, start_pos: Vector2, end_pos_stored
 
 	# Apply Sun gravity (simple, fast, 90% accurate)
 	# Gravity bends trajectory; thrust corrects to stay on target
-	var r_sun := -ship.position_au,
-			GameState.total_ticks
+	var r_sun := -ship.position_au
 	var dist_sq := r_sun.length_squared()
 	if dist_sq > 1e-12:
 		var dist := sqrt(dist_sq)
@@ -1050,8 +1046,7 @@ func _trigger_breakdown(ship: Ship, reason: String) -> void:
 		"🚨 BREAKDOWN: %s — %s" % [ship.ship_name, reason],
 		"critical",
 		"breakdown",
-		ship.position_au,
-			GameState.total_ticks
+		ship.position_au
 	)
 
 func _trigger_fuel_depletion(ship: Ship) -> void:
@@ -1074,8 +1069,7 @@ func _trigger_fuel_depletion(ship: Ship) -> void:
 		"🚨 BREAKDOWN: %s — Fuel depleted" % ship.ship_name,
 		"critical",
 		"breakdown",
-		ship.position_au,
-			GameState.total_ticks
+		ship.position_au
 	)
 
 ## Check if ship is near a colony with services and auto-dock
@@ -1181,8 +1175,7 @@ func _process_life_support(dt: float) -> void:
 						"🚨 LIFE SUPPORT: %s at %d%% — send rescue!" % [ship.ship_name, pct_int],
 						"critical",
 						"life_support",
-						ship.position_au,
-			GameState.total_ticks
+						ship.position_au
 					)
 
 		# Check if crew has died
@@ -1221,8 +1214,7 @@ func _process_life_support(dt: float) -> void:
 			"💀 SHIP DESTROYED: %s — life support failure, all hands lost" % ship.ship_name,
 			"critical",
 			"destruction",
-			ship.position_au,
-			GameState.total_ticks
+			ship.position_au
 		)
 
 		# Remove the ship and free its name for reuse
@@ -1408,8 +1400,7 @@ func _policy_dispatch_idle_ship(ship: Ship) -> void:
 	# Priority 2: mine
 	if ship.get_cargo_remaining() < ship.get_effective_cargo_capacity() * 0.1:
 		return
-	var ship_pos := ship.position_au,
-			GameState.total_ticks
+	var ship_pos := ship.position_au
 	var best_asteroid: AsteroidData = null
 	var best_score: float = -1.0
 	for asteroid in GameState.asteroids:
@@ -1483,8 +1474,7 @@ func _autoplay_dispatch_from_earth(ship: Ship) -> void:
 	if ship.get_cargo_remaining() < ship.get_effective_cargo_capacity() * 0.1:
 		return
 
-	var ship_pos := ship.position_au,
-			GameState.total_ticks
+	var ship_pos := ship.position_au
 	var best_asteroid: AsteroidData = null
 	var best_score: float = -1.0
 
@@ -1593,8 +1583,7 @@ func _station_try_repair(ship: Ship) -> bool:
 	mission.mission_type = Mission.MissionType.REPAIR
 	mission.ship = ship
 	mission.status = Mission.Status.TRANSIT_OUT
-	mission.origin_position_au = ship.position_au,
-			GameState.total_ticks
+	mission.origin_position_au = ship.position_au
 	mission.origin_is_earth = false
 	mission.return_position_au = ship.station_colony.get_position_au()
 	mission.return_to_station = true
@@ -1654,8 +1643,7 @@ func _station_try_parts_delivery(ship: Ship) -> bool:
 	mission.mission_type = Mission.MissionType.SUPPLY_RUN
 	mission.ship = ship
 	mission.status = Mission.Status.TRANSIT_OUT
-	mission.origin_position_au = ship.position_au,
-			GameState.total_ticks
+	mission.origin_position_au = ship.position_au
 	mission.origin_is_earth = false
 	mission.return_position_au = ship.station_colony.get_position_au()
 	mission.return_to_station = true
@@ -1737,8 +1725,7 @@ func _station_try_provisioning(ship: Ship) -> bool:
 	mission.mission_type = Mission.MissionType.SUPPLY_RUN
 	mission.ship = ship
 	mission.status = Mission.Status.TRANSIT_OUT
-	mission.origin_position_au = ship.position_au,
-			GameState.total_ticks
+	mission.origin_position_au = ship.position_au
 	mission.origin_is_earth = false
 	mission.return_position_au = ship.station_colony.get_position_au()
 	mission.return_to_station = true
@@ -1880,8 +1867,7 @@ func _station_try_crew_ferry(ship: Ship) -> bool:
 	mission.mission_type = Mission.MissionType.CREW_FERRY
 	mission.ship = ship
 	mission.status = Mission.Status.TRANSIT_OUT
-	mission.origin_position_au = ship.position_au,
-			GameState.total_ticks
+	mission.origin_position_au = ship.position_au
 	mission.origin_is_earth = false
 	mission.return_position_au = ship.station_colony.get_position_au()
 	mission.return_to_station = true
@@ -1926,8 +1912,7 @@ func _station_try_patrol(ship: Ship) -> bool:
 	mission.ship = ship
 	mission.asteroid = best_asteroid  # Use asteroid for position tracking
 	mission.status = Mission.Status.TRANSIT_OUT
-	mission.origin_position_au = ship.position_au,
-			GameState.total_ticks
+	mission.origin_position_au = ship.position_au
 	mission.origin_is_earth = false
 	mission.return_position_au = ship.station_colony.get_position_au()
 	mission.return_to_station = true
@@ -2032,8 +2017,7 @@ func _start_station_return(mission: Mission) -> void:
 		return_pos = ship.station_colony.get_position_au()
 		mission.return_position_au = return_pos
 
-	var current_pos := ship.position_au,
-			GameState.total_ticks
+	var current_pos := ship.position_au
 	if mission.asteroid:
 		current_pos = mission.asteroid.get_position_au()
 		ship.position_au = current_pos
@@ -2167,8 +2151,7 @@ func _start_return_for_crew(ship: Ship, crew: Array[Worker]) -> void:
 	m.ship = ship
 	m.workers = crew.duplicate()
 	m.status = Mission.Status.TRANSIT_BACK
-	m.origin_position_au = ship.position_au,
-			GameState.total_ticks
+	m.origin_position_au = ship.position_au
 	m.return_position_au = target_pos
 	m.origin_is_earth = false
 	m.return_to_station = false  # Go to Earth / nearest location, not a station
@@ -2712,8 +2695,7 @@ func _trigger_starvation(ship: Ship, mission: Mission = null, trade_mission: Tra
 		"💀 STARVATION: %d crew died on %s — food depleted" % [dead_workers.size(), ship.ship_name],
 		"critical",
 		"crew",
-		ship.position_au,
-			GameState.total_ticks
+		ship.position_au
 	)
 	print("Ship %s: Food depleted — %d crew starved (%s)" % [ship.ship_name, dead_workers.size(), worker_names])
 
@@ -3567,18 +3549,18 @@ func _resolve_combat(attacker: Ship, defender: Ship, distance: float) -> void:
 		_apply_combat_damage(attacker, def_damage * 0.5, false, defender)  # Return fire is less effective
 		attacker_damaged = true
 
-	# Phase 7: Criminal violations (queued with lightspeed delay to colony)
+	# Phase 7: Criminal violations
 	if not defender.is_armed():
 		# Attacking unarmed ship - major violation (2 strikes)
 		var nearest_colony := _find_nearest_colony(attacker.position_au)
 		if nearest_colony:
-			_queue_violation(nearest_colony, "attacked_unarmed_ship", attacker.position_au)
-			_queue_violation(nearest_colony, "attacked_unarmed_ship_major", attacker.position_au)
+			nearest_colony.add_violation("attacked_unarmed_ship", GameState.total_ticks)
+			nearest_colony.add_violation("attacked_unarmed_ship_major", GameState.total_ticks)
 	else:
 		# Attacking armed ship - minor violation
 		var nearest_colony := _find_nearest_colony(attacker.position_au)
 		if nearest_colony:
-			_queue_violation(nearest_colony, "unprovoked_attack", attacker.position_au)
+			nearest_colony.add_violation("unprovoked_attack", GameState.total_ticks)
 
 	# Phase 8: Fusion torpedo consequences
 	if is_fusion_used:
@@ -3609,8 +3591,7 @@ func _apply_combat_damage(ship: Ship, damage: float, is_emp: bool, attacker: Shi
 			"⚡ EMP HIT: %s disabled!" % ship.ship_name,
 			"critical",
 			"combat",
-			ship.position_au,
-			GameState.total_ticks
+			ship.position_au
 		)
 		return
 
@@ -3639,14 +3620,13 @@ func _apply_combat_damage(ship: Ship, damage: float, is_emp: bool, attacker: Shi
 			"💀 CREW DEATH: %s killed on %s" % [worker.worker_name, ship.ship_name],
 			"critical",
 			"combat",
-			ship.position_au,
-			GameState.total_ticks
+			ship.position_au
 		)
 
-		# Add violation to attacker for causing death (queued with lightspeed delay)
+		# Add violation to attacker for causing death
 		var nearest_colony := _find_nearest_colony(attacker.position_au)
 		if nearest_colony:
-			_queue_violation(nearest_colony, "crew_death_combat", ship.position_au)
+			nearest_colony.add_violation("crew_death_combat", GameState.total_ticks)
 
 	# Ship destroyed if engine condition <= 0
 	if ship.engine_condition <= 0:
@@ -3657,17 +3637,16 @@ func _apply_combat_damage(ship: Ship, damage: float, is_emp: bool, attacker: Shi
 			"🚨 SHIP DESTROYED: %s is derelict!" % ship.ship_name,
 			"critical",
 			"combat",
-			ship.position_au,
-			GameState.total_ticks
+			ship.position_au
 		)
 
 func _handle_fusion_torpedo_use(attacker: Ship) -> void:
-	# Reputation catastrophe (queued - colonies learn after lightspeed delay)
+	# Immediate reputation catastrophe
 	for colony in GameState.colonies:
-		# Add 4 violations to EVERY colony (queued with realistic delays)
+		# Add 4 violations to EVERY colony
 		for i in 4:
-			_queue_violation(colony, "fusion_weapon_use", attacker.position_au)
-		# Ban will be set when violations arrive at colony
+			colony.add_violation("fusion_weapon_use", GameState.total_ticks)
+		colony.player_banned = true
 
 	EventBus.fusion_weapon_used.emit(attacker)
 	EventBus.game_over.emit("fusion_weapon")
@@ -3689,21 +3668,3 @@ func _find_nearest_colony(position: Vector2) -> Colony:
 			min_dist = dist
 			nearest = colony
 	return nearest
-
-## Queue violation with realistic lightspeed delay from event location to colony
-## This ensures colonies don't "magically" know about distant events instantly
-func _queue_violation(colony: Colony, reason: String, event_position: Vector2) -> void:
-	# Calculate lightspeed delay from event location to colony
-	var colony_pos := colony.get_position_au()
-	var distance := event_position.distance_to(colony_pos)
-	var delay := distance * GameState.LIGHT_SECONDS_PER_AU
-	var event_time := GameState.total_ticks
-
-	# Queue violation to fire after colony receives news
-	GameState.pending_orders.append({
-		"fires_at": GameState.total_ticks + delay,
-		"ship": null,
-		"label": "violation_report",
-		"fn": func():
-			# Colony NOW learns of the event and issues violation
-			colony.add_violation(reason, event_time)

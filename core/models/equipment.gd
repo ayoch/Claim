@@ -19,6 +19,7 @@ extends Resource
 @export var ammo_capacity: int = 0          # 0 = unlimited, >0 = torpedo launchers
 @export var current_ammo: int = 0           # Current loaded torpedoes
 @export var ammo_cost: int = 0              # Cost to reload 1 torpedo
+@export var ammo_quality: int = 1           # MunitionsData.Quality enum (1 = STANDARD default)
 @export var mining_speed_bonus: float = 0.0 # For mining laser: 0.2 = +20% mining speed
 @export var mass: float = 0.0               # Equipment mass in tonnes
 

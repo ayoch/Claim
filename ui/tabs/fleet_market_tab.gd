@@ -774,6 +774,29 @@ func _rebuild_ships() -> void:
 			)
 			vbox.add_child(engine_btn)
 
+		# Torpedo restocking button (docked ships with torpedoes needing reload)
+		if ship.is_docked:
+			var restock_cost := GameState.get_torpedo_restock_cost(ship)
+			if restock_cost > 0:
+				# Determine location and quality
+				var location_name := "Earth"
+				if ship.docked_at_colony != null:
+					location_name = ship.docked_at_colony.colony_name
+				var quality: int = MunitionsData.get_quality_at_location(location_name)
+				var quality_name := MunitionsData.get_quality_name(quality)
+				var quality_color := MunitionsData.get_quality_color(quality)
+
+				var restock_btn := Button.new()
+				restock_btn.text = "Restock Torpedoes ($%s) — %s" % [_format_number(restock_cost), quality_name]
+				restock_btn.custom_minimum_size = Vector2(0, 44)
+				restock_btn.disabled = GameState.money < restock_cost
+				restock_btn.add_theme_color_override("font_color", quality_color)
+				restock_btn.pressed.connect(func() -> void:
+					GameState.restock_torpedoes(ship)
+					_mark_dirty()
+				)
+				vbox.add_child(restock_btn)
+
 		# === EQUIPMENT ===
 		if not ship.equipment.is_empty():
 			for e in ship.equipment:
@@ -791,7 +814,18 @@ func _rebuild_ships() -> void:
 				else:
 					equip_label.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
 
-				equip_label.text = "%s (%.2fx) %s%s" % [e.equipment_name, e.mining_bonus, dur_str, broken_str]
+				# Build equipment text with ammo info for weapons
+				var equip_text := ""
+				if e.is_weapon():
+					var ammo_str := ""
+					if e.has_ammo():
+						var quality_name := MunitionsData.get_quality_name(e.ammo_quality)
+						ammo_str = " [%d/%d %s]" % [e.current_ammo, e.ammo_capacity, quality_name]
+					equip_text = "%s%s %s%s" % [e.equipment_name, ammo_str, dur_str, broken_str]
+				else:
+					equip_text = "%s (%.2fx) %s%s" % [e.equipment_name, e.mining_bonus, dur_str, broken_str]
+
+				equip_label.text = equip_text
 				equip_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				equip_label.clip_text = true
 				equip_row.add_child(equip_label)

@@ -6,6 +6,10 @@ extends Node
 
 var enabled: bool = false
 
+# AI personality traits (set at init, could be randomized for variety)
+var ai_aggression: float = 0.95  # 0.0=peaceful, 1.0=ruthless (TEST: highly aggressive, seeks combat)
+var ai_skill: float = 0.85       # 0.0=incompetent, 1.0=expert (TEST: highly skilled, optimal decisions)
+
 # Accumulators
 var day_accumulator: float = 0.0
 const DAY_TICKS: float = 86400.0
@@ -224,20 +228,73 @@ func _daily_decision_loop() -> void:
 	# 4. Maintenance — repair everything we can before making decisions
 	_maintain_fleet()
 
-	# 5. Contracts — accept everything, fulfill what we can
+	# 5. Combat Readiness — arm ships, set stances, identify threats/opportunities
+	_manage_combat_readiness()
+
+	# 6. Contracts — accept everything, fulfill what we can
 	_manage_contracts()
 
-	# 6. Fleet — the core loop: every ship should be DOING something
+	# 7. Fleet — the core loop: every ship should be DOING something
 	_assign_all_ships()
 
-	# 7. Opportunistic redirects — occasionally send in-transit ships to better targets
+	# 8. Opportunistic redirects — occasionally send in-transit ships to better targets
 	_try_redirect_missions()
 
-	# 8. Queue next missions — pre-plan for ships heading home
+	# 9. Queue next missions — pre-plan for ships heading home
 	_queue_next_missions()
 
-	# 9. Growth — spend profits to expand
+	# 10. Growth — spend profits to expand
 	_manage_growth()
+
+# ---------- 5. Combat Readiness ----------
+
+func _manage_combat_readiness() -> void:
+	# Set aggression stances based on AI personality and threat level
+	var base_stance := Ship.AggressionStance.DEFENSIVE
+	if ai_aggression >= 0.7:
+		base_stance = Ship.AggressionStance.AGGRESSIVE
+	elif ai_aggression < 0.3:
+		base_stance = Ship.AggressionStance.PEACEFUL
+
+	# Assess threats: rival corps near our assets or hostile activity
+	var threat_level := _assess_threat_level()
+
+	for ship in GameState.ships:
+		if ship.is_derelict:
+			continue
+
+		# Armed ships get aggressive stance if AI is aggressive
+		if ship.is_armed():
+			if ai_aggression >= 0.7:
+				ship.aggression_stance = Ship.AggressionStance.AGGRESSIVE
+			elif threat_level > 0.5:  # Elevated threat: defend aggressively
+				ship.aggression_stance = Ship.AggressionStance.DEFENSIVE
+			else:
+				ship.aggression_stance = base_stance
+		else:
+			# Unarmed ships stay peaceful
+			ship.aggression_stance = Ship.AggressionStance.PEACEFUL
+
+func _assess_threat_level() -> float:
+	# Returns 0.0-1.0 indicating how threatened we are
+	var threat := 0.0
+
+	# Check for rival corps near our mining operations
+	for unit in GameState.deployed_mining_units:
+		var unit_pos := Vector2.ZERO
+		for asteroid in GameState.asteroids:
+			if asteroid.asteroid_name == unit.deployed_at_asteroid:
+				unit_pos = asteroid.get_position_au()
+				break
+
+		# Check if rival ships are nearby
+		for rival in GameState.rival_corps:
+			if rival.get("ship_position_au") != null:
+				var dist := unit_pos.distance_to(rival["ship_position_au"])
+				if dist < 0.15:  # Rivals within 0.15 AU of our assets
+					threat += 0.3
+
+	return minf(threat, 1.0)
 
 # ---------- 1. Rescue ----------
 
@@ -398,6 +455,7 @@ func _send_docked_ship(ship: Ship) -> void:
 		if GameState.money >= ship.get_engine_repair_cost():
 			GameState.repair_engine(ship)
 		elif not desperate or ship.engine_condition < 25.0:
+			print("AUTOTEST: Ship %s waiting for engine repair (%.1f%%)" % [ship.ship_name, ship.engine_condition])
 			return
 
 	_repair_broken_equipment(ship)
@@ -405,10 +463,12 @@ func _send_docked_ship(ship: Ship) -> void:
 
 	if ship.fuel < ship.get_effective_fuel_capacity() * 0.5:
 		if not desperate or ship.fuel < ship.get_effective_fuel_capacity() * 0.25:
+			print("AUTOTEST: Ship %s waiting for fuel (%.1f/%.1f)" % [ship.ship_name, ship.fuel, ship.get_effective_fuel_capacity()])
 			return
 
 	var available := GameState.get_available_workers()
 	if available.size() < ship.min_crew:
+		print("AUTOTEST: Ship %s waiting for crew (%d/%d available)" % [ship.ship_name, available.size(), ship.min_crew])
 		return
 
 	var crew: Array[Worker] = []
@@ -416,7 +476,8 @@ func _send_docked_ship(ship: Ship) -> void:
 		crew.append(available[i])
 
 	# Priority 1: deploy mining units if we have inventory and enough workers
-	if not GameState.mining_unit_inventory.is_empty() and GameState.money > 1_000_000:
+	# EXPANSIONIST: Deploy aggressively to claim territory
+	if not GameState.mining_unit_inventory.is_empty() and GameState.money > 500_000:
 		if _try_deploy_units(ship, crew, available):
 			return
 
@@ -734,30 +795,37 @@ func _manage_growth() -> void:
 	if operational == 0 and money > 800_000:
 		if GameState.purchase_ship(ShipData.ShipClass.PROSPECTOR):
 			ships_bought += 1
-	elif num_ships < 4 and money > 15_000_000:
-		var ship_class := _pick_ship_class()
+			print("AUTOTEST: Emergency ship purchase - $%d remaining" % GameState.money)
+
+	# EXPANSIONIST PRIORITY 1: Fleet expansion (most important for territory control)
+	# Target fleet size scales with money (1 ship per $2M, min 2, max 12)
+	var target_fleet_size := clampi(money / 2_000_000, 2, 12)
+	if num_ships < target_fleet_size and money > 2_000_000:  # Lowered from 3M
+		var ship_class := _pick_ship_class_expansionist()
 		if GameState.purchase_ship(ship_class):
 			ships_bought += 1
+			print("AUTOTEST: Fleet expansion - bought ship class %d (fleet: %d/%d, money: $%d)" % [
+				ship_class, num_ships + 1, target_fleet_size, GameState.money
+			])
 
-	# Equipment: only when flush and ships need it
-	if money > 5_000_000:
+	# EXPANSIONIST PRIORITY 2: Mining units (claim territory)
+	if money > 1_500_000:
+		_manage_mining_units()
+
+	# PRIORITY 3: Equipment for combat/mining
+	if money > 3_000_000:
 		_buy_needed_equipment()
 
-	# Upgrades: luxury purchase
-	if money > 10_000_000:
-		_buy_and_install_upgrades()
-
-	# Supplies: cheap, always worth it
+	# PRIORITY 4: Supplies (cheap maintenance)
 	if money > 500_000:
 		_buy_supplies_for_docked()
 
-	# Mining units: buy and deploy when profitable
-	if money > 2_000_000:
-		_manage_mining_units()
+	# PRIORITY 5: Upgrades (luxury)
+	if money > 8_000_000:
+		_buy_and_install_upgrades()
 
-	# Station a ship once fleet is established and profitable
-	if GameState.ships.size() >= 3 and money > 5_000_000:
-		_consider_stationing()
+	# DISABLED: Stationing counterproductive for aggressive expansionist AI
+	# An aggressive corp should actively mine/fight, not station ships
 
 func _pick_ship_class() -> int:
 	var counts := {}
@@ -770,6 +838,45 @@ func _pick_ship_class() -> int:
 	if counts.get(ShipData.ShipClass.EXPLORER, 0) < 1:
 		return ShipData.ShipClass.EXPLORER
 	return ShipData.ShipClass.HAULER
+
+func _pick_ship_class_expansionist() -> int:
+	# Expansionist strategy: build balanced fleet (Prospector/Hauler/Courier/Explorer)
+	# Couriers are fast and good for armed response/combat positioning
+	var counts := {}
+	for ship in GameState.ships:
+		counts[ship.ship_class] = counts.get(ship.ship_class, 0) + 1
+
+	var total := GameState.ships.size()
+
+	# Early game: establish core mining fleet
+	if total < 3:
+		if counts.get(ShipData.ShipClass.PROSPECTOR, 0) == 0:
+			return ShipData.ShipClass.PROSPECTOR
+		if counts.get(ShipData.ShipClass.HAULER, 0) == 0:
+			return ShipData.ShipClass.HAULER
+		return ShipData.ShipClass.PROSPECTOR
+
+	# Mid game: add fast ships (Couriers for combat response/territory control)
+	if total < 6:
+		if counts.get(ShipData.ShipClass.COURIER, 0) < 2:
+			return ShipData.ShipClass.COURIER
+		if counts.get(ShipData.ShipClass.HAULER, 0) < 2:
+			return ShipData.ShipClass.HAULER
+		return ShipData.ShipClass.PROSPECTOR
+
+	# Late game: maintain balanced ratio (40% Prospector, 25% Hauler, 20% Courier, 15% Explorer)
+	var prospectors: int = counts.get(ShipData.ShipClass.PROSPECTOR, 0)
+	var haulers: int = counts.get(ShipData.ShipClass.HAULER, 0)
+	var couriers: int = counts.get(ShipData.ShipClass.COURIER, 0)
+	var explorers: int = counts.get(ShipData.ShipClass.EXPLORER, 0)
+
+	if couriers < total / 5:  # 20% fast response ships
+		return ShipData.ShipClass.COURIER
+	if haulers < total / 4:   # 25% haulers
+		return ShipData.ShipClass.HAULER
+	if explorers < total / 7:  # ~14% explorers
+		return ShipData.ShipClass.EXPLORER
+	return ShipData.ShipClass.PROSPECTOR  # Default: mining ships
 
 func _install_available_gear() -> void:
 	var docked := GameState.get_docked_ships()
@@ -787,19 +894,48 @@ func _install_available_gear() -> void:
 func _buy_needed_equipment() -> void:
 	if not GameState.fabrication_queue.is_empty() or not GameState.equipment_inventory.is_empty():
 		return
+
+	var threat := _assess_threat_level()
+	var want_weapons := (ai_aggression >= 0.5) or (threat > 0.3)
+
 	for ship in GameState.ships:
-		if ship.equipment.size() < ship.max_equipment_slots:
-			var catalog: Array[Dictionary] = MarketData.EQUIPMENT_CATALOG
-			if not catalog.is_empty():
-				var best: Dictionary = {}
-				for entry in catalog:
-					if int(entry["cost"]) <= GameState.money:
-						if best.is_empty() or float(entry["mining_bonus"]) > float(best["mining_bonus"]):
-							best = entry
-				if not best.is_empty():
-					if GameState.purchase_equipment(best):
-						equipment_bought += 1
-			return
+		if ship.equipment.size() >= ship.max_equipment_slots:
+			continue
+
+		var catalog: Array[Dictionary] = MarketData.EQUIPMENT_CATALOG
+		if catalog.is_empty():
+			continue
+
+		# Prioritize weapons if aggressive or threatened
+		if want_weapons and not ship.is_armed():
+			var best_weapon: Dictionary = {}
+			for entry in catalog:
+				if entry.get("type") == "weapon" and int(entry["cost"]) <= GameState.money:
+					# Prefer cost-effective weapons (Mining Laser or Battle Laser)
+					var power: int = int(entry.get("weapon_power", 0))
+					var cost: int = int(entry["cost"])
+					if power > 0:
+						if best_weapon.is_empty():
+							best_weapon = entry
+						elif cost < int(best_weapon["cost"]) and power >= int(best_weapon.get("weapon_power", 0)) * 0.8:
+							best_weapon = entry  # Cheaper with decent power
+
+			if not best_weapon.is_empty():
+				if GameState.purchase_equipment(best_weapon):
+					equipment_bought += 1
+					return
+
+		# Otherwise buy mining equipment
+		var best: Dictionary = {}
+		for entry in catalog:
+			if entry.get("type") != "weapon" and int(entry["cost"]) <= GameState.money:
+				if best.is_empty() or float(entry.get("mining_bonus", 1.0)) > float(best.get("mining_bonus", 1.0)):
+					best = entry
+
+		if not best.is_empty():
+			if GameState.purchase_equipment(best):
+				equipment_bought += 1
+				return
 
 func _buy_and_install_upgrades() -> void:
 	if not GameState.upgrade_inventory.is_empty():
@@ -858,13 +994,19 @@ func _manage_mining_units() -> void:
 		if unit.max_durability < 100.0 and GameState.money > unit.rebuild_cost():
 			GameState.rebuild_mining_unit(unit)
 
-	# Buy a mining unit if fleet is small
+	# EXPANSIONIST: Buy mining units aggressively to claim territory
+	# Target: 2 units per ship (defensive + offensive claims)
 	var total_units := GameState.mining_unit_inventory.size() + GameState.deployed_mining_units.size()
-	if total_units < 3 and GameState.money > 2_000_000:
+	var target_units := GameState.ships.size() * 2
+	if total_units < target_units and GameState.money > 1_500_000:
 		var catalog := MiningUnitCatalog.get_available_units()
 		if not catalog.is_empty():
-			var entry := catalog[mini(total_units, catalog.size() - 1)]
-			GameState.purchase_mining_unit(entry)
+			# Buy best unit we can afford
+			var entry := catalog[mini(total_units / 2, catalog.size() - 1)]
+			if GameState.purchase_mining_unit(entry):
+				print("AUTOTEST: Bought mining unit for territory expansion (units: %d/%d)" % [
+					total_units + 1, target_units
+				])
 
 	# Deploy from docked ships is handled by _send_docked_ship via _try_deploy_units
 

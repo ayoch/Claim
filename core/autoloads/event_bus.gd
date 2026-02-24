@@ -132,6 +132,7 @@ signal ship_sold(ship_id: int)
 
 # Criminal ban system
 signal violation_recorded(colony: Colony, reason: String)
+signal colony_banned_player(colony: Colony)
 signal game_over(reason: String)
 
 # Warning system

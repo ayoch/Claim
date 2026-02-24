@@ -1,6 +1,6 @@
 extends Node
 
-var money: int = 14000000:
+var money: int = 10000000:
 	set(value):
 		money = value
 		EventBus.money_changed.emit(money)
@@ -29,8 +29,10 @@ var settings: Dictionary = {
 	"auto_refuel": true,
 	"show_unreachable_destinations": false,
 	"auto_sell_at_markets": false,
+	"auto_restock_torpedoes": true,
 	"auto_sell_at_earth": true,
 	"autoplay": true,
+	"auto_pause_on_critical": true,  # Default ON for safety
 }
 
 # Leaderboard system
@@ -62,6 +64,10 @@ func get_repair_policy(ship: Ship) -> int:
 
 # Game clock: total elapsed game-seconds (ticks) since game start
 var total_ticks: float = 0.0
+
+# Statistics
+var total_crew_deaths: int = 0
+
 const START_YEAR: int = 2026
 const START_MONTH: int = 2
 const START_DAY: int = 18
@@ -226,7 +232,7 @@ func new_game() -> void:
 	available_contracts.clear()
 	active_contracts.clear()
 	active_market_events.clear()
-	money = 10000
+	money = 10_000_000
 	total_ticks = 0.0
 	Reputation.score = 0.0
 	_init_resources()
@@ -591,12 +597,66 @@ func check_game_over_banned() -> bool:
 
 	return false
 
-## Warning System: Persistent, dismissible warnings
-func add_warning(message: String, severity: String, category: String) -> String:
-	# Check if this warning already exists (avoid duplicates)
+## Warning System: Persistent, dismissible warnings with lightspeed delay
+## position_au: Where the event occurred (Vector2). If null, delivered instantly (local events only).
+## event_time: When the event actually occurred (game ticks). If 0, uses current time.
+func add_warning(message: String, severity: String, category: String, position_au: Vector2 = Vector2.ZERO, event_time: float = 0.0) -> String:
+	# Use current time if no event time specified
+	var actual_event_time := event_time if event_time > 0.0 else total_ticks
+
+	# Calculate lightspeed delay if position provided (non-zero)
+	var delay: float = 0.0
+	if position_au != Vector2.ZERO:
+		var earth_pos := CelestialData.get_earth_position_au()
+		var distance := position_au.distance_to(earth_pos)
+		delay = distance * LIGHT_SECONDS_PER_AU
+
+		# Queue warning for delayed delivery
+		pending_orders.append({
+			"fires_at": total_ticks + delay,
+			"ship": null,
+			"label": "warning_delivery",
+			"fn": func():
+				_deliver_warning(message, severity, category, delay, actual_event_time)
+		})
+		return "queued"  # Will be assigned real ID when delivered
+	else:
+		# Instant delivery (local Earth events only)
+		return _deliver_warning(message, severity, category, 0.0, actual_event_time)
+
+func _deliver_warning(message: String, severity: String, category: String, delay: float, event_time: float) -> String:
+	# Check if duplicate exists BEFORE adding timestamp/delay prefixes (base message deduplication)
 	for warning in active_warnings:
-		if warning["message"] == message and warning["category"] == category:
-			return warning["id"]  # Already exists
+		# Strip timestamp and delay prefixes to get base message
+		# Format: "[D1 12:34] [+5m delay] Message" or "[D1 12:34] Message"
+		var existing_base: String = warning["message"]
+
+		# Strip timestamp: "[D1 12:34]"
+		if existing_base.begins_with("[D"):
+			var bracket_end := existing_base.find("]")
+			if bracket_end > 0:
+				existing_base = existing_base.substr(bracket_end + 2)  # +2 to skip "] "
+
+		# Strip delay: "[+5m delay]"
+		if existing_base.begins_with("[+"):
+			var bracket_end := existing_base.find("]")
+			if bracket_end > 0:
+				existing_base = existing_base.substr(bracket_end + 2)  # +2 to skip "] "
+
+		if existing_base == message and warning["category"] == category and warning["severity"] == severity:
+			return warning["id"]  # Duplicate - don't create again
+
+	# Format event timestamp
+	var event_date := _format_game_time(event_time)
+	var timestamp_prefix := "[%s]" % event_date
+
+	# Add delay info if applicable
+	var final_message := message
+	if delay > 0.0:
+		var delay_str := _format_delay_time(delay)
+		final_message = "%s [+%s delay] %s" % [timestamp_prefix, delay_str, message]
+	else:
+		final_message = "%s %s" % [timestamp_prefix, message]
 
 	# Create new warning
 	var warning_id := "warning_%d" % _next_warning_id
@@ -604,13 +664,45 @@ func add_warning(message: String, severity: String, category: String) -> String:
 
 	active_warnings.append({
 		"id": warning_id,
-		"message": message,
+		"message": final_message,
 		"severity": severity,  # "warning" or "critical"
-		"category": category,  # "violation", "crew", "debt", "loan"
+		"category": category,  # "violation", "crew", "debt", "loan", "combat"
 	})
 
-	EventBus.warning_added.emit(warning_id, message, severity)
+	# Limit active warnings to prevent UI bloat (keep 50 most recent)
+	const MAX_ACTIVE_WARNINGS := 50
+	if active_warnings.size() > MAX_ACTIVE_WARNINGS:
+		# Remove oldest warnings (first in array)
+		for i in range(active_warnings.size() - MAX_ACTIVE_WARNINGS):
+			EventBus.warning_dismissed.emit(active_warnings[0]["id"])
+			active_warnings.remove_at(0)
+
+	# Auto-pause on critical events if setting enabled
+	if severity == "critical" and settings.get("auto_pause_on_critical", true):
+		TimeScale.set_speed(1.0)
+
+	# Send push notification for critical events
+	if severity == "critical":
+		send_push_notification("Critical Event", final_message)
+
+	EventBus.warning_added.emit(warning_id, final_message, severity)
 	return warning_id
+
+func _format_delay_time(seconds: float) -> String:
+	if seconds < 60.0:
+		return "%.0fs" % seconds
+	elif seconds < 3600.0:
+		return "%.1fm" % (seconds / 60.0)
+	else:
+		return "%.1fh" % (seconds / 3600.0)
+
+func _format_game_time(ticks: float) -> String:
+	# Format as "Day X, HH:MM"
+	var day := int(ticks / 86400.0) + 1
+	var remaining_secs := int(ticks) % 86400
+	var hours := remaining_secs / 3600
+	var minutes := (remaining_secs % 3600) / 60
+	return "D%d %02d:%02d" % [day, hours, minutes]
 
 func dismiss_warning(warning_id: String) -> void:
 	for i in range(active_warnings.size() - 1, -1, -1):
@@ -632,6 +724,55 @@ func get_warnings_by_category(category: String) -> Array[Dictionary]:
 		if warning["category"] == category:
 			result.append(warning)
 	return result
+
+## Push notification system for critical events
+func send_push_notification(title: String, body: String) -> void:
+	var os_name := OS.get_name()
+
+	# Desktop: flash window for attention
+	if os_name in ["Windows", "macOS", "Linux"]:
+		DisplayServer.window_request_attention()
+
+	# Android: native notification via JNI
+	elif os_name == "Android":
+		_send_android_notification(title, body)
+
+	# iOS: native plugin required (stub for now)
+	elif os_name == "iOS":
+		_send_ios_notification(title, body)
+
+func _send_android_notification(title: String, body: String) -> void:
+	# Android notifications in Godot 4 require a custom GDExtension plugin
+	# This is a reference implementation that would work with a proper plugin
+
+	# Check if custom notification plugin is available
+	if Engine.has_singleton("AndroidNotifications"):
+		var android_notif := Engine.get_singleton("AndroidNotifications")
+		android_notif.call("send_notification", title, body, true)  # true = critical (vibrate)
+		return
+
+	# Fallback: Use JavaScriptBridge approach (requires custom Android plugin module)
+	# The plugin should implement:
+	# - NotificationManager access
+	# - Notification.Builder for creating notifications
+	# - Vibration pattern support
+	# - Notification channel creation (required for Android 8+)
+
+	# For now, log to console
+	print("Android notification (plugin required): %s - %s" % [title, body])
+
+func _send_ios_notification(title: String, body: String) -> void:
+	# iOS requires a native plugin for local notifications
+	# This is a stub that will be implemented via native plugin
+	# The plugin should call UNUserNotificationCenter to schedule local notifications
+
+	# Check if native plugin is available
+	if Engine.has_singleton("IOSNotifications"):
+		var ios_notifications := Engine.get_singleton("IOSNotifications")
+		ios_notifications.call("send_local_notification", title, body)
+	else:
+		# Fallback: log for debugging
+		print("iOS notification (plugin required): %s - %s" % [title, body])
 
 func get_available_workers() -> Array[Worker]:
 	var available: Array[Worker] = []
@@ -1118,15 +1259,31 @@ func restock_torpedoes(ship: Ship) -> bool:
 	if not ship.is_docked:
 		return false
 
+	# Determine location and munitions quality
+	var location_name := "Earth"
+	if ship.docked_at_colony != null:
+		location_name = ship.docked_at_colony.colony_name
+	elif not ship.is_at_earth:
+		return false  # Not docked anywhere valid
+
+	var quality: int = MunitionsData.get_quality_at_location(location_name)
 	var total_cost := 0
 	var restock_list: Array[Equipment] = []
 
-	# Calculate total cost
+	# Calculate total cost with quality-based pricing
 	for equip in ship.equipment:
-		if equip.has_ammo() and equip.needs_reload():
-			var needed := equip.ammo_capacity - equip.current_ammo
-			total_cost += needed * equip.ammo_cost
-			restock_list.append(equip)
+		if not equip.has_ammo() or not equip.needs_reload():
+			continue
+
+		# Block fusion torpedoes at non-Mars locations or insufficient reputation
+		if equip.equipment_name == "Fusion Torpedo Launcher":
+			if not MunitionsData.can_buy_fusion_torpedoes(location_name, Reputation.score):
+				continue  # Skip fusion torpedoes if unavailable
+
+		var needed := equip.ammo_capacity - equip.current_ammo
+		var cost_per_round := MunitionsData.get_ammo_cost(equip.ammo_cost, quality)
+		total_cost += needed * cost_per_round
+		restock_list.append(equip)
 
 	if total_cost <= 0:
 		return false  # Nothing to restock
@@ -1138,18 +1295,42 @@ func restock_torpedoes(ship: Ship) -> bool:
 	money -= total_cost
 	for equip in restock_list:
 		var needed := equip.ammo_capacity - equip.current_ammo
+		var cost_per_round := MunitionsData.get_ammo_cost(equip.ammo_cost, quality)
 		equip.current_ammo = equip.ammo_capacity
-		record_transaction(-needed * equip.ammo_cost, "Torpedoes: %s" % equip.equipment_name, ship.ship_name)
+		equip.ammo_quality = quality  # Store quality of purchased ammo
+		var quality_name := MunitionsData.get_quality_name(quality)
+		record_transaction(-needed * cost_per_round, "Torpedoes: %s (%s)" % [equip.equipment_name, quality_name], ship.ship_name)
 
 	return true
 
-## Get cost to restock all torpedoes on a ship
+## Get cost to restock all torpedoes on a ship (with quality-based pricing)
 func get_torpedo_restock_cost(ship: Ship) -> int:
+	if not ship.is_docked:
+		return 0
+
+	# Determine location and munitions quality
+	var location_name := "Earth"
+	if ship.docked_at_colony != null:
+		location_name = ship.docked_at_colony.colony_name
+	elif not ship.is_at_earth:
+		return 0
+
+	var quality: int = MunitionsData.get_quality_at_location(location_name)
 	var total_cost := 0
+
 	for equip in ship.equipment:
-		if equip.has_ammo() and equip.needs_reload():
-			var needed := equip.ammo_capacity - equip.current_ammo
-			total_cost += needed * equip.ammo_cost
+		if not equip.has_ammo() or not equip.needs_reload():
+			continue
+
+		# Block fusion torpedoes at non-Mars locations or insufficient reputation
+		if equip.equipment_name == "Fusion Torpedo Launcher":
+			if not MunitionsData.can_buy_fusion_torpedoes(location_name, Reputation.score):
+				continue
+
+		var needed := equip.ammo_capacity - equip.current_ammo
+		var cost_per_round := MunitionsData.get_ammo_cost(equip.ammo_cost, quality)
+		total_cost += needed * cost_per_round
+
 	return total_cost
 
 ## Calculate intercept trajectory to a moving asteroid
@@ -1446,7 +1627,9 @@ func process_pending_orders() -> void:
 	for order in pending_orders:
 		if total_ticks >= order["fires_at"]:
 			order["fn"].call()
-			EventBus.order_executed.emit(order["ship"], order["label"])
+			# Only emit order_executed for actual ship orders (not warnings)
+			if order["ship"] != null:
+				EventBus.order_executed.emit(order["ship"], order["label"])
 		else:
 			remaining.append(order)
 	pending_orders = remaining
@@ -2388,6 +2571,7 @@ func save_game(save_name: String = "") -> void:
 		"net_worth": calculate_net_worth(),
 		"money": money,
 		"total_ticks": total_ticks,
+		"total_crew_deaths": total_crew_deaths,
 		"thrust_policy": thrust_policy,
 		"supply_policy": supply_policy,
 		"collection_policy": collection_policy,
@@ -2406,6 +2590,7 @@ func save_game(save_name: String = "") -> void:
 		"autoplay": settings.get("autoplay", false),
 		"auto_sell_at_earth": settings.get("auto_sell_at_earth", true),
 		"auto_sell_at_markets": settings.get("auto_sell_at_markets", false),
+		"auto_restock_torpedoes": settings.get("auto_restock_torpedoes", true),
 		"fabrication_queue": [],
 		"reputation": Reputation.score,
 		"rescue_missions": {},
@@ -2493,6 +2678,7 @@ func save_game(save_name: String = "") -> void:
 				"ammo_capacity": e.ammo_capacity,
 				"current_ammo": e.current_ammo,
 				"ammo_cost": e.ammo_cost,
+				"ammo_quality": e.ammo_quality,
 				"mining_speed_bonus": e.mining_speed_bonus,
 				"mass": e.mass,
 			})
@@ -2727,6 +2913,7 @@ func save_game(save_name: String = "") -> void:
 	for corp: RivalCorp in rival_corps:
 		var corp_entry := { "name": corp.corp_name, "money": corp.money,
 			"total_ore_mined": corp.total_ore_mined, "total_revenue": corp.total_revenue,
+			"aggression": corp.aggression, "skill": corp.skill,
 			"ships": [] }
 		for ship: RivalShip in corp.ships:
 			corp_entry["ships"].append({
@@ -2777,6 +2964,7 @@ func load_game(file_name: String = "save_game.json") -> bool:
 	settings["autoplay"] = data.get("autoplay", false)
 	settings["auto_sell_at_earth"] = data.get("auto_sell_at_earth", true)
 	settings["auto_sell_at_markets"] = data.get("auto_sell_at_markets", false)
+	settings["auto_restock_torpedoes"] = data.get("auto_restock_torpedoes", true)
 
 	_init_resources()
 	var res_data: Dictionary = data.get("resources", {})
@@ -2884,11 +3072,14 @@ func load_game(file_name: String = "save_game.json") -> bool:
 			# Restore weapon ammo if saved (for torpedoes)
 			if ed.has("current_ammo"):
 				e.current_ammo = int(ed.get("current_ammo", e.ammo_capacity))
+			# Restore ammo quality (default to STANDARD for old saves)
+			e.ammo_quality = int(ed.get("ammo_quality", 1))  # 1 = MunitionsData.Quality.STANDARD
 			s.equipment.append(e)
 		ships.append(s)
 
-	# Restore game clock
+	# Restore game clock and statistics
 	total_ticks = float(data.get("total_ticks", 0.0))
+	total_crew_deaths = int(data.get("total_crew_deaths", 0))
 
 	# Reconnect ship crew from saved worker names
 	var ship_save_array: Array = data.get("ships", [])
@@ -3263,6 +3454,8 @@ func load_game(file_name: String = "save_game.json") -> bool:
 		corp.money = int(cd.get("money", corp.money))
 		corp.total_ore_mined = float(cd.get("total_ore_mined", 0.0))
 		corp.total_revenue = int(cd.get("total_revenue", 0))
+		corp.aggression = float(cd.get("aggression", corp.aggression))
+		corp.skill = float(cd.get("skill", corp.skill))
 		var saved_ships: Array = cd.get("ships", [])
 		for j in min(corp.ships.size(), saved_ships.size()):
 			var ship: RivalShip = corp.ships[j]

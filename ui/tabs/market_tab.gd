@@ -339,8 +339,8 @@ func _refresh_equip() -> void:
 				var fab_time: float = entry.get("fabrication_ticks", 0.0)
 				var info := Label.new()
 				info.text = "%s  %.2fx  $%s  (fab: %s)" % [
-					entry["name"], entry["mining_bonus"],
-					_format_number(entry["cost"]), _format_time(fab_time)
+					entry.get("name", ""), entry.get("mining_bonus", 1.0),
+					_format_number(entry.get("cost", 0)), _format_time(fab_time)
 				]
 				info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				info.clip_text = true

@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-24 EST (session 16)
+**Last Updated:** 2026-02-24 EST (session 17)
 **Updated By:** Instance on Machine 2 (Mac laptop - HK-47)
-**Session Context:** Combat system implementation, worker skill progression verification, trajectory fixes, UI polish
-**Next Session Priority:** Torpedo restocking UI (backend complete), fuel processor equipment, or colony growth system
+**Session Context:** Warning system overhaul - timestamps, ship ownership labels, auto-pause, violation physics, mobile notifications
+**Next Session Priority:** Test warning system with aggressive AI, then torpedo restocking UI
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -13,6 +13,47 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-24 EST (session 17) - Warning System Overhaul: Timestamps, Physics-Correct Violations, Auto-Pause
+- **Machine:** Mac laptop (HK-47)
+- **Work Completed:**
+  - **Warning System Comprehensive Overhaul** (see `docs/WARNING_SYSTEM.md` for full documentation):
+    - **Event Timestamps**: All warnings now show when events actually occurred (`[D1 12:34]` format), not just when message arrived. Added `event_time` parameter to `add_warning()`.
+    - **Ship Ownership Labels**: Combat warnings now clearly identify ship ownership: `[YOUR] Ship Name` (player), `[Corp Name] Ship Name` (rival), or plain name (unaffiliated).
+    - **Auto-Pause System**: Critical warnings (combat, crew death, breakdowns, ship destruction, life support, bans) trigger auto-pause to 1x speed if enabled. Default ON for safety. UI toggle in dashboard: "⚠️ Pause" button.
+    - **Physics-Correct Violation Queuing**: MAJOR FIX - violations are no longer issued instantly when events occur. Colonies now only issue violations AFTER receiving news via lightspeed delay. New `_queue_violation()` function implements two-stage delay: event→colony + colony→Earth. Applies to all violation types (combat, crew death, fusion weapons).
+    - **Violation Throttling**: Reduced spam from 100+ violations to only 4 threshold warnings (1st, 2nd, 3rd=final warning, 4th=ban). Each violation had unique count so wasn't caught by deduplication.
+    - **Improved Deduplication**: Now strips both timestamp `[D1 12:34]` and delay `[+5m delay]` prefixes before comparing base messages. Prevents duplicate warnings for same event.
+    - **Warning Limit**: Capped active warnings at 50, auto-dismissing oldest to prevent UI bloat and performance issues.
+    - **Mobile Push Notifications**: Added `send_push_notification()` for critical events. Desktop (window flash) works immediately. Android/iOS require native plugins (see `docs/MOBILE_NOTIFICATIONS.md`).
+
+  - **Performance Fixes**:
+    - Fixed violation spam causing 100+ UI node creations → FPS drops to 1, process time spikes to 663ms
+    - Fixed default auto-pause setting (was off, now on)
+    - Fixed duplicate detection not catching delayed warnings
+
+  - **Timeline Accuracy**:
+    - Example: Combat at 2 AU from Lunar Base
+      - T+0s: Combat happens
+      - T+16m: Lunar Base receives light from combat
+      - T+16m: Lunar Base issues violation
+      - T+16m1s: Player receives violation (colony→Earth delay)
+    - Player can now see events happened BEFORE warnings that arrived earlier (due to different distances)
+
+- **Files Modified:**
+  - `core/autoloads/game_state.gd` (timestamps, auto-pause, deduplication, mobile notifications)
+  - `core/autoloads/simulation.gd` (violation queuing, ship ownership labels, all critical warnings)
+  - `core/models/colony.gd` (violation throttling, event_time parameter)
+  - `ui/tabs/dashboard_tab.gd` (auto-pause toggle button)
+  - `docs/WARNING_SYSTEM.md` (NEW - comprehensive documentation)
+  - `docs/MOBILE_NOTIFICATIONS.md` (updated for critical events integration)
+
+- **Stats:** Warning system now handles realistic physics for all ~15 critical event types with proper delays
+
+- **Next Steps:**
+  - Test with aggressive AI to verify violation timeline accuracy
+  - Consider adding warning history panel
+  - Implement Android/iOS notification plugins
 
 ### 2026-02-24 EST (session 16) - Combat System, Worker XP Verification, Trajectory Fixes
 - **Machine:** Mac laptop (HK-47)
