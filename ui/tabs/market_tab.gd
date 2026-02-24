@@ -78,11 +78,14 @@ func _refresh_sell() -> void:
 
 		for event in GameState.active_market_events:
 			var event_panel := PanelContainer.new()
+			event_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			var event_vbox := VBoxContainer.new()
 			event_vbox.add_theme_constant_override("separation", 4)
 
 			var event_title := Label.new()
 			event_title.text = event.get_display_text()
+			event_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			event_title.clip_text = true
 			event_title.add_theme_font_size_override("font_size", 14)
 			if event.price_multiplier > 1.0:
 				event_title.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
@@ -92,6 +95,7 @@ func _refresh_sell() -> void:
 
 			var event_desc := Label.new()
 			event_desc.text = event.event_description
+			event_desc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			event_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			event_desc.add_theme_color_override("font_color", Color(0.8, 0.8, 0.9))
 			event_vbox.add_child(event_desc)
@@ -113,6 +117,7 @@ func _refresh_sell() -> void:
 
 	var sell_all_btn := Button.new()
 	sell_all_btn.text = "Sell All Ores ($%s)" % _format_number(total_value)
+	sell_all_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	sell_all_btn.custom_minimum_size = Vector2(0, 48)
 	sell_all_btn.disabled = not has_any
 	sell_all_btn.pressed.connect(_sell_all_ores)
@@ -178,12 +183,14 @@ func _refresh_equip() -> void:
 
 		for equip in GameState.fabrication_queue:
 			var fab_panel := PanelContainer.new()
+			fab_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			var fab_hbox := HBoxContainer.new()
 			fab_hbox.add_theme_constant_override("separation", 8)
 
 			var fab_info := Label.new()
 			fab_info.text = "%s (%.2fx)" % [equip.equipment_name, equip.mining_bonus]
 			fab_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			fab_info.clip_text = true
 			fab_hbox.add_child(fab_info)
 
 			var time_label := Label.new()
@@ -224,6 +231,7 @@ func _refresh_equip() -> void:
 			var inv_info := Label.new()
 			inv_info.text = "%s (%.2fx mining)" % [equip.equipment_name, equip.mining_bonus]
 			inv_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			inv_info.clip_text = true
 			inv_row.add_child(inv_info)
 
 			# Install buttons for each docked ship with open slots
@@ -246,6 +254,7 @@ func _refresh_equip() -> void:
 	# Show each ship's equipment and available slots
 	for ship in GameState.ships:
 		var ship_panel := PanelContainer.new()
+		ship_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var ship_vbox := VBoxContainer.new()
 		ship_vbox.add_theme_constant_override("separation", 4)
 
@@ -253,6 +262,8 @@ func _refresh_equip() -> void:
 		ship_header.text = "%s  [%d/%d slots]" % [
 			ship.ship_name, ship.equipment.size(), ship.max_equipment_slots
 		]
+		ship_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		ship_header.clip_text = true
 		ship_header.add_theme_font_size_override("font_size", 18)
 		ship_vbox.add_child(ship_header)
 
@@ -280,6 +291,7 @@ func _refresh_equip() -> void:
 					int(equip.durability), status_str
 				]
 				eq_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				eq_info.clip_text = true
 				eq_row.add_child(eq_info)
 
 				# Durability bar
@@ -316,6 +328,8 @@ func _refresh_equip() -> void:
 		if has_open_slot and ship.is_docked:
 			var buy_label := Label.new()
 			buy_label.text = "Buy Equipment (goes to inventory for fabrication):"
+			buy_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			buy_label.clip_text = true
 			buy_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 			ship_vbox.add_child(buy_label)
 
@@ -324,11 +338,12 @@ func _refresh_equip() -> void:
 				buy_row.add_theme_constant_override("separation", 8)
 				var fab_time: float = entry.get("fabrication_ticks", 0.0)
 				var info := Label.new()
-				info.text = "%s  %.2fx  $%s  (fab: %.0f ticks)" % [
+				info.text = "%s  %.2fx  $%s  (fab: %s)" % [
 					entry["name"], entry["mining_bonus"],
-					_format_number(entry["cost"]), fab_time
+					_format_number(entry["cost"]), _format_time(fab_time)
 				]
 				info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				info.clip_text = true
 				buy_row.add_child(info)
 
 				var btn := Button.new()
@@ -341,8 +356,9 @@ func _refresh_equip() -> void:
 		elif not has_open_slot:
 			var full_label := Label.new()
 			full_label.text = "All slots full - remove equipment to make room"
+			full_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			full_label.clip_text = true
 			full_label.add_theme_color_override("font_color", Color(0.8, 0.6, 0.2))
-			full_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			ship_vbox.add_child(full_label)
 
 		ship_panel.add_child(ship_vbox)
@@ -361,48 +377,53 @@ func _refresh_equip() -> void:
 	upgrades_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 	equip_list.add_child(upgrades_header)
 
-	# Show upgrade inventory
-	if not GameState.upgrade_inventory.is_empty():
-		for upgrade in GameState.upgrade_inventory:
-			var upgrade_row := HBoxContainer.new()
-			upgrade_row.add_theme_constant_override("separation", 8)
-			var upgrade_info := Label.new()
-			upgrade_info.text = "%s - %s" % [upgrade.upgrade_name, upgrade.description]
-			upgrade_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			upgrade_row.add_child(upgrade_info)
+	var all_upgrades := UpgradeCatalog.get_available_upgrades()
+	var modular_catalog := all_upgrades.filter(func(e): return not e.get("requires_dry_dock", false))
+	var dry_dock_catalog := all_upgrades.filter(func(e): return e.get("requires_dry_dock", false))
+	var docked_ships := GameState.get_docked_ships()
 
-			# Install on docked ships
-			for docked_ship in GameState.get_docked_ships():
-				var install_btn := Button.new()
-				install_btn.text = "Install on %s" % docked_ship.ship_name
-				install_btn.custom_minimum_size = Vector2(0, 40)
-				install_btn.pressed.connect(func() -> void:
-					GameState.install_upgrade(docked_ship, upgrade)
-					_refresh_equip()
-				)
-				upgrade_row.add_child(install_btn)
+	# ── MODULAR UPGRADES ─────────────────────────────────────────────────────
+	var modular_header := Label.new()
+	modular_header.text = "Modular Upgrades"
+	modular_header.add_theme_font_size_override("font_size", 16)
+	modular_header.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
+	equip_list.add_child(modular_header)
 
-			equip_list.add_child(upgrade_row)
+	var modular_note := Label.new()
+	modular_note.text = "Physical units. Buy to inventory, then install on any docked ship."
+	modular_note.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+	modular_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	equip_list.add_child(modular_note)
 
-		var upgrade_sep2 := HSeparator.new()
-		equip_list.add_child(upgrade_sep2)
+	# Inventory of purchased modular units awaiting installation
+	for upgrade in GameState.upgrade_inventory:
+		var upgrade_row := HBoxContainer.new()
+		upgrade_row.add_theme_constant_override("separation", 8)
+		var upgrade_info := Label.new()
+		upgrade_info.text = "[In inventory] %s — %s" % [upgrade.upgrade_name, upgrade.description]
+		upgrade_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		upgrade_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		upgrade_info.add_theme_color_override("font_color", Color(0.6, 0.9, 0.6))
+		upgrade_row.add_child(upgrade_info)
+		for docked_ship in docked_ships:
+			var install_btn := Button.new()
+			install_btn.text = "Install on %s" % docked_ship.ship_name
+			install_btn.custom_minimum_size = Vector2(0, 40)
+			install_btn.pressed.connect(func() -> void:
+				GameState.install_upgrade(docked_ship, upgrade)
+				_refresh_equip()
+			)
+			upgrade_row.add_child(install_btn)
+		equip_list.add_child(upgrade_row)
 
-	# Buy upgrades
-	var buy_upgrades_label := Label.new()
-	buy_upgrades_label.text = "Available Upgrades:"
-	buy_upgrades_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	equip_list.add_child(buy_upgrades_label)
-
-	for entry in UpgradeCatalog.get_available_upgrades():
+	for entry in modular_catalog:
 		var buy_row := HBoxContainer.new()
 		buy_row.add_theme_constant_override("separation", 8)
 		var info := Label.new()
-		info.text = "%s - %s ($%s)" % [
-			entry["name"], entry["description"], _format_number(entry["cost"])
-		]
+		info.text = "%s — %s ($%s)" % [entry["name"], entry["description"], _format_number(entry["cost"])]
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		buy_row.add_child(info)
-
 		var btn := Button.new()
 		btn.text = "Buy"
 		btn.custom_minimum_size = Vector2(0, 44)
@@ -413,6 +434,51 @@ func _refresh_equip() -> void:
 		)
 		buy_row.add_child(btn)
 		equip_list.add_child(buy_row)
+
+	# ── DRY DOCK WORK ────────────────────────────────────────────────────────
+	var dry_sep := HSeparator.new()
+	equip_list.add_child(dry_sep)
+
+	var dry_header := Label.new()
+	dry_header.text = "Dry Dock Work"
+	dry_header.add_theme_font_size_override("font_size", 16)
+	dry_header.add_theme_color_override("font_color", Color(1.0, 0.75, 0.4))
+	equip_list.add_child(dry_header)
+
+	var dry_note := Label.new()
+	dry_note.text = "Structural modifications. Commissioned directly on a docked ship — hull cuts, rebuilds, conversions."
+	dry_note.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
+	dry_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	equip_list.add_child(dry_note)
+
+	for entry in dry_dock_catalog:
+		var dry_row := VBoxContainer.new()
+		dry_row.add_theme_constant_override("separation", 4)
+		var info := Label.new()
+		info.text = "%s — %s ($%s)" % [entry["name"], entry["description"], _format_number(entry["cost"])]
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		dry_row.add_child(info)
+		if docked_ships.is_empty():
+			var no_ship := Label.new()
+			no_ship.text = "No ships docked."
+			no_ship.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+			dry_row.add_child(no_ship)
+		else:
+			var btn_row := HBoxContainer.new()
+			btn_row.add_theme_constant_override("separation", 6)
+			for docked_ship in docked_ships:
+				var commission_btn := Button.new()
+				commission_btn.text = "Commission on %s" % docked_ship.ship_name
+				commission_btn.custom_minimum_size = Vector2(0, 40)
+				commission_btn.disabled = GameState.money < entry["cost"]
+				commission_btn.pressed.connect(func() -> void:
+					if GameState.commission_dry_dock(docked_ship, entry):
+						_refresh_equip()
+				)
+				btn_row.add_child(commission_btn)
+			dry_row.add_child(btn_row)
+		equip_list.add_child(dry_row)
 
 # ═══════════════════════════════════════════════════
 #  CONTRACTS SECTION
@@ -433,6 +499,7 @@ func _refresh_contracts() -> void:
 
 		for contract in GameState.active_contracts:
 			var panel := PanelContainer.new()
+			panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			var vbox := VBoxContainer.new()
 			vbox.add_theme_constant_override("separation", 4)
 
@@ -442,9 +509,9 @@ func _refresh_contracts() -> void:
 			var delivery_loc := contract.get_delivery_location_text()
 			var progress_pct := contract.get_progress() * 100.0
 
-			info.text = "%s: %s %.1f/%.1f t (%.0f%%) - Deliver to: %s\n$%s reward - Deadline: %.0f ticks - Earth stockpile: %.1f t" % [
+			info.text = "%s: %s %.1f/%.1f t (%.0f%%) - Deliver to: %s\n$%s reward - Deadline: %s - Earth stockpile: %.1f t" % [
 				contract.issuer_name, ore_name, contract.quantity_delivered, contract.quantity, progress_pct,
-				delivery_loc, _format_number(contract.reward), contract.deadline_ticks, have
+				delivery_loc, _format_number(contract.reward), _format_time(contract.deadline_ticks), have
 			]
 			info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -474,6 +541,8 @@ func _refresh_contracts() -> void:
 
 			var note := Label.new()
 			note.text = "(Or deliver from ship at colony)"
+			note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			note.clip_text = true
 			note.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 			hbox.add_child(note)
 
@@ -498,6 +567,7 @@ func _refresh_contracts() -> void:
 	else:
 		for contract in GameState.available_contracts:
 			var panel := PanelContainer.new()
+			panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			var hbox := HBoxContainer.new()
 			hbox.add_theme_constant_override("separation", 8)
 
@@ -505,10 +575,10 @@ func _refresh_contracts() -> void:
 			var ore_name := ResourceTypes.get_ore_name(contract.ore_type)
 			var delivery_loc := contract.get_delivery_location_text()
 			var partial_text := " (partial OK)" if contract.allows_partial else " (all or nothing)"
-			info.text = "%s: %s %.1f t to %s%s\n$%s reward (+%.0f%% vs spot) - %.0f ticks" % [
+			info.text = "%s: %s %.1f t to %s%s\n$%s reward (+%.0f%% vs spot) - %s remaining" % [
 				contract.issuer_name, ore_name, contract.quantity, delivery_loc, partial_text,
 				_format_number(contract.reward), contract.get_premium_percent(),
-				contract.deadline_ticks
+				_format_time(contract.deadline_ticks)
 			]
 			info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -549,6 +619,7 @@ func _refresh_colony() -> void:
 
 	for colony: Colony in GameState.colonies:
 		var panel := PanelContainer.new()
+		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var vbox := VBoxContainer.new()
 		vbox.add_theme_constant_override("separation", 4)
 
@@ -559,6 +630,8 @@ func _refresh_colony() -> void:
 
 		var header := Label.new()
 		header.text = "%s (%.2f AU from Earth)" % [colony.colony_name, dist_from_earth]
+		header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		header.clip_text = true
 		header.add_theme_font_size_override("font_size", 18)
 		header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 		vbox.add_child(header)
@@ -584,6 +657,7 @@ func _refresh_colony() -> void:
 		if prices_text != "":
 			var prices_label := Label.new()
 			prices_label.text = prices_text.strip_edges()
+			prices_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			prices_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			vbox.add_child(prices_label)
 

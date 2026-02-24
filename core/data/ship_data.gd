@@ -47,6 +47,7 @@ const SHIP_NAMES := [
 	"Cimmeria",
 	"Technically Profitable",
 	"Sing Forever",
+	"Long Path",
 	"Of Distant Suns",
 ]
 
@@ -128,7 +129,9 @@ static func create_ship(ship_class: ShipClass, ship_name: String = "") -> Ship:
 	ship.ship_name = ship_name
 
 	# Per-ship variance per GDD §8.2
-	ship.base_mass = _vary(stats["dry_mass"], 0.05)           # ±5%
+	# ±12% base variance; 20% chance of an additional ±8% outlier
+	var mass_spread := 0.12 + (0.08 if randf() < 0.20 else 0.0)
+	ship.base_mass = _vary(stats["dry_mass"], mass_spread)
 	ship.max_thrust_g = _vary(stats["thrust_g"], 0.05)        # ±5%
 	ship.thrust_setting = 1.0
 	ship.cargo_capacity = _vary(stats["cargo_capacity"], 0.10) # ±10%

@@ -12,6 +12,7 @@ enum UpgradeType {
 @export var upgrade_type: UpgradeType = UpgradeType.FUEL_TANK
 @export var cost: int = 0
 @export var description: String = ""
+@export var requires_dry_dock: bool = false  # Structural work done to the ship; not a physical unit
 
 # Stat modifications
 @export var fuel_capacity_bonus: float = 0.0
@@ -33,4 +34,5 @@ static func from_catalog(entry: Dictionary) -> ShipUpgrade:
 	u.cargo_volume_bonus = entry.get("cargo_volume_bonus", 0.0)
 	u.base_mass_multiplier = entry.get("base_mass_multiplier", 1.0)
 	u.fuel_efficiency_multiplier = entry.get("fuel_efficiency_multiplier", 1.0)
+	u.requires_dry_dock = entry.get("requires_dry_dock", false)
 	return u

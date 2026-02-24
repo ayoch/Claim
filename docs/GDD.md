@@ -463,9 +463,15 @@ With units deployed across the belt, logistics is the core challenge: supply rou
 > **NOT YET IMPLEMENTED:** Supply route planning, food as cargo, fuel processor equipment (extracting fuel from water-ice asteroids), player-owned fuel depots.
 
 ### 8.7 Ship Upgrades
-Modules with mass, occupying upgrade slots. Categories: speed, efficiency, capacity, weapons (see Section 6.4).
+Two categories with distinct installation flows:
 
-> **STATUS: PARTIALLY IMPLEMENTED.** 9 types across fuel, engine, cargo, and hull. **Weapon upgrades not yet implemented.**
+**Modular upgrades** — Physical units that can be purchased, stored in inventory, and installed on any docked ship. Examples: auxiliary fuel tanks (bolt-on pressure vessels), replacement nozzle assemblies. Inventory step means you can buy in bulk and hold for later.
+
+**Dry dock work** — Structural modifications commissioned directly on a docked ship. No inventory step; work is applied immediately. Examples: internal fuel system restructuring, engine rebuilds, hull extensions, hauler conversions, hull material replacement. These can't be "carried" — you're contracting shipyard labor.
+
+Categories: fuel, engine, cargo bay, hull. Weapons (see Section 6.4) not yet categorized.
+
+> **STATUS: IMPLEMENTED.** Two-tier upgrade system in place. Modular and dry dock upgrades shown in separate UI sections with appropriate purchase flows. Weapon upgrades not yet implemented.
 
 ### 8.8 Mining Unit Generations
 New models release periodically within an epoch — better extraction, durability, or maintenance at higher cost.

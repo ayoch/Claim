@@ -1,8 +1,8 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-23 EST (session 14)
+**Last Updated:** 2026-02-24 EST (session 15)
 **Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
-**Session Context:** Bug fixes — starting ships count, refuel teleport, profit estimates, Market tab width
+**Session Context:** UI polish — docked ships bug, upgrade category differentiation, clip_text fix
 **Next Session Priority:** Continued playtesting and polish; Phase 3 (ServerBackend HTTP wrapper) still pending from session 13
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
@@ -13,6 +13,21 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-24 EST (session 15) - UI Polish: Docked Ships Bug, Upgrade Categories, Clip Text
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Clip_text fix**: `upgrade_info` and upgrade buy `info` labels in `market_tab.gd` were using `clip_text = true` (from overflow fix). Changed to `autowrap_mode = TextServer.AUTOWRAP_WORD_SMART` so descriptions wrap instead of truncating.
+  - **Docked ships drifting from Earth fixed**: `is_at_earth` used live ephemeris proximity — Earth orbits away from stored ship position, causing ships to silently lose dock status. Fix: added `docked_at_earth: bool = true` to `ship.gd`; `is_at_earth` checks flag OR proximity. Set `true` at all 3 Earth-return paths in `simulation.gd`. Set `false` at all 4 dispatch paths in `game_state.gd`. Saved/loaded with default `true`.
+  - **Modular vs dry dock upgrades**: Added `requires_dry_dock: bool` to `ShipUpgrade`. Recategorized catalog — Extended Fuel Tank and Improved Thrust Nozzles are modular (physical units; buy → inventory → install); everything else (fuel system restructuring, engine rebuilds, cargo bay extensions, hull work) is dry dock (structural; commissioned directly on ship). Added `commission_dry_dock(ship, entry)` to `game_state.gd`. Market tab upgrades section split into "Modular Upgrades" (blue header, buy→inventory flow) and "Dry Dock Work" (amber header, per-ship Commission buttons). Updated GDD §8.7.
+- **Files Modified:**
+  - `ui/tabs/market_tab.gd` (clip_text → autowrap, upgrades section split)
+  - `core/models/ship.gd` (docked_at_earth field)
+  - `core/autoloads/simulation.gd` (docked_at_earth = true at Earth return)
+  - `core/autoloads/game_state.gd` (docked_at_earth = false at dispatch, save/load, commission_dry_dock())
+  - `core/models/ship_upgrade.gd` (requires_dry_dock field)
+  - `core/data/upgrade_catalog.gd` (recategorized, updated descriptions)
+  - `docs/GDD.md` (§8.7 Ship Upgrades rewritten)
 
 ### 2026-02-23 EST (session 14) - Bug Fixes: Starting Ships, Refuel Teleport, Ore Prices, Market Tab
 - **Machine:** Windows desktop (Dweezil)

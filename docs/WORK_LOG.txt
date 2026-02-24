@@ -1,5 +1,13 @@
 ﻿# Claim — Work Log
-# Updated: 2026-02-23 EST
+# Updated: 2026-02-24 EST
+
+---
+
+## 2026-02-24 EST (session 15)
+
+- **Clip_text fix (market_tab.gd):** `upgrade_info` and upgrade buy row `info` labels were using `clip_text = true` (overflow fix from prior session) but should wrap. Changed both to `autowrap_mode = TextServer.AUTOWRAP_WORD_SMART`.
+- **Docked ships drifting from Earth (full fix):** Root cause was `is_at_earth` using live ephemeris proximity check — Earth orbits away from stored ship position. Added `docked_at_earth: bool = true` to `ship.gd`; `is_at_earth` now checks flag OR proximity. Set `true` at all 3 Earth-return points in `simulation.gd` (mining mission return, station_colony==null return path, trade mission return). Set `false` at all 4 dispatch points in `game_state.gd`. Save/load added with default `true` for backward compatibility.
+- **Modular vs dry dock upgrades:** Added `requires_dry_dock: bool` field to `ShipUpgrade` model. Recategorized `upgrade_catalog.gd` — Extended Fuel Tank and Improved Thrust Nozzles are modular (physical units, buy → inventory → install); all others (fuel system restructuring, engine rebuilds, cargo bay extensions, hull work) are dry dock (structural, commissioned directly on a ship). Added `commission_dry_dock(ship, entry)` to `game_state.gd` — applies upgrade directly, no inventory step, logs as "Dry dock: [work] on [ship]". Split market tab upgrades section into "Modular Upgrades" (blue) and "Dry Dock Work" (amber) with distinct UI flows. Updated `GDD.md §8.7`.
 
 ---
 

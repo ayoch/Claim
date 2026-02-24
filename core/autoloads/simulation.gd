@@ -369,6 +369,7 @@ func _process_missions(dt: float) -> void:
 						elif not mission.return_to_station:
 							mission.ship.position_au = CelestialData.get_earth_position_au()
 							mission.ship.docked_at_colony = null  # Returning to Earth, not a colony
+							mission.ship.docked_at_earth = true
 							_auto_refuel_at_earth(mission.ship)
 							# Provision AFTER complete_mission clears ore cargo (so food fits)
 							_provision_after_complete = true
@@ -376,6 +377,7 @@ func _process_missions(dt: float) -> void:
 							if mission.ship.station_colony == null:
 								mission.ship.position_au = CelestialData.get_earth_position_au()
 								_auto_refuel_at_earth(mission.ship)
+								mission.ship.docked_at_earth = true
 								# Provision AFTER complete_mission clears ore cargo (so food fits)
 								_provision_after_complete = true
 							else:
@@ -742,6 +744,7 @@ func _process_trade_missions(dt: float) -> void:
 						else:
 							tm.ship.position_au = CelestialData.get_earth_position_au()
 							tm.ship.docked_at_colony = null  # Returning to Earth, not a colony
+							tm.ship.docked_at_earth = true
 							_auto_refuel_at_earth(tm.ship)
 							_auto_provision_at_location(tm.ship)
 						var _trade_ship := tm.ship

@@ -584,6 +584,19 @@ func install_upgrade(ship: Ship, upgrade: ShipUpgrade) -> void:
 	ship.upgrades.append(upgrade)
 	EventBus.upgrade_installed.emit(ship, upgrade)
 
+## Commission dry dock work directly on a docked ship (no inventory step).
+func commission_dry_dock(ship: Ship, entry: Dictionary) -> bool:
+	if money < entry.get("cost", 0):
+		return false
+	if not ship.is_docked:
+		return false
+	var upgrade := ShipUpgrade.from_catalog(entry)
+	money -= upgrade.cost
+	record_transaction(-upgrade.cost, "Dry dock: %s on %s" % [upgrade.upgrade_name, ship.ship_name])
+	ship.upgrades.append(upgrade)
+	EventBus.upgrade_installed.emit(ship, upgrade)
+	return true
+
 ## --- Mining Unit Methods ---
 
 func purchase_mining_unit(entry: Dictionary) -> bool:
@@ -848,6 +861,7 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, units: Array[Minin
 		ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
 
 	ship.docked_at_colony = null
+	ship.docked_at_earth = false
 	ship.reset_life_support(ship.crew.size())
 
 	missions.append(mission)
@@ -918,6 +932,7 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int
 		ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
 
 	ship.docked_at_colony = null
+	ship.docked_at_earth = false
 	ship.reset_life_support(ship.crew.size())
 
 	missions.append(mission)
@@ -1151,6 +1166,7 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 		ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
 
 	ship.docked_at_colony = null  # Ship is departing
+	ship.docked_at_earth = false
 	ship.reset_life_support(ship.crew.size())
 
 	missions.append(mission)
@@ -2032,6 +2048,7 @@ func start_trade_mission(ship: Ship, colony_target: Colony, cargo_to_load: Dicti
 		ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
 
 	ship.docked_at_colony = null  # Ship is departing
+	ship.docked_at_earth = false
 	ship.reset_life_support(ship.crew.size())
 
 	trade_missions.append(tm)
@@ -2244,6 +2261,7 @@ func save_game() -> void:
 		ship_data["collection_policy_override"] = s.collection_policy_override
 		ship_data["encounter_policy_override"] = s.encounter_policy_override
 		ship_data["repair_policy_override"] = s.repair_policy_override
+		ship_data["docked_at_earth"] = s.docked_at_earth
 		# Supplies
 		if not s.supplies.is_empty():
 			ship_data["supplies"] = s.supplies.duplicate()
@@ -2610,6 +2628,7 @@ func load_game() -> bool:
 		s.collection_policy_override = int(sd.get("collection_policy_override", -1))
 		s.encounter_policy_override = int(sd.get("encounter_policy_override", -1))
 		s.repair_policy_override = int(sd.get("repair_policy_override", -1))
+		s.docked_at_earth = bool(sd.get("docked_at_earth", true))
 		# Restore station data (colony ref reconnected after colonies are loaded)
 		s.is_stationed = sd.get("is_stationed", false)
 		if s.is_stationed:
