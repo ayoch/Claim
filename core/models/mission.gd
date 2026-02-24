@@ -184,10 +184,11 @@ func get_current_leg_start_pos() -> Vector2:
 			return _get_origin_pos_live()
 		Status.TRANSIT_BACK:
 			if return_waypoint_index == 0:
-				return asteroid.get_position_au() if asteroid else destination_position_au
+				# Prefer static predicted position if set, else use dynamic asteroid position
+				return destination_position_au if destination_position_au != Vector2.ZERO else (asteroid.get_position_au() if asteroid else Vector2.ZERO)
 			elif return_waypoint_index <= return_legs.size():
 				return return_legs[return_waypoint_index - 1].get_live_position()
-			return asteroid.get_position_au() if asteroid else destination_position_au
+			return destination_position_au if destination_position_au != Vector2.ZERO else (asteroid.get_position_au() if asteroid else Vector2.ZERO)
 		_:
 			return _get_origin_pos_live()
 
@@ -196,7 +197,8 @@ func get_current_leg_end_pos() -> Vector2:
 		Status.TRANSIT_OUT:
 			if outbound_waypoint_index < outbound_legs.size():
 				return outbound_legs[outbound_waypoint_index].get_live_position()
-			return asteroid.get_position_au() if asteroid else destination_position_au
+			# Prefer static predicted position if set, else use dynamic asteroid position
+			return destination_position_au if destination_position_au != Vector2.ZERO else (asteroid.get_position_au() if asteroid else Vector2.ZERO)
 		Status.TRANSIT_BACK:
 			if return_waypoint_index < return_legs.size():
 				return return_legs[return_waypoint_index].get_live_position()

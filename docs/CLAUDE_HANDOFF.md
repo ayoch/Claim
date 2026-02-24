@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-24 EST (session 15)
-**Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
-**Session Context:** UI polish — docked ships bug, upgrade category differentiation, clip_text fix
-**Next Session Priority:** Continued playtesting and polish; Phase 3 (ServerBackend HTTP wrapper) still pending from session 13
+**Last Updated:** 2026-02-24 EST (session 16)
+**Updated By:** Instance on Machine 2 (Mac laptop - HK-47)
+**Session Context:** Combat system implementation, worker skill progression verification, trajectory fixes, UI polish
+**Next Session Priority:** Torpedo restocking UI (backend complete), fuel processor equipment, or colony growth system
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -13,6 +13,52 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-24 EST (session 16) - Combat System, Worker XP Verification, Trajectory Fixes
+- **Machine:** Mac laptop (HK-47)
+- **Work Completed:**
+  - **Combat System (complete implementation)**:
+    - **Equipment model** (`equipment.gd`): Added weapon properties: `weapon_power`, `weapon_range`, `weapon_accuracy`, `weapon_role` (dual/defensive/offensive), `fire_rate` (fast/slow/very_slow/limited), `ammo_capacity`, `current_ammo`, `ammo_cost`, `mining_speed_bonus`, `mass`. Added helper methods: `is_weapon()`, `has_ammo()`, `needs_reload()`.
+    - **Ship model** (`ship.gd`): Added `AggressionStance` enum (PEACEFUL/DEFENSIVE/AGGRESSIVE), `aggression_stance` field. Added combat helpers: `get_max_weapon_range()`, `get_total_firepower()` (includes crew pilot skill bonus), `get_weapons_in_range()`, `is_armed()`.
+    - **Weapon catalog** (`market_data.gd`): Added 7 weapon types: Mining Laser (dual-purpose, +20% mining speed), Battle Laser (defensive, fast fire), Light/Heavy Rail Guns (offensive, accurate), Explosive/EMP/Fusion Torpedo Launchers (2-round capacity, purchasable ammo).
+    - **Combat resolution** (`simulation.gd`): Added `_check_combat_encounters()` (60s interval, 0.08 AU range). Multi-phase resolution: range check → aggression check → torpedo launch (ammo deduction) → laser interception (60% accuracy) → evasion (pilot skill up to 60%) → damage application (crew casualties) → criminal violations → fusion torpedo consequences (instant ban, game over).
+    - **EventBus signals**: `combat_initiated`, `combat_resolved`, `torpedo_fired/intercepted/evaded`, `fusion_weapon_used`, `ship_disabled_combat`, `crew_casualty_combat`.
+    - **Mining laser bonus**: Applied in `_mine_tick()` — +20% mining speed per Mining Laser equipped.
+    - **Torpedo restocking** (`game_state.gd`): Added `restock_torpedoes(ship)` and `get_torpedo_restock_cost(ship)` — backend complete, UI pending.
+
+  - **Worker Skill Progression (verified complete)**:
+    - System already fully implemented by Dweezil (Windows instance):
+    - XP fields (`pilot_xp`, `engineer_xp`, `mining_xp`) and methods (`add_xp()`, `get_xp_progress()`) in `worker.gd`
+    - XP granting in `simulation.gd`: pilot XP during transit, engineer XP during transit/self-repair/unit repairs, mining XP during mining phase and deployed units
+    - XP progress bars in `workers_tab.gd` (color-coded: pilot=blue, engineer=orange, mining=green)
+    - Level-up alerts in `dashboard_tab.gd` activity feed
+    - Save/load support in `game_state.gd`
+
+  - **Intercept Trajectory Fix**: Ships now predict where moving destinations will be when they arrive (iterative convergence in 3 iterations). Added `get_position_at_time()` to `asteroid_data.gd`, `calculate_asteroid_intercept()` to `game_state.gd`. Fixed type inference errors (explicit `float` and `Vector2` annotations).
+
+  - **Earth Position Fix**: Return fuel routes now target Earth's future position (not stale position from mission start). `mission.return_position_au` set to `CelestialData.get_earth_position_at_time(estimated_mission_time)` in `start_mission()`.
+
+  - **Activity Panel Interval Adjustments**: Reduced event frequencies for 1x gameplay: `SURVEY_INTERVAL = 21600` (was 120), `CONTRACT_INTERVAL = 14400` (was 150), `MARKET_INTERVAL = 3600` (was 90), `OBSERVATION_INTERVAL = 300` (was 60).
+
+  - **Starfield Polish** (`starfield_bg.gd`): Cut pan speed in half (6.0), tighter boundaries, added 30 twinkling stars with randomized phase/brightness.
+
+- **Files Modified:**
+  - `core/models/equipment.gd` (weapon properties, helper methods)
+  - `core/models/ship.gd` (aggression stance, combat helpers)
+  - `core/data/market_data.gd` (7 weapon catalog entries)
+  - `core/autoloads/simulation.gd` (combat system, mining laser bonus, event intervals)
+  - `core/autoloads/game_state.gd` (intercept calculation, Earth prediction, torpedo restocking)
+  - `core/autoloads/event_bus.gd` (combat signals)
+  - `core/data/asteroid_data.gd` (position prediction)
+  - `ui/starfield_bg.gd` (twinkle + speed/boundary fixes)
+
+- **Stats:** Project now ~26,300 lines of GDScript + 1,300 lines of scene files + 2,000 lines of docs = ~30,000 total lines
+
+- **Next Steps:**
+  - Torpedo restocking UI in Fleet/Outfitting tab
+  - Fuel processor equipment (extract fuel from ice)
+  - Player fuel depots (strategic caches)
+  - Colony growth/decline system
 
 ### 2026-02-24 EST (session 15) - UI Polish: Docked Ships Bug, Upgrade Categories, Clip Text
 - **Machine:** Windows desktop (Dweezil)

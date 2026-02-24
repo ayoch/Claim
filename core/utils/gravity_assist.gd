@@ -38,10 +38,17 @@ static func find_beneficial_slingshots(start_pos: Vector2, end_pos: Vector2, shi
 
 	# Check each planet as a potential waypoint
 	for i in range(CelestialData.PLANETS.size()):
-		var planet_pos := CelestialData.get_planet_position_au(i)
 		var planet_name: String = CelestialData.PLANETS[i]["name"]
 
-		# Calculate slingshot route via this planet
+		# Predict where planet will be when ship arrives (iterative calculation)
+		var planet_pos := CelestialData.get_planet_position_au(i)  # Start with current
+		var iterations := 3
+		for _iter in iterations:
+			var leg1_dist := start_pos.distance_to(planet_pos)
+			var leg1_time := Brachistochrone.transit_time(leg1_dist, ship.get_effective_thrust())
+			planet_pos = CelestialData.get_planet_position_at_time(i, leg1_time)
+
+		# Calculate slingshot route via this predicted planet position
 		var route = _calculate_slingshot_route(
 			start_pos, planet_pos, end_pos,
 			ship, expected_cargo_mass,

@@ -214,6 +214,14 @@ func _ready() -> void:
 		_queue_alert("===== GAME OVER: %s =====" % reason, Color(1.0, 0.0, 0.0))
 	)
 
+	# Warning system
+	EventBus.warning_added.connect(func(_id: String, _msg: String, _sev: String) -> void:
+		_refresh_warnings()
+	)
+	EventBus.warning_dismissed.connect(func(_id: String) -> void:
+		_refresh_warnings()
+	)
+
 	EventBus.order_queued.connect(func(ship: Ship, label: String, delay_secs: float) -> void:
 		var mins := int(delay_secs / 60.0)
 		var secs := int(fmod(delay_secs, 60.0))
@@ -243,6 +251,7 @@ func _ready() -> void:
 	_setup_balance_history()
 	_setup_discipline_panel()
 	_setup_colony_standing_panel()
+	_setup_warnings_panel()
 	_setup_collapsible_sections()
 
 func _setup_stationed_ships_panel() -> void:
@@ -585,6 +594,88 @@ func _refresh_colony_standing() -> void:
 			shown_count += 1
 
 		entries_list_node.add_child(entry_vbox)
+
+func _setup_warnings_panel() -> void:
+	var scroll := get_node("ScrollContainer")
+	var vbox := scroll.get_node("VBox")
+
+	var card := PanelContainer.new()
+	card.name = "ActiveWarningsCard"
+	var card_vbox := VBoxContainer.new()
+	card_vbox.add_theme_constant_override("separation", 8)
+
+	var title := Label.new()
+	title.text = "⚠️ ACTIVE WARNINGS"
+	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_color_override("font_color", Color(1.0, 0.6, 0.1))
+	card_vbox.add_child(title)
+
+	var warnings_list := VBoxContainer.new()
+	warnings_list.name = "WarningsList"
+	warnings_list.add_theme_constant_override("separation", 8)
+	card_vbox.add_child(warnings_list)
+
+	card.add_child(card_vbox)
+
+	# Insert at the very top
+	vbox.add_child(card)
+	vbox.move_child(card, 0)
+
+	_refresh_warnings()
+
+func _refresh_warnings() -> void:
+	var card := get_node_or_null("ScrollContainer/VBox/ActiveWarningsCard")
+	if not card:
+		return
+
+	var warnings_list_node := card.find_child("WarningsList", true, false)
+	if not warnings_list_node:
+		return
+
+	_free_children(warnings_list_node)
+
+	if GameState.active_warnings.is_empty():
+		card.visible = false
+		return
+
+	card.visible = true
+
+	# Sort warnings by severity (critical first)
+	var sorted_warnings := GameState.active_warnings.duplicate()
+	sorted_warnings.sort_custom(func(a, b) -> bool:
+		if a["severity"] == "critical" and b["severity"] != "critical":
+			return true
+		if a["severity"] != "critical" and b["severity"] == "critical":
+			return false
+		return a["message"] < b["message"]
+	)
+
+	for warning in sorted_warnings:
+		var warning_hbox := HBoxContainer.new()
+		warning_hbox.add_theme_constant_override("separation", 12)
+
+		# Warning message
+		var msg_label := Label.new()
+		msg_label.text = warning["message"]
+		msg_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		msg_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+		# Color based on severity
+		if warning["severity"] == "critical":
+			msg_label.add_theme_color_override("font_color", Color(1.0, 0.2, 0.2))
+		else:
+			msg_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+
+		warning_hbox.add_child(msg_label)
+
+		# Dismiss button
+		var dismiss_btn := Button.new()
+		dismiss_btn.text = "Dismiss"
+		dismiss_btn.custom_minimum_size = Vector2(80, 32)
+		dismiss_btn.pressed.connect(GameState.dismiss_warning.bind(warning["id"]))
+		warning_hbox.add_child(dismiss_btn)
+
+		warnings_list_node.add_child(warning_hbox)
 
 func _setup_policies_ui() -> void:
 	# Find the main VBox in the dashboard

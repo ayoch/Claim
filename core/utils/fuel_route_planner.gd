@@ -61,20 +61,34 @@ static func plan_route_to_position(
 			}
 
 		# Score colonies by distance to destination (prefer closer to goal)
+		# Use intercept prediction for each colony
 		var best_colony: Colony = null
 		var best_score := INF
+		var best_predicted_pos := Vector2.ZERO
+		var best_leg_time := 0.0
 
 		for colony in reachable:
-			var candidate_pos := colony.get_position_au()
-			var dist_to_dest := candidate_pos.distance_to(dest_pos)
+			# Iteratively predict where colony will be when ship arrives
+			var colony_pos := colony.get_position_au()  # Start with current
+			var iterations := 3
+			for _iter in iterations:
+				var dist := simulated_pos.distance_to(colony_pos)
+				var transit_time := Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+				colony_pos = colony.get_position_at_time(transit_time)
 
-			# Score: distance to destination (lower is better)
-			# Could add other factors: fuel price, distance from current pos, etc.
+			# Calculate final leg time to predicted position
+			var final_dist := simulated_pos.distance_to(colony_pos)
+			var final_leg_time := Brachistochrone.transit_time(final_dist, ship.get_effective_thrust())
+
+			# Score based on predicted position's distance to destination
+			var dist_to_dest := colony_pos.distance_to(dest_pos)
 			var score := dist_to_dest
 
 			if score < best_score:
 				best_score = score
 				best_colony = colony
+				best_predicted_pos = colony_pos
+				best_leg_time = final_leg_time
 
 		if best_colony == null:
 			return {
@@ -88,11 +102,11 @@ static func plan_route_to_position(
 				"reason": "Could not find suitable fuel stop"
 			}
 
-		# Add this colony as a waypoint
-		var colony_pos := best_colony.get_position_au()
+		# Add this colony as a waypoint (use predicted position)
+		var colony_pos := best_predicted_pos
 		var leg_dist := simulated_pos.distance_to(colony_pos)
 		var leg_fuel := ship.calc_fuel_for_distance(leg_dist, cargo_mass)
-		var leg_time := Brachistochrone.transit_time(leg_dist, ship.get_effective_thrust())
+		var leg_time := best_leg_time
 
 		# Calculate how much fuel to purchase at this stop
 		# Fill to capacity to maximize range for next leg
