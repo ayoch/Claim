@@ -48,9 +48,8 @@ func _ready() -> void:
 	if main_menu_btn:
 		main_menu_btn.pressed.connect(_on_main_menu)
 
-	# Wire up Save button (only visible in LOCAL mode)
+	# Wire up Save button visibility (signal already connected in .tscn)
 	if save_btn:
-		save_btn.pressed.connect(_on_save_pressed)
 		# Hide save button in multiplayer mode
 		save_btn.visible = (BackendManager.current_mode == BackendManager.BackendMode.LOCAL)
 

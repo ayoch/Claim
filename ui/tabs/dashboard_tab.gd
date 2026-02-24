@@ -704,6 +704,29 @@ func _setup_policies_ui() -> void:
 		autoplay_btn.text = "AUTOPLAY: ON" if on else "AUTOPLAY: OFF"
 	)
 	title_row.add_child(autoplay_btn)
+
+	var restock_btn := Button.new()
+	restock_btn.toggle_mode = true
+	restock_btn.button_pressed = GameState.settings.get("auto_restock_torpedoes", true)
+	restock_btn.text = "Auto Restock: ON" if restock_btn.button_pressed else "Auto Restock: OFF"
+	restock_btn.custom_minimum_size = Vector2(150, 0)
+	restock_btn.toggled.connect(func(on: bool) -> void:
+		GameState.settings["auto_restock_torpedoes"] = on
+		restock_btn.text = "Auto Restock: ON" if on else "Auto Restock: OFF"
+	)
+	title_row.add_child(restock_btn)
+
+	var pause_btn := Button.new()
+	pause_btn.toggle_mode = true
+	pause_btn.button_pressed = GameState.settings.get("auto_pause_on_critical", false)
+	pause_btn.text = "⚠️ Pause: ON" if pause_btn.button_pressed else "⚠️ Pause: OFF"
+	pause_btn.custom_minimum_size = Vector2(130, 0)
+	pause_btn.toggled.connect(func(on: bool) -> void:
+		GameState.settings["auto_pause_on_critical"] = on
+		pause_btn.text = "⚠️ Pause: ON" if on else "⚠️ Pause: OFF"
+	)
+	title_row.add_child(pause_btn)
+
 	policies_vbox.add_child(title_row)
 
 	var policies_content := VBoxContainer.new()

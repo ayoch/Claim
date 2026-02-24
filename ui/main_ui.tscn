@@ -177,17 +177,6 @@ layout_mode = 2
 custom_minimum_size = Vector2(52, 0)
 text = "100x"
 
-[node name="DateSpacer" type="Control" parent="VBox/SpeedBar/HBox"]
-layout_mode = 2
-custom_minimum_size = Vector2(12, 0)
-
-[node name="DateDisplay" type="Label" parent="VBox/SpeedBar/HBox"]
-unique_name_in_owner = true
-layout_mode = 2
-text = "02/18/2026  00:00"
-theme_override_font_sizes/font_size = 17
-theme_override_colors/font_color = Color(0.5, 0.7, 0.9, 1)
-
 [node name="TabContainer" type="TabContainer" parent="VBox"]
 unique_name_in_owner = true
 layout_mode = 2

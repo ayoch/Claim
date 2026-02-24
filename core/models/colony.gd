@@ -16,13 +16,29 @@ extends Resource
 const VIOLATION_THRESHOLD: int = 4
 const VIOLATION_DECAY_DAYS: float = 30.0
 
+static func get_violation_description(reason: String) -> String:
+	match reason:
+		"attacked_unarmed_ship":
+			return "Attacked an unarmed vessel"
+		"attacked_unarmed_ship_major":
+			return "Attacked unarmed vessel (major offense)"
+		"unprovoked_attack":
+			return "Unprovoked attack on armed vessel"
+		"crew_death_combat":
+			return "Caused crew deaths in combat"
+		"fusion_weapon_use":
+			return "Used prohibited fusion weapons"
+		_:
+			return reason.replace("_", " ").capitalize()
+
 func get_ore_price(ore_type: ResourceTypes.OreType, market: MarketState) -> float:
 	var base_market_price: float = market.get_price(ore_type)
 	var mult: float = price_multipliers.get(ore_type, 1.0)
 
 	# Distance from Earth increases scarcity and price
 	var earth_pos := CelestialData.get_earth_position_au()
-	var dist_from_earth := get_position_au().distance_to(earth_pos)
+	var dist_from_earth := get_position_au(),
+			current_ticks.distance_to(earth_pos)
 	# Price increases by 20% per AU of distance
 	var scarcity_multiplier := 1.0 + (dist_from_earth * 0.2)
 
@@ -33,7 +49,8 @@ func get_ore_price(ore_type: ResourceTypes.OreType, market: MarketState) -> floa
 
 	return base_market_price * mult * scarcity_multiplier * event_multiplier
 
-func get_position_au() -> Vector2:
+func get_position_au(),
+			current_ticks -> Vector2:
 	# Moons with tiny orbits (< 0.05 AU) sit at their parent's position
 	# to avoid visual jitter on the map
 	if parent_planet_index >= 0 and orbit_au < 0.05:
@@ -110,9 +127,54 @@ func add_violation(reason: String, current_ticks: float) -> void:
 	# Clean up old violations (older than 30 days)
 	decay_violations(current_ticks)
 
-	# Check if player should be banned
-	if get_active_violation_count(current_ticks) >= VIOLATION_THRESHOLD:
+	# Emit signal for UI notification
+	EventBus.violation_recorded.emit(self, reason)
+
+	var active_count := get_active_violation_count(current_ticks)
+	var description := get_violation_description(reason)
+
+	# Only warn at important thresholds (not every single violation - too spammy)
+	# Thresholds: 1st violation, 2nd, 3rd (final warning), 4th (ban)
+	if active_count == 1:
+		# First violation - just log it
+		GameState.add_warning(
+			"⚠️ VIOLATION - %s: %s (1/%d)" % [colony_name, description, VIOLATION_THRESHOLD],
+			"warning",
+			"criminal",
+			get_position_au(),
+			current_ticks
+		)
+	elif active_count == 2:
+		# Second violation - escalate
+		GameState.add_warning(
+			"⚠️ %s: 2 violations (4 = BAN)" % colony_name,
+			"warning",
+			"criminal",
+			get_position_au(),
+			current_ticks
+		)
+	elif active_count == 3:
+		# Final warning
+		GameState.add_warning(
+			"🚨 FINAL WARNING: %s - one more = banned! (3/%d)" % [colony_name, VIOLATION_THRESHOLD],
+			"critical",
+			"criminal",
+			get_position_au(),
+			current_ticks
+		)
+	# 4th+ violation triggers ban warning below
+
+	# Check if player should be banned (only warn on first ban, not every violation after)
+	if active_count >= VIOLATION_THRESHOLD and not player_banned:
 		player_banned = true
+		EventBus.colony_banned_player.emit(self)
+		GameState.add_warning(
+			"🚨 BANNED FROM %s - %d violations" % [colony_name, violations.size()],
+			"critical",
+			"criminal",
+			get_position_au(),
+			current_ticks
+		)
 		print("%s has BANNED the player! (%d violations)" % [colony_name, violations.size()])
 
 
