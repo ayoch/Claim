@@ -19,6 +19,9 @@ var _selected_deploy_workers: Array[Worker] = []
 var _sell_at_destination_markets: bool = true  # Toggle: return with ore vs sell at nearby markets
 var _sort_by: String = "profit"
 var _filter_type: int = -1
+var _market_sort_by: String = "profit"  # Sort mode for market destinations: "profit" or "name"
+var _market_search: String = ""  # Search filter for market destinations
+var _mining_search: String = ""  # Search filter for mining destinations
 var _available_slingshot_routes: Array = []  # Array of GravityAssist.SlingshotRoute
 var _selected_slingshot_route = null  # GravityAssist.SlingshotRoute or null
 var _needs_full_rebuild: bool = true
@@ -33,7 +36,7 @@ var _policy_overrides_expanded: Dictionary = {}  # Ship -> bool, persists across
 var _ship_stats_expanded: Dictionary = {}  # Ship -> bool, persists across rebuilds
 const PROGRESS_LERP_SPEED: float = 8.0  # How fast progress bars catch up
 var _dispatch_refresh_timer: float = 0.0
-const DISPATCH_REFRESH_INTERVAL: float = 2.0  # Refresh dispatch popup every 2 seconds
+const DISPATCH_REFRESH_INTERVAL: float = 5.0  # Refresh dispatch popup every 5 seconds (orbital motion is slow)
 var _last_tick_msec: int = 0
 const TICK_THROTTLE_MSEC: int = 100  # Only process ticks every 100ms real-time
 var _on_selection_screen: bool = false  # Track if we're on the initial destination selection screen
@@ -133,6 +136,10 @@ func _clear_dispatch_buttons() -> void:
 	_free_children(dispatch_buttons)
 
 func _process(delta: float) -> void:
+	# Skip animation updates when tab is not visible
+	if not is_visible_in_tree():
+		return
+
 	# Smooth LERP for progress bars
 	for ship: Ship in _progress_bars:
 		var bar: ProgressBar = _progress_bars[ship]
@@ -162,6 +169,10 @@ func _on_worker_hired(_worker: Worker) -> void:
 		_show_worker_selection()
 
 func _on_tick(_dt: float) -> void:
+	# Skip all updates when tab is not visible (massive performance win)
+	if not is_visible_in_tree():
+		return
+
 	# Throttle tick processing to real-time (not game-time, which explodes at high speed)
 	var now := Time.get_ticks_msec()
 	if now - _last_tick_msec < TICK_THROTTLE_MSEC:
@@ -1442,6 +1453,36 @@ func _show_asteroid_selection() -> void:
 	)
 	dispatch_content.add_child(colonies_header)
 
+	# Market controls (search + sort)
+	var market_controls := HFlowContainer.new()
+	market_controls.visible = colonies_expanded
+	market_controls.add_theme_constant_override("h_separation", 8)
+
+	var market_sort_btn := OptionButton.new()
+	market_sort_btn.add_item("Best Profit")
+	market_sort_btn.add_item("Name A-Z")
+	market_sort_btn.custom_minimum_size = Vector2(0, 44)
+	market_sort_btn.focus_mode = Control.FOCUS_NONE
+	market_sort_btn.item_selected.connect(func(idx: int) -> void:
+		_market_sort_by = ["profit", "name"][idx]
+		_show_asteroid_selection()
+	)
+	market_sort_btn.selected = 0 if _market_sort_by == "profit" else 1
+	market_controls.add_child(market_sort_btn)
+
+	var market_search_field := LineEdit.new()
+	market_search_field.placeholder_text = "Search markets..."
+	market_search_field.custom_minimum_size = Vector2(200, 44)
+	market_search_field.focus_mode = Control.FOCUS_CLICK
+	market_search_field.text = _market_search
+	market_search_field.text_changed.connect(func(new_text: String) -> void:
+		_market_search = new_text.strip_edges()
+		_show_asteroid_selection()
+	)
+	market_controls.add_child(market_search_field)
+
+	dispatch_content.add_child(market_controls)
+
 	var colonies_scroll := ScrollContainer.new()
 	_colonies_scroll = colonies_scroll
 	colonies_scroll.name = "ColoniesScroll"
@@ -1454,23 +1495,37 @@ func _show_asteroid_selection() -> void:
 	colonies_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	colonies_vbox.add_theme_constant_override("separation", 6)
 
-	# Sort colonies by profit (revenue - fuel cost)
-	var sorted_colonies := GameState.colonies.duplicate()
-	sorted_colonies.sort_custom(func(a: Colony, b: Colony) -> bool:
-		var profit_a := _calculate_colony_profit(a)
-		var profit_b := _calculate_colony_profit(b)
-		return profit_a > profit_b  # Highest profit first
-	)
+	# Filter and sort colonies
+	var filtered_colonies: Array[Colony] = []
+	var search_lower := _market_search.to_lower()
+	for colony in GameState.colonies:
+		# Apply search filter
+		if _market_search != "" and not colony.colony_name.to_lower().contains(search_lower):
+			continue
+		filtered_colonies.append(colony)
+
+	# Sort by profit or name
+	match _market_sort_by:
+		"profit":
+			filtered_colonies.sort_custom(func(a: Colony, b: Colony) -> bool:
+				var profit_a := _calculate_colony_profit(a)
+				var profit_b := _calculate_colony_profit(b)
+				return profit_a > profit_b  # Highest profit first
+			)
+		"name":
+			filtered_colonies.sort_custom(func(a: Colony, b: Colony) -> bool:
+				return a.colony_name.naturalcasecmp_to(b.colony_name) < 0
+			)
 
 	# Filter out current location to prevent exploit (within 0.1 AU proximity)
 	const PROXIMITY_THRESHOLD := 0.1
-	var filtered_colonies: Array[Colony] = []
-	for colony in sorted_colonies:
+	var final_colonies: Array[Colony] = []
+	for colony in filtered_colonies:
 		var dist_to_colony := _selected_ship.position_au.distance_to(colony.get_position_au())
 		if dist_to_colony > PROXIMITY_THRESHOLD:
-			filtered_colonies.append(colony)
+			final_colonies.append(colony)
 
-	for colony in filtered_colonies:
+	for colony in final_colonies:
 		var colony_pos: Vector2 = colony.get_position_au()
 		var dist := _selected_ship.position_au.distance_to(colony_pos)
 		var transit := Brachistochrone.transit_time(dist, _selected_ship.get_effective_thrust())
@@ -1732,6 +1787,18 @@ func _show_asteroid_selection() -> void:
 		_show_asteroid_selection()
 	)
 	controls.add_child(market_toggle)
+
+	# Search field for mining destinations
+	var mining_search_field := LineEdit.new()
+	mining_search_field.placeholder_text = "Search asteroids..."
+	mining_search_field.custom_minimum_size = Vector2(200, 44)
+	mining_search_field.focus_mode = Control.FOCUS_CLICK
+	mining_search_field.text = _mining_search
+	mining_search_field.text_changed.connect(func(new_text: String) -> void:
+		_mining_search = new_text.strip_edges()
+		_show_asteroid_selection()
+	)
+	controls.add_child(mining_search_field)
 
 	dispatch_content.add_child(controls)
 
@@ -2191,8 +2258,13 @@ func _update_destination_labels() -> void:
 
 func _get_sorted_asteroids(est_workers: Array[Worker]) -> Array[AsteroidData]:
 	var filtered: Array[AsteroidData] = []
+	var search_lower := _mining_search.to_lower()
 	for a in GameState.asteroids:
+		# Apply type filter
 		if _filter_type >= 0 and a.body_type != _filter_type:
+			continue
+		# Apply search filter
+		if _mining_search != "" and not a.asteroid_name.to_lower().contains(search_lower):
 			continue
 		filtered.append(a)
 

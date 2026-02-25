@@ -34,6 +34,10 @@ func _ready() -> void:
 	_refresh_crew()
 
 func _on_tick(_dt: float) -> void:
+	# Skip all updates when tab is not visible (massive performance win)
+	if not is_visible_in_tree():
+		return
+
 	if not _dirty_crew and not _dirty_all:
 		return
 	var now := Time.get_ticks_msec()

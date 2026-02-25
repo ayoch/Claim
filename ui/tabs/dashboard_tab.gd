@@ -872,6 +872,10 @@ func _setup_policies_ui() -> void:
 	_make_collapsible("policies", title, policies_content, true)
 
 func _process(delta: float) -> void:
+	# Skip animation updates when tab is not visible
+	if not is_visible_in_tree():
+		return
+
 	# Smooth progress bar updates with LERP
 	for mission_or_trade in _progress_bars:
 		var progress_bar: ProgressBar = _progress_bars[mission_or_trade]
@@ -906,6 +910,10 @@ func _on_money_changed(amount: int) -> void:
 	_dirty_balance_history = true
 
 func _on_tick(_dt: float) -> void:
+	# Skip all updates when tab is not visible (massive performance win)
+	if not is_visible_in_tree():
+		return
+
 	# Throttle UI rebuilds to real-time interval (not game-time)
 	var now := Time.get_ticks_msec()
 	if now - _last_refresh_msec < REFRESH_INTERVAL_MSEC:

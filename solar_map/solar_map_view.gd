@@ -13,6 +13,7 @@ const BELT_OUTER_AU: float = 3.5
 @onready var ship_markers: Node2D = $ShipMarkers
 @onready var ship_selector_panel: VBoxContainer = %ShipSelectorPanel
 @onready var zoom_buttons: VBoxContainer = $UI/ZoomButtons
+@onready var search_panel: HBoxContainer = %SearchPanel
 
 var _map_selected_ship: Ship = null
 var _ship_buttons: Dictionary = {}  # Ship -> Button
@@ -73,6 +74,7 @@ const LABEL_OVERLAP_INTERVAL: float = 0.5  # Check label overlaps twice per seco
 
 func _ready() -> void:
 	_setup_zoom_buttons()
+	_setup_search_panel()
 	_spawn_planet_labels()
 	_spawn_asteroid_markers()
 	_spawn_colony_markers()
@@ -216,6 +218,9 @@ func _draw() -> void:
 	# Draw ghost ship observations (rival corps, fog-of-war)
 	_draw_ghost_observations()
 
+	# Draw active mission trajectories (cached curves)
+	_draw_mission_trajectories()
+
 	# Draw trajectory preview if active
 	if _preview_active:
 		# Calculate blink alpha (oscillates between 0.3 and 1.0)
@@ -337,6 +342,70 @@ func _draw_ghost_observations() -> void:
 			label, HORIZONTAL_ALIGNMENT_LEFT, -1, 10,
 			Color(color.r, color.g, color.b, confidence * 0.7))
 
+func _draw_mission_trajectories() -> void:
+	# Only draw trajectory for the selected ship
+	if not _map_selected_ship:
+		return
+
+	var mission: Mission = _map_selected_ship.current_mission
+	if not mission:
+		return
+
+	# Skip completed missions
+	if mission.status == Mission.Status.COMPLETED:
+		return
+
+	# Recalculate if dirty (redirected mid-flight)
+	if mission.trajectory_dirty:
+		mission.calculate_trajectory_curves()
+
+	# Choose color based on transit mode
+	var base_color: Color
+	var is_hohmann: bool = mission.transit_mode == Mission.TransitMode.HOHMANN
+	if is_hohmann:
+		# Hohmann: green (efficient, slow)
+		base_color = Color(0.3, 0.9, 0.4)
+	else:
+		# Brachistochrone: cyan (fast, expensive)
+		base_color = Color(0.3, 0.8, 1.0)
+
+	# Draw outbound trajectory
+	if mission.status == Mission.Status.TRANSIT_OUT or mission.status == Mission.Status.REFUELING:
+		_draw_trajectory_curve(mission.outbound_trajectory_points, base_color, 0.7, is_hohmann)
+
+	# Draw return trajectory
+	elif mission.status == Mission.Status.TRANSIT_BACK:
+		_draw_trajectory_curve(mission.return_trajectory_points, base_color, 0.7, is_hohmann)
+
+	# Draw both when idle/mining (show complete journey)
+	elif mission.status in [Mission.Status.MINING, Mission.Status.IDLE_AT_DESTINATION, Mission.Status.REPAIRING, Mission.Status.DELIVERING, Mission.Status.BOARDING, Mission.Status.PATROLLING, Mission.Status.DEPLOYING, Mission.Status.COLLECTING]:
+		_draw_trajectory_curve(mission.outbound_trajectory_points, base_color, 0.35, is_hohmann)
+		_draw_trajectory_curve(mission.return_trajectory_points, base_color, 0.35, is_hohmann)
+
+func _draw_trajectory_curve(points: PackedVector2Array, base_color: Color, alpha: float, is_hohmann: bool) -> void:
+	if points.size() < 2:
+		return
+
+	var color: Color = Color(base_color.r, base_color.g, base_color.b, alpha)
+
+	# Draw curve as connected line segments
+	for i in range(points.size() - 1):
+		var from: Vector2 = points[i] * AU_PIXELS
+		var to: Vector2 = points[i + 1] * AU_PIXELS
+
+		# Thicker line for Hohmann (emphasize the curve)
+		var width: float = 2.5 if is_hohmann else 1.5
+		draw_line(from, to, color, width)
+
+	# Draw velocity indicators (dots along path)
+	# For Brachistochrone: spacing shows velocity (close = slow, far = fast)
+	# For Hohmann: evenly spaced (orbital mechanics)
+	var dot_interval: int = 5 if is_hohmann else 4  # Show more dots for Brachistochrone velocity variation
+	for i in range(0, points.size(), dot_interval):
+		var pos: Vector2 = points[i] * AU_PIXELS
+		var dot_radius: float = 2.5 if is_hohmann else 2.0
+		draw_circle(pos, dot_radius, Color(base_color.r, base_color.g, base_color.b, alpha * 1.5))
+
 func _setup_zoom_buttons() -> void:
 	# Big zoom row (3× step) — sits above
 	var big_row := HBoxContainer.new()
@@ -367,6 +436,102 @@ func _setup_zoom_buttons() -> void:
 	btn_in.pressed.connect(_zoom_in)
 	small_row.add_child(btn_in)
 	zoom_buttons.add_child(small_row)
+
+func _setup_search_panel() -> void:
+	var search_field := LineEdit.new()
+	search_field.placeholder_text = "Search celestial objects..."
+	search_field.custom_minimum_size = Vector2(300, 44)
+	search_field.focus_mode = Control.FOCUS_CLICK
+
+	var results_popup := PopupPanel.new()
+	var results_vbox := VBoxContainer.new()
+	results_vbox.add_theme_constant_override("separation", 2)
+	results_popup.add_child(results_vbox)
+	search_panel.add_child(results_popup)
+
+	search_field.text_changed.connect(func(text: String) -> void:
+		_search_celestial_objects(text, results_vbox, results_popup, search_field)
+	)
+
+	search_panel.add_child(search_field)
+
+func _search_celestial_objects(query: String, results_vbox: VBoxContainer, results_popup: PopupPanel, search_field: LineEdit) -> void:
+	# Clear existing results
+	for child in results_vbox.get_children():
+		child.queue_free()
+
+	query = query.strip_edges().to_lower()
+	if query.length() < 2:
+		results_popup.hide()
+		return
+
+	var matches: Array[Dictionary] = []
+
+	# Search planets
+	for planet in CelestialData.PLANETS:
+		if planet["name"].to_lower().contains(query):
+			matches.append({
+				"name": planet["name"],
+				"type": "Planet",
+				"position": CelestialData.get_planet_position_au(CelestialData.PLANETS.find(planet))
+			})
+
+	# Search asteroids
+	for asteroid in GameState.asteroids:
+		if asteroid.asteroid_name.to_lower().contains(query):
+			matches.append({
+				"name": asteroid.asteroid_name,
+				"type": AsteroidData.BODY_TYPE_NAMES[asteroid.body_type],
+				"position": asteroid.get_position_au()
+			})
+
+	# Search colonies
+	for colony in GameState.colonies:
+		if colony.colony_name.to_lower().contains(query):
+			matches.append({
+				"name": colony.colony_name,
+				"type": "Colony",
+				"position": colony.get_position_au()
+			})
+
+	# Sort matches alphabetically
+	matches.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a["name"].naturalcasecmp_to(b["name"]) < 0
+	)
+
+	# Limit to 10 results
+	var max_results := mini(matches.size(), 10)
+
+	if max_results == 0:
+		var no_results := Label.new()
+		no_results.text = "No results found"
+		no_results.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		results_vbox.add_child(no_results)
+	else:
+		for i in range(max_results):
+			var match: Dictionary = matches[i]
+			var btn := Button.new()
+			btn.text = "%s (%s)" % [match["name"], match["type"]]
+			btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			btn.custom_minimum_size = Vector2(300, 36)
+			btn.focus_mode = Control.FOCUS_NONE
+			btn.pressed.connect(func() -> void:
+				_pan_to_position(match["position"])
+				results_popup.hide()
+				search_field.text = ""
+			)
+			results_vbox.add_child(btn)
+
+	# Position popup below search field
+	results_popup.popup()
+	var global_pos := search_field.global_position
+	results_popup.position = global_pos + Vector2(0, search_field.size.y + 4)
+	results_popup.size = Vector2(300, 0)  # Auto-size height
+
+func _pan_to_position(pos_au: Vector2) -> void:
+	var pixel_pos := pos_au * AU_PIXELS
+	camera.position = pixel_pos
+	_following_ship = null  # Stop following any ship
 
 func _zoom_in() -> void:
 	_zoom_level = clampf(_zoom_level + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX)
@@ -492,6 +657,13 @@ func _refresh_ship_markers() -> void:
 		ship_markers.add_child(marker)
 
 func _process(delta: float) -> void:
+	# Skip rendering updates when solar map tab is not visible
+	var viewport := get_viewport()
+	if viewport and viewport.get_parent():
+		var tab_container := viewport.get_parent() as SubViewportContainer
+		if tab_container and not tab_container.is_visible_in_tree():
+			return
+
 	# Debounced ship marker rebuild (signals may fire many times per frame at high speed)
 	if _ships_need_refresh:
 		_ships_need_refresh = false
@@ -656,6 +828,14 @@ func _adjust_labels_to_prevent_overlap() -> void:
 			label_control_a.position = new_offset
 
 func _on_tick(_dt: float) -> void:
+	# Skip all updates when solar map tab is not visible (massive performance win)
+	# SolarMapView is inside SubViewport -> SolarMapTab container
+	var viewport := get_viewport()
+	if viewport and viewport.get_parent():
+		var tab_container := viewport.get_parent() as SubViewportContainer
+		if tab_container and not tab_container.is_visible_in_tree():
+			return
+
 	var now := Time.get_ticks_msec()
 	if now - _last_tick_msec < TICK_THROTTLE_MSEC:
 		return
