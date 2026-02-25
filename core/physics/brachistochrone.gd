@@ -35,6 +35,29 @@ static func distance_to(asteroid: AsteroidData) -> float:
 static func distance_between_au(from_pos: Vector2, to_pos: Vector2) -> float:
 	return from_pos.distance_to(to_pos)
 
+## Calculate distance traveled at time t for a Brachistochrone trajectory
+## t: time elapsed (seconds), accel_g: acceleration (g), total_time: total transit time (seconds)
+## Returns distance traveled in AU
+static func distance_at_time(t: float, accel_g: float, total_time: float, total_distance_au: float) -> float:
+	var a := accel_g * G_ACCEL  # m/s^2
+	var t_mid := total_time / 2.0  # Flip time (midpoint)
+
+	# Clamp time to valid range
+	t = clampf(t, 0.0, total_time)
+
+	var distance_meters: float
+	if t <= t_mid:
+		# Acceleration phase: d = 0.5 * a * t^2
+		distance_meters = 0.5 * a * t * t
+	else:
+		# Deceleration phase: calculate from end
+		var t_remaining := total_time - t
+		var distance_remaining_meters := 0.5 * a * t_remaining * t_remaining
+		var total_distance_meters := total_distance_au * CelestialData.AU_TO_METERS
+		distance_meters = total_distance_meters - distance_remaining_meters
+
+	return distance_meters / CelestialData.AU_TO_METERS  # Convert back to AU
+
 ## Calculate Hohmann transfer time (fuel-efficient orbit)
 ## Uses elliptical transfer orbit - much slower but uses ~25% fuel
 ## Time is independent of ship thrust (orbital mechanics, not thrust-based)

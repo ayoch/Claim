@@ -395,6 +395,10 @@ func _apply_redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> vo
 		var total_time_single := new_transit_time + return_transit_time
 		mission.fuel_per_tick = fuel_needed / total_time_single if total_time_single > 0.0 else 0.0
 
+	# Recalculate trajectory visualization for new path
+	mission.destination_position_au = new_dest
+	mission.calculate_trajectory_curves()
+
 	EventBus.mission_redirected.emit(ship, new_asteroid, redirect_cost)
 
 ## Redirect a ship in trade mission to a new colony.
@@ -1650,6 +1654,10 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 	ship.reset_life_support(ship.crew.size())
 
 	missions.append(mission)
+
+	# Calculate trajectory visualization (once, cached for drawing)
+	mission.calculate_trajectory_curves()
+
 	EventBus.mission_started.emit(mission)
 
 	# Check if any hitchhiking workers can catch this ride

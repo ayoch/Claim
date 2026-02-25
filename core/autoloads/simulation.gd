@@ -23,6 +23,10 @@ var _market_accumulator: float = 0.0
 const MARKET_INTERVAL: float = 3600.0  # drift prices every game-hour
 const MARKET_EVENT_CHANCE: float = 0.08  # 8% chance of scripted event per interval
 
+# Orbital motion updates (adaptive frequency based on game speed)
+var _orbital_accumulator: float = 0.0
+var _orbital_interval: float = 1.0  # Dynamically adjusted based on TimeScale.speed_multiplier
+
 # Contract generation
 var _contract_accumulator: float = 0.0
 const CONTRACT_INTERVAL: float = 14400.0  # check every 4 game-hours
@@ -220,14 +224,45 @@ func _process_tick(dt: float, emit_event: bool = true) -> void:
 	GameState.process_pending_orders()
 
 func _process_orbits(dt: float) -> void:
+	# Adaptive orbital update frequency based on game speed
+	# At low speeds, orbital motion is imperceptible - no need to update every tick
+	var speed := TimeScale.speed_multiplier
+	if speed < 10.0:
+		_orbital_interval = 10.0   # Update every 10 ticks at 1x-10x (90% CPU saved)
+	elif speed < 100.0:
+		_orbital_interval = 5.0    # Every 5 ticks at 10x-100x (80% saved)
+	elif speed < 1000.0:
+		_orbital_interval = 2.0    # Every 2 ticks at 100x-1000x (50% saved)
+	else:
+		_orbital_interval = 1.0    # Every tick at extreme speeds (no change)
+
+	_orbital_accumulator += dt
+	if _orbital_accumulator < _orbital_interval:
+		# Skip orbital updates this tick, but still sync docked ships
+		# (they need to stay attached to their dock location even when orbits aren't updating)
+		var earth_pos := CelestialData.get_earth_position_au()
+		for ship in GameState.ships:
+			if ship.is_docked:
+				if ship.docked_at_colony != null:
+					ship.position_au = ship.docked_at_colony.get_position_au()
+				else:
+					ship.position_au = earth_pos
+			elif not ship.is_derelict and ship.current_mission == null and ship.current_trade_mission == null:
+				_check_auto_dock_colony(ship)
+		return
+
+	# Time to update orbits - advance by accumulated time
+	var accumulated_dt := _orbital_accumulator
+	_orbital_accumulator = 0.0
+
 	# Advance all planets (including Earth)
-	CelestialData.advance_planets(dt)
+	CelestialData.advance_planets(accumulated_dt)
 	# Advance all asteroids
 	for asteroid in GameState.asteroids:
-		asteroid.advance_orbit(dt)
+		asteroid.advance_orbit(accumulated_dt)
 	# Advance colonies
 	for colony in GameState.colonies:
-		colony.advance_orbit(dt)
+		colony.advance_orbit(accumulated_dt)
 
 	# Sync docked ships with their dock location
 	var earth_pos := CelestialData.get_earth_position_au()
