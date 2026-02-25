@@ -21,3 +21,6 @@ enum Personality {
 # AI ratings (0.0-1.0)
 @export var aggression: float = 0.5  # 0.0=peaceful defender, 1.0=ruthless attacker
 @export var skill: float = 0.5        # 0.0=incompetent, 1.0=expert (affects efficiency/decisions)
+
+# Colony relationships
+@export var colony_standings: Dictionary = {}  # colony_name -> { violations: Array[Dictionary], banned: bool }

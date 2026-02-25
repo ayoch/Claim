@@ -162,16 +162,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _toggle() -> void:
+	# Key 5 now only toggles stats overlay (AI controlled by autoplay setting)
 	enabled = !enabled
-	overlay_label.visible = false
+	overlay_label.visible = enabled
 	if enabled:
-		GameState.settings["auto_sell_at_markets"] = true
-		TimeScale.set_speed(TimeScale.SPEED_MAX)
-		print("AUTOTEST: ENABLED — AI corp active at max speed")
+		print("TEST HARNESS: Stats overlay VISIBLE")
 	else:
-		GameState.settings["auto_sell_at_markets"] = false
-		TimeScale.set_speed(1.0)
-		print("AUTOTEST: DISABLED — AI corp inactive, speed reset to 1x")
+		print("TEST HARNESS: Stats overlay HIDDEN")
 
 # ========== Mission signal handlers ==========
 
@@ -193,7 +190,9 @@ var _validate_accumulator: float = 0.0
 const VALIDATE_INTERVAL: float = 43200.0  # Every half game-day
 
 func _on_tick(delta_ticks: float) -> void:
-	if not enabled:
+	# AI runs when autoplay is enabled (not just when Key 5 is pressed)
+	var autoplay_enabled: bool = GameState.settings.get("autoplay", false)
+	if not autoplay_enabled:
 		return
 	day_accumulator += delta_ticks
 	elapsed_days += delta_ticks / DAY_TICKS
@@ -379,9 +378,19 @@ func _maintain_fleet() -> void:
 		if ship.is_derelict:
 			continue
 
-		# Repair engines on docked or stationed-idle ships
-		if (ship.is_docked or ship.is_stationed_idle) and ship.engine_condition < 90.0:
-			if GameState.money >= ship.get_engine_repair_cost():
+		# Repair engines on docked or stationed-idle ships (respect Repair Policy)
+		if ship.is_docked or ship.is_stationed_idle:
+			var repair_policy := GameState.get_repair_policy(ship)
+			var should_repair := false
+			match repair_policy:
+				CompanyPolicy.RepairPolicy.ALWAYS:
+					should_repair = ship.engine_condition < 100.0
+				CompanyPolicy.RepairPolicy.AS_NEEDED:
+					should_repair = ship.engine_condition < CompanyPolicy.REPAIR_AS_NEEDED_THRESHOLD
+				CompanyPolicy.RepairPolicy.NEVER:
+					should_repair = false
+
+			if should_repair and GameState.money >= ship.get_engine_repair_cost():
 				GameState.repair_engine(ship)
 
 		# Repair broken equipment on any ship

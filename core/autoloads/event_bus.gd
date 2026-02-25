@@ -149,4 +149,8 @@ signal fusion_weapon_used(attacker: Ship)
 signal ship_disabled_combat(ship: Ship, damage: float)
 signal crew_casualty_combat(ship: Ship, worker: Worker)
 
+# NPC violations & consequences
+signal rival_corp_banned(corp_name: String, colony_name: String)
+signal colony_militia_intervened(corp_name: String, colony_name: String)
+
 @warning_ignore_restore("unused_signal")

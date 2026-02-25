@@ -41,6 +41,7 @@ const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at co
 @export var collection_policy_override: int = -1
 @export var encounter_policy_override: int = -1
 @export var repair_policy_override: int = -1
+@export var cargo_policy_override: int = -1
 
 # Combat stance
 @export var aggression_stance: int = AggressionStance.DEFENSIVE
@@ -193,8 +194,13 @@ func get_effective_thrust() -> float:
 	var max_thrust := max_thrust_g
 	for upgrade in upgrades:
 		max_thrust += upgrade.thrust_bonus
+
+	# Apply engine condition (0-100 range, convert to 0.0-1.0 multiplier)
+	# At 0% engine condition, ship cannot thrust
+	var condition_multiplier := engine_condition / 100.0
+
 	# Apply thrust setting (0.0 to 1.0)
-	return max_thrust * thrust_setting
+	return max_thrust * thrust_setting * condition_multiplier
 
 func get_effective_fuel_capacity() -> float:
 	var effective := fuel_capacity

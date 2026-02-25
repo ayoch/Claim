@@ -37,8 +37,7 @@ func get_ore_price(ore_type: ResourceTypes.OreType, market: MarketState) -> floa
 
 	# Distance from Earth increases scarcity and price
 	var earth_pos := CelestialData.get_earth_position_au()
-	var dist_from_earth := get_position_au(),
-			current_ticks.distance_to(earth_pos)
+	var dist_from_earth := get_position_au().distance_to(earth_pos)
 	# Price increases by 20% per AU of distance
 	var scarcity_multiplier := 1.0 + (dist_from_earth * 0.2)
 
@@ -49,8 +48,7 @@ func get_ore_price(ore_type: ResourceTypes.OreType, market: MarketState) -> floa
 
 	return base_market_price * mult * scarcity_multiplier * event_multiplier
 
-func get_position_au(),
-			current_ticks -> Vector2:
+func get_position_au() -> Vector2:
 	# Moons with tiny orbits (< 0.05 AU) sit at their parent's position
 	# to avoid visual jitter on the map
 	if parent_planet_index >= 0 and orbit_au < 0.05:
