@@ -223,18 +223,36 @@ func _process_tick(dt: float, emit_event: bool = true) -> void:
 	_check_combat_encounters(dt)
 	GameState.process_pending_orders()
 
+func _is_solar_map_visible() -> bool:
+	# Check if the solar map tab is currently visible
+	var main_ui := get_node_or_null("/root/MainUI")
+	if not main_ui:
+		return false
+	var tab_container = main_ui.get_node_or_null("VBox/TabContainer")
+	if not tab_container:
+		return false
+	# Map tab is index 5 (HQ=0, Fleet=1, Shipyard=2, Crew=3, Market=4, Map=5)
+	return tab_container.current_tab == 5
+
 func _process_orbits(dt: float) -> void:
-	# Adaptive orbital update frequency based on game speed
+	# Adaptive orbital update frequency based on game speed AND map visibility
 	# At low speeds, orbital motion is imperceptible - no need to update every tick
+	# When map is hidden, we can reduce frequency even more (positions still accurate enough for gameplay)
 	var speed := TimeScale.speed_multiplier
+	var map_visible := _is_solar_map_visible()
+
 	if speed < 10.0:
-		_orbital_interval = 10.0   # Update every 10 ticks at 1x-10x (90% CPU saved)
+		# 1x-10x: Map hidden = 60 ticks (99% saved), visible = 10 ticks (90% saved)
+		_orbital_interval = 60.0 if not map_visible else 10.0
 	elif speed < 100.0:
-		_orbital_interval = 5.0    # Every 5 ticks at 10x-100x (80% saved)
+		# 10x-100x: Map hidden = 20 ticks (95% saved), visible = 5 ticks (80% saved)
+		_orbital_interval = 20.0 if not map_visible else 5.0
 	elif speed < 1000.0:
-		_orbital_interval = 2.0    # Every 2 ticks at 100x-1000x (50% saved)
+		# 100x-1000x: Map hidden = 5 ticks (80% saved), visible = 2 ticks (50% saved)
+		_orbital_interval = 5.0 if not map_visible else 2.0
 	else:
-		_orbital_interval = 1.0    # Every tick at extreme speeds (no change)
+		# 1000x+: Always every tick (orbital motion is significant at extreme speeds)
+		_orbital_interval = 1.0
 
 	_orbital_accumulator += dt
 	if _orbital_accumulator < _orbital_interval:
