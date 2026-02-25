@@ -46,6 +46,7 @@ var supply_policy: int = CompanyPolicy.SupplyPolicy.ROUTINE
 var collection_policy: int = CompanyPolicy.CollectionPolicy.ROUTINE
 var encounter_policy: int = CompanyPolicy.EncounterPolicy.COEXIST
 var repair_policy: int = CompanyPolicy.RepairPolicy.ALWAYS
+var cargo_policy: int = CompanyPolicy.CargoPolicy.STANDARD
 
 func get_thrust_policy(ship: Ship) -> int:
 	return ship.thrust_policy_override if ship.thrust_policy_override >= 0 else thrust_policy
@@ -61,6 +62,9 @@ func get_encounter_policy(ship: Ship) -> int:
 
 func get_repair_policy(ship: Ship) -> int:
 	return ship.repair_policy_override if ship.repair_policy_override >= 0 else repair_policy
+
+func get_cargo_policy(ship: Ship) -> int:
+	return ship.cargo_policy_override if ship.cargo_policy_override >= 0 else cargo_policy
 
 # Game clock: total elapsed game-seconds (ticks) since game start
 var total_ticks: float = 0.0
@@ -575,6 +579,44 @@ func record_rescue_failure_violation(ship: Ship, reason: String) -> void:
 		print("VIOLATION recorded at %s: %s" % [colony.colony_name, reason])
 		EventBus.violation_recorded.emit(colony, reason)
 
+## NPC Violation System: Track rival corp violations at colonies
+func add_corp_violation(corp: RivalCorp, colony: Colony, reason: String, timestamp: float) -> void:
+	if not corp.colony_standings.has(colony.colony_name):
+		corp.colony_standings[colony.colony_name] = { "violations": [], "banned": false }
+
+	var standing: Dictionary = corp.colony_standings[colony.colony_name]
+	standing["violations"].append({"timestamp": timestamp, "reason": reason})
+
+	# Decay old violations (30 game-days)
+	_decay_corp_violations(corp, colony, timestamp)
+
+	var active_count := _get_active_corp_violations(corp, colony, timestamp)
+	if active_count >= 4 and not standing["banned"]:
+		standing["banned"] = true
+		print("NPC BAN: %s banned from %s (%d violations)" % [corp.corp_name, colony.colony_name, active_count])
+		EventBus.rival_corp_banned.emit(corp.corp_name, colony.colony_name)
+
+func _decay_corp_violations(corp: RivalCorp, colony: Colony, current_ticks: float) -> void:
+	if not corp.colony_standings.has(colony.colony_name):
+		return
+	var standing: Dictionary = corp.colony_standings[colony.colony_name]
+	var violations: Array = standing.get("violations", [])
+	var decay_threshold := current_ticks - (30.0 * 86400.0)  # 30 game-days
+	standing["violations"] = violations.filter(func(v): return v["timestamp"] > decay_threshold)
+
+func _get_active_corp_violations(corp: RivalCorp, colony: Colony, current_ticks: float) -> int:
+	if not corp.colony_standings.has(colony.colony_name):
+		return 0
+	_decay_corp_violations(corp, colony, current_ticks)
+	var standing: Dictionary = corp.colony_standings[colony.colony_name]
+	return standing.get("violations", []).size()
+
+func _is_corp_banned_from_colony(corp: RivalCorp, colony: Colony) -> bool:
+	if not corp.colony_standings.has(colony.colony_name):
+		return false
+	var standing: Dictionary = corp.colony_standings[colony.colony_name]
+	return standing.get("banned", false)
+
 func _find_colony_by_name(name: String) -> Colony:
 	# Search all colonies for matching name
 	for col in colonies:
@@ -600,7 +642,8 @@ func check_game_over_banned() -> bool:
 ## Warning System: Persistent, dismissible warnings with lightspeed delay
 ## position_au: Where the event occurred (Vector2). If null, delivered instantly (local events only).
 ## event_time: When the event actually occurred (game ticks). If 0, uses current time.
-func add_warning(message: String, severity: String, category: String, position_au: Vector2 = Vector2.ZERO, event_time: float = 0.0) -> String:
+## ship: Optional ship reference for validation at delivery (e.g., check if ship still exists/is destroyed)
+func add_warning(message: String, severity: String, category: String, position_au: Vector2 = Vector2.ZERO, event_time: float = 0.0, ship: Ship = null) -> String:
 	# Use current time if no event time specified
 	var actual_event_time := event_time if event_time > 0.0 else total_ticks
 
@@ -614,17 +657,17 @@ func add_warning(message: String, severity: String, category: String, position_a
 		# Queue warning for delayed delivery
 		pending_orders.append({
 			"fires_at": total_ticks + delay,
-			"ship": null,
+			"ship": ship,  # Store ship ref for validation at delivery
 			"label": "warning_delivery",
 			"fn": func():
-				_deliver_warning(message, severity, category, delay, actual_event_time)
+				_deliver_warning(message, severity, category, delay, actual_event_time, ship)
 		})
 		return "queued"  # Will be assigned real ID when delivered
 	else:
 		# Instant delivery (local Earth events only)
-		return _deliver_warning(message, severity, category, 0.0, actual_event_time)
+		return _deliver_warning(message, severity, category, 0.0, actual_event_time, ship)
 
-func _deliver_warning(message: String, severity: String, category: String, delay: float, event_time: float) -> String:
+func _deliver_warning(message: String, severity: String, category: String, delay: float, event_time: float, ship: Ship = null) -> String:
 	# Check if duplicate exists BEFORE adding timestamp/delay prefixes (base message deduplication)
 	for warning in active_warnings:
 		# Strip timestamp and delay prefixes to get base message
@@ -667,6 +710,7 @@ func _deliver_warning(message: String, severity: String, category: String, delay
 		"message": final_message,
 		"severity": severity,  # "warning" or "critical"
 		"category": category,  # "violation", "crew", "debt", "loan", "combat"
+		"delivered_at": total_ticks,  # When warning arrived at player
 	})
 
 	# Limit active warnings to prevent UI bloat (keep 50 most recent)
@@ -2577,6 +2621,7 @@ func save_game(save_name: String = "") -> void:
 		"collection_policy": collection_policy,
 		"encounter_policy": encounter_policy,
 		"repair_policy": repair_policy,
+		"cargo_policy": cargo_policy,
 		"resources": {},
 		"workers": [],
 		"ships": [],
@@ -2656,6 +2701,7 @@ func save_game(save_name: String = "") -> void:
 		ship_data["collection_policy_override"] = s.collection_policy_override
 		ship_data["encounter_policy_override"] = s.encounter_policy_override
 		ship_data["repair_policy_override"] = s.repair_policy_override
+		ship_data["cargo_policy_override"] = s.cargo_policy_override
 		ship_data["aggression_stance"] = s.aggression_stance
 		ship_data["docked_at_earth"] = s.docked_at_earth
 		# Supplies
@@ -2914,6 +2960,7 @@ func save_game(save_name: String = "") -> void:
 		var corp_entry := { "name": corp.corp_name, "money": corp.money,
 			"total_ore_mined": corp.total_ore_mined, "total_revenue": corp.total_revenue,
 			"aggression": corp.aggression, "skill": corp.skill,
+			"colony_standings": corp.colony_standings.duplicate(true),
 			"ships": [] }
 		for ship: RivalShip in corp.ships:
 			corp_entry["ships"].append({
@@ -2961,6 +3008,7 @@ func load_game(file_name: String = "save_game.json") -> bool:
 	collection_policy = int(data.get("collection_policy", CompanyPolicy.CollectionPolicy.ROUTINE))
 	encounter_policy = int(data.get("encounter_policy", CompanyPolicy.EncounterPolicy.COEXIST))
 	repair_policy = int(data.get("repair_policy", CompanyPolicy.RepairPolicy.ALWAYS))
+	cargo_policy = int(data.get("cargo_policy", CompanyPolicy.CargoPolicy.STANDARD))
 	settings["autoplay"] = data.get("autoplay", false)
 	settings["auto_sell_at_earth"] = data.get("auto_sell_at_earth", true)
 	settings["auto_sell_at_markets"] = data.get("auto_sell_at_markets", false)
@@ -3051,6 +3099,7 @@ func load_game(file_name: String = "save_game.json") -> bool:
 		s.collection_policy_override = int(sd.get("collection_policy_override", -1))
 		s.encounter_policy_override = int(sd.get("encounter_policy_override", -1))
 		s.repair_policy_override = int(sd.get("repair_policy_override", -1))
+		s.cargo_policy_override = int(sd.get("cargo_policy_override", -1))
 		s.aggression_stance = int(sd.get("aggression_stance", Ship.AggressionStance.DEFENSIVE))
 		s.docked_at_earth = bool(sd.get("docked_at_earth", true))
 		# Restore station data (colony ref reconnected after colonies are loaded)
@@ -3456,6 +3505,7 @@ func load_game(file_name: String = "save_game.json") -> bool:
 		corp.total_revenue = int(cd.get("total_revenue", 0))
 		corp.aggression = float(cd.get("aggression", corp.aggression))
 		corp.skill = float(cd.get("skill", corp.skill))
+		corp.colony_standings = cd.get("colony_standings", {}).duplicate(true)
 		var saved_ships: Array = cd.get("ships", [])
 		for j in min(corp.ships.size(), saved_ships.size()):
 			var ship: RivalShip = corp.ships[j]

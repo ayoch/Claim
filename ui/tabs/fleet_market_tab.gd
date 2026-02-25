@@ -944,7 +944,7 @@ func _rebuild_ships() -> void:
 					"set": func(v: int) -> void: ship.supply_policy_override = v,
 				},
 				{
-					"label": "Collection",
+					"label": "Pickup Threshold",
 					"names": CompanyPolicy.COLLECTION_POLICY_NAMES,
 					"get": func() -> int: return ship.collection_policy_override,
 					"set": func(v: int) -> void: ship.collection_policy_override = v,
@@ -960,6 +960,12 @@ func _rebuild_ships() -> void:
 					"names": CompanyPolicy.REPAIR_POLICY_NAMES,
 					"get": func() -> int: return ship.repair_policy_override,
 					"set": func(v: int) -> void: ship.repair_policy_override = v,
+				},
+				{
+					"label": "Mining Threshold",
+					"names": CompanyPolicy.CARGO_POLICY_NAMES,
+					"get": func() -> int: return ship.cargo_policy_override,
+					"set": func(v: int) -> void: ship.cargo_policy_override = v,
 				},
 			]
 

@@ -17,9 +17,16 @@ const REFRESH_INTERVAL_MSEC: int = 200
 
 func _ready() -> void:
 	refresh_btn.pressed.connect(_generate_candidates)
-	EventBus.worker_hired.connect(func(_w: Worker) -> void: _dirty_all = true)
+	EventBus.worker_hired.connect(func(w: Worker) -> void:
+		# Remove hired worker from candidates and generate a new one to maintain pool of 3
+		_candidates.erase(w)
+		_candidates.append(Worker.generate_random())
+		_dirty_all = true
+	)
 	EventBus.worker_fired.connect(func(_w: Worker) -> void: _dirty_all = true)
 	EventBus.worker_skill_leveled.connect(func(_w: Worker, _st: int, _nv: float) -> void: _dirty_crew = true)
+	EventBus.crew_casualty_combat.connect(func(_s: Ship, _w: Worker) -> void: _dirty_crew = true)
+	EventBus.ship_food_depleted.connect(func(_s: Ship, _count: int) -> void: _dirty_crew = true)
 	EventBus.mission_started.connect(func(_m: Mission) -> void: _dirty_crew = true)
 	EventBus.mission_completed.connect(func(_m: Mission) -> void: _dirty_crew = true)
 	EventBus.tick.connect(_on_tick)

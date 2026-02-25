@@ -72,10 +72,10 @@ const COLLECTION_POLICY_NAMES := {
 }
 
 const COLLECTION_POLICY_DESCRIPTIONS := {
-	CollectionPolicy.AGGRESSIVE: "Collect ore when stockpile reaches 25% of ship cargo capacity. More trips, lower inventory risk.",
-	CollectionPolicy.ROUTINE: "Collect when stockpile reaches 50% of ship cargo. Balanced trip frequency.",
-	CollectionPolicy.PATIENT: "Collect when stockpile reaches 80% of ship cargo. Fewer trips, higher stockpile risk.",
-	CollectionPolicy.MANUAL: "Never auto-collect. You dispatch all collection runs manually.",
+	CollectionPolicy.AGGRESSIVE: "Dispatch ships when mining unit stockpiles reach 25% of ship cargo capacity. More trips, lower inventory risk.",
+	CollectionPolicy.ROUTINE: "Dispatch ships when mining unit stockpiles reach 50% of ship cargo. Balanced trip frequency.",
+	CollectionPolicy.PATIENT: "Dispatch ships when mining unit stockpiles reach 80% of ship cargo. Fewer trips, higher stockpile risk.",
+	CollectionPolicy.MANUAL: "Never auto-dispatch collection runs. You manually send ships to pick up from mining unit stockpiles.",
 }
 
 # Threshold as fraction of ship cargo capacity
@@ -131,6 +131,33 @@ const ENCOUNTER_POLICY_DESCRIPTIONS := {
 	EncounterPolicy.COEXIST: "Workers stay but won't escalate. Peaceful coexistence where possible. Reputation benefit over time.",
 	EncounterPolicy.CONFRONT: "Workers assert dominance and pressure rivals to leave. Higher productivity at contested sites; reputation risk if violence occurs.",
 	EncounterPolicy.DEFEND: "Workers hold the claim at all costs. Use force if threatened. Best claim retention; significant reputation risk.",
+}
+
+# --- Cargo Target Policy ---
+# Controls when ships return from mining based on cargo fill level.
+enum CargoPolicy {
+	QUICK_RETURN,   # Return at 50% full — frequent trips, lower risk
+	STANDARD,       # Return at 75% full — balanced approach
+	MAXIMUM_HAUL,   # Return at 95% full — fewer trips, best efficiency
+}
+
+const CARGO_POLICY_NAMES := {
+	CargoPolicy.QUICK_RETURN: "Quick Return",
+	CargoPolicy.STANDARD: "Standard",
+	CargoPolicy.MAXIMUM_HAUL: "Maximum Haul",
+}
+
+const CARGO_POLICY_DESCRIPTIONS := {
+	CargoPolicy.QUICK_RETURN: "Ships mining asteroids return at 50% cargo. Frequent trips, lower inventory risk at contested sites, higher fuel costs per ton.",
+	CargoPolicy.STANDARD: "Ships mining asteroids return at 75% cargo. Balanced trip frequency and efficiency.",
+	CargoPolicy.MAXIMUM_HAUL: "Ships mining asteroids return at 95% cargo. Fewer trips, best fuel efficiency, longer missions with higher breakdown risk.",
+}
+
+# Cargo fill thresholds for each policy (fraction of cargo capacity)
+const CARGO_POLICY_THRESHOLDS := {
+	CargoPolicy.QUICK_RETURN: 0.50,
+	CargoPolicy.STANDARD: 0.75,
+	CargoPolicy.MAXIMUM_HAUL: 0.95,
 }
 
 # Calculate optimal thrust setting based on policy and mission parameters

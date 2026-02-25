@@ -243,6 +243,12 @@ func _ready() -> void:
 	EventBus.rival_corps_contested.connect(func(corp_name: String, asteroid_name: String) -> void:
 		_queue_alert("[RIVAL] %s is now competing with you at %s!" % [corp_name, asteroid_name], Color(1.0, 0.4, 0.1))
 	)
+	EventBus.rival_corp_banned.connect(func(corp_name: String, colony_name: String) -> void:
+		_queue_activity("⚖️ %s banned from %s" % [corp_name, colony_name], Color(0.3, 0.9, 0.9))
+	)
+	EventBus.colony_militia_intervened.connect(func(corp_name: String, colony_name: String) -> void:
+		_queue_activity("🛡️ %s militia defended against %s" % [colony_name, corp_name], Color(0.3, 0.7, 1.0))
+	)
 
 	_refresh_all()
 	_setup_policies_ui()
@@ -640,14 +646,11 @@ func _refresh_warnings() -> void:
 
 	card.visible = true
 
-	# Sort warnings by severity (critical first)
+	# Sort warnings by time (most recent first)
 	var sorted_warnings := GameState.active_warnings.duplicate()
 	sorted_warnings.sort_custom(func(a, b) -> bool:
-		if a["severity"] == "critical" and b["severity"] != "critical":
-			return true
-		if a["severity"] != "critical" and b["severity"] == "critical":
-			return false
-		return a["message"] < b["message"]
+		# Most recent (higher delivered_at) comes first
+		return a.get("delivered_at", 0.0) > b.get("delivered_at", 0.0)
 	)
 
 	for warning in sorted_warnings:
@@ -702,6 +705,15 @@ func _setup_policies_ui() -> void:
 	autoplay_btn.toggled.connect(func(on: bool) -> void:
 		GameState.settings["autoplay"] = on
 		autoplay_btn.text = "AUTOPLAY: ON" if on else "AUTOPLAY: OFF"
+		# Auto-enable max speed when autoplay turns on
+		if on:
+			GameState.settings["auto_sell_at_markets"] = true
+			TimeScale.set_speed(TimeScale.SPEED_MAX)
+			print("AUTOPLAY: ENABLED — AI corp running at max speed")
+		else:
+			GameState.settings["auto_sell_at_markets"] = false
+			TimeScale.set_speed(1.0)
+			print("AUTOPLAY: DISABLED — Manual control, speed reset to 1x")
 	)
 	title_row.add_child(autoplay_btn)
 
@@ -781,7 +793,7 @@ func _setup_policies_ui() -> void:
 		func(idx: int) -> void: GameState.supply_policy = idx
 	)
 	_add_policy_row.call(
-		"Ore Collection:",
+		"Pickup Threshold:",
 		CompanyPolicy.COLLECTION_POLICY_NAMES,
 		CompanyPolicy.COLLECTION_POLICY_DESCRIPTIONS,
 		func() -> int: return GameState.collection_policy,
@@ -800,6 +812,13 @@ func _setup_policies_ui() -> void:
 		CompanyPolicy.REPAIR_POLICY_DESCRIPTIONS,
 		func() -> int: return GameState.repair_policy,
 		func(idx: int) -> void: GameState.repair_policy = idx
+	)
+	_add_policy_row.call(
+		"Mining Threshold:",
+		CompanyPolicy.CARGO_POLICY_NAMES,
+		CompanyPolicy.CARGO_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.cargo_policy,
+		func(idx: int) -> void: GameState.cargo_policy = idx
 	)
 
 	policies_vbox.add_child(policies_content)
