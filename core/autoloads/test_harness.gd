@@ -451,10 +451,19 @@ func _provision_ship(ship: Ship) -> void:
 		supplies_bought += 1
 
 func _repair_broken_equipment(ship: Ship) -> void:
+	# Respect Equipment Maintenance Policy
+	var maint_policy := GameState.get_maintenance_policy(ship)
+	var threshold: float = CompanyPolicy.MAINTENANCE_POLICY_THRESHOLDS[maint_policy]
+
+	# MANUAL policy: never auto-repair
+	if threshold < 0.0:
+		return
+
 	for equip in ship.equipment:
-		if not equip.is_functional() and equip.durability <= 0.0:
-			if GameState.money >= equip.repair_cost():
-				GameState.repair_equipment(ship, equip)
+		# Equipment has max durability of 100.0
+		var should_repair := equip.durability <= (100.0 * threshold)
+		if should_repair and GameState.money >= equip.repair_cost():
+			GameState.repair_equipment(ship, equip)
 
 func _send_docked_ship(ship: Ship) -> void:
 	var desperate := GameState.money < 500_000

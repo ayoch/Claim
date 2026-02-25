@@ -153,4 +153,9 @@ signal crew_casualty_combat(ship: Ship, worker: Worker)
 signal rival_corp_banned(corp_name: String, colony_name: String)
 signal colony_militia_intervened(corp_name: String, colony_name: String)
 
+# Partnership system
+signal partnership_created(leader: Ship, follower: Ship)
+signal partnership_broken(ship1: Ship, ship2: Ship, reason: String)
+signal partnership_aid_provided(leader_name: String, follower_name: String, aid_type: String, details: Dictionary)
+
 @warning_ignore_restore("unused_signal")

@@ -160,6 +160,107 @@ const CARGO_POLICY_THRESHOLDS := {
 	CargoPolicy.MAXIMUM_HAUL: 0.95,
 }
 
+# --- Equipment Maintenance Policy ---
+# Controls when to repair broken/degraded equipment.
+enum MaintenancePolicy {
+	PREVENTIVE,      # Repair at 30% durability — costly but minimal downtime
+	AS_NEEDED,       # Repair at 10% durability — balanced
+	RUN_TO_FAILURE,  # Only repair when broken (0% durability) — cheapest but risky
+	MANUAL,          # Never auto-repair — player decides
+}
+
+const MAINTENANCE_POLICY_NAMES := {
+	MaintenancePolicy.PREVENTIVE: "Preventive",
+	MaintenancePolicy.AS_NEEDED: "As Needed",
+	MaintenancePolicy.RUN_TO_FAILURE: "Run to Failure",
+	MaintenancePolicy.MANUAL: "Manual",
+}
+
+const MAINTENANCE_POLICY_DESCRIPTIONS := {
+	MaintenancePolicy.PREVENTIVE: "Repair equipment at 30% durability. High costs, minimal downtime, no mid-mission breakdowns.",
+	MaintenancePolicy.AS_NEEDED: "Repair equipment at 10% durability. Balanced cost and risk of breakdown.",
+	MaintenancePolicy.RUN_TO_FAILURE: "Only repair when equipment breaks (0% durability). Lowest cost, expect mid-mission failures.",
+	MaintenancePolicy.MANUAL: "Never auto-repair equipment. You manage all maintenance manually.",
+}
+
+# Durability thresholds for each policy (fraction of max durability)
+const MAINTENANCE_POLICY_THRESHOLDS := {
+	MaintenancePolicy.PREVENTIVE: 0.30,
+	MaintenancePolicy.AS_NEEDED: 0.10,
+	MaintenancePolicy.RUN_TO_FAILURE: 0.0,  # Only when broken
+	MaintenancePolicy.MANUAL: -1.0,  # Never auto-repair
+}
+
+# --- Trading Policy ---
+# Controls when and how to sell ore.
+enum TradingPolicy {
+	IMMEDIATE,         # Sell all ore on return — steady cash flow
+	MARKET_TIMING,     # Wait for favorable prices — maximize revenue
+	CONTRACT_PRIORITY, # Fulfill contracts first, then sell — reputation focus
+	STOCKPILE,         # Hold ore for future contracts/price spikes
+}
+
+const TRADING_POLICY_NAMES := {
+	TradingPolicy.IMMEDIATE: "Immediate",
+	TradingPolicy.MARKET_TIMING: "Market Timing",
+	TradingPolicy.CONTRACT_PRIORITY: "Contract Priority",
+	TradingPolicy.STOCKPILE: "Stockpile",
+}
+
+const TRADING_POLICY_DESCRIPTIONS := {
+	TradingPolicy.IMMEDIATE: "Sell all ore immediately upon return to Earth. Predictable cash flow, never miss opportunities, always liquid.",
+	TradingPolicy.MARKET_TIMING: "Wait to sell ore when prices are above average. Higher revenue but delayed cash, requires patience.",
+	TradingPolicy.CONTRACT_PRIORITY: "Fulfill active contracts first, then sell remaining ore. Best reputation, steady contract flow.",
+	TradingPolicy.STOCKPILE: "Hold ore in inventory for future contracts or major price spikes. High storage costs, cash tied up.",
+}
+
+# --- Crew Morale Policy ---
+# Controls how aggressively to maintain crew satisfaction.
+# (Full morale system will be implemented in future; this sets preferences now)
+enum MoralePolicy {
+	STRICT,            # Minimal perks, focus on efficiency
+	BALANCED,          # Standard working conditions
+	INTENSIVE,         # Extra perks, better conditions
+	PERFORMANCE_BASED, # Bonuses tied to results
+}
+
+const MORALE_POLICY_NAMES := {
+	MoralePolicy.STRICT: "Strict",
+	MoralePolicy.BALANCED: "Balanced",
+	MoralePolicy.INTENSIVE: "Intensive",
+	MoralePolicy.PERFORMANCE_BASED: "Performance-Based",
+}
+
+const MORALE_POLICY_DESCRIPTIONS := {
+	MoralePolicy.STRICT: "Minimal perks and benefits. Lower payroll costs but higher turnover and loyalty issues.",
+	MoralePolicy.BALANCED: "Standard working conditions. Competitive pay, reasonable treatment. Steady retention.",
+	MoralePolicy.INTENSIVE: "Premium benefits and crew amenities. Higher costs but best morale, loyalty, and performance.",
+	MoralePolicy.PERFORMANCE_BASED: "Bonus pay for successful missions. Variable costs, high motivation during good times.",
+}
+
+# --- Automation Policy ---
+# Controls how much autonomy stationed ships have.
+enum AutomationPolicy {
+	FULLY_MANUAL,  # Ships never auto-dispatch — you control everything
+	SEMI_AUTO,     # Ships auto-dispatch for simple jobs (resupply, collection)
+	FULL_AUTO,     # Ships auto-dispatch for all jobs including mining and trading
+	ADAPTIVE,      # AI learns optimal patterns and self-optimizes
+}
+
+const AUTOMATION_POLICY_NAMES := {
+	AutomationPolicy.FULLY_MANUAL: "Fully Manual",
+	AutomationPolicy.SEMI_AUTO: "Semi-Auto",
+	AutomationPolicy.FULL_AUTO: "Full Auto",
+	AutomationPolicy.ADAPTIVE: "Adaptive",
+}
+
+const AUTOMATION_POLICY_DESCRIPTIONS := {
+	AutomationPolicy.FULLY_MANUAL: "Stationed ships never auto-dispatch. You manually order every mission. Maximum control, high attention needed.",
+	AutomationPolicy.SEMI_AUTO: "Ships auto-dispatch for resupply and ore collection. You handle mining and trading. Moderate automation.",
+	AutomationPolicy.FULL_AUTO: "Ships autonomously handle all jobs: mining, trading, resupply, collection. Low attention needed.",
+	AutomationPolicy.ADAPTIVE: "AI analyzes patterns and optimizes operations. Ships learn best routes, timing, and strategies.",
+}
+
 # Calculate optimal thrust setting based on policy and mission parameters
 static func calculate_thrust_setting(
 	policy: ThrustPolicy,

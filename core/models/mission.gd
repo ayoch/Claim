@@ -66,6 +66,11 @@ enum TransitMode {
 @export var return_legs: Array[WaypointLeg] = []
 @export var return_waypoint_index: int = 0
 
+# Partnership support
+@export var is_partnership_shadow: bool = false  # True for follower missions
+@export var partnership_leader_ship_name: String = ""  # Name of leader ship (for sync)
+var partnership_leader_mission: Mission = null  # Runtime reference to leader's mission
+
 # Refueling status and duration
 const REFUEL_DURATION: float = 5.0  # ticks spent refueling
 var refueling_is_return: bool = false  # True when refueling during return trip

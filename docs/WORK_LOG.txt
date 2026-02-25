@@ -437,3 +437,19 @@
 - Seed data: 20 real asteroids with Keplerian orbital elements, 9 colonies with price multipliers
 - Standalone seed.py script: creates tables, seeds data, creates default player1 with Prospector ship + 3 workers
 - README.md with setup instructions and full API reference
+
+
+## 2026-02-25 ~[time untracked] EST (HK-47)
+
+- Ship Partnership System (complete implementation)
+  - Leader/follower model: two ships travel together as coordinated pair
+  - Shadow missions: follower syncs with leader (status, position, timing)
+  - Mutual aid: automatic fuel transfer and engineer repair for troubled partners
+  - Combat bonuses: combined firepower, proportional damage splitting
+  - NPC integration: aggressive corps form partnerships for contested asteroids
+  - Station support: partnered ships dispatch together, return together
+  - Full save/load persistence with name-based reference resolution
+  - UI: Fleet tab partnership controls, Dashboard activity log integration
+  - Created docs/PARTNERSHIP_SYSTEM.md and partnership_test.gd
+  - ~800-1000 lines across 7 core files
+
