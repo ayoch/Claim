@@ -464,6 +464,46 @@ func _rebuild_ships() -> void:
 		if _derelict_actions:
 			vbox.add_child(_derelict_actions)
 
+		# === PARTNERSHIP STATUS ===
+		if ship.is_partnered():
+			var partnership_row := HBoxContainer.new()
+			partnership_row.add_theme_constant_override("separation", 8)
+
+			var partner_icon := Label.new()
+			partner_icon.text = "🤝"
+			partner_icon.add_theme_font_size_override("font_size", 14)
+			partnership_row.add_child(partner_icon)
+
+			var partner_label := Label.new()
+			var role := "Leader" if ship.is_partnership_leader else "Follower"
+			partner_label.text = "%s: Partnered with %s" % [role, ship.partner_ship_name]
+			partner_label.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))  # Cyan
+			partner_label.add_theme_font_size_override("font_size", 11)
+			partnership_row.add_child(partner_label)
+
+			var break_btn := Button.new()
+			break_btn.text = "Break Partnership"
+			break_btn.add_theme_font_size_override("font_size", 10)
+			break_btn.custom_minimum_size = Vector2(0, 24)
+			break_btn.pressed.connect(func() -> void:
+				GameState.break_partnership(ship, ship.partner_ship, "User terminated partnership")
+				_needs_full_rebuild = true
+			)
+			partnership_row.add_child(break_btn)
+
+			vbox.add_child(partnership_row)
+
+		# Partnership creation button (for idle docked ships)
+		if ship.is_docked and not ship.is_partnered() and ship.current_mission == null:
+			var partner_btn := Button.new()
+			partner_btn.text = "Create Partnership"
+			partner_btn.add_theme_font_size_override("font_size", 11)
+			partner_btn.custom_minimum_size = Vector2(0, 28)
+			partner_btn.pressed.connect(func() -> void:
+				_show_partnership_selection(ship)
+			)
+			vbox.add_child(partner_btn)
+
 		# === SHIP STATS (Collapsible) ===
 		var stats_expanded: bool = _ship_stats_expanded.get(ship, false)  # Default collapsed
 
@@ -966,6 +1006,30 @@ func _rebuild_ships() -> void:
 					"names": CompanyPolicy.CARGO_POLICY_NAMES,
 					"get": func() -> int: return ship.cargo_policy_override,
 					"set": func(v: int) -> void: ship.cargo_policy_override = v,
+				},
+				{
+					"label": "Equipment Maintenance",
+					"names": CompanyPolicy.MAINTENANCE_POLICY_NAMES,
+					"get": func() -> int: return ship.maintenance_policy_override,
+					"set": func(v: int) -> void: ship.maintenance_policy_override = v,
+				},
+				{
+					"label": "Trading",
+					"names": CompanyPolicy.TRADING_POLICY_NAMES,
+					"get": func() -> int: return ship.trading_policy_override,
+					"set": func(v: int) -> void: ship.trading_policy_override = v,
+				},
+				{
+					"label": "Crew Morale",
+					"names": CompanyPolicy.MORALE_POLICY_NAMES,
+					"get": func() -> int: return ship.morale_policy_override,
+					"set": func(v: int) -> void: ship.morale_policy_override = v,
+				},
+				{
+					"label": "Automation",
+					"names": CompanyPolicy.AUTOMATION_POLICY_NAMES,
+					"get": func() -> int: return ship.automation_policy_override,
+					"set": func(v: int) -> void: ship.automation_policy_override = v,
 				},
 			]
 
@@ -3263,6 +3327,47 @@ func _clear_dispatch_content() -> void:
 
 func _format_time(ticks: float) -> String:
 	return TimeScale.format_time(ticks)
+
+func _show_partnership_selection(ship: Ship) -> void:
+	var dialog := AcceptDialog.new()
+	dialog.title = "Select Partner Ship"
+	dialog.dialog_text = "Choose a ship to partner with %s:" % ship.ship_name
+	dialog.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_MAIN_WINDOW_SCREEN
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 4)
+
+	# List eligible ships
+	var found_eligible := false
+	for other in GameState.ships:
+		if other == ship:
+			continue
+
+		var check := ship.can_partner_with(other)
+		if not check["valid"]:
+			continue
+
+		found_eligible = true
+		var btn := Button.new()
+		btn.text = "%s (Cargo: %.0f t, Fuel: %.0f)" % [other.ship_name, other.cargo_capacity, other.fuel]
+		btn.add_theme_font_size_override("font_size", 11)
+		btn.custom_minimum_size = Vector2(300, 0)
+		btn.pressed.connect(func() -> void:
+			GameState.create_partnership(ship, other)
+			dialog.hide()
+			_needs_full_rebuild = true
+		)
+		vbox.add_child(btn)
+
+	if not found_eligible:
+		var no_ships := Label.new()
+		no_ships.text = "No eligible ships nearby"
+		no_ships.add_theme_font_size_override("font_size", 11)
+		vbox.add_child(no_ships)
+
+	dialog.add_child(vbox)
+	add_child(dialog)
+	dialog.popup_centered()
 
 var _station_job_checks: Dictionary = {}  # job_name -> CheckBox
 var _station_job_order: Array[String] = []  # Current ordering

@@ -152,6 +152,22 @@ func _ready() -> void:
 		_queue_activity("%s rescued by %s" % [ship.ship_name, stranger_name], Color(0.3, 0.9, 0.4))
 	)
 
+	# Partnership events
+	EventBus.partnership_created.connect(func(leader: Ship, follower: Ship) -> void:
+		_queue_activity("🤝 Partnership: %s + %s" % [leader.ship_name, follower.ship_name], Color(0.4, 0.8, 1.0))
+	)
+	EventBus.partnership_broken.connect(func(ship1: Ship, ship2: Ship, reason: String) -> void:
+		_queue_activity("💔 Partnership ended: %s & %s (%s)" % [ship1.ship_name, ship2.ship_name, reason], Color(0.9, 0.6, 0.3))
+	)
+	EventBus.partnership_aid_provided.connect(func(leader: String, follower: String, aid_type: String, details: Dictionary) -> void:
+		var msg := ""
+		if aid_type == "fuel_transfer":
+			msg = "⛽ %s transferred %.0f fuel to %s" % [leader, details["amount"], follower]
+		elif aid_type == "engineer_repair":
+			msg = "🔧 %s repaired %s (Engineer: %s)" % [leader, follower, details["engineer"]]
+		_queue_activity(msg, Color(0.3, 0.9, 0.9))
+	)
+
 	# Mining units
 	EventBus.mining_unit_deployed.connect(func(unit: MiningUnit, asteroid: AsteroidData) -> void:
 		_queue_activity("Deployed %s at %s" % [unit.unit_name, asteroid.asteroid_name], Color(0.3, 0.9, 0.4))
@@ -819,6 +835,34 @@ func _setup_policies_ui() -> void:
 		CompanyPolicy.CARGO_POLICY_DESCRIPTIONS,
 		func() -> int: return GameState.cargo_policy,
 		func(idx: int) -> void: GameState.cargo_policy = idx
+	)
+	_add_policy_row.call(
+		"Equipment Maintenance:",
+		CompanyPolicy.MAINTENANCE_POLICY_NAMES,
+		CompanyPolicy.MAINTENANCE_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.maintenance_policy,
+		func(idx: int) -> void: GameState.maintenance_policy = idx
+	)
+	_add_policy_row.call(
+		"Trading:",
+		CompanyPolicy.TRADING_POLICY_NAMES,
+		CompanyPolicy.TRADING_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.trading_policy,
+		func(idx: int) -> void: GameState.trading_policy = idx
+	)
+	_add_policy_row.call(
+		"Crew Morale:",
+		CompanyPolicy.MORALE_POLICY_NAMES,
+		CompanyPolicy.MORALE_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.morale_policy,
+		func(idx: int) -> void: GameState.morale_policy = idx
+	)
+	_add_policy_row.call(
+		"Automation:",
+		CompanyPolicy.AUTOMATION_POLICY_NAMES,
+		CompanyPolicy.AUTOMATION_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.automation_policy,
+		func(idx: int) -> void: GameState.automation_policy = idx
 	)
 
 	policies_vbox.add_child(policies_content)

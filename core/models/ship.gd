@@ -42,6 +42,10 @@ const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at co
 @export var encounter_policy_override: int = -1
 @export var repair_policy_override: int = -1
 @export var cargo_policy_override: int = -1
+@export var maintenance_policy_override: int = -1
+@export var trading_policy_override: int = -1
+@export var morale_policy_override: int = -1
+@export var automation_policy_override: int = -1
 
 # Combat stance
 @export var aggression_stance: int = AggressionStance.DEFENSIVE
@@ -70,6 +74,11 @@ var current_mission: Mission = null
 var current_trade_mission: TradeMission = null
 var crew: Array[Worker] = []  # Workers permanently assigned to this ship
 var last_crew: Array[Worker] = []  # Last crew used for dispatch (for pre-selection)
+
+# Partnership system
+@export var partner_ship_name: String = ""  # Name of partnered ship (for save/load)
+@export var is_partnership_leader: bool = false  # True = leader, False = follower
+var partner_ship: Ship = null  # Runtime reference (resolved at load time)
 
 # Queued mission data (set destination while ship is busy)
 var queued_destination: Variant = null  # AsteroidData or Colony
@@ -378,3 +387,28 @@ func is_armed() -> bool:
 			else:
 				return true
 	return false
+
+## Partnership system helper functions
+func is_partnered() -> bool:
+	return partner_ship != null
+
+func get_partnership_role() -> String:
+	if not is_partnered():
+		return "solo"
+	return "leader" if is_partnership_leader else "follower"
+
+func can_partner_with(other_ship: Ship) -> Dictionary:
+	# Validate partnership conditions
+	if is_partnered() or other_ship.is_partnered():
+		return {"valid": false, "reason": "Already partnered"}
+	if current_mission != null or other_ship.current_mission != null:
+		return {"valid": false, "reason": "Ships must be idle"}
+	if is_derelict or other_ship.is_derelict:
+		return {"valid": false, "reason": "Derelict ships cannot partner"}
+
+	# Location check (within colony proximity)
+	var distance := position_au.distance_to(other_ship.position_au)
+	if distance > 0.02:  # COLONY_PROXIMITY_AU
+		return {"valid": false, "reason": "Ships too far apart"}
+
+	return {"valid": true}

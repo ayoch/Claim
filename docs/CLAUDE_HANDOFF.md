@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-24 EST (session 17)
+**Last Updated:** 2026-02-25 EST (session 18)
 **Updated By:** Instance on Machine 2 (Mac laptop - HK-47)
-**Session Context:** Warning system overhaul - timestamps, ship ownership labels, auto-pause, violation physics, mobile notifications
-**Next Session Priority:** Test warning system with aggressive AI, then torpedo restocking UI
+**Session Context:** Ship partnership system - leader/follower pairs, mutual aid, combat bonuses, NPC integration
+**Next Session Priority:** Test partnership system (run partnership_test.gd), then torpedo restocking UI
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -13,6 +13,68 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-25 EST (session 18) - Ship Partnership System
+- **Machine:** Mac laptop (HK-47)
+- **Work Completed:**
+  - **Ship Partnership System (complete implementation)** (see `docs/PARTNERSHIP_SYSTEM.md` for full documentation):
+    - **Data model**: Bidirectional partnership references in Ship (`partner_ship_name`, `is_partnership_leader`, `partner_ship`) and Mission (`is_partnership_shadow`, `partnership_leader_ship_name`, `partnership_leader_mission`)
+    - **Partnership management**: `create_partnership()` and `break_partnership()` in GameState with validation (both idle, not derelict, within 0.02 AU proximity)
+    - **Shadow missions**: Follower automatically gets synchronized mission copy when leader dispatches. Position, status, and timing synced every tick.
+    - **Mutual aid system** (automatic):
+      - Fuel transfer: Leader stops and transfers up to 50% fuel when follower runs dry, mission resumes
+      - Engineer repair: Leader's engineer repairs follower's broken engine (skill-based, 50-100% condition), mission resumes
+      - Partnership breaks if no qualified engineer available (skill < 0.5)
+    - **Combat integration**:
+      - Combined firepower: Rival threat assessment includes both ships' weapons if partner within 0.1 AU
+      - Damage splitting: Combat damage distributed proportionally by cargo capacity
+      - Reduces rival attack probability significantly (more weapons = exponentially safer)
+    - **NPC partnerships**: Aggressive corps (aggression ≥ 0.5) form partnerships for contested high-value asteroids, dispatch pairs together
+    - **Station support**: Partnered stationed ships dispatch together, both perform jobs as pair, return together
+    - **UI implementation**:
+      - Fleet tab: Partnership status display (🤝 icon, cyan), create/break buttons, selection dialog with ship stats
+      - Dashboard: Activity log entries for all partnership events (created, broken, fuel transfer, engineer repair)
+    - **Save/load**: Name-based reference resolution (same pattern as crew assignments), full persistence
+    - **Helper functions**: `is_partnered()`, `get_partnership_role()` (solo/leader/follower), `can_partner_with()` validation
+    - **Event signals**: `partnership_created`, `partnership_broken`, `partnership_aid_provided`
+
+  - **Testing script**: Created `partnership_test.gd` with automated tests for all core features (creation, roles, dispatch, save/load, breaking)
+
+  - **Documentation updates**:
+    - Created `docs/PARTNERSHIP_SYSTEM.md` (comprehensive architecture, features, testing, edge cases)
+    - Updated `memory/models.md` (Ship and Mission partnership fields)
+    - Updated `memory/architecture.md` (partnership system section, simulation tick integration)
+    - Updated `memory/MEMORY.md` (recently implemented section)
+
+- **Files Modified:**
+  - `core/models/ship.gd` (partnership fields, helper functions)
+  - `core/models/mission.gd` (shadow mission fields)
+  - `core/autoloads/event_bus.gd` (3 new signals)
+  - `core/autoloads/game_state.gd` (create/break functions, shadow mission creation, save/load)
+  - `core/autoloads/simulation.gd` (mission sync, mutual aid, combat integration, NPC logic)
+  - `ui/tabs/fleet_market_tab.gd` (partnership UI controls, selection dialog)
+  - `ui/tabs/dashboard_tab.gd` (activity log signal connections)
+  - **New files:** `partnership_test.gd`, `docs/PARTNERSHIP_SYSTEM.md`
+
+- **Stats:** ~800-1000 lines added/modified across 7 core files + comprehensive documentation
+
+- **Implementation highlights:**
+  - Leveraged existing patterns (rescue missions, crew assignments, stationed ships)
+  - Shadow missions reuse Mission model with special flags
+  - Mutual aid is reactive (triggered by derelict conditions)
+  - Zero duplication - all integration via existing systems
+  - Name-based save/load for cross-instance compatibility
+
+- **Known limitations:**
+  - Fuel constraint not enforced (leader doesn't validate follower's fuel capacity before dispatch)
+  - Orphaned shadow cleanup needed (if leader destroyed mid-mission)
+  - NPC partnerships simplified (no full RivalShip partnership tracking)
+
+- **Next Steps:**
+  - Run `partnership_test.gd` to validate implementation
+  - Test at high speed (200,000x) to verify stability
+  - Add orphaned shadow cleanup in ship destruction logic
+  - Torpedo restocking UI (backend complete since session 16)
 
 ### 2026-02-24 EST (session 17) - Warning System Overhaul: Timestamps, Physics-Correct Violations, Auto-Pause
 - **Machine:** Mac laptop (HK-47)

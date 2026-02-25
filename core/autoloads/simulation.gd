@@ -450,6 +450,92 @@ func _process_missions(dt: float) -> void:
 						if not _mission_ship.is_stationed and _mission_ship.has_queued_mission():
 							GameState._start_queued_mission(_mission_ship)
 
+		# Partnership system: sync follower missions with leader
+		if mission.ship.is_partnered() and mission.ship.is_partnership_leader:
+			_sync_partnership_missions(mission, dt)
+
+## Partnership system - sync follower mission with leader
+func _sync_partnership_missions(leader_mission: Mission, dt: float) -> void:
+	var leader_ship := leader_mission.ship
+	if not leader_ship.is_partnered() or not leader_ship.is_partnership_leader:
+		return
+
+	var follower := leader_ship.partner_ship
+	if follower == null or follower.current_mission == null:
+		return
+
+	var follower_mission := follower.current_mission
+	if not follower_mission.is_partnership_shadow:
+		return
+
+	# Sync status and timing
+	follower_mission.status = leader_mission.status
+	follower_mission.elapsed_ticks = leader_mission.elapsed_ticks
+
+	# Sync position (both ships co-located)
+	follower.position_au = leader_ship.position_au
+
+	# Check for mutual aid needs
+	if follower.is_derelict:
+		_partnership_mutual_aid(leader_ship, follower)
+
+## Partnership system - provide mutual aid when follower is in trouble
+func _partnership_mutual_aid(leader: Ship, follower: Ship) -> void:
+	if not follower.is_derelict:
+		return
+
+	# Leader stops to assist
+	if leader.current_mission:
+		leader.current_mission.status = Mission.Status.IDLE_AT_DESTINATION
+
+	# Fuel transfer
+	if follower.derelict_reason == "out_of_fuel":
+		var fuel_to_transfer := minf(leader.fuel * 0.5, follower.get_effective_fuel_capacity() - follower.fuel)
+		if fuel_to_transfer > 10.0:
+			leader.fuel -= fuel_to_transfer
+			follower.fuel += fuel_to_transfer
+			follower.is_derelict = false
+			follower.derelict_reason = ""
+
+			EventBus.partnership_aid_provided.emit(
+				leader.ship_name,
+				follower.ship_name,
+				"fuel_transfer",
+				{"amount": fuel_to_transfer}
+			)
+
+			# Resume mission
+			if leader.current_mission:
+				leader.current_mission.status = Mission.Status.TRANSIT_OUT
+
+	# Engineer repair
+	elif follower.derelict_reason == "breakdown":
+		var best_engineer: Worker = null
+		var best_skill := 0.0
+		for w in leader.crew:
+			if w.engineer_skill > best_skill:
+				best_skill = w.engineer_skill
+				best_engineer = w
+
+		if best_engineer and best_skill >= 0.5:
+			follower.is_derelict = false
+			follower.derelict_reason = ""
+			follower.engine_condition = 50.0 + best_skill * 50.0
+
+			EventBus.partnership_aid_provided.emit(
+				leader.ship_name,
+				follower.ship_name,
+				"engineer_repair",
+				{"engineer": best_engineer.worker_name, "skill": best_skill}
+			)
+
+			# Resume mission
+			if leader.current_mission:
+				leader.current_mission.status = Mission.Status.TRANSIT_OUT
+		else:
+			# No qualified engineer - break partnership
+			GameState.break_partnership(leader, follower, "No qualified engineer for repair")
+
 func _process_waypoint_transition(mission: Mission, is_outbound: bool) -> void:
 	var legs := mission.outbound_legs if is_outbound else mission.return_legs
 	var idx := mission.outbound_waypoint_index if is_outbound else mission.return_waypoint_index
@@ -3221,10 +3307,68 @@ func _advance_rival_ship(corp: RivalCorp, ship: RivalShip, dt: float) -> void:
 					corp.money += revenue
 
 func _update_rival_corp_decisions(corp: RivalCorp) -> void:
+	# Check if partnerships would be beneficial (for aggressive corps)
+	if corp.aggression >= 0.5:
+		_rival_try_form_partnership(corp)
+
 	for ship: RivalShip in corp.ships:
 		if ship.status != RivalShip.Status.IDLE:
 			continue
 		_rival_try_dispatch(corp, ship)
+
+## Partnership system - NPC corps form partnerships for contested high-value targets
+func _rival_try_form_partnership(corp: RivalCorp) -> void:
+	# Find pairs of idle ships
+	var idle_ships: Array[RivalShip] = []
+	for s in corp.ships:
+		if s.status == RivalShip.Status.IDLE:
+			idle_ships.append(s)
+
+	if idle_ships.size() < 2:
+		return
+
+	# Look for high-value contested targets
+	for asteroid in GameState.asteroids:
+		var ore_value := _calc_rival_ore_rate(asteroid, corp.skill)
+		if ore_value < 0.5:  # Only high-value targets worth partnering for
+			continue
+
+		# Check for player presence nearby
+		var player_threat := 0
+		for ship in GameState.ships:
+			var dist := ship.position_au.distance_to(asteroid.get_position_au())
+			if dist < 0.5:  # Within threat range
+				if ship.is_armed():
+					player_threat += 2
+				else:
+					player_threat += 1
+
+		# Form partnership if contested and valuable
+		if player_threat >= 2:
+			# Dispatch first two idle ships as a pair to same asteroid
+			var ship1 := idle_ships[0]
+			var ship2 := idle_ships[1]
+
+			var dist1 := ship1.home_position_au.distance_to(asteroid.get_position_au())
+			var dist2 := ship2.home_position_au.distance_to(asteroid.get_position_au())
+
+			# Dispatch both ships
+			ship1.target_asteroid_name = asteroid.asteroid_name
+			ship1.target_position_au = asteroid.get_position_au()
+			ship1.transit_time = Brachistochrone.transit_time(dist1, ship1.thrust_g)
+			ship1.elapsed_ticks = 0.0
+			ship1.mining_duration = RIVAL_BASE_MINING_DURATION * (0.6 + corp.skill * 0.8)
+			ship1.status = RivalShip.Status.TRANSIT_TO
+
+			ship2.target_asteroid_name = asteroid.asteroid_name
+			ship2.target_position_au = asteroid.get_position_au()
+			ship2.transit_time = Brachistochrone.transit_time(dist2, ship2.thrust_g)
+			ship2.elapsed_ticks = 0.0
+			ship2.mining_duration = RIVAL_BASE_MINING_DURATION * (0.6 + corp.skill * 0.8)
+			ship2.status = RivalShip.Status.TRANSIT_TO
+
+			EventBus.rival_corp_dispatched.emit(corp.corp_name, asteroid.asteroid_name)
+			return  # Only form one partnership per decision cycle
 
 func _rival_try_dispatch(corp: RivalCorp, ship: RivalShip) -> void:
 	var best_asteroid: AsteroidData = null
@@ -3578,6 +3722,15 @@ func _rival_should_attack(player_ship: Ship, rival_ship: RivalShip, corp: RivalC
 	var player_weapon_count := player_weapons.size()
 	var player_max_range := player_ship.get_max_weapon_range()
 
+	# Partnership support: include partner firepower in threat assessment
+	if player_ship.is_partnered() and player_ship.partner_ship:
+		var partner := player_ship.partner_ship
+		var partner_distance := rival_ship.get_position_au().distance_to(partner.position_au)
+		if partner_distance < 0.1 and not partner.is_derelict:  # Partner in range to assist
+			var partner_weapons := partner.get_weapons_in_range(distance)
+			player_weapon_count += partner_weapons.size()
+			player_max_range = maxf(player_max_range, partner.get_max_weapon_range())
+
 	# Threat level: more weapons = more dangerous
 	# BUT aggressive corps care less about threat (lerp between full concern and ignoring it)
 	var base_threat_penalty: float = 1.0 / (1.0 + player_weapon_count * 0.3)  # 0.77 per weapon
@@ -3684,7 +3837,22 @@ func _resolve_bidirectional_combat(player_ship: Ship, rival_ship: RivalShip, cor
 
 	# Apply damage to player ship
 	if rival_damage > 0:
-		_apply_combat_damage(player_ship, rival_damage, false, null)
+		# Partnership support: split damage between partners
+		if player_ship.is_partnered() and player_ship.partner_ship:
+			var partner := player_ship.partner_ship
+			var partner_dist := rival_ship.get_position_au().distance_to(partner.position_au)
+			if partner_dist < 0.1 and not partner.is_derelict:
+				# Split damage proportionally to ship size
+				var total_cargo := player_ship.cargo_capacity + partner.cargo_capacity
+				var player_share := player_ship.cargo_capacity / total_cargo
+				var partner_share := partner.cargo_capacity / total_cargo
+
+				_apply_combat_damage(player_ship, rival_damage * player_share, false, null)
+				_apply_combat_damage(partner, rival_damage * partner_share, false, null)
+			else:
+				_apply_combat_damage(player_ship, rival_damage, false, null)
+		else:
+			_apply_combat_damage(player_ship, rival_damage, false, null)
 
 		# Record NPC violations for attacking player
 		var nearest_colony := _find_nearest_colony(player_ship.position_au)

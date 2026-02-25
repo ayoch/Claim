@@ -47,6 +47,10 @@ var collection_policy: int = CompanyPolicy.CollectionPolicy.ROUTINE
 var encounter_policy: int = CompanyPolicy.EncounterPolicy.COEXIST
 var repair_policy: int = CompanyPolicy.RepairPolicy.ALWAYS
 var cargo_policy: int = CompanyPolicy.CargoPolicy.STANDARD
+var maintenance_policy: int = CompanyPolicy.MaintenancePolicy.AS_NEEDED
+var trading_policy: int = CompanyPolicy.TradingPolicy.IMMEDIATE
+var morale_policy: int = CompanyPolicy.MoralePolicy.BALANCED
+var automation_policy: int = CompanyPolicy.AutomationPolicy.SEMI_AUTO
 
 func get_thrust_policy(ship: Ship) -> int:
 	return ship.thrust_policy_override if ship.thrust_policy_override >= 0 else thrust_policy
@@ -65,6 +69,18 @@ func get_repair_policy(ship: Ship) -> int:
 
 func get_cargo_policy(ship: Ship) -> int:
 	return ship.cargo_policy_override if ship.cargo_policy_override >= 0 else cargo_policy
+
+func get_maintenance_policy(ship: Ship) -> int:
+	return ship.maintenance_policy_override if ship.maintenance_policy_override >= 0 else maintenance_policy
+
+func get_trading_policy(ship: Ship) -> int:
+	return ship.trading_policy_override if ship.trading_policy_override >= 0 else trading_policy
+
+func get_morale_policy(ship: Ship) -> int:
+	return ship.morale_policy_override if ship.morale_policy_override >= 0 else morale_policy
+
+func get_automation_policy(ship: Ship) -> int:
+	return ship.automation_policy_override if ship.automation_policy_override >= 0 else automation_policy
 
 # Game clock: total elapsed game-seconds (ticks) since game start
 var total_ticks: float = 0.0
@@ -1567,6 +1583,59 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 	if not ship.is_stationed:
 		ship.current_cargo.clear()
 
+	# Partnership support: create shadow mission for follower
+	if ship.is_partnered() and ship.is_partnership_leader:
+		var follower := ship.partner_ship
+		if follower != null and follower.current_mission == null:
+			# Create shadow mission for follower
+			var shadow := Mission.new()
+			shadow.ship = follower
+			shadow.asteroid = asteroid
+			shadow.status = Mission.Status.TRANSIT_OUT
+			shadow.is_partnership_shadow = true
+			shadow.partnership_leader_ship_name = ship.ship_name
+			shadow.partnership_leader_mission = mission
+
+			# Copy route and timing from leader
+			shadow.origin_position_au = follower.position_au
+			shadow.return_position_au = follower.position_au
+			shadow.origin_is_earth = mission.origin_is_earth
+			shadow.origin_name = mission.origin_name
+			shadow.destination_position_au = mission.destination_position_au
+			shadow.transit_mode = mission.transit_mode
+			shadow.outbound_legs = mission.outbound_legs.duplicate(true)
+			shadow.return_legs = mission.return_legs.duplicate(true)
+			shadow.transit_time = mission.transit_time
+			shadow.mining_duration = mission.mining_duration
+			shadow.mission_type = mission.mission_type
+			shadow.elapsed_ticks = 0.0
+
+			# Calculate follower's own fuel consumption (based on follower's mass/thrust)
+			var follower_cargo := follower.get_cargo_total()
+			var follower_fuel_out := follower.calc_fuel_for_distance(dist, follower_cargo)
+			var follower_fuel_ret := follower.calc_fuel_for_distance(dist, follower.cargo_capacity)
+			var follower_total_fuel := follower_fuel_out + follower_fuel_ret
+			if transit_mode == Mission.TransitMode.HOHMANN:
+				follower_total_fuel *= Brachistochrone.hohmann_fuel_multiplier()
+			var follower_total_transit := shadow.transit_time * 2.0
+			shadow.fuel_per_tick = follower_total_fuel / follower_total_transit if follower_total_transit > 0 else 0.0
+
+			# Provision follower's supplies
+			var follower_crew_size := follower.crew.size() if follower.crew.size() > 0 else follower.min_crew
+			follower.supplies["food"] = follower_crew_size * 30.0 * 2.8
+			follower.supplies["water"] = follower_crew_size * 30.0 * 0.25 / 20.0
+			follower.supplies["oxygen"] = follower_crew_size * 30.0 * 0.05 / 2.0
+			follower.reset_life_support(follower.crew.size())
+
+			follower.current_mission = shadow
+			follower.docked_at_colony = null
+			follower.docked_at_earth = false
+			if not follower.is_stationed:
+				follower.current_cargo.clear()
+
+			missions.append(shadow)
+			EventBus.mission_started.emit(shadow)
+
 	# Provision supplies before departure (if at Earth or colony)
 	var _earth_pos_check := CelestialData.get_earth_position_au()
 	var at_earth := ship.position_au.distance_to(_earth_pos_check) < 0.05
@@ -1677,6 +1746,43 @@ func process_pending_orders() -> void:
 		else:
 			remaining.append(order)
 	pending_orders = remaining
+
+## Partnership system - create a partnership between two ships
+func create_partnership(leader: Ship, follower: Ship) -> bool:
+	# Validate
+	var check := leader.can_partner_with(follower)
+	if not check["valid"]:
+		push_warning("Cannot create partnership: %s" % check["reason"])
+		return false
+
+	# Create bidirectional partnership
+	leader.partner_ship = follower
+	leader.partner_ship_name = follower.ship_name
+	leader.is_partnership_leader = true
+
+	follower.partner_ship = leader
+	follower.partner_ship_name = leader.ship_name
+	follower.is_partnership_leader = false
+
+	EventBus.partnership_created.emit(leader, follower)
+	return true
+
+## Partnership system - break a partnership between two ships
+func break_partnership(ship1: Ship, ship2: Ship, reason: String) -> void:
+	ship1.partner_ship = null
+	ship1.partner_ship_name = ""
+	ship1.is_partnership_leader = false
+
+	ship2.partner_ship = null
+	ship2.partner_ship_name = ""
+	ship2.is_partnership_leader = false
+
+	EventBus.partnership_broken.emit(ship1, ship2, reason)
+
+	# Convert shadow mission to independent mission
+	if ship2.current_mission and ship2.current_mission.is_partnership_shadow:
+		ship2.current_mission.is_partnership_shadow = false
+		ship2.current_mission.partnership_leader_mission = null
 
 ## Returns the pending order dictionary for a ship, or {} if none.
 func get_pending_order(ship: Ship) -> Dictionary:
@@ -2622,6 +2728,10 @@ func save_game(save_name: String = "") -> void:
 		"encounter_policy": encounter_policy,
 		"repair_policy": repair_policy,
 		"cargo_policy": cargo_policy,
+		"maintenance_policy": maintenance_policy,
+		"trading_policy": trading_policy,
+		"morale_policy": morale_policy,
+		"automation_policy": automation_policy,
 		"resources": {},
 		"workers": [],
 		"ships": [],
@@ -2702,8 +2812,16 @@ func save_game(save_name: String = "") -> void:
 		ship_data["encounter_policy_override"] = s.encounter_policy_override
 		ship_data["repair_policy_override"] = s.repair_policy_override
 		ship_data["cargo_policy_override"] = s.cargo_policy_override
+		ship_data["maintenance_policy_override"] = s.maintenance_policy_override
+		ship_data["trading_policy_override"] = s.trading_policy_override
+		ship_data["morale_policy_override"] = s.morale_policy_override
+		ship_data["automation_policy_override"] = s.automation_policy_override
 		ship_data["aggression_stance"] = s.aggression_stance
 		ship_data["docked_at_earth"] = s.docked_at_earth
+		# Partnership data
+		if s.is_partnered():
+			ship_data["partner_ship_name"] = s.partner_ship_name
+			ship_data["is_partnership_leader"] = s.is_partnership_leader
 		# Supplies
 		if not s.supplies.is_empty():
 			ship_data["supplies"] = s.supplies.duplicate()
@@ -3009,6 +3127,10 @@ func load_game(file_name: String = "save_game.json") -> bool:
 	encounter_policy = int(data.get("encounter_policy", CompanyPolicy.EncounterPolicy.COEXIST))
 	repair_policy = int(data.get("repair_policy", CompanyPolicy.RepairPolicy.ALWAYS))
 	cargo_policy = int(data.get("cargo_policy", CompanyPolicy.CargoPolicy.STANDARD))
+	maintenance_policy = int(data.get("maintenance_policy", CompanyPolicy.MaintenancePolicy.AS_NEEDED))
+	trading_policy = int(data.get("trading_policy", CompanyPolicy.TradingPolicy.IMMEDIATE))
+	morale_policy = int(data.get("morale_policy", CompanyPolicy.MoralePolicy.BALANCED))
+	automation_policy = int(data.get("automation_policy", CompanyPolicy.AutomationPolicy.SEMI_AUTO))
 	settings["autoplay"] = data.get("autoplay", false)
 	settings["auto_sell_at_earth"] = data.get("auto_sell_at_earth", true)
 	settings["auto_sell_at_markets"] = data.get("auto_sell_at_markets", false)
@@ -3100,8 +3222,15 @@ func load_game(file_name: String = "save_game.json") -> bool:
 		s.encounter_policy_override = int(sd.get("encounter_policy_override", -1))
 		s.repair_policy_override = int(sd.get("repair_policy_override", -1))
 		s.cargo_policy_override = int(sd.get("cargo_policy_override", -1))
+		s.maintenance_policy_override = int(sd.get("maintenance_policy_override", -1))
+		s.trading_policy_override = int(sd.get("trading_policy_override", -1))
+		s.morale_policy_override = int(sd.get("morale_policy_override", -1))
+		s.automation_policy_override = int(sd.get("automation_policy_override", -1))
 		s.aggression_stance = int(sd.get("aggression_stance", Ship.AggressionStance.DEFENSIVE))
 		s.docked_at_earth = bool(sd.get("docked_at_earth", true))
+		# Restore partnership data (references resolved after all ships loaded)
+		s.partner_ship_name = sd.get("partner_ship_name", "")
+		s.is_partnership_leader = sd.get("is_partnership_leader", false)
 		# Restore station data (colony ref reconnected after colonies are loaded)
 		s.is_stationed = sd.get("is_stationed", false)
 		if s.is_stationed:
@@ -3155,6 +3284,16 @@ func load_game(file_name: String = "save_game.json") -> bool:
 								ship.station_colony = colony
 								break
 					break
+
+	# Resolve partnership references (like crew resolution)
+	for s in ships:
+		if s.partner_ship_name != "":
+			var partner_arr := ships.filter(func(sh): return sh.ship_name == s.partner_ship_name)
+			if not partner_arr.is_empty():
+				s.partner_ship = partner_arr[0]
+			else:
+				push_warning("Could not resolve partner ship: %s" % s.partner_ship_name)
+				s.partner_ship_name = ""
 
 	# Restore reputation
 	if data.has("reputation"):
