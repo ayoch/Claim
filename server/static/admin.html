@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo-title">
+                <img src="/static/dark-river-logo.png" alt="Dark River" class="logo">
+                <h1>Admin Dashboard</h1>
+            </div>
+            <ul>
+                <li><a href="/">Home</a></li>
+                <li><a href="/blog.html">Blog</a></li>
+                <li><a href="/admin.html">Admin</a></li>
+                <li><a href="#" onclick="logout()">Logout</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <div id="login-screen" style="display: none;">
+        <main style="max-width: 400px; margin: 4rem auto;">
+            <div class="game-card">
+                <h3>Admin Login</h3>
+                <div class="form-group">
+                    <label>Admin Key</label>
+                    <input type="password" id="admin-key-input" placeholder="Enter admin key">
+                </div>
+                <button class="btn" onclick="login()">Login</button>
+                <p id="login-error" style="color: #ff4444; margin-top: 1rem; display: none;">Invalid admin key</p>
+            </div>
+        </main>
+    </div>
+
+    <div id="admin-content" style="display: none;">
+        <div class="admin-container">
+            <section>
+                <div class="admin-header">
+                    <h3>Claim Server Status</h3>
+                    <button class="btn" onclick="refreshClaimStatus()">Refresh</button>
+                </div>
+                <div class="stat-grid" id="claim-stats">
+                    <div class="stat-card">
+                        <div class="stat-value">--</div>
+                        <div class="stat-label">Total Ticks</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">--</div>
+                        <div class="stat-label">Players</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">--</div>
+                        <div class="stat-label">Ships</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">--</div>
+                        <div class="stat-label">Asteroids</div>
+                    </div>
+                </div>
+            </section>
+
+            <section>
+                <div class="admin-header">
+                    <h3>Blog Posts</h3>
+                    <a href="/admin-blog-editor.html" class="btn">New Post</a>
+                </div>
+                <div id="blog-posts-admin">
+                    <p class="loading">Loading...</p>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Dark River. All rights reserved.</p>
+    </footer>
+
+    <script>
+        const API_BASE = '';
+        let adminKey = localStorage.getItem('adminKey');
+
+        function showLoginScreen() {
+            document.getElementById('login-screen').style.display = 'block';
+            document.getElementById('admin-content').style.display = 'none';
+        }
+
+        function showAdminContent() {
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('admin-content').style.display = 'block';
+            loadAdminData();
+        }
+
+        async function login() {
+            const key = document.getElementById('admin-key-input').value;
+
+            // Test the admin key
+            try {
+                const response = await fetch('/admin/status', {
+                    headers: { 'X-Admin-Key': key }
+                });
+
+                if (response.ok) {
+                    adminKey = key;
+                    localStorage.setItem('adminKey', key);
+                    document.getElementById('login-error').style.display = 'none';
+                    showAdminContent();
+                } else {
+                    document.getElementById('login-error').style.display = 'block';
+                }
+            } catch (error) {
+                document.getElementById('login-error').style.display = 'block';
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('adminKey');
+            adminKey = null;
+            location.reload();
+        }
+
+        async function loadAdminData() {
+            await refreshClaimStatus();
+            await loadBlogPosts();
+        }
+
+        async function refreshClaimStatus() {
+            try {
+                const response = await fetch('/admin/status', {
+                    headers: { 'X-Admin-Key': adminKey }
+                });
+                const data = await response.json();
+
+                document.getElementById('claim-stats').innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-value">${data.total_ticks.toLocaleString()}</div>
+                        <div class="stat-label">Total Ticks</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${data.player_count}</div>
+                        <div class="stat-label">Players</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${data.ship_count}</div>
+                        <div class="stat-label">Ships</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${data.asteroid_count}</div>
+                        <div class="stat-label">Asteroids</div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Failed to load Claim status:', error);
+            }
+        }
+
+        async function loadBlogPosts() {
+            try {
+                const response = await fetch('/api/admin/blog/posts', {
+                    headers: { 'X-Admin-Key': adminKey }
+                });
+                const posts = await response.json();
+
+                const container = document.getElementById('blog-posts-admin');
+
+                if (posts.length === 0) {
+                    container.innerHTML = '<p class="loading">No posts yet.</p>';
+                    return;
+                }
+
+                container.innerHTML = posts.map(post => `
+                    <div class="post-list-item ${post.is_published ? '' : 'unpublished'}">
+                        <div>
+                            <strong>${post.title}</strong>
+                            ${post.is_published ? '' : '<span class="tag" style="margin-left: 0.5rem; background: #666;">Draft</span>'}
+                            <p style="color: var(--text-dim); font-size: 0.9rem; margin-top: 0.25rem;">
+                                ${new Date(post.created_at).toLocaleDateString()}
+                            </p>
+                        </div>
+                        <div class="post-list-actions">
+                            <a href="/admin-blog-editor.html?id=${post.id}" class="btn btn-small">Edit</a>
+                            <button class="btn btn-small btn-danger" onclick="deletePost(${post.id}, '${post.title}')">Delete</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to load blog posts:', error);
+            }
+        }
+
+        async function deletePost(id, title) {
+            if (!confirm(`Are you sure you want to delete "${title}"?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/admin/blog/post/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'X-Admin-Key': adminKey }
+                });
+
+                if (response.ok) {
+                    await loadBlogPosts();
+                } else {
+                    alert('Failed to delete post');
+                }
+            } catch (error) {
+                alert('Failed to delete post');
+            }
+        }
+
+        // Initialize
+        if (adminKey) {
+            showAdminContent();
+        } else {
+            showLoginScreen();
+        }
+
+        // Auto-refresh Claim stats every 5 seconds
+        setInterval(() => {
+            if (adminKey && document.getElementById('admin-content').style.display !== 'none') {
+                refreshClaimStatus();
+            }
+        }, 5000);
+    </script>
+</body>
+</html>

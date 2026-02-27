@@ -246,7 +246,7 @@ func calculate_trajectory_curves(num_samples: int = 40) -> void:
 
 		# Draw each leg
 		for leg in outbound_legs:
-			var leg_end: Vector2 = leg.get_position_au()
+			var leg_end: Vector2 = leg.get_live_position()
 			var leg_distance: float = current_start.distance_to(leg_end)
 
 			if leg_distance < 0.001:
@@ -304,7 +304,7 @@ func calculate_trajectory_curves(num_samples: int = 40) -> void:
 
 				# Draw each return leg
 				for leg in return_legs:
-					var leg_end: Vector2 = leg.get_position_au()
+					var leg_end: Vector2 = leg.get_live_position()
 					var leg_distance: float = current_start.distance_to(leg_end)
 
 					if leg_distance < 0.001:
