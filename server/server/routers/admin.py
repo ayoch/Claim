@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import require_admin
+from server.auth import require_admin_key
 from server.database import get_db, init_db
 from server.models.asteroid import Asteroid
 from server.models.colony import Colony
@@ -12,7 +13,7 @@ from server.models.worker import Worker
 from server.rate_limit import limiter
 from server.simulation.tick import get_total_ticks
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin_key)])
 
 
 @router.get("/status")

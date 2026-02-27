@@ -23,6 +23,13 @@
 ## 2026-02-25 EST (session 18, HK-47)
 
 - **Ship Partnership System (complete)**: Leader/follower pairs travel together with shadow missions, automatic mutual aid (fuel transfer, engineer repair), combined firepower in combat with proportional damage splitting, NPC partnerships for contested asteroids, stationed ship pair dispatch, full save/load persistence, UI controls in Fleet tab. See docs/PARTNERSHIP_SYSTEM.md for full documentation.
+## 2026-02-27 EST (session 19, Dweezil)
+
+- **Security audit of server routers**: Reviewed all `/game` and `/admin` endpoints for IDOR and authorization issues. Game routes clean — all ownership checks present. Admin router had zero authentication on all three endpoints.
+- **Admin endpoint authentication**: Added `ADMIN_KEY` setting to `config.py` (with production validation). Added `require_admin_key` dependency to `auth.py` that reads `X-Admin-Key` header and returns 403 on mismatch. Applied as router-level dependency in `admin.py` — covers all admin endpoints in one line.
+- **Login rate limiter fix**: `request: Request` parameter in login route was `= None` (optional), which could silently break the rate limiter. Changed to required (`= ...`).
+- **`.env.example` updated**: Added `ADMIN_KEY` entry with generation instructions.
+- **Deployment planning**: Decided on Railway as hosting platform. Created `dev` branch — Railway will deploy from `main` only. Deployment steps documented in `CLAUDE_HANDOFF.md` session 19.
 
 ---
 
