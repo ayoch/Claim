@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from slowapi.errors import RateLimitExceeded
 from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
+from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from server.config import settings
 from server.database import init_db
@@ -17,11 +20,41 @@ from server.rate_limit import limiter, rate_limit_handler
 from server.routers import admin, auth, events, game, leaderboard, blog
 from server.simulation.runner import simulation_loop
 
+# Configure logging
+log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=log_level,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+# Add file handler for production to capture auth logs
+if settings.ENVIRONMENT == "production":
+    file_handler = logging.FileHandler("logs/auth.log")
+    file_handler.setLevel(logging.WARNING)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    )
+    logging.getLogger("server.routers.auth").addHandler(file_handler)
+
 logger = logging.getLogger(__name__)
+
+
+class LimitUploadSize(BaseHTTPMiddleware):
+    """Middleware to limit request body size."""
+    def __init__(self, app, max_upload_size: int = 10 * 1024 * 1024):  # 10MB default
+        super().__init__(app)
+        self.max_upload_size = max_upload_size
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method in ["POST", "PUT", "PATCH"]:
+            content_length = request.headers.get("content-length")
+            if content_length and int(content_length) > self.max_upload_size:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": f"Request body too large (max {self.max_upload_size} bytes)"}
+                )
+        return await call_next(request)
 
 app = FastAPI(
     title="Claim Server",
@@ -32,6 +65,17 @@ app = FastAPI(
 # Rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
+
+# Production security middleware
+if settings.ENVIRONMENT == "production":
+    app.add_middleware(HTTPSRedirectMiddleware)
+    # Extract allowed hosts from CORS origins
+    allowed_hosts = [origin.replace("https://", "").replace("http://", "")
+                     for origin in settings.cors_origins_list]
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
+
+# Request size limiting (always enabled)
+app.add_middleware(LimitUploadSize, max_upload_size=10 * 1024 * 1024)  # 10MB
 
 # CORS — configured via environment variables
 app.add_middleware(
@@ -60,16 +104,30 @@ app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 _sim_task: asyncio.Task | None = None
 
 
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Hide stack traces in production, show in development."""
+    if settings.ENVIRONMENT == "production":
+        logger.error(f"Unhandled exception: {exc}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"}
+        )
+    else:
+        # In development, let FastAPI show the full trace
+        raise exc
+
+
 @app.on_event("startup")
 async def on_startup() -> None:
     global _sim_task
     logger.info("Claim Server starting up...")
 
-    # Validate production settings
-    if settings.ENVIRONMENT == "production":
+    # Validate production settings (any non-development environment)
+    if settings.ENVIRONMENT != "development":
         try:
             settings.validate_production()
-            logger.info("Production settings validated successfully")
+            logger.info(f"Production settings validated for environment: {settings.ENVIRONMENT}")
         except ValueError as e:
             logger.error(f"Production validation failed: {e}")
             raise
