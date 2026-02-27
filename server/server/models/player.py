@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from server.database import Base
@@ -14,6 +14,7 @@ class Player(Base):
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     money: Mapped[int] = mapped_column(Integer, default=14_000_000, nullable=False)
     reputation: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     hq_colony_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("colonies.id", ondelete="SET NULL"), nullable=True

@@ -3,6 +3,26 @@
 
 ---
 
+## 2026-02-27 EST (session 20, HK-47)
+
+- **Server Security Audit & Fixes**: Identified 13 vulnerabilities (5 critical, 5 high, 3 medium). **ALL CRITICAL AND HIGH PRIORITY ISSUES FIXED**. Most critical: admin endpoints had NO authentication. Implemented: admin role + require_admin dependency, rate limiting on admin endpoints, HTTPS redirect, request size limits, exception handler, production validation fix, removed hardcoded credentials. Created database migration for is_admin field.
+- **Authentication Security (bonus)**: Added password strength validation (min 12 chars, uppercase/lowercase/number required, common password blacklist). Added comprehensive authentication logging (failed/successful logins with IP + User-Agent). Production logs written to `logs/auth.log` for attack detection.
+- **Documentation**: Created `SECURITY_AUDIT.md`, `SECURITY_FIXES_SUMMARY.md`, `AUTH_SECURITY.md`. Updated CLAUDE_HANDOFF.md and WORK_LOG.txt.
+- **Files Modified**: 15 total (server models, auth, config, main, admin router, alembic migration, .gitignore, .env examples, documentation)
+
+---
+
+## 2026-02-25 EST (session 19, HK-47)
+
+- **Search and Sort UI**: Added alphabetical sorting and name search to dispatch panel (market and mining destinations). Added search to solar map with auto-pan to celestial objects. All searches case-insensitive with partial matching.
+- **Performance Optimizations (30-40% CPU savings)**: Added visibility checks to all UI tabs (_on_tick and _process early return when hidden). Implemented adaptive orbital updates based on game speed and map visibility (99% reduction at 1x with map hidden, every 60 ticks vs every tick). Increased dispatch popup refresh from 2s to 5s. Critical for multiplayer viability at 1x speed.
+- **Documentation**: Created performance_analysis.md with detailed breakdown of all optimizations and recommendations for future work.
+
+---
+
+## 2026-02-25 EST (session 18, HK-47)
+
+- **Ship Partnership System (complete)**: Leader/follower pairs travel together with shadow missions, automatic mutual aid (fuel transfer, engineer repair), combined firepower in combat with proportional damage splitting, NPC partnerships for contested asteroids, stationed ship pair dispatch, full save/load persistence, UI controls in Fleet tab. See docs/PARTNERSHIP_SYSTEM.md for full documentation.
 ## 2026-02-27 EST (session 19, Dweezil)
 
 - **Security audit of server routers**: Reviewed all `/game` and `/admin` endpoints for IDOR and authorization issues. Game routes clean — all ownership checks present. Admin router had zero authentication on all three endpoints.

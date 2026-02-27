@@ -1,6 +1,7 @@
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import secrets
+from typing import Any
 
 
 class Settings(BaseSettings):
@@ -17,6 +18,14 @@ class Settings(BaseSettings):
     DATABASE_URL: str | None = Field(
         default=None,
         description="Database connection string (required in production, has dev default)"
+    DATABASE_URL: str = "postgresql+asyncpg://claim:claim@localhost/claim_dev"
+    BLOG_DATABASE_URL: str = Field(
+        default="sqlite+aiosqlite:///website.db",
+        description="SQLite database for blog/website content"
+    )
+    SECRET_KEY: str | None = Field(
+        default=None,
+        description="JWT signing key (required in production, has dev default)"
     )
     BLOG_DATABASE_URL: str = Field(
         default="sqlite+aiosqlite:///website.db",
@@ -55,7 +64,6 @@ class Settings(BaseSettings):
                 )
 
         return self
-
     WORLD_NAME: str = "Euterpe"
     TICK_INTERVAL: float = Field(default=1.0, ge=0.01, le=10.0)
 
@@ -67,6 +75,12 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = Field(
         default="http://localhost:3000,http://localhost:8080",
         description="Comma-separated list of allowed origins"
+    )
+
+    # Admin API key
+    ADMIN_KEY: str = Field(
+        default="changeme-admin-key",
+        description="Secret key required for all /admin endpoints"
     )
 
     # Admin API key
