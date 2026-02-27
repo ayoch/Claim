@@ -10,17 +10,21 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    DATABASE_URL: str = "postgresql+asyncpg://claim:claim@localhost/claim_dev"
+    DATABASE_URL: str = Field(
+        ...,
+        description="Database connection string (MUST be set via environment variable)"
+    )
     SECRET_KEY: str = Field(
-        default_factory=lambda: secrets.token_urlsafe(32),
-        description="JWT signing key - MUST be set in production"
+        ...,
+        min_length=32,
+        description="JWT signing key (MUST be set via environment variable, min 32 characters)"
     )
     WORLD_NAME: str = "Euterpe"
     TICK_INTERVAL: float = Field(default=1.0, ge=0.01, le=10.0)
 
     # JWT settings
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 hour (was 7 days - security risk)
 
     # CORS settings
     CORS_ORIGINS: str = Field(
@@ -41,14 +45,16 @@ class Settings(BaseSettings):
 
     def validate_production(self) -> None:
         """Validate settings for production deployment."""
-        if self.SECRET_KEY == "changeme-in-production":
-            raise ValueError("SECRET_KEY must be set to a secure random value in production")
         if len(self.SECRET_KEY) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters")
         if "*" in self.CORS_ORIGINS:
             raise ValueError("CORS_ORIGINS must not contain wildcard in production")
         if "localhost" in self.CORS_ORIGINS:
             raise ValueError("CORS_ORIGINS should not contain localhost in production")
+        # Validate CORS origins use HTTPS
+        for origin in self.cors_origins_list:
+            if not origin.startswith("https://"):
+                raise ValueError(f"Production CORS origins must use HTTPS: {origin}")
 
 
 settings = Settings()

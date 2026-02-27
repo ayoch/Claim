@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-25 EST (session 19)
+**Last Updated:** 2026-02-27 EST (session 20)
 **Updated By:** Instance on Machine 2 (Mac laptop - HK-47)
-**Session Context:** Search/sort UI, performance optimizations (UI visibility checks, adaptive orbital updates)
-**Next Session Priority:** Test all optimizations across different speeds, verify no regressions
+**Session Context:** Server security audit and deployment hardening review
+**Next Session Priority:** Implement critical security fixes before production deployment
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -13,6 +13,71 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-27 EST (session 20) - Server Security Audit & Deployment Hardening
+- **Machine:** Mac laptop (HK-47)
+- **Context:** Continued from Dweezil (Windows) session discussing server deployment and security hardening
+- **Work Completed:**
+  - **Comprehensive Server Security Audit** (`server/SECURITY_AUDIT.md`):
+    - **13 vulnerabilities identified** across 3 severity levels:
+      - **5 CRITICAL**: Admin endpoints unprotected, no rate limiting, validation bypass, hardcoded credentials, random secrets
+      - **5 HIGH**: No HTTPS enforcement, missing input validation, verbose errors, no size limits, CORS issues
+      - **3 MEDIUM**: No auth logging, missing connection pooling, long JWT expiry
+    - **Most severe finding**: `/admin/give-starter-pack/{player_id}` endpoint has NO authentication - anyone can give unlimited ships/workers to any player
+    - **Admin endpoint vulnerabilities**:
+      - `/admin/status` - exposes server metrics without auth
+      - `/admin/seed` - allows database seeding without auth (DoS risk)
+      - `/admin/give-starter-pack/{player_id}` - allows unlimited resource creation without auth
+    - **Security misconfigurations**:
+      - `DATABASE_URL` hardcoded as `claim:claim` in source code
+      - `SECRET_KEY` generates random value each restart → invalidates all JWT tokens on deployment
+      - Production validation only runs if `ENVIRONMENT == "production"` (can be bypassed with `staging`)
+      - No HTTPS redirect or trusted host middleware
+      - No request size limits (DoS via gigabyte payloads)
+      - JWT tokens valid for 7 days (no refresh token system)
+    - **Documented fixes for all issues**:
+      - Add `is_admin` field to Player model
+      - Create `require_admin()` dependency for all admin endpoints
+      - Add rate limiting with slowapi (`1/minute` for seed, `5/hour` for starter packs)
+      - Force `DATABASE_URL` and `SECRET_KEY` from environment (remove defaults)
+      - Add `HTTPSRedirectMiddleware` and `TrustedHostMiddleware` for production
+      - Implement generic exception handler to hide stack traces
+      - Add `LimitUploadSize` middleware (10MB max)
+      - Reduce JWT expiry to 1 hour, implement refresh tokens
+      - Add authentication attempt logging for brute-force detection
+      - Configure database connection pool limits
+    - **Deployment checklist** (20+ items):
+      - Generate strong secrets with `secrets.token_urlsafe(64)`
+      - Set up proper `.env` file (not in git)
+      - Configure production CORS origins with HTTPS validation
+      - Run security scanner (OWASP ZAP) before launch
+    - **Infrastructure hardening recommendations**:
+      - Firewall rules (only 443/22 inbound)
+      - PostgreSQL isolation (no public access, SSL connections)
+      - Reverse proxy (Nginx/Caddy) with security headers (HSTS, CSP)
+      - Process manager (systemd/supervisor) running as non-root
+      - Monitoring/alerting (Sentry, error tracking)
+    - **Example production `.env`** with strong defaults
+
+- **Files Created:**
+  - `server/SECURITY_AUDIT.md` - comprehensive security audit document
+
+- **Files Examined:**
+  - `server/server/config.py` - settings configuration, found hardcoded credentials
+  - `server/server/main.py` - FastAPI app setup, found bypassable validation
+  - `server/server/auth.py` - JWT authentication, found long expiry
+  - `server/server/routers/admin.py` - admin endpoints, found no authentication
+
+- **Estimated Fix Time:** 4-6 hours for all critical + high priority issues
+
+- **Critical Recommendation:** **DO NOT deploy to public internet until admin endpoints are secured.** Current state allows anyone to give themselves unlimited game resources.
+
+- **Next Steps:**
+  - Review security audit findings with team
+  - Implement critical fixes (admin auth, secrets, credentials)
+  - Implement high priority fixes (HTTPS, input validation, errors)
+  - Test with security scanner before production deployment
+  - Set up proper production environment configuration
 
 ### 2026-02-25 EST (session 19) - Search/Sort UI + Performance Optimizations
 - **Machine:** Mac laptop (HK-47)

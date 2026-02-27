@@ -55,3 +55,15 @@ async def get_current_player(
     if player is None:
         raise credentials_exc
     return player
+
+
+async def require_admin(
+    player: Player = Depends(get_current_player),
+) -> Player:
+    """Require authenticated player to have admin privileges."""
+    if not player.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return player
