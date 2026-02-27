@@ -2,19 +2,22 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from server.blog_database import init_blog_db
 from server.config import settings
 from server.database import init_db
 from server.rate_limit import limiter, rate_limit_handler
-from server.routers import admin, auth, events, game, leaderboard
+from server.routers import admin, auth, blog, events, game, leaderboard
 from server.simulation.runner import simulation_loop
 
 # Configure logging
@@ -91,6 +94,8 @@ app.include_router(game.router)
 app.include_router(events.router)
 app.include_router(admin.router)
 app.include_router(leaderboard.router)
+app.include_router(blog.router)
+app.include_router(blog.admin_router)
 
 _sim_task: asyncio.Task | None = None
 
@@ -124,6 +129,7 @@ async def on_startup() -> None:
             raise
 
     await init_db()
+    await init_blog_db()
     _sim_task = asyncio.create_task(simulation_loop(world_id=1), name="simulation_loop")
     logger.info("Simulation loop started for world: %s", settings.WORLD_NAME)
 
@@ -153,3 +159,25 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# Static files and HTML pages
+static_dir = Path(__file__).parent.parent / "static"
+if static_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    @app.get("/blog.html")
+    async def blog_page():
+        return FileResponse(static_dir / "blog.html")
+
+    @app.get("/post.html")
+    async def post_page():
+        return FileResponse(static_dir / "post.html")
+
+    @app.get("/admin.html")
+    async def admin_page():
+        return FileResponse(static_dir / "admin.html")
+
+    @app.get("/admin-blog-editor.html")
+    async def admin_blog_editor():
+        return FileResponse(static_dir / "admin-blog-editor.html")

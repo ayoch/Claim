@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blog Editor</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo-title">
+                <img src="/static/dark-river-logo.png" alt="Dark River" class="logo">
+                <h1>Blog Editor</h1>
+            </div>
+            <ul>
+                <li><a href="/">Home</a></li>
+                <li><a href="/admin.html">Admin</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <div class="admin-container">
+        <div class="admin-header">
+            <h3 id="editor-title">New Post</h3>
+            <div>
+                <button class="btn" onclick="savePost(false)">Save Draft</button>
+                <button class="btn" onclick="savePost(true)">Publish</button>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+            <div>
+                <h4>Edit</h4>
+                <form id="post-form" onsubmit="event.preventDefault();">
+                    <div class="form-group">
+                        <label>Title</label>
+                        <input type="text" id="post-title" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Slug (URL-friendly)</label>
+                        <input type="text" id="post-slug" pattern="[a-z0-9-]+" required>
+                        <small style="color: var(--text-dim);">Only lowercase letters, numbers, and hyphens</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Excerpt (short summary)</label>
+                        <input type="text" id="post-excerpt" maxlength="500">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Content (Markdown)</label>
+                        <textarea id="post-content" oninput="updatePreview()"></textarea>
+                    </div>
+                </form>
+            </div>
+
+            <div>
+                <h4>Preview</h4>
+                <div class="post-card">
+                    <h2 id="preview-title">Title</h2>
+                    <p class="post-meta">Just now</p>
+                    <div class="post-content" id="preview-content">
+                        <p>Content will appear here...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2026 Dark River. All rights reserved.</p>
+    </footer>
+
+    <script>
+        const adminKey = localStorage.getItem('adminKey');
+        if (!adminKey) {
+            window.location.href = '/admin.html';
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const postId = params.get('id');
+        let isEditMode = !!postId;
+
+        // Auto-generate slug from title
+        document.getElementById('post-title').addEventListener('input', (e) => {
+            if (!isEditMode || !postId) {
+                const slug = e.target.value
+                    .toLowerCase()
+                    .replace(/[^a-z0-9\s-]/g, '')
+                    .replace(/\s+/g, '-')
+                    .replace(/-+/g, '-');
+                document.getElementById('post-slug').value = slug;
+            }
+            updatePreview();
+        });
+
+        function updatePreview() {
+            const title = document.getElementById('post-title').value || 'Title';
+            const content = document.getElementById('post-content').value || '*Content will appear here...*';
+
+            document.getElementById('preview-title').textContent = title;
+            document.getElementById('preview-content').innerHTML = marked.parse(content);
+        }
+
+        async function loadPost() {
+            if (!postId) return;
+
+            try {
+                const response = await fetch(`/api/admin/blog/post/${postId}`, {
+                    headers: { 'X-Admin-Key': adminKey }
+                });
+                const post = await response.json();
+
+                document.getElementById('editor-title').textContent = 'Edit Post';
+                document.getElementById('post-title').value = post.title;
+                document.getElementById('post-slug').value = post.slug;
+                document.getElementById('post-excerpt').value = post.excerpt;
+                document.getElementById('post-content').value = post.content;
+                updatePreview();
+            } catch (error) {
+                alert('Failed to load post');
+                window.location.href = '/admin.html';
+            }
+        }
+
+        async function savePost(publish) {
+            const title = document.getElementById('post-title').value;
+            const slug = document.getElementById('post-slug').value;
+            const excerpt = document.getElementById('post-excerpt').value;
+            const content = document.getElementById('post-content').value;
+
+            if (!title || !slug || !content) {
+                alert('Please fill in all required fields');
+                return;
+            }
+
+            const postData = {
+                title,
+                slug,
+                excerpt,
+                content,
+                is_published: publish
+            };
+
+            try {
+                let response;
+                if (postId) {
+                    // Update existing post
+                    response = await fetch(`/api/admin/blog/post/${postId}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Admin-Key': adminKey
+                        },
+                        body: JSON.stringify(postData)
+                    });
+                } else {
+                    // Create new post
+                    response = await fetch('/api/admin/blog/post', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Admin-Key': adminKey
+                        },
+                        body: JSON.stringify(postData)
+                    });
+                }
+
+                if (response.ok) {
+                    alert(publish ? 'Post published!' : 'Draft saved!');
+                    window.location.href = '/admin.html';
+                } else {
+                    const error = await response.json();
+                    alert(`Failed to save post: ${error.detail}`);
+                }
+            } catch (error) {
+                alert('Failed to save post');
+            }
+        }
+
+        // Load post if editing
+        if (postId) {
+            loadPost();
+        }
+    </script>
+</body>
+</html>

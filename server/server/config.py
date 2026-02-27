@@ -19,9 +19,12 @@ class Settings(BaseSettings):
         default=None,
         description="Database connection string (required in production, has dev default)"
     )
+    BLOG_DATABASE_URL: str = Field(
+        default="sqlite+aiosqlite:///website.db",
+        description="SQLite database for blog/website content"
+    )
     SECRET_KEY: str | None = Field(
         default=None,
-        min_length=32,
         description="JWT signing key (required in production, has dev default)"
     )
 
@@ -58,12 +61,18 @@ class Settings(BaseSettings):
 
     # JWT settings
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # 1 hour (was 7 days - security risk)
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
 
     # CORS settings
     CORS_ORIGINS: str = Field(
         default="http://localhost:3000,http://localhost:8080",
         description="Comma-separated list of allowed origins"
+    )
+
+    # Admin API key
+    ADMIN_KEY: str = Field(
+        default="changeme-admin-key",
+        description="Secret key required for all /admin endpoints"
     )
 
     # Logging
@@ -76,8 +85,10 @@ class Settings(BaseSettings):
 
     def validate_production(self) -> None:
         """Validate settings for production deployment."""
-        if len(self.SECRET_KEY) < 32:
+        if self.SECRET_KEY and len(self.SECRET_KEY) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters")
+        if self.ADMIN_KEY == "changeme-admin-key":
+            raise ValueError("ADMIN_KEY must be set to a secure random value in production")
         if "*" in self.CORS_ORIGINS:
             raise ValueError("CORS_ORIGINS must not contain wildcard in production")
         if "localhost" in self.CORS_ORIGINS:
