@@ -71,19 +71,35 @@
 
 ---
 
-### MEDIUM Priority Issues (Partial)
+### MEDIUM Priority Issues (2/3 Fixed ✅)
 
-**11. Authentication Logging** ⚠️ NOT YET IMPLEMENTED
-- Requires logging infrastructure setup
-- Low risk - rate limiting provides protection
+**11. Authentication Logging** ✅ FIXED
+- Added comprehensive logging to all auth endpoints
+- Logs failed/successful logins with IP + User-Agent
+- Production logs written to `logs/auth.log`
+- Enables attack detection and forensic analysis
 
 **12. Database Connection Pooling** ⚠️ NOT YET CONFIGURED
 - Need to add `pool_size` and `max_overflow` to database.py
-- Medium priority
+- Medium priority (performance, not security)
 
 **13. JWT Expiry** ✅ FIXED
 - Reduced from 7 days to 1 hour
 - Refresh tokens not yet implemented (future work)
+
+### BONUS: Additional Auth Security ✅
+
+**14. Password Strength Validation** ✅ ADDED
+- Minimum 12 characters
+- Requires uppercase, lowercase, and number
+- Common password blacklist
+- Validates on registration
+
+**15. Enhanced Logging Configuration** ✅ ADDED
+- Uses LOG_LEVEL from settings
+- Production auth logs written to file
+- Includes IP addresses and User-Agent strings
+- Ready for log aggregation tools (ELK, Splunk)
 
 ---
 

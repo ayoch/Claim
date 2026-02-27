@@ -17,10 +17,23 @@ from server.rate_limit import limiter, rate_limit_handler
 from server.routers import admin, auth, events, game, leaderboard
 from server.simulation.runner import simulation_loop
 
+# Configure logging
+log_level = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    level=log_level,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+# Add file handler for production to capture auth logs
+if settings.ENVIRONMENT == "production":
+    file_handler = logging.FileHandler("logs/auth.log")
+    file_handler.setLevel(logging.WARNING)
+    file_handler.setFormatter(
+        logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+    )
+    logging.getLogger("server.routers.auth").addHandler(file_handler)
+
 logger = logging.getLogger(__name__)
 
 
