@@ -12,18 +12,12 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
-from slowapi.errors import RateLimitExceeded
-from starlette.middleware.base import BaseHTTPMiddleware
 
 from server.blog_database import init_blog_db
 from server.config import settings
 from server.database import init_db
-from server.blog_database import init_blog_db
 from server.rate_limit import limiter, rate_limit_handler
 from server.routers import admin, auth, blog, events, game, leaderboard
-from server.routers import admin, auth, events, game, leaderboard, blog
 from server.simulation.runner import simulation_loop
 
 # Configure logging
@@ -162,7 +156,7 @@ async def on_shutdown() -> None:
 @app.get("/")
 async def root():
     """Serve the website homepage."""
-    index_path = Path(__file__).parent.parent / "static" / "index.html"
+    index_path = static_dir / "index.html"
     if index_path.exists():
         return FileResponse(index_path)
     # Fallback if no static site yet
@@ -179,42 +173,22 @@ async def health():
     return {"status": "ok"}
 
 
-# Static files and HTML pages
-static_dir = Path(__file__).parent.parent / "static"
-if static_dir.exists():
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
-
-    @app.get("/blog.html")
-    async def blog_page():
-        return FileResponse(static_dir / "blog.html")
-
-    @app.get("/post.html")
-    async def post_page():
-        return FileResponse(static_dir / "post.html")
-
-    @app.get("/admin.html")
-    async def admin_page():
-        return FileResponse(static_dir / "admin.html")
-
-    @app.get("/admin-blog-editor.html")
-    async def admin_blog_editor():
-        return FileResponse(static_dir / "admin-blog-editor.html")
 # Serve HTML pages
 @app.get("/blog.html")
 async def blog_page():
-    return FileResponse(Path(__file__).parent.parent / "static" / "blog.html")
+    return FileResponse(static_dir / "blog.html")
 
 
 @app.get("/post.html")
 async def post_page():
-    return FileResponse(Path(__file__).parent.parent / "static" / "post.html")
+    return FileResponse(static_dir / "post.html")
 
 
 @app.get("/admin.html")
 async def admin_page():
-    return FileResponse(Path(__file__).parent.parent / "static" / "admin.html")
+    return FileResponse(static_dir / "admin.html")
 
 
 @app.get("/admin-blog-editor.html")
 async def admin_editor_page():
-    return FileResponse(Path(__file__).parent.parent / "static" / "admin-blog-editor.html")
+    return FileResponse(static_dir / "admin-blog-editor.html")
