@@ -20,8 +20,52 @@ func _ready() -> void:
 	username_input.text_submitted.connect(func(_text): _on_login())
 	password_input.text_submitted.connect(func(_text): _on_login())
 
-	# Focus username field
+	# Load saved username if exists
+	_load_saved_username()
+
+	# Try auto-login if session exists
+	await _try_auto_login()
+
+	# Focus username field if not auto-logged in
 	username_input.grab_focus()
+
+
+func _load_saved_username() -> void:
+	"""Load and populate saved username"""
+	BackendManager.switch_mode(BackendManager.BackendMode.SERVER)
+	var server_backend = BackendManager.get_server_backend()
+	if server_backend:
+		var saved_user: String = server_backend.get_saved_username()
+		if saved_user != "":
+			username_input.text = saved_user
+
+
+func _try_auto_login() -> void:
+	"""Attempt auto-login with saved session token"""
+	BackendManager.switch_mode(BackendManager.BackendMode.SERVER)
+	var server_backend = BackendManager.get_server_backend()
+	if not server_backend:
+		return
+
+	if not server_backend.has_saved_session():
+		return
+
+	_show_status("Restoring session...", Color(0.8, 0.8, 0.8))
+	_set_processing(true)
+
+	# Verify token is still valid by fetching game state
+	var state: Dictionary = await BackendManager.get_game_state()
+
+	if state.has("player") and state["player"] != null:
+		# Token is valid, proceed to game
+		_show_status("Session restored! Loading game...", Color(0.3, 0.9, 0.3))
+		await get_tree().create_timer(1.0).timeout
+		get_tree().change_scene_to_file("res://ui/main_ui.tscn")
+	else:
+		# Token expired or invalid, clear it
+		server_backend.logout()
+		_show_status("Session expired. Please log in.", Color(0.9, 0.6, 0.3))
+		_set_processing(false)
 
 
 func _on_login() -> void:

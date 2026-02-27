@@ -15,6 +15,9 @@ server/.venv/
 server/venv/
 server/*.log
 server/.pytest_cache/
+server/*.db
+server/*.sqlite
+server/*.sqlite3
 *.pyc
 *.pyo
 *.pyd

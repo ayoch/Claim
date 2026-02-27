@@ -30,7 +30,7 @@ async def register(payload: PlayerCreate, request: Request, db: AsyncSession = D
 
 @router.post("/login", response_model=Token)
 @limiter.limit("10/minute")  # Prevent brute force attacks
-async def login(form: OAuth2PasswordRequestForm = Depends(), request: Request = None, db: AsyncSession = Depends(get_db)):
+async def login(form: OAuth2PasswordRequestForm = Depends(), request: Request = ..., db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Player).where(Player.username == form.username.lower()))
     player = result.scalar_one_or_none()
     if not player or not verify_password(form.password, player.password_hash):

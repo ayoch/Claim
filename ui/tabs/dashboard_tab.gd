@@ -9,9 +9,12 @@ extends MarginContainer
 @onready var activity_list: VBoxContainer = %ActivityList
 @onready var activity_scroll: ScrollContainer = %ActivityScroll
 @onready var contracts_list: VBoxContainer = %ContractsList
-@onready var contracts_scroll: ScrollContainer = %ContractsScroll
+@ontml:parameter name="contracts_scroll: ScrollContainer = %ContractsScroll
 @onready var transactions_list: VBoxContainer = %TransactionsList
 @onready var transactions_scroll: ScrollContainer = %TransactionsScroll
+
+# Session info (created programmatically)
+var session_info_label: Label = null
 
 const MAX_ALERTS: int = 50
 const MAX_ACTIVITY: int = 100
@@ -66,6 +69,9 @@ func _ready() -> void:
 		_queue_activity(msg, color)
 	)
 	EventBus.tick.connect(_on_tick)
+
+	# Create session info label
+	_create_session_info_label()
 
 	# Market events → activity
 	EventBus.market_event.connect(func(_ore: ResourceTypes.OreType, _old: float, _new: float, msg: String) -> void:
@@ -948,6 +954,9 @@ func _on_tick(_dt: float) -> void:
 	if _dirty_workers:
 		_dirty_workers = false
 		_refresh_workers()
+
+	# Update session info every tick
+	_update_session_info()
 	if _dirty_balance_history:
 		_dirty_balance_history = false
 		_refresh_balance_history()
@@ -1400,3 +1409,91 @@ func _on_worker_skill_leveled(worker: Worker, skill_type: int, new_value: float)
 		2: skill_name = "Mining"
 	var message := "[Worker] %s's %s skill increased to %.2f!" % [worker.worker_name, skill_name, new_value]
 	_queue_activity(message, Color(0.3, 0.9, 0.9))
+
+func _create_session_info_label() -> void:
+	"""Create and add session info label to the UI"""
+	# Only show for server mode
+	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+		return
+	
+	session_info_label = Label.new()
+	session_info_label.add_theme_font_size_override("font_size", 11)
+	session_info_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	
+	# Add to top of dashboard (insert as first child of money label's parent)
+	if money_label and money_label.get_parent():
+		money_label.get_parent().add_child(session_info_label)
+		money_label.get_parent().move_child(session_info_label, 0)
+	
+	_update_session_info()
+
+
+func _update_session_info() -> void:
+	"""Update session info label with username and expiration"""
+	if not session_info_label or BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+		return
+	
+	var server_backend = BackendManager.get_server_backend()
+	if not server_backend:
+		return
+	
+	var username: String = server_backend.get_saved_username()
+	var token: String = server_backend.auth_token
+	
+	if username == "" or token == "":
+		session_info_label.text = ""
+		return
+	
+	# Decode JWT to get expiration
+	var expiration_text := _get_token_expiration_text(token)
+	
+	session_info_label.text = "Logged in as: %s  |  %s" % [username, expiration_text]
+
+
+func _get_token_expiration_text(token: String) -> String:
+	"""Extract expiration time from JWT token"""
+	# JWT format: header.payload.signature
+	var parts := token.split(".")
+	if parts.size() != 3:
+		return "Session: Unknown"
+	
+	# Decode payload (base64url)
+	var payload_b64: String = parts[1]
+	# Add padding if needed
+	while payload_b64.length() % 4 != 0:
+		payload_b64 += "="
+	# Replace base64url chars with base64
+	payload_b64 = payload_b64.replace("-", "+").replace("_", "/")
+	
+	var payload_bytes := Marshalls.base64_to_raw(payload_b64)
+	var payload_str := payload_bytes.get_string_from_utf8()
+	
+	# Parse JSON
+	var json := JSON.new()
+	var parse_result := json.parse(payload_str)
+	if parse_result != OK:
+		return "Session: Unknown"
+	
+	var payload: Dictionary = json.data
+	var exp: int = payload.get("exp", 0)
+	
+	if exp == 0:
+		return "Session: Unknown"
+	
+	# Calculate time remaining
+	var current_time := Time.get_unix_time_from_system()
+	var seconds_left: int = exp - int(current_time)
+	
+	if seconds_left <= 0:
+		return "Session: Expired"
+	
+	var days_left := int(seconds_left / 86400.0)
+	var hours_left := int((seconds_left % 86400) / 3600.0)
+	
+	if days_left > 0:
+		return "Session expires in %d day%s" % [days_left, "s" if days_left != 1 else ""]
+	elif hours_left > 0:
+		return "Session expires in %d hour%s" % [hours_left, "s" if hours_left != 1 else ""]
+	else:
+		var minutes_left := int(seconds_left / 60.0)
+		return "Session expires in %d minute%s" % [minutes_left, "s" if minutes_left != 1 else ""]

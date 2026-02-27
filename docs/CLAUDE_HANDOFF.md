@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-25 EST (session 18)
-**Updated By:** Instance on Machine 2 (Mac laptop - HK-47)
-**Session Context:** Ship partnership system - leader/follower pairs, mutual aid, combat bonuses, NPC integration
-**Next Session Priority:** Test partnership system (run partnership_test.gd), then torpedo restocking UI
+**Last Updated:** 2026-02-27 EST (session 19)
+**Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
+**Session Context:** Planning remote server deployment (Railway)
+**Next Session Priority:** Deploy backend to Railway — see Session 19 below for exact steps
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -13,6 +13,41 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-27 EST (session 19) - Railway Deployment Planning
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:** Planning only — no code changed
+- **Context:** User wants to deploy the FastAPI backend to Railway (PaaS). Game is a phone app (Android/iOS), Godot client connects to remote backend over HTTPS.
+
+- **Deployment Plan (execute in order):**
+
+  1. **Test server locally first** (on Mac laptop, easier to run Python there)
+     - `cd server && python -m venv .venv && source .venv/bin/activate`
+     - `pip install -r requirements.txt`
+     - Set up local PostgreSQL, run `uvicorn server.main:app --reload`
+     - Run `python test_local.py` — all tests must pass before deploying
+
+  2. **Make `base_url` configurable in `server_backend.gd`**
+     - Currently hardcoded to `http://localhost:3000` (wrong port too — server runs on 8000)
+     - Change to read from a config file or exported variable so it can point at the real Railway URL
+     - Suggested approach: read from a `user://server_config.json` file, fall back to localhost for dev
+
+  3. **Create Railway account** at railway.app
+     - Connect GitHub repo
+     - Create new project → deploy from repo → point at `server/` directory
+     - Add PostgreSQL plugin (one click)
+     - Set environment variables: `DATABASE_URL` (Railway auto-provides), `SECRET_KEY`, `ENVIRONMENT=production`, `CORS_ORIGINS` (can be `*` for now since it's a mobile app, not browser)
+
+  4. **Add `Procfile` or `railway.toml`** to tell Railway how to start the server
+     - `web: uvicorn server.main:app --host 0.0.0.0 --port $PORT`
+
+  5. **Update `server_backend.gd`** with the Railway-provided URL (e.g. `https://claim-server.up.railway.app`)
+
+- **Key files to touch:**
+  - `core/backend/server_backend.gd` — base_url fix
+  - New: `server/Procfile` or `server/railway.toml`
+
+- **Known issue:** `base_url` is also on wrong port (3000 vs 8000) — fix both at once
 
 ### 2026-02-25 EST (session 18) - Ship Partnership System
 - **Machine:** Mac laptop (HK-47)
@@ -69,6 +104,13 @@
   - Fuel constraint not enforced (leader doesn't validate follower's fuel capacity before dispatch)
   - Orphaned shadow cleanup needed (if leader destroyed mid-mission)
   - NPC partnerships simplified (no full RivalShip partnership tracking)
+
+- **Security fixes completed this session (session 19):**
+  - `server/server/config.py` — added `ADMIN_KEY` setting + production validation
+  - `server/server/auth.py` — added `require_admin_key` dependency, fixed `Request` optional bug in login
+  - `server/server/routers/admin.py` — applied `require_admin_key` as router-level dependency
+  - `server/.env.example` — added `ADMIN_KEY` entry
+  - All `/admin` endpoints now require `X-Admin-Key: <your key>` header
 
 - **Next Steps:**
   - Run `partnership_test.gd` to validate implementation

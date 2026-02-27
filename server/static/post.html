@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Post - Dark River</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo-title">
+                <img src="/static/dark-river-logo.png" alt="Dark River" class="logo">
+                <h1>Dark River</h1>
+            </div>
+            <ul>
+                <li><a href="/">Home</a></li>
+                <li><a href="/blog.html">Blog</a></li>
+                <li><a href="/admin.html" id="admin-link" style="display: none;">Admin</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main>
+        <div id="post-container">
+            <p class="loading">Loading post...</p>
+        </div>
+    </main>
+
+    <footer>
+        <p>&copy; 2026 Dark River. All rights reserved.</p>
+    </footer>
+
+    <script>
+        // Check if admin key is set
+        if (localStorage.getItem('adminKey')) {
+            document.getElementById('admin-link').style.display = 'block';
+        }
+
+        async function loadPost() {
+            const params = new URLSearchParams(window.location.search);
+            const slug = params.get('slug');
+
+            if (!slug) {
+                document.getElementById('post-container').innerHTML =
+                    '<p class="loading">No post specified.</p>';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/blog/post/${slug}`);
+                if (!response.ok) {
+                    throw new Error('Post not found');
+                }
+
+                const post = await response.json();
+                document.title = `${post.title} - Dark River`;
+
+                const htmlContent = marked.parse(post.content);
+
+                document.getElementById('post-container').innerHTML = `
+                    <article class="post-card">
+                        <h2>${post.title}</h2>
+                        <p class="post-meta">${new Date(post.published_at).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'long',
+                            day: 'numeric'
+                        })}</p>
+                        <div class="post-content">
+                            ${htmlContent}
+                        </div>
+                    </article>
+                    <p><a href="/blog.html" class="view-all">← Back to all posts</a></p>
+                `;
+            } catch (error) {
+                console.error('Failed to load post:', error);
+                document.getElementById('post-container').innerHTML =
+                    '<p class="loading">Post not found.</p>';
+            }
+        }
+
+        loadPost();
+    </script>
+</body>
+</html>

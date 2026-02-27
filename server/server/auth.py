@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +31,11 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = 
     )
     to_encode["exp"] = expire
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def require_admin_key(x_admin_key: str = Header(...)) -> None:
+    if x_admin_key != settings.ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Invalid admin key")
 
 
 async def get_current_player(
