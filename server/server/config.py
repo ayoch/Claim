@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     )
 
     DATABASE_URL: str = "postgresql+asyncpg://claim:claim@localhost/claim_dev"
+    BLOG_DATABASE_URL: str = Field(
+        default="sqlite+aiosqlite:///website.db",
+        description="SQLite database for blog/website content"
+    )
     SECRET_KEY: str = Field(
         default_factory=lambda: secrets.token_urlsafe(32),
         description="JWT signing key - MUST be set in production"
