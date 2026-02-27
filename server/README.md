@@ -2,16 +2,55 @@
 
 FastAPI-based simulation server for the Claim space mining game.
 
+## 📚 Documentation
+
+| Guide | Purpose |
+|-------|---------|
+| **[DEVELOPMENT.md](DEVELOPMENT.md)** | 🚀 Zero-config local setup, testing, troubleshooting |
+| **[RAILWAY_DEPLOYMENT.md](RAILWAY_DEPLOYMENT.md)** | ☁️ Production deployment on Railway.app (step-by-step) |
+| **[SECURITY_AUDIT.md](SECURITY_AUDIT.md)** | 🔒 Security vulnerabilities + fixes |
+| **[AUTH_SECURITY.md](AUTH_SECURITY.md)** | 🔑 Authentication features, testing, monitoring |
+| **This README** | 📖 Quick reference and API documentation |
+
+---
+
 ## Quick Start
 
-**IMPORTANT:** Test the server locally before applying production hardening changes!
+### Local Development (Zero Config!)
+```bash
+# Clone, install, run - that's it!
+git clone <repo>
+cd server
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn server.main:app --reload
+```
 
-1. Follow setup instructions below
-2. Start server: `uvicorn server.main:app --reload`
-3. Run automated tests: `python test_local.py`
-4. See `TESTING_CHECKLIST.md` for manual verification steps
+**No .env file needed!** Server uses safe development defaults.
 
-Once all tests pass, you can apply production hardening from `PRODUCTION_HARDENING.md`.
+**See:** [DEVELOPMENT.md](DEVELOPMENT.md) for detailed setup
+
+### Deploy to Railway
+```bash
+# Push to GitHub → Connect Railway → Add PostgreSQL → Deploy!
+```
+
+**See:** [RAILWAY_DEPLOYMENT.md](RAILWAY_DEPLOYMENT.md) for step-by-step guide
+
+---
+
+## Security Status
+
+✅ **Production Ready** (as of 2026-02-27)
+
+- All critical vulnerabilities fixed
+- Admin endpoints require authentication
+- Rate limiting on auth endpoints
+- Password strength validation
+- Comprehensive logging
+
+**See:** [SECURITY_AUDIT.md](SECURITY_AUDIT.md) for details
 
 ## Requirements
 

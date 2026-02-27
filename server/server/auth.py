@@ -34,6 +34,7 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = 
 
 
 def require_admin_key(x_admin_key: str = Header(...)) -> None:
+    """Verify admin API key for protected endpoints."""
     if x_admin_key != settings.ADMIN_KEY:
         raise HTTPException(status_code=403, detail="Invalid admin key")
 
@@ -59,4 +60,16 @@ async def get_current_player(
     player = result.scalar_one_or_none()
     if player is None:
         raise credentials_exc
+    return player
+
+
+async def require_admin(
+    player: Player = Depends(get_current_player),
+) -> Player:
+    """Require authenticated player to have admin privileges."""
+    if not player.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
     return player
