@@ -5,6 +5,13 @@
 # Exception: example files should be committed
 !.env.example
 !.env.production.example
+# Environment variables (NEVER commit this)
+.env
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
 
 # Python
 __pycache__/
@@ -35,6 +42,15 @@ ENV/
 env/
 
 # IDEs
+.venv/
+venv/
+ENV/
+
+# Logs
+logs/
+*.log
+
+# IDE
 .vscode/
 .idea/
 *.swp

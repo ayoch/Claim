@@ -925,3 +925,12 @@
 [2026-02-25T20:43:50] Network unavailable — skipping verification. Will retry next cycle.
 [2026-02-25T20:58:59] Starting verification for game date 2026-02-18
 [2026-02-25T20:58:59] Network unavailable — skipping verification. Will retry next cycle.
+[2026-02-27T12:16:09] Starting verification for game date 2026-02-18
+[2026-02-27T12:16:10] WARN: Failed to fetch Earth: Bad response code 503
+[2026-02-27T12:16:10] WARN: Failed to fetch Mars: Bad response code 503
+[2026-02-27T12:16:10] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-02-27T12:16:10] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-02-27T12:16:10] WARN: Failed to fetch Neptune: Bad response code 503
+[2026-02-27T12:16:10] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-27T14:33:23] Starting verification for game date 2026-02-18
+[2026-02-27T14:33:23] Network unavailable — skipping verification. Will retry next cycle.
