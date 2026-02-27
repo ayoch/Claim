@@ -855,6 +855,8 @@ func _process_trade_missions(dt: float) -> void:
 								var amount: float = tm.cargo[ore_type]
 								var price: float = tm.colony.get_ore_price(ore_type, GameState.market)
 								revenue += int(amount * price)
+								# Update local market inventory (increases supply, lowers price)
+								GameState.market.sell_ore(ore_type, amount, tm.colony.colony_name)
 							tm.revenue = revenue
 							GameState.money += revenue
 							GameState.record_transaction(revenue, "Ore sold at %s" % tm.colony.colony_name, tm.ship.ship_name)

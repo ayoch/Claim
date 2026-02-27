@@ -135,10 +135,10 @@ const EQUIPMENT_CATALOG: Array[Dictionary] = [
 	},
 ]
 
-## Get current dynamic price (delegates to GameState.market)
-static func get_ore_price(ore: ResourceTypes.OreType) -> float:
+## Get current dynamic price at a specific location (delegates to GameState.market)
+static func get_ore_price(ore: ResourceTypes.OreType, location: String = "Earth") -> float:
 	if GameState and GameState.market:
-		return GameState.market.get_price(ore)
+		return GameState.market.get_price(ore, location)
 	return float(ORE_PRICES.get(ore, 0))
 
 ## Get static base price for reference
