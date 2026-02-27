@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     )
 
     DATABASE_URL: str = "postgresql+asyncpg://claim:claim@localhost/claim_dev"
+    BLOG_DATABASE_URL: str = Field(
+        default="sqlite+aiosqlite:///website.db",
+        description="SQLite database for blog/website content"
+    )
     SECRET_KEY: str = Field(
         default_factory=lambda: secrets.token_urlsafe(32),
         description="JWT signing key - MUST be set in production"
@@ -31,6 +35,12 @@ class Settings(BaseSettings):
     # Environment
     ENVIRONMENT: str = Field(default="development", description="development|production")
 
+    # Admin API key
+    ADMIN_KEY: str = Field(
+        default="changeme-admin-key",
+        description="Secret key required for all /admin endpoints"
+    )
+
     # Logging
     LOG_LEVEL: str = Field(default="INFO", description="DEBUG|INFO|WARNING|ERROR")
 
@@ -45,6 +55,8 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY must be set to a secure random value in production")
         if len(self.SECRET_KEY) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters")
+        if self.ADMIN_KEY == "changeme-admin-key":
+            raise ValueError("ADMIN_KEY must be set to a secure random value in production")
         if "*" in self.CORS_ORIGINS:
             raise ValueError("CORS_ORIGINS must not contain wildcard in production")
         if "localhost" in self.CORS_ORIGINS:

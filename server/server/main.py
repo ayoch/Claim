@@ -5,12 +5,16 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from slowapi.errors import RateLimitExceeded
+from pathlib import Path
 
 from server.config import settings
 from server.database import init_db
+from server.blog_database import init_blog_db
 from server.rate_limit import limiter, rate_limit_handler
-from server.routers import admin, auth, events, game, leaderboard
+from server.routers import admin, auth, events, game, leaderboard, blog
 from server.simulation.runner import simulation_loop
 
 logging.basicConfig(
@@ -39,12 +43,19 @@ app.add_middleware(
     max_age=3600,  # Cache preflight for 1 hour
 )
 
-# Routers
+# API Routers
 app.include_router(auth.router)
 app.include_router(game.router)
 app.include_router(events.router)
 app.include_router(admin.router)
 app.include_router(leaderboard.router)
+app.include_router(blog.router)
+app.include_router(blog.admin_router)
+
+# Static files (website frontend)
+static_dir = Path(__file__).parent.parent / "static"
+static_dir.mkdir(exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
 _sim_task: asyncio.Task | None = None
 
@@ -64,6 +75,9 @@ async def on_startup() -> None:
             raise
 
     await init_db()
+    await init_blog_db()
+    logger.info("Blog database initialized")
+
     _sim_task = asyncio.create_task(simulation_loop(world_id=1), name="simulation_loop")
     logger.info("Simulation loop started for world: %s", settings.WORLD_NAME)
 
@@ -82,6 +96,11 @@ async def on_shutdown() -> None:
 
 @app.get("/")
 async def root():
+    """Serve the website homepage."""
+    index_path = Path(__file__).parent.parent / "static" / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path)
+    # Fallback if no static site yet
     return {
         "name": "Claim Server",
         "version": "0.1.0",
@@ -93,3 +112,24 @@ async def root():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+# Serve HTML pages
+@app.get("/blog.html")
+async def blog_page():
+    return FileResponse(Path(__file__).parent.parent / "static" / "blog.html")
+
+
+@app.get("/post.html")
+async def post_page():
+    return FileResponse(Path(__file__).parent.parent / "static" / "post.html")
+
+
+@app.get("/admin.html")
+async def admin_page():
+    return FileResponse(Path(__file__).parent.parent / "static" / "admin.html")
+
+
+@app.get("/admin-blog-editor.html")
+async def admin_editor_page():
+    return FileResponse(Path(__file__).parent.parent / "static" / "admin-blog-editor.html")
