@@ -523,10 +523,10 @@ func _search_celestial_objects(query: String, results_vbox: VBoxContainer, resul
 			results_vbox.add_child(btn)
 
 	# Position popup below search field
-	results_popup.popup()
 	var global_pos := search_field.global_position
-	results_popup.position = global_pos + Vector2(0, search_field.size.y + 4)
-	results_popup.size = Vector2(300, 0)  # Auto-size height
+	results_popup.position = Vector2i(int(global_pos.x), int(global_pos.y + search_field.size.y + 4))
+	results_popup.size = Vector2i(300, 0)
+	results_popup.popup()
 
 func _pan_to_position(pos_au: Vector2) -> void:
 	var pixel_pos := pos_au * AU_PIXELS

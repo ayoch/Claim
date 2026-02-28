@@ -3,6 +3,22 @@
 
 ---
 
+## 2026-02-28 EST (session 22, Dweezil)
+
+- **Admin broadcast messaging system**: Admin can send text messages to all players from browser dashboard. Players see them as blinking yellow alerts at top of HQ tab with a Dismiss button. SSE pushes messages instantly to connected clients; polling fallback (60s) for clients without active SSE.
+  - Server: `server/server/models/server_message.py` — new SQLAlchemy model (`server_messages` table)
+  - Server: `POST /admin/broadcast` — create & SSE-publish a message (admin key required)
+  - Server: `GET /admin/broadcast` — list recent messages (admin key required)
+  - Server: `DELETE /admin/broadcast/{id}` — delete a message (admin key required)
+  - Server: `GET /game/messages` — fetch recent messages for authenticated players (polling endpoint)
+  - Server: `database.py` — registered `server_message` model in `init_db`
+  - Browser: `admin.html` — broadcast compose form + live list of sent messages with delete buttons
+  - Godot: `event_bus.gd` — added `server_message_received(message_id, message)` signal
+  - Godot: `server_backend.gd` — added `get_server_messages()` method
+  - Godot: `hq_tab.gd` — `_setup_server_messages_panel()`, `_refresh_server_messages()`, `_poll_server_messages()`, blinking effect via `_process()`
+
+---
+
 ## 2026-02-28 EST (session 21, Dweezil)
 
 - **Critical bug fix — broken login route**: HK-47's session 20 changes collided with Dweezil's session 19 fix, producing two `login` function definitions in `routers/auth.py`. Decorators were on the first (which returned `None`); DB logic was in the second (unregistered). Merged into one correct function: `request: Request = ...` (required), logging intact, rate limiter intact.

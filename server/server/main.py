@@ -4,11 +4,11 @@ import asyncio
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Cookie, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -30,12 +30,17 @@ logging.basicConfig(
 
 # Add file handler for production to capture auth logs
 if settings.ENVIRONMENT == "production":
-    file_handler = logging.FileHandler("logs/auth.log")
-    file_handler.setLevel(logging.WARNING)
-    file_handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
-    )
-    logging.getLogger("server.routers.auth").addHandler(file_handler)
+    try:
+        import os
+        os.makedirs("logs", exist_ok=True)
+        file_handler = logging.FileHandler("logs/auth.log")
+        file_handler.setLevel(logging.WARNING)
+        file_handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
+        )
+        logging.getLogger("server.routers.auth").addHandler(file_handler)
+    except OSError:
+        pass  # Railway filesystem may not support persistent log files — stdout logging covers it
 
 logger = logging.getLogger(__name__)
 
@@ -190,5 +195,8 @@ async def admin_page():
 
 
 @app.get("/admin-blog-editor.html")
-async def admin_editor_page():
+async def admin_editor_page(admin_session: str | None = Cookie(default=None)):
+    from urllib.parse import unquote
+    if not admin_session or unquote(admin_session) != settings.ADMIN_KEY:
+        return RedirectResponse(url="/admin.html", status_code=302)
     return FileResponse(static_dir / "admin-blog-editor.html")

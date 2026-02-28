@@ -741,8 +741,8 @@ func _deliver_warning(message: String, severity: String, category: String, delay
 			EventBus.warning_dismissed.emit(active_warnings[0]["id"])
 			active_warnings.remove_at(0)
 
-	# Auto-pause on critical events if setting enabled
-	if severity == "critical" and settings.get("auto_pause_on_critical", true):
+	# Auto-pause on critical events if setting enabled (suppressed during test harness runs)
+	if severity == "critical" and settings.get("auto_pause_on_critical", true) and not TestHarness.enabled:
 		TimeScale.set_speed(1.0)
 
 	# Send push notification for critical events

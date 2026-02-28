@@ -8,6 +8,7 @@ from server.models.asteroid import Asteroid
 from server.models.colony import Colony
 from server.models.mission import Mission, STATUS_TRANSIT_OUT
 from server.models.player import Player
+from server.models.server_message import ServerMessage
 from server.models.ship import Ship, SHIP_CLASS_STATS
 from server.models.worker import Worker
 from server.rate_limit import limiter
@@ -73,6 +74,12 @@ async def dispatch(
         raise HTTPException(status_code=409, detail="Ship is already on a mission")
     if ship.is_derelict:
         raise HTTPException(status_code=409, detail="Ship is derelict")
+    crew_count = len(ship.workers)
+    if crew_count < ship.min_crew:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{ship.ship_name} requires at least {ship.min_crew} crew ({crew_count} assigned)"
+        )
     asteroid = None
     origin_name = "Earth"
     origin_is_earth = True
@@ -245,3 +252,18 @@ async def list_colonies(db: AsyncSession = Depends(get_db)):
 @router.get("/market")
 async def market_prices():
     return get_market_prices()
+
+
+@router.get("/messages")
+@limiter.limit("30/minute")
+async def get_messages(
+    request: Request,
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch recent server broadcast messages for display in the client."""
+    result = await db.execute(
+        select(ServerMessage).order_by(ServerMessage.created_at.desc()).limit(10)
+    )
+    msgs = result.scalars().all()
+    return [{"id": m.id, "message": m.message, "created_at": m.created_at.isoformat()} for m in msgs]

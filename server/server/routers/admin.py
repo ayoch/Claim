@@ -1,17 +1,22 @@
 import random
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from server.auth import require_admin
 from server.auth import require_admin_key
 from server.database import get_db, init_db
 from server.models.asteroid import Asteroid
 from server.models.colony import Colony
-from server.models.player import Player
+from server.models.server_message import ServerMessage
 from server.models.ship import Ship, SHIP_CLASS_STATS, PROSPECTOR
 from server.models.worker import Worker
 from server.rate_limit import limiter
+from server.simulation.event_bus import event_bus
 from server.simulation.tick import get_total_ticks
+
+
+class BroadcastRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=500)
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin_key)])
 
@@ -20,7 +25,6 @@ router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(requir
 @limiter.limit("10/minute")
 async def server_status(
     request: Request,
-    admin: Player = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Get server status metrics (admin only)."""
@@ -169,7 +173,6 @@ def _asteroid_seed_data() -> list[dict]:
 @limiter.limit("1/minute")
 async def seed(
     request: Request,
-    admin: Player = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Idempotent seed: insert colonies and asteroids if not already present (admin only)."""
@@ -201,7 +204,6 @@ async def seed(
 async def give_starter_pack(
     request: Request,
     player_id: int = Path(..., ge=1, le=1_000_000, description="Player ID (1-1000000)"),
-    admin: Player = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Give a player their starting Prospector + 3 workers. Idempotent (admin only)."""
@@ -272,3 +274,59 @@ async def give_starter_pack(
     db.add(player)
     await db.commit()
     return {"message": "Starter pack granted", "ship_id": ship.id, "colony_id": colony.id}
+
+
+# ── Broadcast messages ────────────────────────────────────────────────────────
+
+@router.post("/broadcast", status_code=201)
+@limiter.limit("10/minute")
+async def broadcast_message(
+    body: BroadcastRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Send a message to all connected players (admin key only)."""
+    msg = ServerMessage(message=body.message.strip())
+    db.add(msg)
+    await db.commit()
+    await db.refresh(msg)
+
+    # Push to all SSE-connected clients immediately
+    await event_bus.publish({
+        "type": "server_message",
+        "id": msg.id,
+        "message": msg.message,
+    })
+
+    return {"id": msg.id, "message": msg.message}
+
+
+@router.get("/broadcast")
+@limiter.limit("30/minute")
+async def list_messages(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """List recent server messages (admin key only)."""
+    result = await db.execute(
+        select(ServerMessage).order_by(ServerMessage.created_at.desc()).limit(50)
+    )
+    msgs = result.scalars().all()
+    return [{"id": m.id, "message": m.message, "created_at": m.created_at.isoformat()} for m in msgs]
+
+
+@router.delete("/broadcast/{message_id}", status_code=204)
+@limiter.limit("20/minute")
+async def delete_message(
+    message_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a server message (admin key only)."""
+    msg = (await db.execute(
+        select(ServerMessage).where(ServerMessage.id == message_id)
+    )).scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message not found")
+    await db.delete(msg)
+    await db.commit()

@@ -4,7 +4,12 @@ extends BackendInterface
 ## Server-based multiplayer backend implementation
 ## Makes HTTP requests to Python/FastAPI server
 
-var base_url: String = "http://localhost:3000"
+# Production URL — update this when Railway deployment is live
+const PRODUCTION_URL: String = "https://claim-server.up.railway.app"
+const DEV_URL: String = "http://localhost:8000"
+const SERVER_CONFIG_PATH: String = "user://server_config.json"
+
+var base_url: String = PRODUCTION_URL
 var auth_token: String = ""
 var player_id: int = 0
 var saved_username: String = ""
@@ -22,7 +27,23 @@ const MAX_POOL_SIZE: int = 5
 
 func set_backend_manager(manager: Node) -> void:
 	_backend_manager = manager
+	_load_server_config()
 	_load_auth_data()
+
+
+func _load_server_config() -> void:
+	# If a local config file exists, use its URL (dev override).
+	# On a real phone with no config file, falls back to PRODUCTION_URL.
+	if not FileAccess.file_exists(SERVER_CONFIG_PATH):
+		return
+	var file := FileAccess.open(SERVER_CONFIG_PATH, FileAccess.READ)
+	if not file:
+		return
+	var json := JSON.new()
+	if json.parse(file.get_as_text()) == OK and json.data is Dictionary:
+		base_url = json.data.get("base_url", PRODUCTION_URL).rstrip("/")
+	file.close()
+	print("ServerBackend: using base_url = ", base_url)
 
 
 func _load_auth_data() -> void:
@@ -155,7 +176,7 @@ func get_game_state() -> Dictionary:
 	var http := _get_http_request()
 	var headers := _auth_headers()
 
-	var result := await _http_request_async(http, base_url + "/api/game/state", headers, HTTPClient.METHOD_GET)
+	var result := await _http_request_async(http, base_url + "/game/state", headers, HTTPClient.METHOD_GET)
 	_return_http_request(http)
 
 	if result["success"]:
@@ -199,7 +220,7 @@ func dispatch_mission(ship_id: int, asteroid_id: int, mission_type: int, mining_
 		"return_to_station": return_to_station
 	})
 
-	var result := await _http_request_async(http, base_url + "/api/missions", headers, HTTPClient.METHOD_POST, body)
+	var result := await _http_request_async(http, base_url + "/game/dispatch", headers, HTTPClient.METHOD_POST, body)
 	_return_http_request(http)
 
 	if result["success"]:
@@ -219,7 +240,7 @@ func buy_ship(ship_class: int, ship_name: String, colony_id: int):
 		"colony_id": colony_id
 	})
 
-	var result := await _http_request_async(http, base_url + "/api/ships", headers, HTTPClient.METHOD_POST, body)
+	var result := await _http_request_async(http, base_url + "/game/buy-ship", headers, HTTPClient.METHOD_POST, body)
 	_return_http_request(http)
 
 	if result["success"]:
@@ -234,7 +255,7 @@ func sell_ship(ship_id: int) -> void:
 	var http := _get_http_request()
 	var headers := _auth_headers()
 
-	var result := await _http_request_async(http, base_url + "/api/ships/%d" % ship_id, headers, HTTPClient.METHOD_DELETE)
+	var result := await _http_request_async(http, base_url + "/game/sell-ship/%d" % ship_id, headers, HTTPClient.METHOD_POST)
 	_return_http_request(http)
 
 	if not result["success"]:
@@ -251,7 +272,7 @@ func hire_worker(colony_id: int):
 	var headers := _auth_headers()
 	var body := JSON.stringify({"colony_id": colony_id})
 
-	var result := await _http_request_async(http, base_url + "/api/workers", headers, HTTPClient.METHOD_POST, body)
+	var result := await _http_request_async(http, base_url + "/game/hire", headers, HTTPClient.METHOD_POST, body)
 	_return_http_request(http)
 
 	if result["success"]:
@@ -266,7 +287,7 @@ func fire_worker(worker_id: int) -> void:
 	var http := _get_http_request()
 	var headers := _auth_headers()
 
-	var result := await _http_request_async(http, base_url + "/api/workers/%d" % worker_id, headers, HTTPClient.METHOD_DELETE)
+	var result := await _http_request_async(http, base_url + "/game/fire/%d" % worker_id, headers, HTTPClient.METHOD_POST)
 	_return_http_request(http)
 
 	if not result["success"]:
@@ -279,7 +300,7 @@ func assign_worker(worker_id: int, ship_id: int) -> void:
 	var headers := _auth_headers()
 	var body := JSON.stringify({"ship_id": ship_id})
 
-	var result := await _http_request_async(http, base_url + "/api/workers/%d/assign" % worker_id, headers, HTTPClient.METHOD_POST, body)
+	var result := await _http_request_async(http, base_url + "/game/assign-worker/%d" % worker_id, headers, HTTPClient.METHOD_POST, body)
 	_return_http_request(http)
 
 	if not result["success"]:
@@ -291,7 +312,7 @@ func unassign_worker(worker_id: int) -> void:
 	var http := _get_http_request()
 	var headers := _auth_headers()
 
-	var result := await _http_request_async(http, base_url + "/api/workers/%d/unassign" % worker_id, headers, HTTPClient.METHOD_POST)
+	var result := await _http_request_async(http, base_url + "/game/unassign-worker/%d" % worker_id, headers, HTTPClient.METHOD_POST)
 	_return_http_request(http)
 
 	if not result["success"]:
@@ -307,7 +328,7 @@ func get_colonies() -> Array:
 	var http := _get_http_request()
 	var headers := _auth_headers()
 
-	var result := await _http_request_async(http, base_url + "/api/colonies", headers, HTTPClient.METHOD_GET)
+	var result := await _http_request_async(http, base_url + "/game/colonies", headers, HTTPClient.METHOD_GET)
 	_return_http_request(http)
 
 	if result["success"]:
@@ -322,7 +343,7 @@ func get_asteroids() -> Array:
 	var http := _get_http_request()
 	var headers := _auth_headers()
 
-	var result := await _http_request_async(http, base_url + "/api/asteroids", headers, HTTPClient.METHOD_GET)
+	var result := await _http_request_async(http, base_url + "/game/asteroids", headers, HTTPClient.METHOD_GET)
 	_return_http_request(http)
 
 	if result["success"]:
@@ -337,7 +358,7 @@ func get_market_prices() -> Dictionary:
 	var http := _get_http_request()
 	var headers := _auth_headers()
 
-	var result := await _http_request_async(http, base_url + "/api/market/prices", headers, HTTPClient.METHOD_GET)
+	var result := await _http_request_async(http, base_url + "/game/market", headers, HTTPClient.METHOD_GET)
 	_return_http_request(http)
 
 	if result["success"]:
@@ -357,7 +378,7 @@ func update_policies(policies: Dictionary) -> void:
 	var headers := _auth_headers()
 	var body := JSON.stringify(policies)
 
-	var result := await _http_request_async(http, base_url + "/api/policies", headers, HTTPClient.METHOD_PUT, body)
+	var result := await _http_request_async(http, base_url + "/game/policies", headers, HTTPClient.METHOD_POST, body)
 	_return_http_request(http)
 
 	if not result["success"]:
@@ -412,7 +433,7 @@ func _fetch_player_info() -> void:
 func get_leaderboard(limit: int = 100, offset: int = 0) -> Dictionary:
 	var http := _get_http_request()
 	var headers := _auth_headers()
-	var url := base_url + "/api/leaderboard?limit=%d&offset=%d" % [limit, offset]
+	var url := base_url + "/leaderboard?limit=%d&offset=%d" % [limit, offset]
 
 	var result := await _http_request_async(http, url, headers, HTTPClient.METHOD_GET)
 	_return_http_request(http)
@@ -430,7 +451,7 @@ func get_leaderboard(limit: int = 100, offset: int = 0) -> Dictionary:
 func get_player_rank(player_id: int) -> Dictionary:
 	var http := _get_http_request()
 	var headers := _auth_headers()
-	var url := base_url + "/api/leaderboard/player/%d" % player_id
+	var url := base_url + "/leaderboard/player/%d" % player_id
 
 	var result := await _http_request_async(http, url, headers, HTTPClient.METHOD_GET)
 	_return_http_request(http)
@@ -441,6 +462,20 @@ func get_player_rank(player_id: int) -> Dictionary:
 		var err = result.get("error", "Unknown error")
 		push_warning("Failed to get player rank: " + str(err))
 		return {}
+
+
+## Fetch recent server broadcast messages.
+## Returns: Array of { id, message, created_at }
+func get_server_messages() -> Array:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var result := await _http_request_async(http, base_url + "/game/messages", headers, HTTPClient.METHOD_GET)
+	_return_http_request(http)
+
+	if result["success"] and result["data"] is Array:
+		return result["data"]
+	return []
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -162,13 +162,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _toggle() -> void:
-	# Key 5 now only toggles stats overlay (AI controlled by autoplay setting)
 	enabled = !enabled
 	overlay_label.visible = enabled
 	if enabled:
-		print("TEST HARNESS: Stats overlay VISIBLE")
+		TimeScale.set_speed(TimeScale.SPEED_MAX)
+		print("TEST HARNESS: ON — speed cranked to max")
+		# Fire a few broadcast messages to verify the blinking UI works
+		EventBus.broadcast_local("EUTERPE CONTROL: Automated stress test in progress. All anomalies are expected.")
+		EventBus.broadcast_local("SYSTEM: Solar flare activity elevated. Navigation delays possible on outer-belt routes.")
 	else:
-		print("TEST HARNESS: Stats overlay HIDDEN")
+		TimeScale.set_speed(1.0)
+		print("TEST HARNESS: OFF — speed reset to 1x")
 
 # ========== Mission signal handlers ==========
 

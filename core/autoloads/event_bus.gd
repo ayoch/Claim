@@ -153,6 +153,16 @@ signal crew_casualty_combat(ship: Ship, worker: Worker)
 signal rival_corp_banned(corp_name: String, colony_name: String)
 signal colony_militia_intervened(corp_name: String, colony_name: String)
 
+# Server broadcast messages
+signal server_message_received(message_id: int, message: String)
+
+var _local_msg_id: int = -1
+
+func broadcast_local(message: String) -> void:
+	"""Emit a server_message_received from local game code (single-player / testing)."""
+	server_message_received.emit(_local_msg_id, message)
+	_local_msg_id -= 1
+
 # Partnership system
 signal partnership_created(leader: Ship, follower: Ship)
 signal partnership_broken(ship1: Ship, ship2: Ship, reason: String)

@@ -9,7 +9,7 @@ extends MarginContainer
 @onready var activity_list: VBoxContainer = %ActivityList
 @onready var activity_scroll: ScrollContainer = %ActivityScroll
 @onready var contracts_list: VBoxContainer = %ContractsList
-@ontml:parameter name="contracts_scroll: ScrollContainer = %ContractsScroll
+@onready var contracts_scroll: ScrollContainer = %ContractsScroll
 @onready var transactions_list: VBoxContainer = %TransactionsList
 @onready var transactions_scroll: ScrollContainer = %TransactionsScroll
 
@@ -43,6 +43,16 @@ var _dirty_colony_standing: bool = false
 var _section_collapsed: Dictionary = {}
 var _section_content: Dictionary = {}  # key -> Node
 var _section_titles: Dictionary = {}  # key -> Label
+
+# Server broadcast messages
+var _server_messages: Array[Dictionary] = []  # {id, message, created_at}
+var _server_msg_seen: Dictionary = {}         # id -> true (dismissed)
+var _server_msg_blink_on: bool = true
+var _server_msg_blink_timer: float = 0.0
+const SERVER_MSG_BLINK_INTERVAL: float = 0.5
+var _server_msg_poll_elapsed: float = 0.0
+const SERVER_MSG_POLL_INTERVAL: float = 60.0
+var _server_msg_card: PanelContainer = null
 
 static func _free_children(container: Node) -> void:
 	for i in range(container.get_child_count() - 1, -1, -1):
@@ -281,6 +291,18 @@ func _ready() -> void:
 	_setup_colony_standing_panel()
 	_setup_warnings_panel()
 	_setup_collapsible_sections()
+	_setup_server_messages_panel()
+
+	# Server mode: connect to incoming SSE messages and do initial poll
+	EventBus.server_message_received.connect(func(msg_id: int, msg: String) -> void:
+		for m in _server_messages:
+			if m["id"] == msg_id:
+				return
+		_server_messages.push_front({"id": msg_id, "message": msg, "created_at": ""})
+		_refresh_server_messages()
+	)
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		_poll_server_messages()
 
 func _setup_stationed_ships_panel() -> void:
 	var scroll := get_node("ScrollContainer")
@@ -904,6 +926,21 @@ func _process(delta: float) -> void:
 		else:
 			progress_bar.value = lerp(progress_bar.value, target_progress, PROGRESS_LERP_SPEED * delta)
 
+	# Blink server message card
+	if _server_msg_card and _server_msg_card.visible:
+		_server_msg_blink_timer += delta
+		if _server_msg_blink_timer >= SERVER_MSG_BLINK_INTERVAL:
+			_server_msg_blink_timer = 0.0
+			_server_msg_blink_on = not _server_msg_blink_on
+			_server_msg_card.modulate.a = 1.0 if _server_msg_blink_on else 0.7
+
+	# Poll server messages periodically (server mode only)
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		_server_msg_poll_elapsed += delta
+		if _server_msg_poll_elapsed >= SERVER_MSG_POLL_INTERVAL:
+			_server_msg_poll_elapsed = 0.0
+			_poll_server_messages()
+
 func _refresh_all() -> void:
 	_on_money_changed(GameState.money)
 	_refresh_resources()
@@ -1497,3 +1534,87 @@ func _get_token_expiration_text(token: String) -> String:
 	else:
 		var minutes_left := int(seconds_left / 60.0)
 		return "Session expires in %d minute%s" % [minutes_left, "s" if minutes_left != 1 else ""]
+
+
+# ── Server broadcast messages ─────────────────────────────────────────────────
+
+func _setup_server_messages_panel() -> void:
+	var scroll := get_node("ScrollContainer")
+	var vbox := scroll.get_node("VBox")
+
+	_server_msg_card = PanelContainer.new()
+	_server_msg_card.name = "ServerMessagesCard"
+	_server_msg_card.visible = false
+
+	var card_vbox := VBoxContainer.new()
+	card_vbox.add_theme_constant_override("separation", 6)
+
+	var title := Label.new()
+	title.text = "MESSAGE FROM EUTERPE CONTROL"
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.15))
+	card_vbox.add_child(title)
+
+	var msgs_list := VBoxContainer.new()
+	msgs_list.name = "ServerMsgsList"
+	msgs_list.add_theme_constant_override("separation", 6)
+	card_vbox.add_child(msgs_list)
+
+	_server_msg_card.add_child(card_vbox)
+	vbox.add_child(_server_msg_card)
+	vbox.move_child(_server_msg_card, 0)
+
+
+func _refresh_server_messages() -> void:
+	if not _server_msg_card:
+		return
+	var msgs_list := _server_msg_card.find_child("ServerMsgsList", true, false)
+	if not msgs_list:
+		return
+	_free_children(msgs_list)
+
+	var visible_msgs: Array = []
+	for m in _server_messages:
+		if not _server_msg_seen.has(m["id"]):
+			visible_msgs.append(m)
+
+	_server_msg_card.visible = not visible_msgs.is_empty()
+
+	for m in visible_msgs:
+		var row := HBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_theme_constant_override("separation", 8)
+
+		var label := Label.new()
+		label.text = m["message"]
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
+		row.add_child(label)
+
+		var dismiss_btn := Button.new()
+		dismiss_btn.text = "Dismiss"
+		dismiss_btn.custom_minimum_size = Vector2(80, 32)
+		var msg_id: int = m["id"]
+		dismiss_btn.pressed.connect(func() -> void:
+			_server_msg_seen[msg_id] = true
+			_refresh_server_messages()
+		)
+		row.add_child(dismiss_btn)
+
+		msgs_list.add_child(row)
+
+
+func _poll_server_messages() -> void:
+	var backend = BackendManager.get_server_backend()
+	if not backend:
+		return
+	var msgs: Array = await backend.get_server_messages()
+	_server_messages.clear()
+	for m in msgs:
+		_server_messages.append({
+			"id": int(m.get("id", 0)),
+			"message": str(m.get("message", "")),
+			"created_at": str(m.get("created_at", ""))
+		})
+	_refresh_server_messages()

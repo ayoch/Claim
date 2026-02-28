@@ -65,6 +65,24 @@
 
             <section>
                 <div class="admin-header">
+                    <h3>Broadcast Message</h3>
+                    <span style="color: var(--text-dim); font-size: 0.85rem;">Sends a blinking alert to all players</span>
+                </div>
+                <div class="game-card" style="margin-bottom: 1rem;">
+                    <div class="form-group">
+                        <textarea id="broadcast-input" placeholder="Message to all players..." rows="3"
+                            style="width: 100%; background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; padding: 0.5rem; font-family: inherit; resize: vertical;"></textarea>
+                    </div>
+                    <button class="btn" onclick="sendBroadcast()" style="margin-top: 0.5rem;">Send to All Players</button>
+                    <span id="broadcast-status" style="margin-left: 1rem; font-size: 0.9rem;"></span>
+                </div>
+                <div id="broadcast-messages">
+                    <p class="loading">Loading messages...</p>
+                </div>
+            </section>
+
+            <section>
+                <div class="admin-header">
                     <h3>Blog Posts</h3>
                     <a href="/admin-blog-editor.html" class="btn">New Post</a>
                 </div>
@@ -106,6 +124,7 @@
                 if (response.ok) {
                     adminKey = key;
                     localStorage.setItem('adminKey', key);
+                    document.cookie = `admin_session=${encodeURIComponent(key)}; path=/; SameSite=Strict; max-age=86400`;
                     document.getElementById('login-error').style.display = 'none';
                     showAdminContent();
                 } else {
@@ -118,13 +137,82 @@
 
         function logout() {
             localStorage.removeItem('adminKey');
+            document.cookie = 'admin_session=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
             adminKey = null;
             location.reload();
         }
 
         async function loadAdminData() {
             await refreshClaimStatus();
+            await loadBroadcastMessages();
             await loadBlogPosts();
+        }
+
+        async function sendBroadcast() {
+            const input = document.getElementById('broadcast-input');
+            const status = document.getElementById('broadcast-status');
+            const msg = input.value.trim();
+            if (!msg) return;
+
+            try {
+                const response = await fetch('/admin/broadcast', {
+                    method: 'POST',
+                    headers: { 'X-Admin-Key': adminKey, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: msg }),
+                });
+                if (response.ok) {
+                    input.value = '';
+                    status.textContent = 'Sent!';
+                    status.style.color = '#44ff88';
+                    setTimeout(() => status.textContent = '', 3000);
+                    await loadBroadcastMessages();
+                } else {
+                    status.textContent = 'Failed to send.';
+                    status.style.color = '#ff4444';
+                }
+            } catch (e) {
+                status.textContent = 'Error: ' + e.message;
+                status.style.color = '#ff4444';
+            }
+        }
+
+        async function loadBroadcastMessages() {
+            try {
+                const response = await fetch('/admin/broadcast', {
+                    headers: { 'X-Admin-Key': adminKey },
+                });
+                const msgs = await response.json();
+                const container = document.getElementById('broadcast-messages');
+                if (msgs.length === 0) {
+                    container.innerHTML = '<p style="color: var(--text-dim); font-size: 0.9rem;">No messages sent yet.</p>';
+                    return;
+                }
+                container.innerHTML = msgs.map(m => `
+                    <div style="display: flex; align-items: center; gap: 1rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
+                        <span style="flex: 1; font-size: 0.9rem;">${escapeHtml(m.message)}</span>
+                        <span style="color: var(--text-dim); font-size: 0.8rem; white-space: nowrap;">${new Date(m.created_at).toLocaleString()}</span>
+                        <button class="btn btn-small btn-danger" onclick="deleteBroadcast(${m.id})">Delete</button>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error('Failed to load messages:', e);
+            }
+        }
+
+        async function deleteBroadcast(id) {
+            try {
+                await fetch(`/admin/broadcast/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'X-Admin-Key': adminKey },
+                });
+                await loadBroadcastMessages();
+            } catch (e) {
+                console.error('Failed to delete message:', e);
+            }
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         }
 
         async function refreshClaimStatus() {

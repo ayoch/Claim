@@ -43,6 +43,7 @@ async def init_db() -> None:
         colony,
         mission,
         player,
+        server_message,
         ship,
         worker,
     )

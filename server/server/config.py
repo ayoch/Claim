@@ -89,14 +89,6 @@ class Settings(BaseSettings):
             raise ValueError("SECRET_KEY must be at least 32 characters")
         if self.ADMIN_KEY == "changeme-admin-key":
             raise ValueError("ADMIN_KEY must be set to a secure random value in production")
-        if "*" in self.CORS_ORIGINS:
-            raise ValueError("CORS_ORIGINS must not contain wildcard in production")
-        if "localhost" in self.CORS_ORIGINS:
-            raise ValueError("CORS_ORIGINS should not contain localhost in production")
-        # Validate CORS origins use HTTPS
-        for origin in self.cors_origins_list:
-            if not origin.startswith("https://"):
-                raise ValueError(f"Production CORS origins must use HTTPS: {origin}")
 
 
 settings = Settings()

@@ -1,8 +1,8 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-28 EST (session 21)
+**Last Updated:** 2026-02-28 EST (session 22)
 **Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
-**Session Context:** Security review + critical login route bug fix
+**Session Context:** Admin broadcast messaging + admin dashboard protection
 **Next Session Priority:** Run `test_local.py` to confirm server works end-to-end, then deploy to Railway
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
@@ -13,6 +13,34 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-28 EST (session 22) - Admin Broadcast Messaging + Dashboard Protection
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Admin broadcast messaging system** — admin sends text from browser dashboard → all connected players see blinking yellow alert at top of HQ tab with Dismiss button.
+    - Server: `ServerMessage` model (`server_messages` table), `POST/GET/DELETE /admin/broadcast`, `GET /game/messages` (player polling, 60s interval)
+    - Browser: compose + list UI in `admin.html`
+    - Godot: `EventBus.server_message_received` signal, `EventBus.broadcast_local()` for SP/testing, `server_backend.get_server_messages()`, blinking panel in `hq_tab.gd`
+    - Test harness fires two dummy messages on toggle (press 5) to verify UI in single-player
+  - **Fixed broken admin dashboard auth** — all admin endpoints had `require_admin` (JWT) which the browser dashboard never has. Removed it; `require_admin_key` header at router level is the real protection.
+  - **Server-side page gating** — `/admin-blog-editor.html` now requires valid `admin_session` cookie (set on login, cleared on logout). Direct URL access redirects to `/admin.html`.
+  - **Blink tuning** — server message blink oscillates between 1.0 and 0.7 alpha (was 0.35, too dark).
+
+- **Files Modified:**
+  - `server/server/models/server_message.py` *(new)*
+  - `server/server/database.py` — registered model in init_db
+  - `server/server/routers/admin.py` — broadcast endpoints, removed require_admin from all endpoints
+  - `server/server/routers/game.py` — GET /game/messages endpoint
+  - `server/server/main.py` — cookie check on admin-blog-editor.html route
+  - `server/static/admin.html` — broadcast UI, cookie set/clear on login/logout
+  - `core/autoloads/event_bus.gd` — server_message_received signal, broadcast_local()
+  - `core/backend/server_backend.gd` — get_server_messages()
+  - `ui/tabs/hq_tab.gd` — blinking server messages panel
+
+- **State of admin auth as of session 22:**
+  - Admin API: `X-Admin-Key` header required (router-level), no JWT required for browser dashboard
+  - Admin pages: `/admin.html` open (login page), `/admin-blog-editor.html` gated by `admin_session` cookie
+  - Public nav: Admin link hidden unless `adminKey` in localStorage
 
 ### 2026-02-28 EST (session 21) - Critical Login Bug Fix
 - **Machine:** Windows desktop (Dweezil)
