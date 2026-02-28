@@ -38,7 +38,9 @@ theme_override_font_sizes/font_size = 14
 [node name="MoneyLabel" type="Label" parent="ScrollContainer/VBox/BalanceCard/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 text = "$10,000"
+clip_text = true
 theme_override_font_sizes/font_size = 32
 
 [node name="TransactionsCard" type="PanelContainer" parent="ScrollContainer/VBox"]
@@ -112,7 +114,9 @@ theme_override_font_sizes/font_size = 14
 [node name="WorkersSummary" type="Label" parent="ScrollContainer/VBox/WorkersCard/VBox"]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 text = "0 workers (0 available)"
+clip_text = true
 
 [node name="AlertsCard" type="PanelContainer" parent="ScrollContainer/VBox"]
 layout_mode = 2

@@ -54,6 +54,10 @@ class Settings(BaseSettings):
                     "Set it in .env file or environment variables."
                 )
 
+        # Ensure DATABASE_URL uses asyncpg driver (Railway provides postgresql://)
+        if self.DATABASE_URL and self.DATABASE_URL.startswith("postgresql://"):
+            self.DATABASE_URL = self.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
         return self
 
     WORLD_NAME: str = "Euterpe"

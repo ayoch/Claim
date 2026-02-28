@@ -934,3 +934,86 @@
 [2026-02-27T12:16:10] No JPL data received — skipping verification (network may be unavailable)
 [2026-02-27T14:33:23] Starting verification for game date 2026-02-18
 [2026-02-27T14:33:23] Network unavailable — skipping verification. Will retry next cycle.
+[2026-02-28T12:57:55] Starting verification for game date 2026-02-18
+[2026-02-28T12:57:56] WARN: Failed to fetch Venus: Bad response code 503
+[2026-02-28T12:57:56] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-02-28T12:57:56] WARN: Failed to fetch Neptune: Bad response code 503
+[2026-02-28T12:57:56] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-02-28T12:57:56] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-28T12:58:52] Starting verification for game date 2026-02-18
+[2026-02-28T13:00:30] Starting verification for game date 2026-02-18
+[2026-02-28T13:00:31] WARN: Failed to fetch Venus: Bad response code 503
+[2026-02-28T13:00:31] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-02-28T13:00:31] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-02-28T13:00:31] WARN: Failed to fetch Neptune: Bad response code 503
+[2026-02-28T13:00:31] WARN: Failed to fetch Earth: Bad response code 503
+[2026-02-28T13:00:31] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-28T13:06:46] Starting verification for game date 2026-02-18
+[2026-02-28T13:06:47] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-02-28T13:06:47] WARN: Failed to fetch Neptune: Bad response code 503
+[2026-02-28T13:06:47] WARN: Failed to fetch Earth: Bad response code 503
+[2026-02-28T13:06:47] WARN: Failed to fetch Jupiter: Bad response code 503
+[2026-02-28T13:06:47] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-02-28T13:06:47] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-28T13:13:11] Starting verification for game date 2026-02-18
+[2026-02-28T13:13:12] WARN: Failed to fetch Mars: Bad response code 503
+[2026-02-28T13:13:12] WARN: Failed to fetch Jupiter: Bad response code 503
+[2026-02-28T13:13:12] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-02-28T13:13:12] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-02-28T13:13:12] WARN: Failed to fetch Neptune: Bad response code 503
+[2026-02-28T13:13:12] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-28T13:24:12] Starting verification for game date 2026-02-18
+[2026-02-28T13:24:13] WARN: Failed to fetch Venus: Bad response code 503
+[2026-02-28T13:24:13] WARN: Failed to fetch Mars: Bad response code 503
+[2026-02-28T13:24:13] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-02-28T13:24:13] WARN: Failed to fetch Neptune: Bad response code 503
+[2026-02-28T13:24:13] WARN: Failed to fetch Jupiter: Bad response code 503
+[2026-02-28T13:24:13] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-28T13:26:26] Starting verification for game date 2026-02-18
+[2026-02-28T13:26:27] WARN: Failed to fetch Earth: Bad response code 503
+[2026-02-28T13:26:27] WARN: Failed to fetch Mars: Bad response code 503
+[2026-02-28T13:26:27] WARN: Failed to fetch Jupiter: Bad response code 503
+[2026-02-28T13:26:27] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-02-28T13:26:27] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-02-28T13:26:27] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-28T13:29:52] Starting verification for game date 2026-02-23
+[2026-02-28T13:29:53] WARN: Failed to fetch Venus: Bad response code 503
+[2026-02-28T13:29:53] WARN: Failed to fetch Mars: Bad response code 503
+[2026-02-28T13:29:53] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-02-28T13:29:53] WARN: Failed to fetch Neptune: Bad response code 503
+[2026-02-28T13:29:54] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-28T14:06:23] Starting verification for game date 2026-02-18
+[2026-02-28T14:06:24] WARN: Failed to fetch Earth: Bad response code 503
+[2026-02-28T14:06:24] WARN: Failed to fetch Jupiter: Bad response code 503
+[2026-02-28T14:06:24] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-02-28T14:06:24] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-02-28T14:06:24] WARN: Failed to fetch Neptune: Bad response code 503
+[2026-02-28T14:06:24] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-28T14:24:07] Starting verification for game date 2026-02-22
+[2026-02-28T14:24:08] WARN: Failed to fetch Venus: Bad response code 503
+[2026-02-28T14:24:08] WARN: Failed to fetch Earth: Bad response code 503
+[2026-02-28T14:24:08] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-02-28T14:24:08] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-02-28T14:24:08] WARN: Failed to fetch Neptune: Bad response code 503
+[2026-02-28T14:24:08] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-28T14:29:09] Starting verification for game date 2026-02-20
+[2026-02-28T14:29:10] WARN: Failed to fetch Mars: Bad response code 503
+[2026-02-28T14:29:10] WARN: Failed to fetch Jupiter: Bad response code 503
+[2026-02-28T14:29:10] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-02-28T14:29:10] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-02-28T14:29:10] WARN: Failed to fetch Neptune: Bad response code 503
+[2026-02-28T14:29:10] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-28T16:06:39] Starting verification for game date 2026-02-20
+[2026-02-28T16:06:40] WARN: Failed to fetch Earth: Bad response code 503
+[2026-02-28T16:06:40] WARN: Failed to fetch Mars: Bad response code 503
+[2026-02-28T16:06:40] WARN: Failed to fetch Jupiter: Bad response code 503
+[2026-02-28T16:06:40] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-02-28T16:06:40] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-02-28T16:06:40] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-28T23:07:04] Starting verification for game date 2026-02-18
+[2026-02-28T23:07:05] WARN: Failed to fetch Earth: Bad response code 503
+[2026-02-28T23:07:05] WARN: Failed to fetch Jupiter: Bad response code 503
+[2026-02-28T23:07:05] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-02-28T23:07:05] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-02-28T23:07:05] WARN: Failed to fetch Neptune: Bad response code 503
+[2026-02-28T23:07:05] No JPL data received — skipping verification (network may be unavailable)

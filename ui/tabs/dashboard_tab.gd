@@ -293,6 +293,8 @@ func _setup_stationed_ships_panel() -> void:
 
 	var title := Label.new()
 	title.text = "STATIONED SHIPS"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.clip_text = true
 	title.add_theme_font_size_override("font_size", 14)
 	title.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 	card_vbox.add_child(title)
@@ -402,6 +404,8 @@ func _setup_discipline_panel() -> void:
 
 	var title := Label.new()
 	title.text = "CREW DISCIPLINE"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.clip_text = true
 	title.add_theme_font_size_override("font_size", 14)
 	title.add_theme_color_override("font_color", Color(1.0, 0.6, 0.1))
 	card_vbox.add_child(title)
@@ -533,6 +537,8 @@ func _setup_colony_standing_panel() -> void:
 	var title := Label.new()
 	title.text = "COLONY STANDING"
 	title.name = "Title"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.clip_text = true
 	title.add_theme_font_size_override("font_size", 14)
 	title.add_theme_color_override("font_color", Color(1.0, 0.6, 0.1))
 	card_vbox.add_child(title)
@@ -634,6 +640,8 @@ func _setup_warnings_panel() -> void:
 
 	var title := Label.new()
 	title.text = "⚠️ ACTIVE WARNINGS"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.clip_text = true
 	title.add_theme_font_size_override("font_size", 16)
 	title.add_theme_color_override("font_color", Color(1.0, 0.6, 0.1))
 	card_vbox.add_child(title)
@@ -1314,6 +1322,8 @@ func _setup_balance_history() -> void:
 	# Reputation line
 	var rep_label := Label.new()
 	rep_label.name = "ReputationLabel"
+	rep_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rep_label.clip_text = true
 	rep_label.text = "Reputation: %s (%+.0f)" % [Reputation.get_tier_name(), Reputation.score]
 	_color_reputation_label(rep_label)
 	content.add_child(rep_label)
@@ -1417,6 +1427,8 @@ func _create_session_info_label() -> void:
 		return
 	
 	session_info_label = Label.new()
+	session_info_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	session_info_label.clip_text = true
 	session_info_label.add_theme_font_size_override("font_size", 11)
 	session_info_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	
@@ -1497,3 +1509,89 @@ func _get_token_expiration_text(token: String) -> String:
 	else:
 		var minutes_left := int(seconds_left / 60.0)
 		return "Session expires in %d minute%s" % [minutes_left, "s" if minutes_left != 1 else ""]
+
+
+# ── Server broadcast messages ─────────────────────────────────────────────────
+
+func _setup_server_messages_panel() -> void:
+	var scroll := get_node("ScrollContainer")
+	var vbox := scroll.get_node("VBox")
+
+	_server_msg_card = PanelContainer.new()
+	_server_msg_card.name = "ServerMessagesCard"
+	_server_msg_card.visible = false
+
+	var card_vbox := VBoxContainer.new()
+	card_vbox.add_theme_constant_override("separation", 6)
+
+	var title := Label.new()
+	title.text = "MESSAGE FROM EUTERPE CONTROL"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.clip_text = true
+	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.15))
+	card_vbox.add_child(title)
+
+	var msgs_list := VBoxContainer.new()
+	msgs_list.name = "ServerMsgsList"
+	msgs_list.add_theme_constant_override("separation", 6)
+	card_vbox.add_child(msgs_list)
+
+	_server_msg_card.add_child(card_vbox)
+	vbox.add_child(_server_msg_card)
+	vbox.move_child(_server_msg_card, 0)
+
+
+func _refresh_server_messages() -> void:
+	if not _server_msg_card:
+		return
+	var msgs_list := _server_msg_card.find_child("ServerMsgsList", true, false)
+	if not msgs_list:
+		return
+	_free_children(msgs_list)
+
+	var visible_msgs: Array = []
+	for m in _server_messages:
+		if not _server_msg_seen.has(m["id"]):
+			visible_msgs.append(m)
+
+	_server_msg_card.visible = not visible_msgs.is_empty()
+
+	for m in visible_msgs:
+		var row := HBoxContainer.new()
+		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_theme_constant_override("separation", 8)
+
+		var label := Label.new()
+		label.text = m["message"]
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
+		row.add_child(label)
+
+		var dismiss_btn := Button.new()
+		dismiss_btn.text = "Dismiss"
+		dismiss_btn.custom_minimum_size = Vector2(80, 32)
+		var msg_id: int = m["id"]
+		dismiss_btn.pressed.connect(func() -> void:
+			_server_msg_seen[msg_id] = true
+			_refresh_server_messages()
+		)
+		row.add_child(dismiss_btn)
+
+		msgs_list.add_child(row)
+
+
+func _poll_server_messages() -> void:
+	var backend = BackendManager.get_server_backend()
+	if not backend:
+		return
+	var msgs: Array = await backend.get_server_messages()
+	_server_messages.clear()
+	for m in msgs:
+		_server_messages.append({
+			"id": int(m.get("id", 0)),
+			"message": str(m.get("message", "")),
+			"created_at": str(m.get("created_at", ""))
+		})
+	_refresh_server_messages()
