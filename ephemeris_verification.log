@@ -932,3 +932,5 @@
 [2026-02-27T12:16:10] WARN: Failed to fetch Uranus: Bad response code 503
 [2026-02-27T12:16:10] WARN: Failed to fetch Neptune: Bad response code 503
 [2026-02-27T12:16:10] No JPL data received — skipping verification (network may be unavailable)
+[2026-02-27T14:33:23] Starting verification for game date 2026-02-18
+[2026-02-27T14:33:23] Network unavailable — skipping verification. Will retry next cycle.
