@@ -3,7 +3,8 @@
     "allow": [
       "Bash(find:*)",
       "Bash(python3 -:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(cd C:\\\\Users\\\\Jonat\\\\desktop\\\\claim:*)"
     ]
   }
 }
