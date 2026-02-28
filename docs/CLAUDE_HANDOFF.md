@@ -1,9 +1,9 @@
 # Claude Instance Handoff Notes
 
-**Last Updated:** 2026-02-27 EST (session 20)
-**Updated By:** Instance on Machine 2 (Mac laptop - HK-47)
-**Session Context:** Server security audit and deployment hardening review
-**Next Session Priority:** Implement critical security fixes before production deployment
+**Last Updated:** 2026-02-28 EST (session 21)
+**Updated By:** Instance on Machine 1 (Windows desktop - Dweezil)
+**Session Context:** Security review + critical login route bug fix
+**Next Session Priority:** Run `test_local.py` to confirm server works end-to-end, then deploy to Railway
 
 > **IMPORTANT FOR ALL INSTANCES:** Read this file at the start of EVERY session to check for updates from other instances. Update the timestamp above whenever you modify this document. If you see a newer timestamp than when you last read it, another instance has been working - read the Session Log below to catch up.
 
@@ -13,6 +13,22 @@
 
 ## Session Log
 *(Most recent first)*
+
+### 2026-02-28 EST (session 21) - Critical Login Bug Fix
+- **Machine:** Windows desktop (Dweezil)
+- **Work Completed:**
+  - **Fixed broken login route** in `server/server/routers/auth.py`: HK-47's session 20 changes and Dweezil's session 19 fix collided, producing two `login` function definitions in the same file. Python registered the first (decorated) one, which only set logging variables and returned `None` — login was silently broken. Merged into a single correct function preserving all logging, rate limiting, and the required `request: Request` parameter.
+  - **Reviewed all recent server changes** — everything else from sessions 19-20 looks correct. Admin double-lock (`require_admin_key` header + `require_admin` player role) is intentional and fine.
+  - **Cleaned up WORK_LOG.txt** — session entries were out of order and missing separator.
+
+- **Files Modified:**
+  - `server/server/routers/auth.py` — merged duplicate login functions
+
+- **State of server security as of session 21:**
+  - Admin endpoints: require `X-Admin-Key` header + valid JWT with `is_admin=True`
+  - Login: rate limited, logs IP + user-agent, `request` is required
+  - Password requirements: 12+ chars, upper/lower/number
+  - Config: `ADMIN_KEY` validated in production
 
 ### 2026-02-27 EST (session 20) - Server Security Audit & Deployment Hardening
 - **Machine:** Mac laptop (HK-47)

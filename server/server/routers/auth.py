@@ -76,19 +76,16 @@ async def register(payload: PlayerCreate, request: Request, db: AsyncSession = D
 @limiter.limit("10/minute")  # Prevent brute force attacks
 async def login(
     form: OAuth2PasswordRequestForm = Depends(),
-    request: Request = None,
+    request: Request = ...,
     db: AsyncSession = Depends(get_db)
 ):
-    # Get client IP and user agent for logging
-    client_ip = request.client.host if request and request.client else "unknown"
-    user_agent = request.headers.get("user-agent", "unknown") if request else "unknown"
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")
 
-async def login(form: OAuth2PasswordRequestForm = Depends(), request: Request = ..., db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Player).where(Player.username == form.username.lower()))
     player = result.scalar_one_or_none()
 
     if not player or not verify_password(form.password, player.password_hash):
-        # Log failed login attempt with details
         logger.warning(
             f"Failed login attempt for username: {form.username} "
             f"from IP: {client_ip} "
@@ -100,7 +97,6 @@ async def login(form: OAuth2PasswordRequestForm = Depends(), request: Request = 
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Log successful login
     logger.info(
         f"Successful login: {player.username} (ID: {player.id}) "
         f"from IP: {client_ip} "

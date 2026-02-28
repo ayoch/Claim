@@ -1,5 +1,11 @@
 ﻿# Claim — Work Log
-# Updated: 2026-02-27 EST
+# Updated: 2026-02-28 EST
+
+---
+
+## 2026-02-28 EST (session 21, Dweezil)
+
+- **Critical bug fix — broken login route**: HK-47's session 20 changes collided with Dweezil's session 19 fix, producing two `login` function definitions in `routers/auth.py`. Decorators were on the first (which returned `None`); DB logic was in the second (unregistered). Merged into one correct function: `request: Request = ...` (required), logging intact, rate limiter intact.
 
 ---
 
@@ -9,6 +15,16 @@
 - **Authentication Security (bonus)**: Added password strength validation (min 12 chars, uppercase/lowercase/number required, common password blacklist). Added comprehensive authentication logging (failed/successful logins with IP + User-Agent). Production logs written to `logs/auth.log` for attack detection.
 - **Documentation**: Created `SECURITY_AUDIT.md`, `SECURITY_FIXES_SUMMARY.md`, `AUTH_SECURITY.md`. Updated CLAUDE_HANDOFF.md and WORK_LOG.txt.
 - **Files Modified**: 15 total (server models, auth, config, main, admin router, alembic migration, .gitignore, .env examples, documentation)
+
+---
+
+## 2026-02-27 EST (session 19, Dweezil)
+
+- **Security audit of server routers**: Reviewed all `/game` and `/admin` endpoints for IDOR and authorization issues. Game routes clean — all ownership checks present. Admin router had zero authentication on all three endpoints.
+- **Admin endpoint authentication**: Added `ADMIN_KEY` setting to `config.py` (with production validation). Added `require_admin_key` dependency to `auth.py` that reads `X-Admin-Key` header and returns 403 on mismatch. Applied as router-level dependency in `admin.py` — covers all admin endpoints in one line.
+- **Login rate limiter fix**: `request: Request` parameter in login route was `= None` (optional), which could silently break the rate limiter. Changed to required (`= ...`).
+- **`.env.example` updated**: Added `ADMIN_KEY` entry with generation instructions.
+- **Deployment planning**: Decided on Railway as hosting platform. Created `dev` branch — Railway will deploy from `main` only. Deployment steps documented in `CLAUDE_HANDOFF.md` session 19.
 
 ---
 
@@ -23,13 +39,6 @@
 ## 2026-02-25 EST (session 18, HK-47)
 
 - **Ship Partnership System (complete)**: Leader/follower pairs travel together with shadow missions, automatic mutual aid (fuel transfer, engineer repair), combined firepower in combat with proportional damage splitting, NPC partnerships for contested asteroids, stationed ship pair dispatch, full save/load persistence, UI controls in Fleet tab. See docs/PARTNERSHIP_SYSTEM.md for full documentation.
-## 2026-02-27 EST (session 19, Dweezil)
-
-- **Security audit of server routers**: Reviewed all `/game` and `/admin` endpoints for IDOR and authorization issues. Game routes clean — all ownership checks present. Admin router had zero authentication on all three endpoints.
-- **Admin endpoint authentication**: Added `ADMIN_KEY` setting to `config.py` (with production validation). Added `require_admin_key` dependency to `auth.py` that reads `X-Admin-Key` header and returns 403 on mismatch. Applied as router-level dependency in `admin.py` — covers all admin endpoints in one line.
-- **Login rate limiter fix**: `request: Request` parameter in login route was `= None` (optional), which could silently break the rate limiter. Changed to required (`= ...`).
-- **`.env.example` updated**: Added `ADMIN_KEY` entry with generation instructions.
-- **Deployment planning**: Decided on Railway as hosting platform. Created `dev` branch — Railway will deploy from `main` only. Deployment steps documented in `CLAUDE_HANDOFF.md` session 19.
 
 ---
 
