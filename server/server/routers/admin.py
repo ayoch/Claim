@@ -1,20 +1,29 @@
 import random
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from server.auth import require_admin
+from server.auth import require_admin_key
 from server.database import get_db, init_db
 from server.models.asteroid import Asteroid
 from server.models.colony import Colony
 from server.models.player import Player
 from server.models.ship import Ship, SHIP_CLASS_STATS, PROSPECTOR
 from server.models.worker import Worker
+from server.rate_limit import limiter
 from server.simulation.tick import get_total_ticks
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin_key)])
 
 
 @router.get("/status")
-async def server_status(db: AsyncSession = Depends(get_db)):
+@limiter.limit("10/minute")
+async def server_status(
+    request: Request,
+    admin: Player = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get server status metrics (admin only)."""
     player_count = (await db.execute(select(func.count(Player.id)))).scalar_one()
     ship_count = (await db.execute(select(func.count(Ship.id)))).scalar_one()
     asteroid_count = (await db.execute(select(func.count(Asteroid.id)))).scalar_one()
@@ -157,8 +166,13 @@ def _asteroid_seed_data() -> list[dict]:
 
 
 @router.post("/seed")
-async def seed(db: AsyncSession = Depends(get_db)):
-    """Idempotent seed: insert colonies and asteroids if not already present."""
+@limiter.limit("1/minute")
+async def seed(
+    request: Request,
+    admin: Player = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Idempotent seed: insert colonies and asteroids if not already present (admin only)."""
     await init_db()
     seeded = {"colonies": 0, "asteroids": 0}
 
@@ -183,8 +197,14 @@ async def seed(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/give-starter-pack/{player_id}")
-async def give_starter_pack(player_id: int, db: AsyncSession = Depends(get_db)):
-    """Give a player their starting Prospector + 3 workers. Idempotent."""
+@limiter.limit("5/hour")
+async def give_starter_pack(
+    request: Request,
+    player_id: int = Path(..., ge=1, le=1_000_000, description="Player ID (1-1000000)"),
+    admin: Player = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Give a player their starting Prospector + 3 workers. Idempotent (admin only)."""
     player = (await db.execute(
         select(Player).where(Player.id == player_id)
     )).scalar_one_or_none()

@@ -7,9 +7,13 @@ extends BackendInterface
 var base_url: String = "http://localhost:3000"
 var auth_token: String = ""
 var player_id: int = 0
+var saved_username: String = ""
 
 # Reference to BackendManager (Node) for adding HTTP nodes to tree
 var _backend_manager: Node = null
+
+# Persistent auth storage
+const AUTH_SAVE_PATH: String = "user://auth_data.json"
 
 # HTTP request queue (reuse nodes for efficiency)
 var _http_pool: Array[HTTPRequest] = []
@@ -18,6 +22,63 @@ const MAX_POOL_SIZE: int = 5
 
 func set_backend_manager(manager: Node) -> void:
 	_backend_manager = manager
+	_load_auth_data()
+
+
+func _load_auth_data() -> void:
+	"""Load saved auth token and username from disk"""
+	if not FileAccess.file_exists(AUTH_SAVE_PATH):
+		return
+
+	var file := FileAccess.open(AUTH_SAVE_PATH, FileAccess.READ)
+	if not file:
+		return
+
+	var json_string := file.get_as_text()
+	file.close()
+
+	var json := JSON.new()
+	var parse_result := json.parse(json_string)
+	if parse_result != OK:
+		return
+
+	var data: Dictionary = json.data
+	auth_token = data.get("auth_token", "")
+	player_id = data.get("player_id", 0)
+	saved_username = data.get("username", "")
+
+
+func _save_auth_data(username: String) -> void:
+	"""Save auth token and username to disk"""
+	var data := {
+		"auth_token": auth_token,
+		"player_id": player_id,
+		"username": username
+	}
+
+	var file := FileAccess.open(AUTH_SAVE_PATH, FileAccess.WRITE)
+	if not file:
+		push_warning("Failed to save auth data")
+		return
+
+	file.store_string(JSON.stringify(data))
+	file.close()
+
+
+func _clear_auth_data() -> void:
+	"""Clear saved auth data"""
+	if FileAccess.file_exists(AUTH_SAVE_PATH):
+		DirAccess.remove_absolute(AUTH_SAVE_PATH)
+
+
+func has_saved_session() -> bool:
+	"""Check if there's a saved auth session"""
+	return auth_token != "" and player_id > 0
+
+
+func get_saved_username() -> String:
+	"""Get the saved username"""
+	return saved_username
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AUTHENTICATION
@@ -39,6 +100,8 @@ func login(username: String, password: String) -> Dictionary:
 		# Extract player_id from token or fetch from /auth/me
 		# For now, we'll fetch the player info after login
 		await _fetch_player_info()
+		# Save auth data for persistent login
+		_save_auth_data(username)
 		return {
 			"success": true,
 			"token": auth_token,
@@ -80,6 +143,8 @@ func register(username: String, password: String) -> Dictionary:
 func logout() -> void:
 	auth_token = ""
 	player_id = 0
+	saved_username = ""
+	_clear_auth_data()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

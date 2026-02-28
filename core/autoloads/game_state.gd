@@ -2765,8 +2765,17 @@ func save_game(save_name: String = "") -> void:
 	for ore_type in resources:
 		save_data["resources"][str(ore_type)] = resources[ore_type]
 	if market:
-		for ore_type in market.current_prices:
-			save_data["market_prices"][str(ore_type)] = market.current_prices[ore_type]
+		# Save location-based market data
+		save_data["market_locations"] = {}
+		for location in market.location_prices:
+			save_data["market_locations"][location] = {
+				"prices": {},
+				"inventory": {}
+			}
+			for ore_type in market.location_prices[location]:
+				save_data["market_locations"][location]["prices"][str(ore_type)] = market.location_prices[location][ore_type]
+			for ore_type in market.location_inventory[location]:
+				save_data["market_locations"][location]["inventory"][str(ore_type)] = market.location_inventory[location][ore_type]
 	for w in workers:
 		save_data["workers"].append({
 			"name": w.worker_name,
@@ -3149,11 +3158,25 @@ func load_game(file_name: String = "save_game.json") -> bool:
 	for key in res_data:
 		resources[int(key)] = float(res_data[key])
 
-	# Restore market prices
+	# Restore market prices and inventory
 	if market:
-		var price_data: Dictionary = data.get("market_prices", {})
-		for key in price_data:
-			market.current_prices[int(key)] = float(price_data[key])
+		# Try new format first (location-based markets)
+		var location_data: Dictionary = data.get("market_locations", {})
+		if not location_data.is_empty():
+			for location in location_data:
+				if market.location_prices.has(location):
+					var prices: Dictionary = location_data[location].get("prices", {})
+					for key in prices:
+						market.location_prices[location][int(key)] = float(prices[key])
+					var inventory: Dictionary = location_data[location].get("inventory", {})
+					for key in inventory:
+						market.location_inventory[location][int(key)] = float(inventory[key])
+		else:
+			# Fallback for old saves (global prices only) - apply to all locations
+			var price_data: Dictionary = data.get("market_prices", {})
+			for location in market.location_prices:
+				for key in price_data:
+					market.location_prices[location][int(key)] = float(price_data[key])
 
 	workers.clear()
 	for wd in data.get("workers", []):

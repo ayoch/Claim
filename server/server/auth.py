@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +33,12 @@ def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = 
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
+def require_admin_key(x_admin_key: str = Header(...)) -> None:
+    """Verify admin API key for protected endpoints."""
+    if x_admin_key != settings.ADMIN_KEY:
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+
+
 async def get_current_player(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db),
@@ -54,4 +60,16 @@ async def get_current_player(
     player = result.scalar_one_or_none()
     if player is None:
         raise credentials_exc
+    return player
+
+
+async def require_admin(
+    player: Player = Depends(get_current_player),
+) -> Player:
+    """Require authenticated player to have admin privileges."""
+    if not player.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
     return player
