@@ -16,6 +16,8 @@ extends MarginContainer
 # Session info (created programmatically)
 var session_info_label: Label = null
 var _server_msg_card: PanelContainer = null
+var _server_messages: Array = []
+var _server_msg_seen: Dictionary = {}
 
 const MAX_ALERTS: int = 50
 const MAX_ACTIVITY: int = 100
