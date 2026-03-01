@@ -127,8 +127,8 @@ func _on_register() -> void:
 		_show_status("Username must be at least 3 characters", Color(0.9, 0.3, 0.3))
 		return
 
-	if password.length() < 6:
-		_show_status("Password must be at least 6 characters", Color(0.9, 0.3, 0.3))
+	if password.length() < 12:
+		_show_status("Password: 12+ chars, upper, lower, number", Color(0.9, 0.3, 0.3))
 		return
 
 	# Disable inputs while processing

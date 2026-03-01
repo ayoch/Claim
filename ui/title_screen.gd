@@ -90,12 +90,18 @@ func _on_quit() -> void:
 
 
 func _check_server_status() -> void:
+	var server_backend = BackendManager.get_server_backend()
+	if not is_instance_valid(server_backend):
+		_set_server_status(false, "Server: Offline")
+		return
+
 	# Create HTTP request node
 	http_request = HTTPRequest.new()
+	http_request.set_tls_options(TLSOptions.client_unsafe())
 	add_child(http_request)
 	http_request.request_completed.connect(_on_server_status_received)
 
-	var url := BackendManager.get_server_backend().base_url + "/health"
+	var url: String = server_backend.base_url + "/health"
 	print("Checking server status at: ", url)
 	var error := http_request.request(url)
 

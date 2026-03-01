@@ -2674,13 +2674,13 @@ func calculate_net_worth() -> int:
 	if market:
 		for ship in ships:
 			for ore_type in ship.current_cargo:
-				var price: float = market.current_prices.get(ore_type, 0.0)
+				var price: float = market.get_price(ore_type)
 				total += int(ship.current_cargo[ore_type] * price)
 
 	# Add ore in storage
 	if market:
 		for ore_type in resources:
-			var price: float = market.current_prices.get(ore_type, 0.0)
+			var price: float = market.get_price(ore_type)
 			total += int(resources[ore_type] * price)
 
 	return total

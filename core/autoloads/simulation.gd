@@ -1670,7 +1670,7 @@ func _score_mining_trip(ship: Ship, asteroid: AsteroidData, origin_pos: Vector2,
 		var rate: float = float(asteroid.ore_yields[ore_type])  # tons/day
 		var tons := minf(rate * (mining_duration / 86400.0), ship.get_effective_cargo_capacity())
 		haul_tons += tons
-		haul_value += tons * float(GameState.market.current_prices.get(ore_type, 1000.0))
+		haul_value += tons * GameState.market.get_price(ore_type)
 	haul_tons = minf(haul_tons, ship.get_effective_cargo_capacity())
 	# Revenue minus fuel cost
 	var fuel_cost := (fuel_out + fuel_back) * Ship.FUEL_COST_PER_UNIT
@@ -3540,11 +3540,11 @@ func _calc_rival_ore_rate(asteroid: AsteroidData, skill: float) -> float:
 		# Skill affects market awareness — low skill corps use poor price estimates
 		if skill >= 0.7:
 			# High skill — accurate market prices
-			var price: float = float(GameState.market.current_prices.get(ore_type, 1000.0))
+			var price: float = GameState.market.get_price(ore_type)
 			total += rate * price
 		elif skill >= 0.3:
 			# Mid skill — partially accurate prices
-			var price: float = float(GameState.market.current_prices.get(ore_type, 1000.0))
+			var price: float = GameState.market.get_price(ore_type)
 			var noise := randf_range(0.8, 1.2)
 			total += rate * price * noise
 		else:
@@ -3558,8 +3558,8 @@ func _sell_rival_cargo(corp: RivalCorp, ship: RivalShip) -> int:
 	# Estimate value using average price across all ores
 	var avg_price := 0.0
 	var count := 0
-	for ore_type in GameState.market.current_prices:
-		avg_price += float(GameState.market.current_prices[ore_type])
+	for ore_type in MarketData.ORE_PRICES:
+		avg_price += GameState.market.get_price(ore_type)
 		count += 1
 	if count > 0:
 		avg_price /= count

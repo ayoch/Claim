@@ -83,7 +83,6 @@ async def login(
     client_ip = request.client.host if request and request.client else "unknown"
     user_agent = request.headers.get("user-agent", "unknown") if request else "unknown"
 
-async def login(form: OAuth2PasswordRequestForm = Depends(), request: Request = ..., db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Player).where(Player.username == form.username.lower()))
     player = result.scalar_one_or_none()
 
