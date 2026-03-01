@@ -2,7 +2,6 @@ import random
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from server.auth import require_admin
 from server.auth import require_admin_key
 from server.database import get_db, init_db
 from server.models.asteroid import Asteroid
@@ -20,7 +19,6 @@ router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(requir
 @limiter.limit("10/minute")
 async def server_status(
     request: Request,
-    admin: Player = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Get server status metrics (admin only)."""
@@ -169,7 +167,6 @@ def _asteroid_seed_data() -> list[dict]:
 @limiter.limit("1/minute")
 async def seed(
     request: Request,
-    admin: Player = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Idempotent seed: insert colonies and asteroids if not already present (admin only)."""
@@ -201,7 +198,6 @@ async def seed(
 async def give_starter_pack(
     request: Request,
     player_id: int = Path(..., ge=1, le=1_000_000, description="Player ID (1-1000000)"),
-    admin: Player = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Give a player their starting Prospector + 3 workers. Idempotent (admin only)."""
