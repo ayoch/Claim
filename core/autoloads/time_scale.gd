@@ -20,6 +20,11 @@ func _ready() -> void:
 	pass
 
 func _input(event: InputEvent) -> void:
+	if BackendManager.current_mode != BackendManager.BackendMode.LOCAL:
+		return
+	var scene := get_tree().current_scene
+	if not scene or scene.scene_file_path != "res://ui/main_ui.tscn":
+		return
 	if event is InputEventKey and event.pressed and not event.echo:
 		if event.keycode == KEY_1:
 			slow_down()

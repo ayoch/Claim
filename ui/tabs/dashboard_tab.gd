@@ -9,7 +9,7 @@ extends MarginContainer
 @onready var activity_list: VBoxContainer = %ActivityList
 @onready var activity_scroll: ScrollContainer = %ActivityScroll
 @onready var contracts_list: VBoxContainer = %ContractsList
-@ontml:parameter name="contracts_scroll: ScrollContainer = %ContractsScroll
+@onready var contracts_scroll: ScrollContainer = %ContractsScroll
 @onready var transactions_list: VBoxContainer = %TransactionsList
 @onready var transactions_scroll: ScrollContainer = %TransactionsScroll
 
