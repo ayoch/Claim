@@ -62,10 +62,6 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 # Production security middleware
 if settings.ENVIRONMENT == "production":
     app.add_middleware(HTTPSRedirectMiddleware)
-    # Extract allowed hosts from CORS origins
-    allowed_hosts = [origin.replace("https://", "").replace("http://", "")
-                     for origin in settings.cors_origins_list]
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
 
 # Request size limiting (always enabled)
 app.add_middleware(LimitUploadSize, max_upload_size=10 * 1024 * 1024)  # 10MB
