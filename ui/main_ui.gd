@@ -64,7 +64,7 @@ func _ready() -> void:
 		_save_load_dialog.save_confirmed.connect(_on_save_confirmed)
 		_save_load_dialog.load_confirmed.connect(_on_load_confirmed)
 
-	if TESTING_MODE:
+	if BackendManager.current_mode == BackendManager.BackendMode.LOCAL:
 		_setup_speed_bar()
 	else:
 		speed_bar.visible = false
