@@ -19,10 +19,9 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add is_admin column to players table
-    op.add_column('players', sa.Column('is_admin', sa.Boolean(), nullable=False, server_default='false'))
+    # is_admin is included in the initial schema migration; nothing to do here
+    pass
 
 
 def downgrade() -> None:
-    # Remove is_admin column from players table
-    op.drop_column('players', 'is_admin')
+    pass
