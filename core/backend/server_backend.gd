@@ -457,7 +457,7 @@ func _auth_headers() -> Array:
 func _get_http_request() -> HTTPRequest:
 	if _http_pool.is_empty():
 		var http := HTTPRequest.new()
-		# Don't add to tree - we'll manage lifecycle manually
+		http.set_tls_options(TLSOptions.client())
 		return http
 	else:
 		return _http_pool.pop_back()

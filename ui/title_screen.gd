@@ -95,9 +95,7 @@ func _check_server_status() -> void:
 	add_child(http_request)
 	http_request.request_completed.connect(_on_server_status_received)
 
-	# For now, check localhost:3000/health (local server)
-	# Later this will be changed to the production server URL
-	var url := "http://localhost:3000/health"
+	var url := BackendManager.get_server_backend().base_url + "/health"
 	print("Checking server status at: ", url)
 	var error := http_request.request(url)
 
