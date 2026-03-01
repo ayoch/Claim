@@ -4,7 +4,7 @@ extends BackendInterface
 ## Server-based multiplayer backend implementation
 ## Makes HTTP requests to Python/FastAPI server
 
-var base_url: String = "http://localhost:3000"
+var base_url: String = "https://claim-production-066b.up.railway.app"
 var auth_token: String = ""
 var player_id: int = 0
 var saved_username: String = ""
