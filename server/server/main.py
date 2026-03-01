@@ -59,9 +59,8 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 
-# Production security middleware
-if settings.ENVIRONMENT == "production":
-    app.add_middleware(HTTPSRedirectMiddleware)
+# Note: HTTPSRedirectMiddleware omitted — Railway terminates TLS at the edge,
+# internal health checks use plain HTTP and would be rejected by the redirect.
 
 # Request size limiting (always enabled)
 app.add_middleware(LimitUploadSize, max_upload_size=10 * 1024 * 1024)  # 10MB
