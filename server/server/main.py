@@ -28,14 +28,6 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-# Add file handler for production to capture auth logs
-if settings.ENVIRONMENT == "production":
-    file_handler = logging.FileHandler("logs/auth.log")
-    file_handler.setLevel(logging.WARNING)
-    file_handler.setFormatter(
-        logging.Formatter("%(asctime)s %(levelname)s [%(name)s] %(message)s")
-    )
-    logging.getLogger("server.routers.auth").addHandler(file_handler)
 
 logger = logging.getLogger(__name__)
 
