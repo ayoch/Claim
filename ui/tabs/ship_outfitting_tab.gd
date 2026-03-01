@@ -4,6 +4,11 @@ static func _free_children(container: Node) -> void:
 	for i in range(container.get_child_count() - 1, -1, -1):
 		container.get_child(i).queue_free()
 
+static func _lbl() -> Label:
+	var l := _lbl()
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return l
+
 @onready var ships_list: VBoxContainer = %ShipsList
 @onready var buy_ship_popup: PanelContainer = %BuyShipPopup
 @onready var buy_ship_content: VBoxContainer = %BuyShipContent
@@ -46,7 +51,7 @@ func _refresh_all() -> void:
 	_refresh_queued = false
 	_free_children(ships_list)
 
-	var title := Label.new()
+	var title := _lbl()
 	title.text = "SHIP OUTFITTING"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.clip_text = true
@@ -59,7 +64,7 @@ func _refresh_all() -> void:
 
 	# Show upgrade inventory
 	if not GameState.upgrade_inventory.is_empty():
-		var inv_header := Label.new()
+		var inv_header := _lbl()
 		inv_header.text = "Upgrade Inventory (ready to install):"
 		inv_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		inv_header.clip_text = true
@@ -71,7 +76,7 @@ func _refresh_all() -> void:
 			var upgrade_row := HFlowContainer.new()
 			upgrade_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			upgrade_row.add_theme_constant_override("h_separation", 8)
-			var upgrade_info := Label.new()
+			var upgrade_info := _lbl()
 			upgrade_info.text = "%s - %s" % [upgrade.upgrade_name, upgrade.description]
 			upgrade_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			upgrade_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -104,7 +109,7 @@ func _refresh_all() -> void:
 		ship_vbox.add_theme_constant_override("separation", 8)
 
 		# Ship header
-		var ship_header := Label.new()
+		var ship_header := _lbl()
 		ship_header.text = ship.ship_name
 		ship_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		ship_header.clip_text = true
@@ -127,7 +132,7 @@ func _refresh_all() -> void:
 		else:
 			status_text = "In space (dock at Earth or large colony for services)"
 
-		var status_label := Label.new()
+		var status_label := _lbl()
 		status_label.text = status_text
 		status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		status_label.clip_text = true
@@ -138,7 +143,7 @@ func _refresh_all() -> void:
 		ship_vbox.add_child(stats_sep)
 
 		# Base stats
-		var base_stats := Label.new()
+		var base_stats := _lbl()
 		base_stats.text = "BASE STATS:"
 		base_stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		base_stats.clip_text = true
@@ -156,13 +161,13 @@ func _refresh_all() -> void:
 		_add_stat_row(stats_grid, "Fuel:", "%.0ft" % ship.fuel_capacity, ship.get_effective_fuel_capacity())
 		var dv_base := ship.get_delta_v(ship.fuel_capacity)
 		var dv_eff := ship.get_delta_v(ship.get_effective_fuel_capacity())
-		var dv_lbl := Label.new()
+		var dv_lbl := _lbl()
 		dv_lbl.text = "Δv (full):"
 		dv_lbl.clip_text = true
 		dv_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		dv_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 		stats_grid.add_child(dv_lbl)
-		var dv_val := Label.new()
+		var dv_val := _lbl()
 		if abs(dv_eff - dv_base) > 0.05:
 			dv_val.text = "%.1f km/s → %.1f km/s" % [dv_base, dv_eff]
 			dv_val.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
@@ -182,7 +187,7 @@ func _refresh_all() -> void:
 		var upgrades_sep := HSeparator.new()
 		ship_vbox.add_child(upgrades_sep)
 
-		var upgrades_header := Label.new()
+		var upgrades_header := _lbl()
 		upgrades_header.text = "INSTALLED UPGRADES:"
 		upgrades_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		upgrades_header.clip_text = true
@@ -191,7 +196,7 @@ func _refresh_all() -> void:
 		ship_vbox.add_child(upgrades_header)
 
 		if ship.upgrades.is_empty():
-			var no_upgrades := Label.new()
+			var no_upgrades := _lbl()
 			no_upgrades.text = "No upgrades installed"
 			no_upgrades.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			no_upgrades.clip_text = true
@@ -199,7 +204,7 @@ func _refresh_all() -> void:
 			ship_vbox.add_child(no_upgrades)
 		else:
 			for upgrade in ship.upgrades:
-				var upgrade_label := Label.new()
+				var upgrade_label := _lbl()
 				upgrade_label.text = "• %s - %s" % [upgrade.upgrade_name, upgrade.description]
 				upgrade_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				upgrade_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -228,7 +233,7 @@ func _refresh_all() -> void:
 	var purchase_sep := HSeparator.new()
 	ships_list.add_child(purchase_sep)
 
-	var purchase_header := Label.new()
+	var purchase_header := _lbl()
 	purchase_header.text = "AVAILABLE UPGRADES TO PURCHASE"
 	purchase_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	purchase_header.clip_text = true
@@ -240,7 +245,7 @@ func _refresh_all() -> void:
 		var buy_row := HBoxContainer.new()
 		buy_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		buy_row.add_theme_constant_override("separation", 8)
-		var info := Label.new()
+		var info := _lbl()
 		info.text = "%s - %s ($%s)" % [
 			entry["name"], entry["description"], _format_number(entry["cost"])
 		]
@@ -263,7 +268,7 @@ func _refresh_all() -> void:
 	var mu_sep := HSeparator.new()
 	ships_list.add_child(mu_sep)
 
-	var mu_header := Label.new()
+	var mu_header := _lbl()
 	mu_header.text = "MINING UNITS"
 	mu_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mu_header.clip_text = true
@@ -273,7 +278,7 @@ func _refresh_all() -> void:
 
 	# Show inventory
 	if not GameState.mining_unit_inventory.is_empty():
-		var inv_label := Label.new()
+		var inv_label := _lbl()
 		inv_label.text = "In Inventory: %d unit(s)" % GameState.mining_unit_inventory.size()
 		inv_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		inv_label.clip_text = true
@@ -283,7 +288,7 @@ func _refresh_all() -> void:
 			var unit_row := HBoxContainer.new()
 			unit_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			unit_row.add_theme_constant_override("separation", 8)
-			var unit_info := Label.new()
+			var unit_info := _lbl()
 			unit_info.text = "  • %s (%.1ft, %.1fx, %.0f/%.0f%% dur)" % [
 				unit.unit_name, unit.mass, unit.mining_multiplier, unit.durability, unit.max_durability
 			]
@@ -305,7 +310,7 @@ func _refresh_all() -> void:
 
 	# Show deployed
 	if not GameState.deployed_mining_units.is_empty():
-		var dep_label := Label.new()
+		var dep_label := _lbl()
 		dep_label.text = "Deployed: %d unit(s)" % GameState.deployed_mining_units.size()
 		dep_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		dep_label.clip_text = true
@@ -315,7 +320,7 @@ func _refresh_all() -> void:
 			var worker_names: Array[String] = []
 			for w in unit.assigned_workers:
 				worker_names.append(w.worker_name)
-			var unit_info := Label.new()
+			var unit_info := _lbl()
 			unit_info.text = "  • %s at %s (%.0f%% durability, crew: %s)" % [
 				unit.unit_name, unit.deployed_at_asteroid, unit.durability,
 				", ".join(worker_names) if not worker_names.is_empty() else "none"
@@ -326,7 +331,7 @@ func _refresh_all() -> void:
 			ships_list.add_child(unit_info)
 
 	# Purchase catalog
-	var mu_buy_header := Label.new()
+	var mu_buy_header := _lbl()
 	mu_buy_header.text = "Available to Purchase:"
 	mu_buy_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mu_buy_header.clip_text = true
@@ -338,7 +343,7 @@ func _refresh_all() -> void:
 		var mu_row := HBoxContainer.new()
 		mu_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		mu_row.add_theme_constant_override("separation", 8)
-		var mu_info := Label.new()
+		var mu_info := _lbl()
 		mu_info.text = "%s - %s ($%s, %.1ft, %d workers)" % [
 			mu_entry["name"], mu_entry["description"],
 			_format_number(mu_entry["cost"]), mu_entry["mass"], mu_entry["workers_required"]
@@ -359,14 +364,14 @@ func _refresh_all() -> void:
 		ships_list.add_child(mu_row)
 
 func _add_stat_row(grid: GridContainer, label_text: String, base_value: String, effective_value: float) -> void:
-	var label := Label.new()
+	var label := _lbl()
 	label.text = label_text
 	label.clip_text = true
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	grid.add_child(label)
 
-	var value := Label.new()
+	var value := _lbl()
 	# Show effective value if different from base
 	if str(effective_value) != base_value:
 		value.text = "%s → %.1f" % [base_value, effective_value]
@@ -403,7 +408,7 @@ func _build_buy_ship_ui() -> void:
 	var header := HBoxContainer.new()
 	header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-	var title := Label.new()
+	var title := _lbl()
 	title.text = "BUY NEW SHIP"
 	title.add_theme_font_size_override("font_size", 20)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -421,7 +426,7 @@ func _build_buy_ship_ui() -> void:
 	buy_ship_content.add_child(sep)
 
 	# Show current money
-	var money_label := Label.new()
+	var money_label := _lbl()
 	money_label.text = "Available Funds: $%s" % _format_number(GameState.money)
 	money_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
 	money_label.add_theme_font_size_override("font_size", 16)
@@ -447,14 +452,14 @@ func _build_buy_ship_ui() -> void:
 
 		# Ship class name and price
 		var class_header := HBoxContainer.new()
-		var class_label := Label.new()
+		var class_label := _lbl()
 		class_label.text = ShipData.CLASS_NAMES[ship_class]
 		class_label.add_theme_font_size_override("font_size", 18)
 		class_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		class_header.add_child(class_label)
 
 		var price: int = ShipData.CLASS_PRICES[ship_class]
-		var price_label := Label.new()
+		var price_label := _lbl()
 		price_label.text = "$%s" % _format_number(price)
 		price_label.add_theme_font_size_override("font_size", 18)
 		if GameState.money >= price:
@@ -466,7 +471,7 @@ func _build_buy_ship_ui() -> void:
 		vbox.add_child(class_header)
 
 		# Description
-		var desc := Label.new()
+		var desc := _lbl()
 		desc.text = ShipData.get_class_description(ship_class)
 		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		desc.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
@@ -474,7 +479,7 @@ func _build_buy_ship_ui() -> void:
 
 		# Specs
 		var stats: Dictionary = ShipData.CLASS_STATS[ship_class]
-		var specs := Label.new()
+		var specs := _lbl()
 		var spec_lines: Array[String] = []
 		spec_lines.append("Thrust: %.2fg" % stats["thrust_g"])
 		spec_lines.append("Cargo: %.0ft / %.0fm³" % [stats["cargo_capacity"], stats["cargo_volume"]])

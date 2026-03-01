@@ -9,6 +9,11 @@ static func _free_children(container: Node) -> void:
 	for i in range(container.get_child_count() - 1, -1, -1):
 		container.get_child(i).free()
 
+static func _lbl() -> Label:
+	var l := _lbl()
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return l
+
 var _candidates: Array[Worker] = []
 var _dirty_crew: bool = false
 var _dirty_all: bool = false
@@ -64,7 +69,7 @@ func _refresh_crew() -> void:
 	crew_count.text = "%d crew (%d available)" % [total, available]
 
 	if GameState.workers.is_empty():
-		var label := Label.new()
+		var label := _lbl()
 		label.text = "No crew hired yet"
 		label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		workers_list.add_child(label)
@@ -79,12 +84,12 @@ func _refresh_crew() -> void:
 		info_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		info_vbox.add_theme_constant_override("separation", 2)
 
-		var name_label := Label.new()
+		var name_label := _lbl()
 		name_label.text = worker.worker_name
 		name_label.add_theme_font_size_override("font_size", 18)
 		info_vbox.add_child(name_label)
 
-		var details := Label.new()
+		var details := _lbl()
 		var status_text: String
 		var status_color: Color
 		match worker.leave_status:
@@ -120,7 +125,7 @@ func _refresh_crew() -> void:
 		info_vbox.add_child(details)
 
 		# Personality trait
-		var personality_label := Label.new()
+		var personality_label := _lbl()
 		personality_label.text = "%s — %s" % [worker.get_personality_name(), worker.get_personality_description()]
 		personality_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		personality_label.add_theme_color_override("font_color", Color(0.75, 0.65, 0.9))
@@ -135,7 +140,7 @@ func _refresh_crew() -> void:
 		if worker.pilot_skill >= 0.1 or worker.pilot_xp > 0.0:
 			var pilot_vbox := VBoxContainer.new()
 			pilot_vbox.add_theme_constant_override("separation", 2)
-			var pilot_label := Label.new()
+			var pilot_label := _lbl()
 			pilot_label.text = "Pilot %.2f" % worker.pilot_skill
 			pilot_label.add_theme_color_override("font_color", Color(0.4, 0.7, 1.0))
 			pilot_vbox.add_child(pilot_label)
@@ -150,7 +155,7 @@ func _refresh_crew() -> void:
 		if worker.engineer_skill >= 0.1 or worker.engineer_xp > 0.0:
 			var eng_vbox := VBoxContainer.new()
 			eng_vbox.add_theme_constant_override("separation", 2)
-			var eng_label := Label.new()
+			var eng_label := _lbl()
 			eng_label.text = "Eng %.2f" % worker.engineer_skill
 			eng_label.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
 			eng_vbox.add_child(eng_label)
@@ -165,7 +170,7 @@ func _refresh_crew() -> void:
 		if worker.mining_skill >= 0.1 or worker.mining_xp > 0.0:
 			var mine_vbox := VBoxContainer.new()
 			mine_vbox.add_theme_constant_override("separation", 2)
-			var mine_label := Label.new()
+			var mine_label := _lbl()
 			mine_label.text = "Mining %.2f" % worker.mining_skill
 			mine_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 			mine_vbox.add_child(mine_label)
@@ -209,7 +214,7 @@ func _refresh_candidates() -> void:
 		var hbox := HBoxContainer.new()
 		hbox.add_theme_constant_override("separation", 8)
 
-		var info := Label.new()
+		var info := _lbl()
 		info.text = "%s  |  %s  |  $%d/pay  |  %s" % [
 			candidate.worker_name, candidate.get_specialties_text(), candidate.wage, candidate.get_personality_name()
 		]
@@ -227,7 +232,7 @@ func _refresh_candidates() -> void:
 		candidates_list.add_child(panel)
 
 	if candidates_list.get_child_count() == 0:
-		var label := Label.new()
+		var label := _lbl()
 		label.text = "All candidates hired. Press New Candidates for more."
 		label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

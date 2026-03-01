@@ -9,6 +9,11 @@ static func _free_children(container: Node) -> void:
 	for i in range(container.get_child_count() - 1, -1, -1):
 		container.get_child(i).free()
 
+static func _lbl() -> Label:
+	var l := _lbl()
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return l
+
 var _dirty_sell: bool = false
 var _dirty_equip: bool = false
 var _dirty_contracts: bool = false
@@ -70,7 +75,7 @@ func _refresh_sell() -> void:
 
 	# Active Market Events
 	if not GameState.active_market_events.is_empty():
-		var events_header := Label.new()
+		var events_header := _lbl()
 		events_header.text = "ACTIVE MARKET EVENTS"
 		events_header.add_theme_font_size_override("font_size", 16)
 		events_header.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
@@ -82,7 +87,7 @@ func _refresh_sell() -> void:
 			var event_vbox := VBoxContainer.new()
 			event_vbox.add_theme_constant_override("separation", 4)
 
-			var event_title := Label.new()
+			var event_title := _lbl()
 			event_title.text = event.get_display_text()
 			event_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			event_title.clip_text = true
@@ -93,7 +98,7 @@ func _refresh_sell() -> void:
 				event_title.add_theme_color_override("font_color", Color(0.9, 0.4, 0.3))
 			event_vbox.add_child(event_title)
 
-			var event_desc := Label.new()
+			var event_desc := _lbl()
 			event_desc.text = event.event_description
 			event_desc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			event_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -147,7 +152,7 @@ func _refresh_sell() -> void:
 				trend = " v"
 				trend_color = Color(0.9, 0.4, 0.3)
 
-		var info := Label.new()
+		var info := _lbl()
 		info.text = "%s: %.1f t  @  $%.0f/t (base $%.0f)%s" % [
 			ResourceTypes.get_ore_name(ore_type), amount, price, base_price, trend
 		]
@@ -175,7 +180,7 @@ func _refresh_equip() -> void:
 
 	# Show fabrication queue
 	if not GameState.fabrication_queue.is_empty():
-		var fab_header := Label.new()
+		var fab_header := _lbl()
 		fab_header.text = "FABRICATION QUEUE"
 		fab_header.add_theme_font_size_override("font_size", 16)
 		fab_header.add_theme_color_override("font_color", Color(0.8, 0.7, 0.2))
@@ -187,13 +192,13 @@ func _refresh_equip() -> void:
 			var fab_hbox := HBoxContainer.new()
 			fab_hbox.add_theme_constant_override("separation", 8)
 
-			var fab_info := Label.new()
+			var fab_info := _lbl()
 			fab_info.text = "%s (%.2fx)" % [equip.equipment_name, equip.mining_bonus]
 			fab_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			fab_info.clip_text = true
 			fab_hbox.add_child(fab_info)
 
-			var time_label := Label.new()
+			var time_label := _lbl()
 			var time_str := _format_time(equip.fabrication_ticks)
 			time_label.text = "Ready in: %s" % time_str
 			time_label.add_theme_color_override("font_color", Color(0.9, 0.8, 0.3))
@@ -221,14 +226,14 @@ func _refresh_equip() -> void:
 			ready_items.append(equip)
 
 	if not ready_items.is_empty():
-		var inv_header := Label.new()
+		var inv_header := _lbl()
 		inv_header.text = "Inventory (ready to install):"
 		inv_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 		equip_list.add_child(inv_header)
 		for equip in ready_items:
 			var inv_row := HBoxContainer.new()
 			inv_row.add_theme_constant_override("separation", 8)
-			var inv_info := Label.new()
+			var inv_info := _lbl()
 			inv_info.text = "%s (%.2fx mining)" % [equip.equipment_name, equip.mining_bonus]
 			inv_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			inv_info.clip_text = true
@@ -258,7 +263,7 @@ func _refresh_equip() -> void:
 		var ship_vbox := VBoxContainer.new()
 		ship_vbox.add_theme_constant_override("separation", 4)
 
-		var ship_header := Label.new()
+		var ship_header := _lbl()
 		ship_header.text = "%s  [%d/%d slots]" % [
 			ship.ship_name, ship.equipment.size(), ship.max_equipment_slots
 		]
@@ -269,7 +274,7 @@ func _refresh_equip() -> void:
 
 		# Show installed equipment with durability and repair buttons
 		if ship.equipment.is_empty():
-			var empty_label := Label.new()
+			var empty_label := _lbl()
 			empty_label.text = "No equipment installed"
 			empty_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 			ship_vbox.add_child(empty_label)
@@ -278,7 +283,7 @@ func _refresh_equip() -> void:
 				var eq_row := HBoxContainer.new()
 				eq_row.add_theme_constant_override("separation", 8)
 
-				var eq_info := Label.new()
+				var eq_info := _lbl()
 				var status_str := ""
 				if equip.durability <= 0:
 					status_str = " (BROKEN)"
@@ -326,7 +331,7 @@ func _refresh_equip() -> void:
 		# Buy buttons for available equipment (only if ship has open slots and is docked)
 		var has_open_slot: bool = ship.equipment.size() < ship.max_equipment_slots
 		if has_open_slot and ship.is_docked:
-			var buy_label := Label.new()
+			var buy_label := _lbl()
 			buy_label.text = "Buy Equipment (goes to inventory for fabrication):"
 			buy_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			buy_label.clip_text = true
@@ -337,7 +342,7 @@ func _refresh_equip() -> void:
 				var buy_row := HBoxContainer.new()
 				buy_row.add_theme_constant_override("separation", 8)
 				var fab_time: float = entry.get("fabrication_ticks", 0.0)
-				var info := Label.new()
+				var info := _lbl()
 				info.text = "%s  %.2fx  $%s  (fab: %s)" % [
 					entry.get("name", ""), entry.get("mining_bonus", 1.0),
 					_format_number(entry.get("cost", 0)), _format_time(fab_time)
@@ -354,7 +359,7 @@ func _refresh_equip() -> void:
 				buy_row.add_child(btn)
 				ship_vbox.add_child(buy_row)
 		elif not has_open_slot:
-			var full_label := Label.new()
+			var full_label := _lbl()
 			full_label.text = "All slots full - remove equipment to make room"
 			full_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			full_label.clip_text = true
@@ -371,7 +376,7 @@ func _refresh_equip() -> void:
 	var upgrades_sep := HSeparator.new()
 	equip_list.add_child(upgrades_sep)
 
-	var upgrades_header := Label.new()
+	var upgrades_header := _lbl()
 	upgrades_header.text = "SHIP UPGRADES"
 	upgrades_header.add_theme_font_size_override("font_size", 20)
 	upgrades_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
@@ -383,13 +388,13 @@ func _refresh_equip() -> void:
 	var docked_ships := GameState.get_docked_ships()
 
 	# ── MODULAR UPGRADES ─────────────────────────────────────────────────────
-	var modular_header := Label.new()
+	var modular_header := _lbl()
 	modular_header.text = "Modular Upgrades"
 	modular_header.add_theme_font_size_override("font_size", 16)
 	modular_header.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
 	equip_list.add_child(modular_header)
 
-	var modular_note := Label.new()
+	var modular_note := _lbl()
 	modular_note.text = "Physical units. Buy to inventory, then install on any docked ship."
 	modular_note.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
 	modular_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -399,7 +404,7 @@ func _refresh_equip() -> void:
 	for upgrade in GameState.upgrade_inventory:
 		var upgrade_row := HBoxContainer.new()
 		upgrade_row.add_theme_constant_override("separation", 8)
-		var upgrade_info := Label.new()
+		var upgrade_info := _lbl()
 		upgrade_info.text = "[In inventory] %s — %s" % [upgrade.upgrade_name, upgrade.description]
 		upgrade_info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		upgrade_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -419,7 +424,7 @@ func _refresh_equip() -> void:
 	for entry in modular_catalog:
 		var buy_row := HBoxContainer.new()
 		buy_row.add_theme_constant_override("separation", 8)
-		var info := Label.new()
+		var info := _lbl()
 		info.text = "%s — %s ($%s)" % [entry["name"], entry["description"], _format_number(entry["cost"])]
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -439,13 +444,13 @@ func _refresh_equip() -> void:
 	var dry_sep := HSeparator.new()
 	equip_list.add_child(dry_sep)
 
-	var dry_header := Label.new()
+	var dry_header := _lbl()
 	dry_header.text = "Dry Dock Work"
 	dry_header.add_theme_font_size_override("font_size", 16)
 	dry_header.add_theme_color_override("font_color", Color(1.0, 0.75, 0.4))
 	equip_list.add_child(dry_header)
 
-	var dry_note := Label.new()
+	var dry_note := _lbl()
 	dry_note.text = "Structural modifications. Commissioned directly on a docked ship — hull cuts, rebuilds, conversions."
 	dry_note.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
 	dry_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -454,13 +459,13 @@ func _refresh_equip() -> void:
 	for entry in dry_dock_catalog:
 		var dry_row := VBoxContainer.new()
 		dry_row.add_theme_constant_override("separation", 4)
-		var info := Label.new()
+		var info := _lbl()
 		info.text = "%s — %s ($%s)" % [entry["name"], entry["description"], _format_number(entry["cost"])]
 		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		dry_row.add_child(info)
 		if docked_ships.is_empty():
-			var no_ship := Label.new()
+			var no_ship := _lbl()
 			no_ship.text = "No ships docked."
 			no_ship.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 			dry_row.add_child(no_ship)
@@ -491,7 +496,7 @@ func _refresh_contracts() -> void:
 
 	# Active contracts
 	if not GameState.active_contracts.is_empty():
-		var active_header := Label.new()
+		var active_header := _lbl()
 		active_header.text = "Active Contracts:"
 		active_header.add_theme_font_size_override("font_size", 18)
 		active_header.add_theme_color_override("font_color", Color(0.3, 0.8, 1.0))
@@ -503,7 +508,7 @@ func _refresh_contracts() -> void:
 			var vbox := VBoxContainer.new()
 			vbox.add_theme_constant_override("separation", 4)
 
-			var info := Label.new()
+			var info := _lbl()
 			var ore_name := ResourceTypes.get_ore_name(contract.ore_type)
 			var have: float = GameState.resources.get(contract.ore_type, 0.0)
 			var delivery_loc := contract.get_delivery_location_text()
@@ -539,7 +544,7 @@ func _refresh_contracts() -> void:
 			)
 			hbox.add_child(fulfill_btn)
 
-			var note := Label.new()
+			var note := _lbl()
 			note.text = "(Or deliver from ship at colony)"
 			note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			note.clip_text = true
@@ -554,13 +559,13 @@ func _refresh_contracts() -> void:
 		contracts_list.add_child(sep)
 
 	# Available contracts
-	var avail_header := Label.new()
+	var avail_header := _lbl()
 	avail_header.text = "Available Contracts:"
 	avail_header.add_theme_font_size_override("font_size", 18)
 	contracts_list.add_child(avail_header)
 
 	if GameState.available_contracts.is_empty():
-		var empty := Label.new()
+		var empty := _lbl()
 		empty.text = "No contracts available - check back later"
 		empty.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		contracts_list.add_child(empty)
@@ -571,7 +576,7 @@ func _refresh_contracts() -> void:
 			var hbox := HBoxContainer.new()
 			hbox.add_theme_constant_override("separation", 8)
 
-			var info := Label.new()
+			var info := _lbl()
 			var ore_name := ResourceTypes.get_ore_name(contract.ore_type)
 			var delivery_loc := contract.get_delivery_location_text()
 			var partial_text := " (partial OK)" if contract.allows_partial else " (all or nothing)"
@@ -628,7 +633,7 @@ func _refresh_colony() -> void:
 		var colony_pos := colony.get_position_au()
 		var dist_from_earth := earth_pos.distance_to(colony_pos)
 
-		var header := Label.new()
+		var header := _lbl()
 		header.text = "%s (%.2f AU from Earth)" % [colony.colony_name, dist_from_earth]
 		header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		header.clip_text = true
@@ -655,7 +660,7 @@ func _refresh_colony() -> void:
 				prices_text += "\n"
 
 		if prices_text != "":
-			var prices_label := Label.new()
+			var prices_label := _lbl()
 			prices_label.text = prices_text.strip_edges()
 			prices_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			prices_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

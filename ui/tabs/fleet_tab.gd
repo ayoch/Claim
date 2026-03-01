@@ -4,6 +4,11 @@ static func _free_children(container: Node) -> void:
 	for i in range(container.get_child_count() - 1, -1, -1):
 		container.get_child(i).free()
 
+static func _lbl() -> Label:
+	var l := _lbl()
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return l
+
 @onready var ships_list: VBoxContainer = %ShipsList
 @onready var dispatch_popup: PanelContainer = %DispatchPopup
 @onready var dispatch_content: VBoxContainer = %DispatchContent
@@ -164,14 +169,14 @@ func _rebuild_ships() -> void:
 
 		var header := VBoxContainer.new()
 		header.add_theme_constant_override("separation", 2)
-		var name_label := Label.new()
+		var name_label := _lbl()
 		name_label.text = "%s (%s)" % [ship.ship_name, ship.get_class_name()]
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		header.add_child(name_label)
 
 		var _derelict_actions: HFlowContainer = null  # Populated below for derelict ships
 		if ship.is_derelict:
-			var status := Label.new()
+			var status := _lbl()
 			var status_text := "STRANDED (OUT OF FUEL)" if ship.derelict_reason == "out_of_fuel" else "DERELICT (BREAKDOWN)"
 			if ship.speed_au_per_tick > 0.0:
 				var speed_km_s := ship.speed_au_per_tick * CelestialData.AU_TO_METERS / 1000.0
@@ -191,7 +196,7 @@ func _rebuild_ships() -> void:
 				var progress: float = elapsed / total
 				var remaining := total - elapsed
 				var source_name: String = refuel_data.get("source_name", "Earth")
-				var refuel_label := Label.new()
+				var refuel_label := _lbl()
 				refuel_label.text = "Refuel: %d%% — ETA %s from %s" % [int(progress * 100), TimeScale.format_time(remaining), source_name]
 				refuel_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
 				_derelict_actions.add_child(refuel_label)
@@ -203,7 +208,7 @@ func _rebuild_ships() -> void:
 				var progress: float = elapsed / total
 				var remaining := total - elapsed
 				var source_name: String = rescue_data.get("source_name", "Earth")
-				var rescue_label := Label.new()
+				var rescue_label := _lbl()
 				rescue_label.text = "Rescue: %d%% — ETA %s from %s" % [int(progress * 100), TimeScale.format_time(remaining), source_name]
 				rescue_label.add_theme_color_override("font_color", Color(0.9, 0.6, 0.2))
 				_derelict_actions.add_child(rescue_label)
@@ -213,7 +218,7 @@ func _rebuild_ships() -> void:
 					var offer: Dictionary = GameState.stranger_offers[ship]
 					var stranger_name: String = offer["stranger_name"]
 					var tip: int = offer["suggested_tip"]
-					var offer_label := Label.new()
+					var offer_label := _lbl()
 					offer_label.text = "A passing vessel (%s) is offering assistance" % stranger_name
 					offer_label.add_theme_color_override("font_color", Color(1.0, 0.9, 0.3))
 					offer_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -274,7 +279,7 @@ func _rebuild_ships() -> void:
 					)
 					_derelict_actions.add_child(rescue_btn)
 		elif ship.is_docked:
-			var status := Label.new()
+			var status := _lbl()
 			var location := "Earth"
 			if ship.docked_at_colony != null:
 				location = ship.docked_at_colony.colony_name
@@ -288,7 +293,7 @@ func _rebuild_ships() -> void:
 			dispatch_btn.pressed.connect(_start_dispatch.bind(ship))
 			header.add_child(dispatch_btn)
 		elif ship.is_idle_remote:
-			var status := Label.new()
+			var status := _lbl()
 			if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
 				status.text = "Idle at " + ship.current_mission.asteroid.asteroid_name
 			elif ship.current_trade_mission and ship.current_trade_mission.status == TradeMission.Status.IDLE_AT_COLONY:
@@ -314,7 +319,7 @@ func _rebuild_ships() -> void:
 				if tm.status == TradeMission.Status.REFUELING:
 					extra_text = tm.get_status_text()
 			if extra_text != "":
-				var status := Label.new()
+				var status := _lbl()
 				status.text = extra_text
 				status.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
 				status.add_theme_font_size_override("font_size", 12)
@@ -343,7 +348,7 @@ func _rebuild_ships() -> void:
 			progress.value = progress_value * 100.0
 			bar_wrapper.add_child(progress)
 
-			var bar_label := Label.new()
+			var bar_label := _lbl()
 			bar_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 			bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			bar_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -355,7 +360,7 @@ func _rebuild_ships() -> void:
 			_progress_bars[ship] = progress
 			_route_labels[ship] = bar_label
 
-		var details := Label.new()
+		var details := _lbl()
 		details.text = _build_details_text(ship)
 		details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		details.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -443,7 +448,7 @@ func _rebuild_ships() -> void:
 				var equip_row := HBoxContainer.new()
 				equip_row.add_theme_constant_override("separation", 6)
 
-				var equip_label := Label.new()
+				var equip_label := _lbl()
 				var dur_str := "%d%%" % int(e.durability)
 				var broken_str := ""
 				if e.durability <= 0:
@@ -469,7 +474,7 @@ func _rebuild_ships() -> void:
 
 		# Policy overrides section (non-derelict ships only)
 		if not ship.is_derelict:
-			var policy_header := Label.new()
+			var policy_header := _lbl()
 			policy_header.text = "Policy Overrides"
 			policy_header.add_theme_font_size_override("font_size", 11)
 			policy_header.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
@@ -508,7 +513,7 @@ func _rebuild_ships() -> void:
 			]
 
 			for pd in policy_defs:
-				var lbl := Label.new()
+				var lbl := _lbl()
 				lbl.text = pd["label"] + ":"
 				lbl.add_theme_font_size_override("font_size", 11)
 				lbl.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
@@ -550,14 +555,14 @@ func _rebuild_ships() -> void:
 			var row := HBoxContainer.new()
 			row.add_theme_constant_override("separation", 8)
 
-			var name_lbl := Label.new()
+			var name_lbl := _lbl()
 			name_lbl.text = w.worker_name
 			name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			name_lbl.clip_text = true
 			name_lbl.add_theme_font_size_override("font_size", 12)
 			row.add_child(name_lbl)
 
-			var skills_lbl := Label.new()
+			var skills_lbl := _lbl()
 			var parts: Array[String] = []
 			if w.pilot_skill >= 0.05:
 				parts.append("P%.2f" % w.pilot_skill)
@@ -570,7 +575,7 @@ func _rebuild_ships() -> void:
 			skills_lbl.add_theme_color_override("font_color", Color(0.6, 0.85, 1.0))
 			row.add_child(skills_lbl)
 
-			var fatigue_lbl := Label.new()
+			var fatigue_lbl := _lbl()
 			fatigue_lbl.text = "Fatigue %d%%" % int(w.fatigue)
 			fatigue_lbl.add_theme_font_size_override("font_size", 11)
 			if w.fatigue >= 80.0:
@@ -582,7 +587,7 @@ func _rebuild_ships() -> void:
 			crew_panel.add_child(row)
 
 		if ship_crew.is_empty():
-			var empty_lbl := Label.new()
+			var empty_lbl := _lbl()
 			empty_lbl.text = "No crew assigned"
 			empty_lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
 			empty_lbl.add_theme_font_size_override("font_size", 12)
@@ -676,13 +681,13 @@ func _show_asteroid_selection() -> void:
 
 	_clear_dispatch_content()
 
-	var title := Label.new()
+	var title := _lbl()
 	title.text = "Select Destination"
 	title.add_theme_font_size_override("font_size", 20)
 	dispatch_content.add_child(title)
 
 	# Show ship origin info and cargo
-	var origin_label := Label.new()
+	var origin_label := _lbl()
 	var cargo_total := _selected_ship.get_cargo_total()
 	if cargo_total > 0:
 		origin_label.text = "Dispatching from: %s (%.1ft cargo)" % [_get_location_text(_selected_ship), cargo_total]
@@ -694,7 +699,7 @@ func _show_asteroid_selection() -> void:
 	# If ship has cargo, show colonies first
 	if cargo_total > 0:
 		# Fixed header for market destinations
-		var colonies_header := Label.new()
+		var colonies_header := _lbl()
 		colonies_header.text = "MARKET DESTINATIONS"
 		colonies_header.add_theme_font_size_override("font_size", 18)
 		colonies_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
@@ -784,7 +789,7 @@ func _show_asteroid_selection() -> void:
 
 			# Show fuel stop route as clickable buttons
 			if not fuel_route.is_empty():
-				var route_label := Label.new()
+				var route_label := _lbl()
 				route_label.text = "  Fuel stops needed:"
 				route_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
 				colony_row.add_child(route_label)
@@ -823,7 +828,7 @@ func _show_asteroid_selection() -> void:
 		dispatch_content.add_child(sep)
 
 	# Fixed header for mining destinations
-	var mining_header := Label.new()
+	var mining_header := _lbl()
 	mining_header.text = "MINING DESTINATIONS"
 	mining_header.add_theme_font_size_override("font_size", 18)
 	mining_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
@@ -941,7 +946,7 @@ func _show_asteroid_selection() -> void:
 
 		# Show fuel stop route as clickable buttons
 		if not fuel_route.is_empty():
-			var route_label := Label.new()
+			var route_label := _lbl()
 			route_label.text = "  Fuel stops needed:"
 			route_label.add_theme_color_override("font_color", Color(0.3, 0.8, 0.9))
 			dest_row.add_child(route_label)
@@ -1067,26 +1072,26 @@ func _show_worker_selection() -> void:
 	# Show trajectory preview on map
 	EventBus.mission_preview_started.emit(_selected_ship, _selected_asteroid.get_position_au())
 
-	var title := Label.new()
+	var title := _lbl()
 	title.text = "Assign Crew"
 	title.add_theme_font_size_override("font_size", 20)
 	dispatch_content.add_child(title)
 
-	var dest_label := Label.new()
+	var dest_label := _lbl()
 	dest_label.text = "Destination: %s (%s)" % [
 		_selected_asteroid.asteroid_name, _selected_asteroid.get_type_name()
 	]
 	dest_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dispatch_content.add_child(dest_label)
 
-	var ore_label := Label.new()
+	var ore_label := _lbl()
 	ore_label.text = "Resources: %s" % _get_ore_summary(_selected_asteroid)
 	ore_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dispatch_content.add_child(ore_label)
 
 	# Distance from ship position
 	var dist := _selected_ship.position_au.distance_to(_selected_asteroid.get_position_au())
-	var dist_label := Label.new()
+	var dist_label := _lbl()
 	dist_label.text = "Distance: %.2f AU from ship" % dist
 	dist_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
 	dispatch_content.add_child(dist_label)
@@ -1094,14 +1099,14 @@ func _show_worker_selection() -> void:
 	var sep := HSeparator.new()
 	dispatch_content.add_child(sep)
 
-	var crew_label := Label.new()
+	var crew_label := _lbl()
 	crew_label.text = "Minimum crew: %d" % _selected_ship.min_crew
 	crew_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	dispatch_content.add_child(crew_label)
 
 	var available := GameState.get_available_workers()
 	if available.size() < _selected_ship.min_crew:
-		var label := Label.new()
+		var label := _lbl()
 		label.text = "Not enough crew! Need %d, have %d available. Hire more first." % [
 			_selected_ship.min_crew, available.size()
 		]
@@ -1161,7 +1166,7 @@ func _show_worker_selection() -> void:
 	var est_vbox := VBoxContainer.new()
 	est_vbox.add_theme_constant_override("separation", 4)
 
-	var est_title := Label.new()
+	var est_title := _lbl()
 	est_title.text = "MISSION ESTIMATE"
 	est_title.add_theme_font_size_override("font_size", 14)
 	est_vbox.add_child(est_title)
@@ -1183,7 +1188,7 @@ func _show_worker_selection() -> void:
 	)
 	thrust_control_row.add_child(manual_thrust_btn)
 
-	var ai_label := Label.new()
+	var ai_label := _lbl()
 	ai_label.name = "AIThrustLabel"
 	ai_label.text = "AI: %.0f%% (%s)" % [_selected_ship.thrust_setting * 100.0, CompanyPolicy.THRUST_POLICY_NAMES[GameState.thrust_policy]]
 	ai_label.add_theme_color_override("font_color", Color(0.5, 0.9, 0.5))
@@ -1197,7 +1202,7 @@ func _show_worker_selection() -> void:
 	thrust_slider_row.visible = false
 	thrust_slider_row.add_theme_constant_override("separation", 8)
 
-	var thrust_label := Label.new()
+	var thrust_label := _lbl()
 	thrust_label.text = "Thrust:"
 	thrust_label.custom_minimum_size = Vector2(60, 0)
 	thrust_slider_row.add_child(thrust_label)
@@ -1216,7 +1221,7 @@ func _show_worker_selection() -> void:
 	)
 	thrust_slider_row.add_child(thrust_slider)
 
-	var thrust_pct_label := Label.new()
+	var thrust_pct_label := _lbl()
 	thrust_pct_label.name = "ThrustPctLabel"
 	thrust_pct_label.text = "%.0f%%" % (_selected_ship.thrust_setting * 100.0)
 	thrust_pct_label.custom_minimum_size = Vector2(50, 0)
@@ -1224,7 +1229,7 @@ func _show_worker_selection() -> void:
 
 	est_vbox.add_child(thrust_slider_row)
 
-	var est_details := Label.new()
+	var est_details := _lbl()
 	est_details.name = "EstimateDetails"
 	est_details.text = "Select crew to see estimate"
 	est_vbox.add_child(est_details)

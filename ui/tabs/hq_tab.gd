@@ -1,5 +1,10 @@
 extends MarginContainer
 
+static func _lbl() -> Label:
+	var l := _lbl()
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return l
+
 @onready var money_label: Label = %MoneyLabel
 @onready var missions_list: VBoxContainer = %MissionsList
 @onready var resources_list: VBoxContainer = %ResourcesList
@@ -294,7 +299,7 @@ func _setup_stationed_ships_panel() -> void:
 	var card_vbox := VBoxContainer.new()
 	card_vbox.add_theme_constant_override("separation", 8)
 
-	var title := Label.new()
+	var title := _lbl()
 	title.text = "STATIONED SHIPS"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.clip_text = true
@@ -341,7 +346,7 @@ func _refresh_stationed_ships() -> void:
 		ship_vbox.add_theme_constant_override("separation", 2)
 		ship_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-		var header := Label.new()
+		var header := _lbl()
 		header.text = "%s @ %s" % [ship.ship_name, ship.station_colony.colony_name if ship.station_colony else "Unknown"]
 		header.add_theme_font_size_override("font_size", 16)
 		header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -349,7 +354,7 @@ func _refresh_stationed_ships() -> void:
 		ship_vbox.add_child(header)
 
 		# Current status
-		var status_label := Label.new()
+		var status_label := _lbl()
 		status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		status_label.clip_text = true
 		if ship.is_stationed_idle:
@@ -372,7 +377,7 @@ func _refresh_stationed_ships() -> void:
 
 		# Cargo
 		if ship.get_cargo_total() > 0.1:
-			var cargo_label := Label.new()
+			var cargo_label := _lbl()
 			cargo_label.text = "Cargo: %.0ft / %.0ft" % [ship.get_cargo_total(), ship.get_effective_cargo_capacity()]
 			cargo_label.add_theme_color_override("font_color", Color(0.7, 0.9, 0.7))
 			cargo_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -384,7 +389,7 @@ func _refresh_stationed_ships() -> void:
 			var log_entry: Dictionary = ship.station_log[0]
 			var elapsed := GameState.total_ticks - float(log_entry["time"])
 			var time_str := TimeScale.format_time(elapsed) + " ago" if elapsed > 0 else "just now"
-			var log_label := Label.new()
+			var log_label := _lbl()
 			log_label.text = "Last: %s (%s)" % [log_entry["message"], time_str]
 			log_label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
 			log_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -405,7 +410,7 @@ func _setup_discipline_panel() -> void:
 	var card_vbox := VBoxContainer.new()
 	card_vbox.add_theme_constant_override("separation", 8)
 
-	var title := Label.new()
+	var title := _lbl()
 	title.text = "CREW DISCIPLINE"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.clip_text = true
@@ -458,7 +463,7 @@ func _refresh_discipline() -> void:
 		entry_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 		# Name
-		var name_label := Label.new()
+		var name_label := _lbl()
 		name_label.text = worker.worker_name
 		name_label.add_theme_font_size_override("font_size", 20)
 		name_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
@@ -467,7 +472,7 @@ func _refresh_discipline() -> void:
 		entry_vbox.add_child(name_label)
 
 		# Skills / wage / tenure / loyalty
-		var info_label := Label.new()
+		var info_label := _lbl()
 		var tenure_days := int(worker.days_at_company)
 		info_label.text = "%s  |  $%d/day  |  %d days at company  |  Loyalty: %d" % [
 			worker.get_specialties_text(), worker.wage, tenure_days, int(worker.loyalty)
@@ -478,7 +483,7 @@ func _refresh_discipline() -> void:
 		entry_vbox.add_child(info_label)
 
 		# Home colony
-		var home_label := Label.new()
+		var home_label := _lbl()
 		home_label.text = "Home: %s" % worker.home_colony
 		home_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 		home_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -486,7 +491,7 @@ func _refresh_discipline() -> void:
 		entry_vbox.add_child(home_label)
 
 		# Reason
-		var reason_label := Label.new()
+		var reason_label := _lbl()
 		reason_label.text = "Reason: %s" % reason
 		reason_label.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
 		reason_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -495,7 +500,7 @@ func _refresh_discipline() -> void:
 
 		# Late by
 		var late_days := (GameState.total_ticks - tardy_since) / 86400.0
-		var late_label := Label.new()
+		var late_label := _lbl()
 		late_label.text = "Late by: %.1f days" % late_days
 		late_label.add_theme_color_override("font_color", Color(0.9, 0.4, 0.3))
 		late_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -537,7 +542,7 @@ func _setup_colony_standing_panel() -> void:
 	var card_vbox := VBoxContainer.new()
 	card_vbox.add_theme_constant_override("separation", 8)
 
-	var title := Label.new()
+	var title := _lbl()
 	title.text = "COLONY STANDING"
 	title.name = "Title"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -595,7 +600,7 @@ func _refresh_colony_standing() -> void:
 		entry_vbox.add_theme_constant_override("separation", 6)
 
 		# Colony name
-		var name_label := Label.new()
+		var name_label := _lbl()
 		name_label.text = colony.colony_name
 		name_label.add_theme_font_size_override("font_size", 16)
 		var color := Color(1.0, 0.2, 0.2) if colony.player_banned else Color(1.0, 0.6, 0.1)
@@ -604,7 +609,7 @@ func _refresh_colony_standing() -> void:
 
 		# Status
 		var active_count := colony.get_active_violation_count(GameState.total_ticks)
-		var status_label := Label.new()
+		var status_label := _lbl()
 		if colony.player_banned:
 			status_label.text = "❌ BANNED"
 			status_label.add_theme_color_override("font_color", Color(1.0, 0.0, 0.0))
@@ -622,7 +627,7 @@ func _refresh_colony_standing() -> void:
 				break
 			var reason: String = violation["reason"]
 			var days_ago := (GameState.total_ticks - float(violation["timestamp"])) / 86400.0
-			var v_label := Label.new()
+			var v_label := _lbl()
 			v_label.text = "  • %s (%.1f days ago)" % [reason, days_ago]
 			v_label.add_theme_color_override("font_color", Color(0.8, 0.5, 0.5))
 			v_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -641,7 +646,7 @@ func _setup_warnings_panel() -> void:
 	var card_vbox := VBoxContainer.new()
 	card_vbox.add_theme_constant_override("separation", 8)
 
-	var title := Label.new()
+	var title := _lbl()
 	title.text = "⚠️ ACTIVE WARNINGS"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.clip_text = true
@@ -691,7 +696,7 @@ func _refresh_warnings() -> void:
 		warning_hbox.add_theme_constant_override("separation", 12)
 
 		# Warning message
-		var msg_label := Label.new()
+		var msg_label := _lbl()
 		msg_label.text = warning["message"]
 		msg_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		msg_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -724,7 +729,7 @@ func _setup_policies_ui() -> void:
 	policies_vbox.add_theme_constant_override("separation", 8)
 
 	var title_row := HBoxContainer.new()
-	var title := Label.new()
+	var title := _lbl()
 	title.text = "COMPANY POLICIES"
 	title.add_theme_font_size_override("font_size", 14)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -787,7 +792,7 @@ func _setup_policies_ui() -> void:
 	) -> void:
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
-		var lbl := Label.new()
+		var lbl := _lbl()
 		lbl.text = label_text
 		lbl.custom_minimum_size = Vector2(130, 0)
 		lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
@@ -798,7 +803,7 @@ func _setup_policies_ui() -> void:
 		for key in names.keys():
 			opt.add_item(names[key])
 		opt.selected = get_fn.call()
-		var desc := Label.new()
+		var desc := _lbl()
 		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		desc.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 		desc.add_theme_font_size_override("font_size", 11)
@@ -978,13 +983,13 @@ func _refresh_resources() -> void:
 		var amount: float = GameState.resources.get(ore_type, 0.0)
 		if amount > 0.01:
 			var price: float = MarketData.get_ore_price(ore_type)
-			var label := Label.new()
+			var label := _lbl()
 			label.text = "%s: %.1f t ($%.0f/t)" % [ResourceTypes.get_ore_name(ore_type), amount, price]
 			label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			label.clip_text = true
 			resources_list.add_child(label)
 	if resources_list.get_child_count() == 0:
-		var label := Label.new()
+		var label := _lbl()
 		label.text = "No resources in stockpile"
 		label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		resources_list.add_child(label)
@@ -993,7 +998,7 @@ func _refresh_resources() -> void:
 	if not GameState.deployed_mining_units.is_empty() or not GameState.ore_stockpiles.is_empty():
 		var claims_sep := HSeparator.new()
 		resources_list.add_child(claims_sep)
-		var claims_header := Label.new()
+		var claims_header := _lbl()
 		claims_header.text = "MINING CLAIMS"
 		claims_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		claims_header.add_theme_font_size_override("font_size", 16)
@@ -1020,7 +1025,7 @@ func _refresh_resources() -> void:
 					max_slots = a.get_max_mining_slots()
 					break
 
-			var header_label := Label.new()
+			var header_label := _lbl()
 			header_label.text = "%s  [%d/%d slots]" % [asteroid_name, units.size(), max_slots]
 			header_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			header_label.clip_text = true
@@ -1037,7 +1042,7 @@ func _refresh_resources() -> void:
 				var unit_row := HBoxContainer.new()
 				unit_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				unit_row.add_theme_constant_override("separation", 8)
-				var unit_label := Label.new()
+				var unit_label := _lbl()
 				var rebuild_warn := " [RECALL FOR REBUILD]" if unit.needs_rebuild() else ""
 				unit_label.text = "  %s: %.0f/%.0f%% dur, %.1fx mult%s" % [
 					unit.unit_name, unit.durability, unit.max_durability, unit.get_effective_multiplier(), rebuild_warn
@@ -1067,7 +1072,7 @@ func _refresh_resources() -> void:
 					var tons: float = pile[ore_type]
 					total_tons += tons
 					total_value += tons * MarketData.get_ore_price(ore_type)
-				var stockpile_label := Label.new()
+				var stockpile_label := _lbl()
 				stockpile_label.text = "  Stockpile: %.1ft ($%s)" % [total_tons, _format_number(int(total_value))]
 				stockpile_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 				stockpile_label.clip_text = true
@@ -1081,7 +1086,7 @@ func _refresh_resources() -> void:
 			var food_val: float = supplies.get("food", 0.0)
 			var parts_val: float = supplies.get("repair_parts", 0.0)
 			if food_val > 0.0 or parts_val > 0.0:
-				var sup_label := Label.new()
+				var sup_label := _lbl()
 				var food_str := "%.1fd" % food_days if food_days < INF else "—"
 				var parts_str := "%.1fd" % parts_days if parts_days < INF else "—"
 				sup_label.text = "  Food: %.2f u (%s)  Parts: %.2f u (%s)" % [food_val, food_str, parts_val, parts_str]
@@ -1115,7 +1120,7 @@ func _refresh_missions() -> void:
 	for mission: Mission in GameState.missions:
 		has_any = true
 		var hbox := HBoxContainer.new()
-		var status_label := Label.new()
+		var status_label := _lbl()
 		status_label.text = mission.get_status_text()
 		status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1131,7 +1136,7 @@ func _refresh_missions() -> void:
 	for tm: TradeMission in GameState.trade_missions:
 		has_any = true
 		var hbox := HBoxContainer.new()
-		var status_label := Label.new()
+		var status_label := _lbl()
 		status_label.text = tm.get_status_text()
 		status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		status_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
@@ -1145,7 +1150,7 @@ func _refresh_missions() -> void:
 		missions_list.add_child(hbox)
 
 	if not has_any:
-		var label := Label.new()
+		var label := _lbl()
 		label.text = "No active missions"
 		label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		missions_list.add_child(label)
@@ -1171,13 +1176,13 @@ func _queue_activity(message: String, color: Color = Color.WHITE) -> void:
 func _refresh_alerts() -> void:
 	_free_children(alerts_list)
 	if _alert_messages.is_empty():
-		var label := Label.new()
+		var label := _lbl()
 		label.text = "No alerts"
 		label.add_theme_color_override("font_color", Color(0.4, 0.4, 0.4))
 		alerts_list.add_child(label)
 		return
 	for entry in _alert_messages:
-		var label := Label.new()
+		var label := _lbl()
 		label.text = entry["text"]
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1188,13 +1193,13 @@ func _refresh_alerts() -> void:
 func _refresh_activity() -> void:
 	_free_children(activity_list)
 	if _activity_messages.is_empty():
-		var label := Label.new()
+		var label := _lbl()
 		label.text = "No recent activity"
 		label.add_theme_color_override("font_color", Color(0.4, 0.4, 0.4))
 		activity_list.add_child(label)
 		return
 	for entry in _activity_messages:
-		var label := Label.new()
+		var label := _lbl()
 		label.text = entry["text"]
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1218,7 +1223,7 @@ func _refresh_contracts() -> void:
 		var hbox := HBoxContainer.new()
 		hbox.add_theme_constant_override("separation", 8)
 
-		var info := Label.new()
+		var info := _lbl()
 		var ore_name := ResourceTypes.get_ore_name(c.ore_type)
 		var deadline_days: float = c.deadline_ticks / 86400.0
 		info.text = "%s: %.1ft %s → %s — $%s (%.1fd left)" % [
@@ -1246,7 +1251,7 @@ func _refresh_contracts() -> void:
 	# Available contracts
 	for c in GameState.available_contracts:
 		has_any = true
-		var label := Label.new()
+		var label := _lbl()
 		var ore_name := ResourceTypes.get_ore_name(c.ore_type)
 		label.text = "[Available] %s: %.1ft %s → %s — $%s" % [
 			c.issuer_name, c.quantity, ore_name,
@@ -1265,7 +1270,7 @@ func _refresh_contracts() -> void:
 
 	# Recent contract log
 	for entry in _contract_messages:
-		var label := Label.new()
+		var label := _lbl()
 		label.text = entry["text"]
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1274,7 +1279,7 @@ func _refresh_contracts() -> void:
 		contracts_list.add_child(label)
 
 	if not has_any and _contract_messages.is_empty():
-		var label := Label.new()
+		var label := _lbl()
 		label.text = "No contracts"
 		label.add_theme_color_override("font_color", Color(0.4, 0.4, 0.4))
 		contracts_list.add_child(label)
@@ -1323,7 +1328,7 @@ func _setup_balance_history() -> void:
 	money_lbl.reparent(content)
 
 	# Reputation line
-	var rep_label := Label.new()
+	var rep_label := _lbl()
 	rep_label.name = "ReputationLabel"
 	rep_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	rep_label.clip_text = true
@@ -1337,7 +1342,7 @@ func _refresh_balance_history() -> void:
 	_free_children(transactions_list)
 	var history := GameState.financial_history
 	if history.is_empty():
-		var empty := Label.new()
+		var empty := _lbl()
 		empty.text = "No transactions yet"
 		empty.add_theme_font_size_override("font_size", 12)
 		empty.add_theme_color_override("font_color", Color(0.4, 0.4, 0.4))
@@ -1356,7 +1361,7 @@ func _refresh_balance_history() -> void:
 		var desc: String = entry.get("desc", "")
 		var ship: String = entry.get("ship", "")
 		var ship_str := "  [%s]" % ship if ship != "" else ""
-		var row := Label.new()
+		var row := _lbl()
 		row.text = "Day %d %02d:00  %s$%s  →  $%s  %s%s" % [
 			day, hour, sign_str, _format_number(change), _format_number(balance),
 			desc, ship_str
@@ -1429,7 +1434,7 @@ func _create_session_info_label() -> void:
 	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
 		return
 	
-	session_info_label = Label.new()
+	session_info_label = _lbl()
 	session_info_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	session_info_label.clip_text = true
 	session_info_label.add_theme_font_size_override("font_size", 11)
@@ -1527,7 +1532,7 @@ func _setup_server_messages_panel() -> void:
 	var card_vbox := VBoxContainer.new()
 	card_vbox.add_theme_constant_override("separation", 6)
 
-	var title := Label.new()
+	var title := _lbl()
 	title.text = "MESSAGE FROM EUTERPE CONTROL"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.clip_text = true
@@ -1565,7 +1570,7 @@ func _refresh_server_messages() -> void:
 		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		row.add_theme_constant_override("separation", 8)
 
-		var label := Label.new()
+		var label := _lbl()
 		label.text = m["message"]
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
