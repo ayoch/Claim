@@ -233,7 +233,7 @@ func dispatch_mission(ship_id: int, asteroid_id: int, mission_type: int, mining_
 		"return_to_station": return_to_station
 	})
 
-	var result := await _http_request_async(http, base_url + "/api/missions", headers, HTTPClient.METHOD_POST, body)
+	var result := await _http_request_async(http, base_url + "/game/dispatch", headers, HTTPClient.METHOD_POST, body)
 	_return_http_request(http)
 
 	if result["success"]:
