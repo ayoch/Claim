@@ -1604,7 +1604,7 @@ func _show_account_settings_dialog() -> void:
 	var dialog := AcceptDialog.new()
 	dialog.title = "Account Settings"
 	dialog.dialog_text = ""
-	dialog.custom_minimum_size = Vector2(400, 200)
+	dialog.min_size = Vector2i(400, 200)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 12)
