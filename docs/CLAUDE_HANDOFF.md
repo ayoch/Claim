@@ -6,30 +6,38 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Local Economy System
-**Date:** 2026-02-27 (Mac/HK-47)
-**Status:** Backend complete, UI pending
-**Handoff Doc:** `HANDOFF_2026-02-27_LOCAL_ECONOMY.md` (read this for full details)
+### Latest Work Session: Server Infrastructure & Auth Polish
+**Date:** 2026-03-02 (Mac/HK-47)
+**Status:** Complete and deployed to Railway
+**Handoff Doc:** `HANDOFF_2026-03-02_SERVER_IMPROVEMENTS.md` (read this for full details)
 
 **What was done:**
-- Implemented per-colony markets (10 trading hubs: Earth + 9 colonies)
-- Each location has independent prices and inventory
-- Supply/demand pricing: selling ore increases inventory and lowers prices
-- Arbitrage opportunities: price differences between locations create profitable trade routes
-- Save/load system updated (backward compatible)
+- ✅ Dark River splash screen with fade animation
+- ✅ Session persistence fix (auto-login now works!)
+- ✅ Server date/time synchronization (total_ticks from server)
+- ✅ Account settings UI (email management via Settings menu)
+- ✅ Admin speed controls (1x to 200kx with live display)
+- ✅ Server status icons (connected/connecting/offline)
+- ✅ UI polish (solar map search to bottom-left)
 
-**What's needed next:**
-- UI to show price comparisons when selecting trade destinations
-- "Find Best Price" button to identify arbitrage opportunities
-- Inventory level display at colonies
-- Arbitrage opportunity notifications
+**Key fixes:**
+- Auto-login validation (was checking wrong key)
+- Admin auth (Bearer token instead of admin key)
+- Speed limit increased (1000x → 200,000x)
+- Email display in account settings
+- is_admin flag returned to client
 
 **Files modified:**
-- `core/data/market_state.gd` (major refactor)
-- `core/models/colony.gd` (use location-based prices)
-- `core/data/market_data.gd` (add location parameter)
-- `core/autoloads/simulation.gd` (update inventory on sales)
-- `core/autoloads/game_state.gd` (location-based save/load)
+- Server: `schemas/player.py`, `schemas/game.py`, `routers/game.py`, `routers/admin_speed.py`
+- Client: `login_screen.gd`, `main_ui.gd`, `hq_tab.gd`, `title_screen.*`, splash screen (new)
+
+### Previous Session: Local Economy System
+**Date:** 2026-02-27 (Mac/HK-47)
+**Status:** Backend complete, UI pending
+**Handoff Doc:** `HANDOFF_2026-02-27_LOCAL_ECONOMY.md`
+- Per-colony markets with supply/demand pricing
+- Arbitrage trading opportunities
+- **Still needs:** UI for price comparisons and trade route optimization
 
 ---
 
