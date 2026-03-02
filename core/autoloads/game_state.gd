@@ -3824,6 +3824,85 @@ func _parse_ore_type(ore_key: String) -> ResourceTypes.OreType:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# SERVER EVENT HANDLERS (SSE Real-Time Updates)
+# ══════════════════════════════════════════════════════════════════════════════
+
+## Apply worker skill level-up event from server
+## Event format: {type, worker_id, player_id, skill_type, new_value, worker_name}
+func apply_worker_skill_event(event: Dictionary) -> void:
+	var worker_name: String = event.get("worker_name", "")
+	var skill_type_str: String = event.get("skill_type", "")
+	var new_value: float = float(event.get("new_value", 0.0))
+
+	# Find worker by name
+	var found_worker: Worker = null
+	for worker in workers:
+		if worker.worker_name == worker_name:
+			found_worker = worker
+			break
+
+	if not found_worker:
+		push_warning("apply_worker_skill_event: Worker '%s' not found" % worker_name)
+		return
+
+	# Map skill type string to int (0=pilot, 1=engineer, 2=mining)
+	var skill_type_int := -1
+	match skill_type_str:
+		"pilot":
+			found_worker.pilot_skill = new_value
+			skill_type_int = 0
+		"engineer":
+			found_worker.engineer_skill = new_value
+			skill_type_int = 1
+		"mining":
+			found_worker.mining_skill = new_value
+			skill_type_int = 2
+		_:
+			push_warning("apply_worker_skill_event: Unknown skill type '%s'" % skill_type_str)
+			return
+
+	# Recalculate wage (server does this too, but we mirror it for consistency)
+	var total_skill := found_worker.pilot_skill + found_worker.engineer_skill + found_worker.mining_skill
+	found_worker.wage = int(80 + total_skill * 40)
+
+	print("[GameState] Worker skill updated via SSE: %s - %s → %.2f (wage: $%d)" % [
+		worker_name, skill_type_str, new_value, found_worker.wage
+	])
+
+	# Emit signal for UI update (signal expects int for skill_type)
+	EventBus.worker_skill_leveled.emit(found_worker, skill_type_int, new_value)
+
+
+## Apply market price update event from server
+## Event format: {type: "market_update", prices: {ore_name: new_price, ...}}
+func apply_market_update_event(event: Dictionary) -> void:
+	var prices: Dictionary = event.get("prices", {})
+
+	if prices.is_empty():
+		return
+
+	var updated_count := 0
+	for ore_name in prices:
+		var new_price: float = float(prices[ore_name])
+
+		# Map ore name to OreType enum
+		var ore_type := _parse_ore_type(ore_name)
+		if ore_type < 0:
+			continue
+
+		# Update market state (for now, update Earth prices - TODO: location-based)
+		if MarketState.location_prices.has("Earth"):
+			if not MarketState.location_prices["Earth"].has(ore_type):
+				MarketState.location_prices["Earth"][ore_type] = {}
+			MarketState.location_prices["Earth"][ore_type] = new_price
+			updated_count += 1
+
+	if updated_count > 0:
+		print("[GameState] Market prices updated via SSE: %d ore types" % updated_count)
+		EventBus.market_state_changed.emit()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SERVER EVENT HANDLERS (Phase 2.5)
 # ══════════════════════════════════════════════════════════════════════════════
 

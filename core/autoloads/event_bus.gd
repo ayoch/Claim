@@ -56,6 +56,7 @@ signal survey_update(asteroid: AsteroidData, message: String)
 signal market_event(ore_type: ResourceTypes.OreType, old_price: float, new_price: float, message: String)
 signal market_event_started(event: MarketEvent)
 signal market_event_ended(event: MarketEvent)
+signal market_state_changed()  # General market update (prices or inventory changed)
 
 # Contracts
 signal contract_offered(contract: Contract)
