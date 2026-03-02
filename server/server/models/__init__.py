@@ -4,6 +4,7 @@ from server.models.mission import Mission
 from server.models.player import Player
 from server.models.ship import Ship
 from server.models.worker import Worker
+from server.models.world_state import WorldState
 
 __all__ = [
     "Asteroid",
@@ -12,4 +13,5 @@ __all__ = [
     "Player",
     "Ship",
     "Worker",
+    "WorldState",
 ]

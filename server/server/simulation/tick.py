@@ -9,6 +9,7 @@ from server.models.mission import (
 from server.models.player import Player
 from server.models.ship import Ship
 from server.models.worker import Worker
+from server.models.world_state import WorldState
 from server.simulation.contracts import process_contracts as _process_contracts
 
 logger = logging.getLogger(__name__)
@@ -124,16 +125,57 @@ def get_total_ticks() -> int:
     """Get current total_ticks value."""
     return _total_ticks
 
-async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]:
+
+async def load_world_state(db: AsyncSession, world_id: int = 1) -> None:
+    """Load world state from database on startup."""
     global _total_ticks
+    result = await db.execute(select(WorldState).where(WorldState.world_id == world_id))
+    world_state = result.scalar_one_or_none()
+
+    if world_state:
+        _total_ticks = world_state.total_ticks
+        logger.info(f'Loaded world state: total_ticks={_total_ticks}')
+    else:
+        # Create initial world state
+        world_state = WorldState(world_id=world_id, total_ticks=0)
+        db.add(world_state)
+        await db.commit()
+        _total_ticks = 0
+        logger.info('Created new world state')
+
+
+async def save_world_state(db: AsyncSession, world_id: int = 1) -> None:
+    """Save current world state to database."""
+    result = await db.execute(select(WorldState).where(WorldState.world_id == world_id))
+    world_state = result.scalar_one_or_none()
+
+    if world_state:
+        world_state.total_ticks = _total_ticks
+        db.add(world_state)
+        await db.commit()
+
+
+_save_counter: int = 0
+_SAVE_INTERVAL: int = 100  # Save world state every 100 ticks
+
+async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]:
+    global _total_ticks, _save_counter
     # Increment total_ticks (allows speed multiplier to affect game time)
     _total_ticks += int(dt)
+    _save_counter += 1
+
     events: list[dict] = []
     try:
         events += await _process_missions(db, dt)
         events += await _process_market(dt)
         events += await _process_payroll(db, dt)
         events += await _process_contracts(db, dt)
+
+        # Periodically save world state
+        if _save_counter >= _SAVE_INTERVAL:
+            await save_world_state(db, world_id)
+            _save_counter = 0
+
     except Exception as exc:
         logger.exception('Tick %d failed: %s', _total_ticks, exc)
     return events

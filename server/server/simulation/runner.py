@@ -5,7 +5,7 @@ import logging
 from server.config import settings
 from server.database import AsyncSessionLocal
 from server.simulation.event_bus import event_bus
-from server.simulation.tick import process_tick
+from server.simulation.tick import process_tick, load_world_state
 from server.routers import admin_speed
 
 logger = logging.getLogger(__name__)
@@ -14,6 +14,11 @@ logger = logging.getLogger(__name__)
 async def simulation_loop(world_id: int = 1) -> None:
     '''Runs indefinitely. One real second = one game tick at 1x speed (adjustable via admin endpoint).'''
     logger.info('Simulation loop started (world_id=%d, base_tick_interval=%.2fs)', world_id, settings.TICK_INTERVAL)
+
+    # Load world state from database
+    async with AsyncSessionLocal() as db:
+        await load_world_state(db, world_id)
+
     while True:
         loop = asyncio.get_event_loop()
         start = loop.time()
