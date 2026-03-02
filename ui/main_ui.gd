@@ -480,7 +480,11 @@ func _poll_server_state() -> void:
 
 	# Fetch both personal state and shared world state
 	var server_data := await BackendManager.get_game_state()
-	var world_data := await BackendManager.get_server_backend().get_world_state() if BackendManager.get_server_backend() else {}
+
+	var world_data: Dictionary = {}
+	var server_backend = BackendManager.get_server_backend()
+	if server_backend:
+		world_data = await server_backend.get_world_state()
 
 	_polling_server = false
 
