@@ -13,9 +13,17 @@ var continue_session_btn: Button = null
 
 
 func _ready() -> void:
+	# Hide email field - only needed for registration
+	email_input.visible = false
+	if email_input.get_parent() and email_input.get_parent().get_class() == "VBoxContainer":
+		# Also hide the email label if it exists
+		var email_label = email_input.get_parent().get_node_or_null("EmailLabel")
+		if email_label:
+			email_label.visible = false
+
 	# Connect buttons
 	login_btn.pressed.connect(_on_login)
-	register_btn.pressed.connect(_on_register)
+	register_btn.pressed.connect(_on_go_to_register)
 	back_btn.pressed.connect(_on_back)
 
 	# Connect enter key to login
@@ -157,6 +165,11 @@ func _on_login() -> void:
 		_set_processing(false)
 		# Switch back to local mode on failure
 		BackendManager.switch_mode(BackendManager.BackendMode.LOCAL)
+
+
+func _on_go_to_register() -> void:
+	"""Navigate to registration screen"""
+	get_tree().change_scene_to_file("res://ui/register_screen.tscn")
 
 
 func _on_register() -> void:
