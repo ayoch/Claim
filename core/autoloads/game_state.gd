@@ -3731,6 +3731,9 @@ func apply_server_state(server_data: Dictionary) -> void:
 		money = new_money
 		state_changed = true
 
+	# Update total_ticks from server (for date/time display)
+	total_ticks = int(server_data.get("total_ticks", total_ticks))
+
 	# Update player policies
 	thrust_policy = int(server_data.get("thrust_policy", thrust_policy))
 	supply_policy = int(server_data.get("supply_policy", supply_policy))

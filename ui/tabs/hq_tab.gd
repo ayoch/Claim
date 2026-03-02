@@ -82,10 +82,10 @@ func _ready() -> void:
 	# Create session info label
 	_create_session_info_label()
 
-	# Create account settings button (server mode only)
+	# Create account settings button and admin controls (server mode only)
+	# Defer to ensure backend is fully initialized
+	await get_tree().create_timer(0.5).timeout
 	_create_account_settings_button()
-
-	# Create admin speed controls (only visible if admin)
 	_create_admin_speed_controls()
 
 	# Market events → activity
@@ -1568,13 +1568,23 @@ func _get_game_date_text() -> String:
 
 func _create_account_settings_button() -> void:
 	"""Create account settings button (server mode only)"""
+	print("=== Creating Account Settings Button ===")
+	print("Backend mode: ", BackendManager.current_mode)
+
 	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+		print("Not in SERVER mode, skipping account settings button")
 		return
 
 	var server_backend = BackendManager.get_server_backend()
+	print("Server backend: ", server_backend)
+	if server_backend:
+		print("Has auth_token: ", server_backend.auth_token != "")
+
 	if not server_backend or not server_backend.auth_token:
+		print("No server backend or no auth token, skipping button")
 		return
 
+	print("Creating account settings button!")
 	# Create settings button
 	var settings_btn := Button.new()
 	settings_btn.text = "⚙️ Account Settings"
@@ -1662,13 +1672,25 @@ func _add_email_to_account(email: String) -> void:
 
 func _create_admin_speed_controls() -> void:
 	"""Create admin-only server speed controls"""
+	print("=== Creating Admin Speed Controls ===")
+	print("Backend mode: ", BackendManager.current_mode)
+	print("SERVER mode enum: ", BackendManager.BackendMode.SERVER)
+
 	# Only show for server mode admins
 	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+		print("Not in SERVER mode, skipping admin controls")
 		return
 
 	var server_backend = BackendManager.get_server_backend()
+	print("Server backend: ", server_backend)
+	if server_backend:
+		print("is_admin: ", server_backend.is_admin)
+
 	if not server_backend or not server_backend.is_admin:
+		print("No server backend or not admin, skipping controls")
 		return
+
+	print("Creating admin speed controls!")
 
 	# Create container for speed controls
 	_admin_speed_controls = HBoxContainer.new()

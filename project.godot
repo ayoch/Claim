@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Claim"
-run/main_scene="res://ui/title_screen.tscn"
+run/main_scene="res://ui/splash_screen.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 

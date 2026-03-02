@@ -26,8 +26,11 @@ func _ready() -> void:
 	# Try auto-login if session exists
 	await _try_auto_login()
 
-	# Focus username field if not auto-logged in
-	username_input.grab_focus()
+	# Focus appropriate field: password if username filled, otherwise username
+	if username_input.text.strip_edges() != "":
+		password_input.grab_focus()
+	else:
+		username_input.grab_focus()
 
 
 func _load_saved_username() -> void:
@@ -62,10 +65,14 @@ func _try_auto_login() -> void:
 		await get_tree().create_timer(1.0).timeout
 		get_tree().change_scene_to_file("res://ui/main_ui.tscn")
 	else:
-		# Token expired or invalid, clear it
-		server_backend.logout()
+		# Token expired or invalid, clear token but keep username
+		server_backend.auth_token = ""
+		server_backend.player_id = 0
+		server_backend._clear_auth_data()
 		_show_status("Session expired. Please log in.", Color(0.9, 0.6, 0.3))
 		_set_processing(false)
+		# Focus password field since username is already filled
+		password_input.grab_focus()
 
 
 func _on_login() -> void:

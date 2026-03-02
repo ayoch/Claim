@@ -86,6 +86,7 @@ class GameState(BaseModel):
     supply_policy: int
     collection_policy: int
     encounter_policy: int
+    total_ticks: int
     ships: list[ShipOut]
     workers: list[WorkerOut]
     active_missions: list[MissionOut]

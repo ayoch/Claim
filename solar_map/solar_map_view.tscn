@@ -28,16 +28,17 @@ theme_override_constants/separation = 4
 
 [node name="SearchPanel" type="HBoxContainer" parent="UI"]
 unique_name_in_owner = true
-anchors_preset = 5
-anchor_left = 0.5
-anchor_top = 0.0
-anchor_right = 0.5
-anchor_bottom = 0.0
-offset_left = -175.0
-offset_top = 8.0
-offset_right = 175.0
-offset_bottom = 52.0
-grow_horizontal = 2
+anchors_preset = 6
+anchor_left = 0.0
+anchor_top = 1.0
+anchor_right = 0.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = -52.0
+offset_right = 358.0
+offset_bottom = -8.0
+grow_horizontal = 0
+grow_vertical = 0
 theme_override_constants/separation = 8
 
 [node name="ZoomButtons" type="VBoxContainer" parent="UI"]
