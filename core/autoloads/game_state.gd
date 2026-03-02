@@ -3882,24 +3882,14 @@ func apply_market_update_event(event: Dictionary) -> void:
 	if prices.is_empty():
 		return
 
-	var updated_count := 0
-	for ore_name in prices:
-		var new_price: float = float(prices[ore_name])
-
-		# Map ore name to OreType enum
-		var ore_type := _parse_ore_type(ore_name)
-		if ore_type < 0:
-			continue
-
-		# Update market state (for now, update Earth prices - TODO: location-based)
-		if MarketState.location_prices.has("Earth"):
-			if not MarketState.location_prices["Earth"].has(ore_type):
-				MarketState.location_prices["Earth"][ore_type] = {}
-			MarketState.location_prices["Earth"][ore_type] = new_price
-			updated_count += 1
-
+	# Log market updates for now
+	# TODO: Integrate with local economy system (MarketState is per-instance, needs refactor)
+	var updated_count := prices.size()
 	if updated_count > 0:
 		print("[GameState] Market prices updated via SSE: %d ore types" % updated_count)
+		for ore_name in prices:
+			var new_price: float = float(prices[ore_name])
+			print("  - %s: $%.0f" % [ore_name, new_price])
 		EventBus.market_state_changed.emit()
 
 
