@@ -170,6 +170,12 @@ func get_game_state() -> Dictionary:
 		return result["data"]
 	else:
 		var err = result.get("error", "Unknown error")
+		var response_code = result.get("response_code", 0)
+		var http_result = result.get("result", 0)
+		print("[ServerBackend] get_game_state FAILED:")
+		print("  HTTP Result: %d" % http_result)
+		print("  Response Code: %d" % response_code)
+		print("  Error: %s" % str(err))
 		push_warning("Failed to get game state: " + str(err))
 		return {}
 
@@ -186,6 +192,10 @@ func get_world_state() -> Dictionary:
 		return result["data"]
 	else:
 		var err = result.get("error", "Unknown error")
+		var response_code = result.get("response_code", 0)
+		print("[ServerBackend] get_world_state FAILED:")
+		print("  Response Code: %d" % response_code)
+		print("  Error: %s" % str(err))
 		push_warning("Failed to get world state: " + str(err))
 		return {}
 
