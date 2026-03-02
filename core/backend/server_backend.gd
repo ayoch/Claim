@@ -125,10 +125,10 @@ func login(username: String, password: String) -> Dictionary:
 		}
 
 
-func register(username: String, password: String) -> Dictionary:
+func register(username: String, password: String, email: String) -> Dictionary:
 	var http := _get_http_request()
 	var headers := ["Content-Type: application/json"]
-	var body := JSON.stringify({"username": username, "password": password})
+	var body := JSON.stringify({"username": username, "password": password, "email": email})
 
 	var result := await _http_request_async(http, base_url + "/auth/register", headers, HTTPClient.METHOD_POST, body)
 	_return_http_request(http)

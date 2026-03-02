@@ -16,7 +16,7 @@ func login(username: String, password: String) -> Dictionary:
 
 ## Register new account
 ## Returns: { "success": bool, "player_id": int, "error": String }
-func register(username: String, password: String) -> Dictionary:
+func register(username: String, password: String, email: String) -> Dictionary:
 	push_error("BackendInterface.register() not implemented")
 	return {"success": false, "error": "Not implemented"}
 

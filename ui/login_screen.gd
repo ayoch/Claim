@@ -1,6 +1,7 @@
 extends Control
 
 @onready var username_input: LineEdit = %UsernameInput
+@onready var email_input: LineEdit = %EmailInput
 @onready var password_input: LineEdit = %PasswordInput
 @onready var status_label: Label = %StatusLabel
 @onready var login_btn: Button = %LoginButton
@@ -132,11 +133,16 @@ func _on_register() -> void:
 		return
 
 	var username := username_input.text.strip_edges()
+	var email := email_input.text.strip_edges()
 	var password := password_input.text
 
 	# Validation
 	if username.is_empty():
 		_show_status("Username is required", Color(0.9, 0.3, 0.3))
+		return
+
+	if email.is_empty():
+		_show_status("Email is required", Color(0.9, 0.3, 0.3))
 		return
 
 	if password.is_empty():
@@ -145,6 +151,11 @@ func _on_register() -> void:
 
 	if username.length() < 3:
 		_show_status("Username must be at least 3 characters", Color(0.9, 0.3, 0.3))
+		return
+
+	# Basic email validation
+	if not email.contains("@") or not email.contains("."):
+		_show_status("Please enter a valid email address", Color(0.9, 0.3, 0.3))
 		return
 
 	if password.length() < 12:
@@ -159,7 +170,7 @@ func _on_register() -> void:
 	BackendManager.switch_mode(BackendManager.BackendMode.SERVER)
 
 	# Attempt registration
-	var result: Dictionary = await BackendManager.register(username, password)
+	var result: Dictionary = await BackendManager.register(username, password, email)
 
 	if result.get("success", false):
 		_show_status("Account created! Logging in...", Color(0.3, 0.9, 0.3))
@@ -189,6 +200,7 @@ func _on_back() -> void:
 func _set_processing(processing: bool) -> void:
 	is_processing = processing
 	username_input.editable = not processing
+	email_input.editable = not processing
 	password_input.editable = not processing
 	login_btn.disabled = processing
 	register_btn.disabled = processing

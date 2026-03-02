@@ -83,8 +83,8 @@ func login(username: String, password: String) -> Dictionary:
 	return await _active_backend.login(username, password)
 
 
-func register(username: String, password: String) -> Dictionary:
-	return await _active_backend.register(username, password)
+func register(username: String, password: String, email: String) -> Dictionary:
+	return await _active_backend.register(username, password, email)
 
 
 func logout() -> void:

@@ -6,7 +6,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 class PlayerCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=32)
-    email: EmailStr | None = None  # Optional for backward compatibility
+    email: EmailStr = Field(..., description="Required unique email address")
     password: str = Field(..., min_length=8, max_length=128)
 
     @field_validator("username")
@@ -38,7 +38,7 @@ class PlayerLogin(BaseModel):
 class PlayerOut(BaseModel):
     id: int
     username: str
-    email: str | None
+    email: str  # Always present - required at registration
     money: int
     reputation: int
     hq_colony_id: int | None
