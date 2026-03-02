@@ -8,6 +8,7 @@ var base_url: String = "https://claim-production-066b.up.railway.app"
 var auth_token: String = ""
 var player_id: int = 0
 var saved_username: String = ""
+var is_admin: bool = false
 
 # Reference to BackendManager (Node) for adding HTTP nodes to tree
 var _backend_manager: Node = null
@@ -51,6 +52,7 @@ func _load_auth_data() -> void:
 	auth_token = data.get("auth_token", "")
 	player_id = data.get("player_id", 0)
 	saved_username = data.get("username", "")
+	is_admin = data.get("is_admin", false)
 
 
 func _save_auth_data(username: String) -> void:
@@ -58,7 +60,8 @@ func _save_auth_data(username: String) -> void:
 	var data := {
 		"auth_token": auth_token,
 		"player_id": player_id,
-		"username": username
+		"username": username,
+		"is_admin": is_admin
 	}
 
 	var file := FileAccess.open(AUTH_SAVE_PATH, FileAccess.WRITE)
@@ -395,6 +398,7 @@ func _fetch_player_info() -> void:
 	if result["success"]:
 		var data: Dictionary = result["data"]
 		player_id = data.get("id", 0)
+		is_admin = data.get("is_admin", false)
 
 
 ## Get leaderboard entries sorted by net worth

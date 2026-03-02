@@ -23,6 +23,7 @@ var session_info_label: Label = null
 var _server_msg_card: PanelContainer = null
 var _server_messages: Array = []
 var _server_msg_seen: Dictionary = {}
+var _admin_speed_controls: HBoxContainer = null
 
 const MAX_ALERTS: int = 50
 const MAX_ACTIVITY: int = 100
@@ -80,6 +81,9 @@ func _ready() -> void:
 
 	# Create session info label
 	_create_session_info_label()
+
+	# Create admin speed controls (only visible if admin)
+	_create_admin_speed_controls()
 
 	# Market events → activity
 	EventBus.market_event.connect(func(_ore: ResourceTypes.OreType, _old: float, _new: float, msg: String) -> void:
@@ -1557,6 +1561,75 @@ func _get_game_date_text() -> String:
 
 	var month_names := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 	return "%s %d, %d" % [month_names[month - 1], day, year]
+
+
+func _create_admin_speed_controls() -> void:
+	"""Create admin-only server speed controls"""
+	# Only show for server mode admins
+	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+		return
+
+	var server_backend = BackendManager.get_server_backend()
+	if not server_backend or not server_backend.is_admin:
+		return
+
+	# Create container for speed controls
+	_admin_speed_controls = HBoxContainer.new()
+	_admin_speed_controls.add_theme_constant_override("separation", 8)
+
+	# Label
+	var label := Label.new()
+	label.text = "Server Speed:"
+	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.3))  # Gold color for admin
+	_admin_speed_controls.add_child(label)
+
+	# Speed buttons
+	var speeds := [1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 200000.0]
+	for speed in speeds:
+		var btn := Button.new()
+		btn.text = "%.0fx" % speed if speed < 1000 else "%.0fk" % (speed / 1000.0)
+		btn.custom_minimum_size = Vector2(50, 28)
+		btn.add_theme_font_size_override("font_size", 11)
+		btn.pressed.connect(func() -> void: _set_server_speed(speed))
+		_admin_speed_controls.add_child(btn)
+
+	# Add to UI (after session info label)
+	if session_info_label and session_info_label.get_parent():
+		var parent := session_info_label.get_parent()
+		parent.add_child(_admin_speed_controls)
+		parent.move_child(_admin_speed_controls, 1)  # Right after session info
+
+
+func _set_server_speed(speed: float) -> void:
+	"""Set server simulation speed (admin only)"""
+	var server_backend = BackendManager.get_server_backend()
+	if not server_backend or not server_backend.is_admin:
+		return
+
+	var http := HTTPRequest.new()
+	add_child(http)
+
+	var url: String = server_backend.base_url + "/admin/set-speed"
+	var headers := ["X-Admin-Key: 9e8650d3-9963-4336-9053-902cbd561994", "Content-Type: application/json"]
+	var body: String = JSON.stringify({"speed_multiplier": speed})
+
+	var error := http.request(url, headers, HTTPClient.METHOD_POST, body)
+	if error != OK:
+		print("[HQTab] Failed to send speed change request: ", error)
+		http.queue_free()
+		return
+
+	var result := await http.request_completed
+	http.queue_free()
+
+	var response_code: int = result[1]
+	if response_code == 200:
+		print("[HQTab] Server speed set to %.0fx" % speed)
+	else:
+		var response_body: PackedByteArray = result[3]
+		var body_str: String = response_body.get_string_from_utf8()
+		print("[HQTab] Failed to set server speed - Code: %d, Body: %s" % [response_code, body_str])
 
 
 # ── Server broadcast messages ─────────────────────────────────────────────────
