@@ -6,7 +6,7 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Server Integration Complete (Phase 1)
+### Latest Work Session: Multi-Player Shared World
 **Date:** 2026-03-02 (Mac/HK-47) - Continued
 **Status:** Complete and deployed to Railway
 
@@ -16,6 +16,7 @@
 3. ✅ Confirmed 2-second server polling is working correctly
 4. ✅ Implemented SSE event handlers for real-time updates
 5. ✅ Improved SSE delivery frequency (35s → 6s latency)
+6. ✅ **Implemented multi-player ship visibility** - all players see each other!
 
 **Ship Position Fix:**
 - Server simulation interpolates positions using `mission.destination_x/destination_y`
@@ -30,13 +31,23 @@
 - Reduced SSE timeout from 30s to 5s, reconnect delay from 5s to 1s
 - Events now delivered every ~6 seconds instead of ~35 seconds
 
+**Multi-Player Ship Visibility:**
+- New `/game/world` endpoint returns ALL players' ships with owner info
+- ShipOut schema includes `player_id` and `owner_username` fields
+- Client polls world state every 2 seconds (alongside personal state)
+- GameState separates own ships from `other_players_ships` array
+- Solar map renders other players' ships as cyan diamonds
+- Labels show "Ship Name (Owner)" for other players
+- Real-time updates: see other players move in real-time!
+
 **Server Integration Status:**
 - ✅ Client simulation disabled in SERVER mode (simulation.gd:164-165)
 - ✅ Ship position updates from server working
 - ✅ State polling every 2 seconds (main_ui.gd:26)
 - ✅ SSE event broadcasting (worker skills, market prices, payroll)
+- ✅ **Multi-player shared world** - all players' ships visible on solar map!
 - ⏳ True real-time SSE streaming via StreamPeerTCP (future enhancement)
-- ⏳ Multi-player features (shared world, player visibility)
+- ⏳ Player interactions (trading, messaging, combat)
 
 **Files modified:**
 - `server/routers/game.py` - Added destination_x/y to mission creation
