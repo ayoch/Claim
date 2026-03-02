@@ -1470,18 +1470,21 @@ func dispatch_mission_any_mode(ship: Ship, asteroid: AsteroidData) -> void:
 			return
 
 		# Find asteroid ID (index in asteroids array)
-		var asteroid_id: int = -1
+		var asteroid_index: int = -1
 		for i in range(asteroids.size()):
 			if asteroids[i] == asteroid:
-				asteroid_id = i
+				asteroid_index = i
 				break
 
-		if asteroid_id < 0:
+		if asteroid_index < 0:
 			push_warning("Asteroid not found: %s" % asteroid.asteroid_name)
 			return
 
+		# Server database IDs start at 1, client array indices start at 0
+		var server_asteroid_id: int = asteroid_index + 1
+
 		# Dispatch via server backend (async, but we don't await - fire and forget for autoplay)
-		BackendManager.dispatch_mission(ship.server_id, asteroid_id, 0, 86400.0, false)
+		BackendManager.dispatch_mission(ship.server_id, server_asteroid_id, 0, 86400.0, false)
 	else:
 		# LOCAL mode: use local GameState directly
 		start_mission(ship, asteroid)
