@@ -6,39 +6,44 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Server Ship Position Sync
+### Latest Work Session: Server Integration Complete (Phase 1)
 **Date:** 2026-03-02 (Mac/HK-47) - Continued
 **Status:** Complete and deployed to Railway
 
 **What was done:**
-- ✅ Fixed server ship position interpolation during transit
-- ✅ Verified client simulation properly disabled in SERVER mode
-- ✅ Confirmed 2-second server polling is working correctly
-- ✅ Completed top 3 server integration priorities
+1. ✅ Fixed server ship position interpolation during transit
+2. ✅ Verified client simulation properly disabled in SERVER mode
+3. ✅ Confirmed 2-second server polling is working correctly
+4. ✅ Implemented SSE event handlers for real-time updates
+5. ✅ Improved SSE delivery frequency (35s → 6s latency)
 
-**The Bug:**
-- Server simulation was interpolating ship positions during transit using `mission.destination_x/destination_y`
-- However, these fields were NEVER set during mission creation
-- Ships interpolated toward (0, 0) instead of their actual destinations
-- Result: Ship positions in SERVER mode were completely wrong
+**Ship Position Fix:**
+- Server simulation interpolates positions using `mission.destination_x/destination_y`
+- These fields were NEVER set during mission creation → ships moved to (0,0)
+- Fixed by adding destination coordinates to Mission constructor
+- Complete flow now works: server sim → ShipOut → 2s polling → apply_server_state()
 
-**The Fix:**
-- Added `destination_x=target_x` and `destination_y=target_y` to Mission constructor in `server/routers/game.py`
-- Now the complete position update flow works:
-  1. Server simulation updates ship.position_x/y during transit (tick.py)
-  2. Server sends positions via ShipOut schema (position_x, position_y)
-  3. Client polls every 2 seconds (main_ui.gd)
-  4. Client applies positions via GameState.apply_server_state()
+**SSE Real-Time Events:**
+- Added `apply_worker_skill_event()` to handle skill level-ups from server
+- Added `apply_market_update_event()` to handle price changes from server
+- Added `market_state_changed` signal to EventBus
+- Reduced SSE timeout from 30s to 5s, reconnect delay from 5s to 1s
+- Events now delivered every ~6 seconds instead of ~35 seconds
 
 **Server Integration Status:**
 - ✅ Client simulation disabled in SERVER mode (simulation.gd:164-165)
-- ✅ Ship position updates from server working (just fixed)
+- ✅ Ship position updates from server working
 - ✅ State polling every 2 seconds (main_ui.gd:26)
-- ⏳ SSE event broadcasting (next priority)
-- ⏳ Multi-player features (future)
+- ✅ SSE event broadcasting (worker skills, market prices, payroll)
+- ⏳ True real-time SSE streaming via StreamPeerTCP (future enhancement)
+- ⏳ Multi-player features (shared world, player visibility)
 
 **Files modified:**
-- `server/server/routers/game.py` - Added destination_x/y to mission creation
+- `server/routers/game.py` - Added destination_x/y to mission creation
+- `server/routers/events.py` - Reduced SSE timeout to 5 seconds
+- `core/autoloads/game_state.gd` - Added SSE event handler methods
+- `core/autoloads/event_bus.gd` - Added market_state_changed signal
+- `core/backend/server_backend.gd` - Reduced reconnect delay to 1 second
 
 ### Previous Session: Server Infrastructure & Auth Polish
 **Date:** 2026-03-02 (Mac/HK-47)
