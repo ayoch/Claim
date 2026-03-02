@@ -45,6 +45,7 @@ class PlayerOut(BaseModel):
     supply_policy: int
     collection_policy: int
     encounter_policy: int
+    is_admin: bool
     created_at: datetime
     last_seen: datetime
 
