@@ -6,8 +6,108 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Multi-Player Shared World
-**Date:** 2026-03-02 (Mac/HK-47) - Continued
+### Latest Work Session: Server Integration Fixes & UX Polish
+**Date:** 2026-03-02 (Mac/HK-47) - Session 3
+**Status:** Complete and pushed to main
+
+**What was done:**
+1. ✅ Fixed server simulation speed multiplier (dt calculation bug)
+2. ✅ Fixed ship dispatch in SERVER mode (endpoint, asteroid IDs, autoplay routing)
+3. ✅ Implemented session restoration with optional "Continue as [username]" button
+4. ✅ Separated login and registration screens (email only on registration)
+5. ✅ Implemented world state persistence (WorldState model + migration)
+6. ✅ Removed green speed indicator from date/time line
+7. ✅ Made speed bar visible on all tabs (was HQ-only in SERVER mode)
+8. ✅ Fixed account settings dialog crash (custom_minimum_size → min_size)
+9. ✅ Removed duplicate account settings button from HQ tab
+
+**Server Speed Fix:**
+- **Bug:** At 100,000x speed, server ticked rapidly but only processed 1 game-second per tick
+- **Root cause:** `dt = settings.TICK_INTERVAL` was constant instead of multiplied by speed_multiplier
+- **Fix:** Changed `server/server/simulation/runner.py:24` to `dt = settings.TICK_INTERVAL * speed_multiplier`
+- Ships now leave port correctly at all simulation speeds
+
+**Ship Dispatch Fixes (SERVER mode):**
+- **Bug 1:** Wrong endpoint - client called `/api/missions`, server has `/game/dispatch`
+- **Fix:** Changed `core/backend/server_backend.gd:236` to use correct endpoint
+- **Bug 2:** Asteroid ID mismatch - server expects DB IDs (start at 1), client sent array indices (start at 0)
+- **Fix:** Added `+ 1` offset in `game_state.gd::dispatch_mission_any_mode()` when converting indices to IDs
+- **Bug 3:** Autoplay called `start_mission()` directly (LOCAL-only), skipped BackendManager in SERVER mode
+- **Fix:** Added `server_id` field to Ship model, created `dispatch_mission_any_mode()` for routing
+- Modified `simulation.gd::_policy_dispatch_idle_ship()` to use new routing function
+- Autoplay now works correctly in SERVER mode
+
+**Session Restoration UX:**
+- User feedback: "Imagine you're playing on a tablet you and your wife share, but there's no way to log in to your account because the game forces you to use hers."
+- Replaced automatic login with optional "Continue as [username]" button
+- Button only shows when valid session token exists
+- User can ignore button and login as different account
+- File: `ui/login_screen.gd` - added `_check_saved_session()` and `_on_continue_session()`
+
+**Login/Registration Separation:**
+- Email no longer required for login (only username + password)
+- New registration screen (`ui/register_screen.gd/tscn`) asks for username, email, password
+- Login screen's "Register" button navigates to registration screen
+- Registration auto-logins after successful account creation
+- Cleaner UX - fields match requirements for each flow
+
+**World State Persistence:**
+- **Bug:** Server reset to initial date (3/2/2026) on restart, losing all elapsed time
+- Created `WorldState` model in `server/server/models/world_state.py`
+- Stores `total_ticks` globally (independent of player accounts)
+- Migration created: `server/alembic/versions/e1f2g3h4i5j6_add_world_state.py`
+- Server loads world state on startup (`runner.py`) and saves every 100 ticks (`tick.py`)
+- Game time now persists across server restarts
+
+**UI Polish:**
+- Removed green "SERVER: 100,000x" indicator from date/time line (redundant with speed bar)
+- Speed bar now visible on all tabs in SERVER mode (was HQ-only)
+- Fixed AcceptDialog crash: `custom_minimum_size` property doesn't exist on AcceptDialog
+- Changed to `min_size = Vector2i(400, 200)` in `ui/tabs/hq_tab.gd`
+- Removed duplicate account settings button from HQ tab (already in main menu settings)
+
+**Commit Hashes:**
+- 091f819 - Server simulation speed fix
+- 8508f99 - Ship dispatch endpoint fix
+- 889a4ac - Asteroid ID offset fix
+- ca54817 - Autoplay routing fix with dispatch_mission_any_mode
+- e29841f - Session restoration with optional "Continue as" button
+- f60d01c - Login/registration screen separation
+- eb1ebe0 - World state persistence (WorldState model + migration)
+- c8775e2 - UI polish (removed green speed indicator, speed bar on all tabs)
+- c286e5e - Account settings dialog crash fix
+- c2cf1f1 - Removed duplicate account settings button
+
+**Files modified:**
+- `server/server/simulation/runner.py` - Fixed speed multiplier, added world state loading
+- `server/server/simulation/tick.py` - Added world state persistence (load/save functions)
+- `server/server/models/world_state.py` (NEW) - WorldState model for persistent game time
+- `server/alembic/versions/e1f2g3h4i5j6_add_world_state.py` (NEW) - Migration
+- `core/backend/server_backend.gd` - Fixed dispatch endpoint
+- `core/models/ship.gd` - Added server_id field
+- `core/autoloads/game_state.gd` - Added dispatch_mission_any_mode() function, store server_id on sync
+- `core/autoloads/simulation.gd` - Modified autoplay to use dispatch_mission_any_mode()
+- `ui/login_screen.gd` - Added optional session restoration button
+- `ui/register_screen.gd` (NEW) - Dedicated registration screen
+- `ui/register_screen.tscn` (NEW) - Registration screen UI
+- `ui/main_ui.gd` - Made speed bar visible on all tabs
+- `ui/main_ui.tscn` - Removed ServerSpeedDisplay label
+- `ui/tabs/hq_tab.gd` - Fixed dialog crash, removed duplicate account settings button
+
+**Server Integration Status:**
+- ✅ Ship dispatch working in SERVER mode (manual + autoplay)
+- ✅ Simulation speed multiplier applied correctly
+- ✅ World state persists across server restarts
+- ✅ Session restoration UX polished
+- ✅ Login/registration flows separated
+- ✅ All UI indicators consistent and non-redundant
+- ⏳ Collection missions (skipped in SERVER mode - not yet implemented server-side)
+- ⏳ Trade missions (not yet implemented server-side)
+
+---
+
+### Previous Work Session: Multi-Player Shared World
+**Date:** 2026-03-02 (Mac/HK-47) - Session 2
 **Status:** Complete and deployed to Railway
 
 **What was done:**
