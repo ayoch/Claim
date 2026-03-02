@@ -9,6 +9,7 @@ extends Control
 @onready var back_btn: Button = %BackButton
 
 var is_processing: bool = false
+var continue_session_btn: Button = null
 
 
 func _ready() -> void:
@@ -24,8 +25,8 @@ func _ready() -> void:
 	# Load saved username if exists
 	_load_saved_username()
 
-	# DISABLED: Don't auto-login - user may want to switch accounts
-	# await _try_auto_login()
+	# Check for saved session and show "Continue as..." button if exists
+	await _check_saved_session()
 
 	# Focus appropriate field: password if username filled, otherwise username
 	if username_input.text.strip_edges() != "":
@@ -42,6 +43,36 @@ func _load_saved_username() -> void:
 		var saved_user: String = server_backend.get_saved_username()
 		if saved_user != "":
 			username_input.text = saved_user
+
+
+func _check_saved_session() -> void:
+	"""Check if there's a saved session and show continue button if so"""
+	BackendManager.switch_mode(BackendManager.BackendMode.SERVER)
+	var server_backend = BackendManager.get_server_backend()
+	if not server_backend or not server_backend.has_saved_session():
+		return
+
+	# Create "Continue as [username]" button
+	continue_session_btn = Button.new()
+	continue_session_btn.text = "Continue as " + server_backend.get_saved_username()
+	continue_session_btn.custom_minimum_size = Vector2(200, 40)
+
+	# Position it above the login button
+	var login_parent = login_btn.get_parent()
+	var login_index = login_btn.get_index()
+	login_parent.add_child(continue_session_btn)
+	login_parent.move_child(continue_session_btn, login_index)
+
+	# Connect to session restore
+	continue_session_btn.pressed.connect(_on_continue_session)
+
+
+func _on_continue_session() -> void:
+	"""User clicked 'Continue as...' button - restore saved session"""
+	# Hide the continue button since they chose to use it
+	if continue_session_btn:
+		continue_session_btn.visible = false
+	await _try_auto_login()
 
 
 func _try_auto_login() -> void:
