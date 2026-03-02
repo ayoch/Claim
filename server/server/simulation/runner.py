@@ -21,7 +21,7 @@ async def simulation_loop(world_id: int = 1) -> None:
         # Get current speed multiplier (adjustable via /admin/set-speed)
         speed_multiplier = admin_speed.get_speed_multiplier()
         effective_tick_interval = settings.TICK_INTERVAL / speed_multiplier
-        dt = settings.TICK_INTERVAL  # Always process 1.0 seconds worth of game time per tick
+        dt = settings.TICK_INTERVAL * speed_multiplier  # Process more game time at higher speeds
 
         try:
             async with AsyncSessionLocal() as db:
