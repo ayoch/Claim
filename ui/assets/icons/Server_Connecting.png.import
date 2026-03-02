@@ -3,15 +3,15 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://yweymcx535kg"
-path="res://.godot/imported/Server_Connecting.png-11b5b852303783fdc9123ecb27468216.ctex"
+path="res://.godot/imported/Server_Connecting.png-502786cec2981ff34b7669902da9aa1f.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://new/Server_Connecting.png"
-dest_files=["res://.godot/imported/Server_Connecting.png-11b5b852303783fdc9123ecb27468216.ctex"]
+source_file="res://ui/assets/icons/Server_Connecting.png"
+dest_files=["res://.godot/imported/Server_Connecting.png-502786cec2981ff34b7669902da9aa1f.ctex"]
 
 [params]
 

@@ -113,6 +113,8 @@ async def dispatch(
         origin_y=origin_y,
         origin_name=origin_name,
         origin_is_earth=origin_is_earth,
+        destination_x=target_x,
+        destination_y=target_y,
         return_to_station=req.return_to_station,
         mining_duration=req.mining_duration,
     )
