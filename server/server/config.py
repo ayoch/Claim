@@ -79,6 +79,12 @@ class Settings(BaseSettings):
         description="Secret key required for all /admin endpoints"
     )
 
+    # Admin usernames (comma-separated list of usernames that get admin privileges on registration)
+    ADMIN_USERNAMES: str = Field(
+        default="Jon",
+        description="Comma-separated list of usernames that receive admin privileges on registration"
+    )
+
     # Logging
     LOG_LEVEL: str = Field(default="INFO", description="DEBUG|INFO|WARNING|ERROR")
 

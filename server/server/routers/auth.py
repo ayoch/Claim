@@ -10,6 +10,7 @@ from server.database import get_db
 from server.models.player import Player
 from server.rate_limit import limiter
 from server.schemas.player import PlayerCreate, PlayerOut, Token
+from server.starter_package import create_starter_package
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -60,15 +61,46 @@ async def register(payload: PlayerCreate, request: Request, db: AsyncSession = D
         logger.warning(f"Registration failed - username already taken: {payload.username} from IP: {client_ip}")
         raise HTTPException(status_code=400, detail="Username already taken")
 
+    # Check if username should be admin (only if NO admin exists yet)
+    from server.config import settings
+    admin_usernames = settings.ADMIN_USERNAMES.split(",") if hasattr(settings, "ADMIN_USERNAMES") and settings.ADMIN_USERNAMES else []
+
+    # Check if any admin already exists
+    admin_check = await db.execute(select(Player).where(Player.is_admin == True))
+    admin_exists = admin_check.scalar_one_or_none() is not None
+
+    # Only grant admin if username matches AND no admin exists yet
+    is_admin = (payload.username in admin_usernames) and (not admin_exists)
+
     player = Player(
         username=payload.username,
         password_hash=hash_password(payload.password),
+        is_admin=is_admin,
     )
     db.add(player)
     await db.commit()
     await db.refresh(player)
 
-    logger.info(f"New user registered: {player.username} (ID: {player.id}) from IP: {client_ip}")
+    if is_admin:
+        logger.info(f"Admin user registered: {player.username} from IP: {client_ip}")
+    elif payload.username in admin_usernames and admin_exists:
+        logger.warning(f"Admin username '{payload.username}' registered but admin already exists - not granting admin privileges")
+
+    # Create randomized starter package (ships + crew with equal net value)
+    try:
+        starter_info = await create_starter_package(db, player)
+        logger.info(
+            f"New user registered: {player.username} (ID: {player.id}) from IP: {client_ip} | "
+            f"Starter package: {starter_info['ships_created']} ships, "
+            f"{starter_info['workers_created']} workers, "
+            f"${starter_info['money_remaining']:,} cash"
+        )
+    except Exception as e:
+        logger.error(f"Failed to create starter package for {player.username}: {e}")
+        # Rollback and re-raise
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to create starter package")
+
     return player
 
 

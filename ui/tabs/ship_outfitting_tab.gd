@@ -5,7 +5,7 @@ static func _free_children(container: Node) -> void:
 		container.get_child(i).queue_free()
 
 static func _lbl() -> Label:
-	var l := _lbl()
+	var l := Label.new()
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	return l
 

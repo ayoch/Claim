@@ -1,7 +1,7 @@
 extends MarginContainer
 
 static func _lbl() -> Label:
-	var l := _lbl()
+	var l := Label.new()
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	return l
 
@@ -1430,44 +1430,47 @@ func _on_worker_skill_leveled(worker: Worker, skill_type: int, new_value: float)
 
 func _create_session_info_label() -> void:
 	"""Create and add session info label to the UI"""
-	# Only show for server mode
-	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
-		return
-	
 	session_info_label = _lbl()
 	session_info_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	session_info_label.clip_text = true
 	session_info_label.add_theme_font_size_override("font_size", 11)
 	session_info_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
-	
+
 	# Add to top of dashboard (insert as first child of money label's parent)
 	if money_label and money_label.get_parent():
 		money_label.get_parent().add_child(session_info_label)
 		money_label.get_parent().move_child(session_info_label, 0)
-	
+
 	_update_session_info()
 
 
 func _update_session_info() -> void:
-	"""Update session info label with username and expiration"""
-	if not session_info_label or BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+	"""Update session info label with username, expiration, date, and speed"""
+	if not session_info_label:
 		return
-	
-	var server_backend = BackendManager.get_server_backend()
-	if not server_backend:
-		return
-	
-	var username: String = server_backend.get_saved_username()
-	var token: String = server_backend.auth_token
-	
-	if username == "" or token == "":
-		session_info_label.text = ""
-		return
-	
-	# Decode JWT to get expiration
-	var expiration_text := _get_token_expiration_text(token)
-	
-	session_info_label.text = "Logged in as: %s  |  %s" % [username, expiration_text]
+
+	# Build info parts
+	var parts: Array[String] = []
+
+	# Server mode: username and session expiration
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		var server_backend = BackendManager.get_server_backend()
+		if server_backend:
+			var username: String = server_backend.get_saved_username()
+			var token: String = server_backend.auth_token
+			if username != "" and token != "":
+				var expiration_text := _get_token_expiration_text(token)
+				parts.append("Logged in as: %s  |  %s" % [username, expiration_text])
+
+	# Game date (2112 + elapsed time)
+	var game_date := _get_game_date_text()
+	parts.append(game_date)
+
+	# Speed display
+	var speed_text := "Speed: %.0fx" % TimeScale.speed_multiplier
+	parts.append(speed_text)
+
+	session_info_label.text = "  |  ".join(parts)
 
 
 func _get_token_expiration_text(token: String) -> String:
@@ -1517,6 +1520,43 @@ func _get_token_expiration_text(token: String) -> String:
 	else:
 		var minutes_left := int(seconds_left / 60.0)
 		return "Session expires in %d minute%s" % [minutes_left, "s" if minutes_left != 1 else ""]
+
+
+func _get_game_date_text() -> String:
+	"""Calculate game date (2112 + elapsed time)"""
+	# Start date: March 2, 2112 (86 years after 2026-03-02)
+	var BASE_YEAR: int = 2112
+	var START_MONTH: int = 3  # March
+	var START_DAY: int = 2
+
+	# Calculate days elapsed in game
+	var days_elapsed := int(GameState.total_ticks / 86400.0)
+
+	# Simple date calculation (doesn't handle leap years perfectly, but close enough)
+	var days_in_month := [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+	var year := BASE_YEAR
+	var month := START_MONTH
+	var day := START_DAY + days_elapsed
+
+	# Advance through months/years
+	while true:
+		var days_in_current_month := days_in_month[month - 1]
+		# Simple leap year check (good enough for 2112-2200 range)
+		if month == 2 and year % 4 == 0:
+			days_in_current_month = 29
+
+		if day <= days_in_current_month:
+			break
+
+		day -= days_in_current_month
+		month += 1
+		if month > 12:
+			month = 1
+			year += 1
+
+	var month_names := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+	return "%s %d, %d" % [month_names[month - 1], day, year]
 
 
 # ── Server broadcast messages ─────────────────────────────────────────────────

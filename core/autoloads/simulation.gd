@@ -160,6 +160,10 @@ func _ready() -> void:
 	)
 
 func _process(delta: float) -> void:
+	# PHASE 1: Skip local simulation in SERVER mode (server runs simulation)
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		return
+
 	var game_speed := TimeScale.speed_multiplier
 	if game_speed <= 0.0:
 		return

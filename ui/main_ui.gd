@@ -21,6 +21,11 @@ var _net_worth_update_timer: float = 0.0
 const NET_WORTH_UPDATE_INTERVAL: float = 1.0  # Update net worth once per second
 var _save_load_dialog: PopupPanel = null
 
+# Server state polling (Phase 1)
+var _server_poll_timer: float = 0.0
+const SERVER_POLL_INTERVAL: float = 2.0  # Poll server every 2 seconds
+var _polling_server: bool = false  # Prevents overlapping async calls
+
 func _ready() -> void:
 	# Position window lower on screen
 	var screen_size := DisplayServer.screen_get_size()
@@ -68,10 +73,35 @@ func _ready() -> void:
 		_setup_speed_bar()
 	else:
 		speed_bar.visible = false
+		# Start server state polling (Phase 1)
+		_server_poll_timer = 0.0  # Poll immediately on load
+		print("[MainUI] Server mode detected - starting state polling")
+
+		# Subscribe to server events (Phase 2)
+		var server_backend = BackendManager.get_server_backend()
+		if server_backend:
+			server_backend.subscribe_events(Callable())
+			print("[MainUI] Subscribed to server event stream")
 
 	_update_date_display()
 
+
+func _exit_tree() -> void:
+	# Cleanup server event subscription
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		var server_backend = BackendManager.get_server_backend()
+		if server_backend:
+			server_backend.unsubscribe_events()
+
+
 func _process(delta: float) -> void:
+	# Server state polling (Phase 1)
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		_server_poll_timer += delta
+		if _server_poll_timer >= SERVER_POLL_INTERVAL and not _polling_server:
+			_server_poll_timer = 0.0
+			_poll_server_state()  # Async call (doesn't block)
+
 	# Throttle date display updates - doesn't need to be every frame
 	_date_update_timer += delta
 	if _date_update_timer >= DATE_UPDATE_INTERVAL:
@@ -93,6 +123,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		if event.keycode == KEY_SPACE:
 			_toggle_pause_speed()
 			get_viewport().set_input_as_handled()
+
+		# Speed control (1/2 keys)
+		elif event.keycode == KEY_1 or event.keycode == KEY_2:
+			if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+				# In SERVER mode, send speed changes to server
+				_adjust_server_speed(event.keycode)
+				get_viewport().set_input_as_handled()
+			else:
+				# In LOCAL mode, use TimeScale (existing behavior handled by TimeScale autoload)
+				pass
 
 func _toggle_pause_speed() -> void:
 	# Space toggles between 1x and previous speed
@@ -315,3 +355,77 @@ func _format_number(n: int) -> String:
 	if n < 0:
 		result = "-" + result
 	return result
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SERVER STATE POLLING (Phase 1)
+# ══════════════════════════════════════════════════════════════════════════════
+
+func _poll_server_state() -> void:
+	_polling_server = true
+	var server_data := await BackendManager.get_game_state()
+	_polling_server = false
+
+	if server_data.is_empty():
+		print("[MainUI] Server poll failed - empty response")
+		return
+
+	# Apply server state to local GameState
+	GameState.apply_server_state(server_data)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SERVER SPEED CONTROL (Testing Feature)
+# ══════════════════════════════════════════════════════════════════════════════
+
+var _current_server_speed: float = 1.0
+const SERVER_SPEED_STEPS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0]
+var _server_speed_index: int = 0
+
+func _adjust_server_speed(keycode: int) -> void:
+	if keycode == KEY_2:
+		# Increase speed
+		_server_speed_index = min(_server_speed_index + 1, SERVER_SPEED_STEPS.size() - 1)
+	elif keycode == KEY_1:
+		# Decrease speed
+		_server_speed_index = max(_server_speed_index - 1, 0)
+
+	var new_speed := SERVER_SPEED_STEPS[_server_speed_index]
+	if new_speed != _current_server_speed:
+		_set_server_speed(new_speed)
+
+
+func _set_server_speed(speed: float) -> void:
+	_current_server_speed = speed
+
+	# Call server admin endpoint
+	var server_backend = BackendManager.get_server_backend()
+	if not server_backend:
+		print("[MainUI] Cannot set server speed - no server backend")
+		return
+
+	var http := HTTPRequest.new()
+	http.set_tls_options(TLSOptions.client_unsafe())
+	add_child(http)
+
+	var url: String = server_backend.base_url + "/admin/set-speed"
+	var headers: Array = [
+		"Content-Type: application/json",
+		"Authorization: Bearer " + server_backend.auth_token
+	]
+	var body: String = JSON.stringify({"multiplier": speed})
+
+	http.request(url, headers, HTTPClient.METHOD_POST, body)
+	var response: Array = await http.request_completed
+
+	http.queue_free()
+
+	var result: int = response[0]
+	var response_code: int = response[1]
+	var response_body: PackedByteArray = response[3]
+
+	if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
+		print("[MainUI] Server speed set to %.0fx" % speed)
+	else:
+		var body_str: String = response_body.get_string_from_utf8()
+		print("[MainUI] Failed to set server speed - Code: %d, Body: %s" % [response_code, body_str])

@@ -19,6 +19,11 @@ const AUTH_SAVE_PATH: String = "user://auth_data.json"
 var _http_pool: Array[HTTPRequest] = []
 const MAX_POOL_SIZE: int = 5
 
+# Server-Sent Events (Phase 2)
+var _sse_http: HTTPRequest = null
+var _sse_connected: bool = false
+var _sse_buffer: String = ""  # Buffer for partial SSE messages
+
 
 func set_backend_manager(manager: Node) -> void:
 	_backend_manager = manager
@@ -155,7 +160,7 @@ func get_game_state() -> Dictionary:
 	var http := _get_http_request()
 	var headers := _auth_headers()
 
-	var result := await _http_request_async(http, base_url + "/api/game/state", headers, HTTPClient.METHOD_GET)
+	var result := await _http_request_async(http, base_url + "/game/state", headers, HTTPClient.METHOD_GET, "")
 	_return_http_request(http)
 
 	if result["success"]:
@@ -366,21 +371,6 @@ func update_policies(policies: Dictionary) -> void:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# REAL-TIME EVENTS (SSE - Server-Sent Events)
-# ══════════════════════════════════════════════════════════════════════════════
-
-func subscribe_events(callback: Callable) -> void:
-	# TODO: Implement SSE (Server-Sent Events) connection
-	# For now, client will poll get_game_state() periodically
-	push_warning("subscribe_events() not yet implemented - will poll instead")
-
-
-func unsubscribe_events() -> void:
-	# TODO: Close SSE connection
-	pass
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # UTILITY
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -550,3 +540,135 @@ func _http_request_async(http: HTTPRequest, url: String, headers: Array, method:
 		"data": json.data,
 		"error": ""
 	}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SERVER-SENT EVENTS (Phase 2)
+# ══════════════════════════════════════════════════════════════════════════════
+
+## Subscribe to server event stream
+func subscribe_events(callback: Callable) -> void:
+	if not _backend_manager:
+		push_error("ServerBackend: Cannot subscribe to events - backend_manager not set")
+		return
+
+	if _sse_connected:
+		print("[ServerBackend] Already subscribed to events")
+		return
+
+	# Create HTTPRequest for SSE stream
+	_sse_http = HTTPRequest.new()
+	_sse_http.set_tls_options(TLSOptions.client_unsafe())
+	_backend_manager.add_child(_sse_http)
+
+	# Connect to chunk_received signal for streaming response
+	_sse_http.request_completed.connect(_on_sse_closed)
+
+	var url := base_url + "/events/stream"
+	var headers := ["Authorization: Bearer " + auth_token]
+
+	print("[ServerBackend] Subscribing to event stream: ", url)
+	var error := _sse_http.request(url, headers)
+
+	if error != OK:
+		push_error("Failed to start SSE request: %d" % error)
+		_sse_http.queue_free()
+		_sse_http = null
+		return
+
+	_sse_connected = true
+	_sse_buffer = ""
+
+	# Poll for data using _process in BackendManager or a Timer
+	# For now, we'll use request_completed which fires when connection closes
+	# TODO: Implement proper streaming chunk processing
+
+
+## Unsubscribe from server events
+func unsubscribe_events() -> void:
+	if _sse_http:
+		_sse_http.cancel_request()
+		_sse_http.queue_free()
+		_sse_http = null
+
+	_sse_connected = false
+	_sse_buffer = ""
+	print("[ServerBackend] Unsubscribed from event stream")
+
+
+func _on_sse_closed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
+	print("[ServerBackend] SSE connection closed - Result: %d, Code: %d" % [result, response_code])
+
+	if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
+		# Parse any final events in body
+		var body_text := body.get_string_from_utf8()
+		if body_text != "":
+			_parse_sse_data(body_text)
+
+	_sse_connected = false
+
+	# Auto-reconnect after 5 seconds if we're still in SERVER mode
+	if _backend_manager:
+		await _backend_manager.get_tree().create_timer(5.0).timeout
+		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+			print("[ServerBackend] Reconnecting to event stream...")
+			subscribe_events(Callable())  # Reconnect
+
+
+func _parse_sse_data(data: String) -> void:
+	"""Parse Server-Sent Events data format"""
+	_sse_buffer += data
+
+	var lines := _sse_buffer.split("\n")
+	var event_data := ""
+
+	for line in lines:
+		if line.begins_with("data: "):
+			event_data = line.substr(6)  # Remove "data: " prefix
+
+			# Try to parse as JSON
+			var json := JSON.new()
+			if json.parse(event_data) == OK and json.data is Dictionary:
+				var event: Dictionary = json.data
+				_handle_server_event(event)
+
+	# Clear buffer after processing
+	_sse_buffer = ""
+
+
+func _handle_server_event(event: Dictionary) -> void:
+	"""Route server events to GameState"""
+	var event_type: String = event.get("type", "")
+
+	match event_type:
+		"connected":
+			print("[ServerBackend] SSE connected for player %d" % event.get("player_id", 0))
+
+		"mission_completed":
+			print("[ServerBackend] Mission completed - ID: %d" % event.get("mission_id", 0))
+			# GameState will handle via polling for now
+
+		"payroll_deducted":
+			print("[ServerBackend] Payroll deducted: $%d (new balance: $%d)" % [
+				event.get("amount", 0),
+				event.get("new_balance", 0)
+			])
+			# Update money directly
+			if event.has("new_balance"):
+				GameState.money = int(event["new_balance"])
+
+		"worker_skill_leveled":
+			print("[ServerBackend] Worker skill leveled: %s - %s to %.2f" % [
+				event.get("worker_name", "Unknown"),
+				event.get("skill_type", "unknown"),
+				event.get("new_value", 0.0)
+			])
+			GameState.apply_worker_skill_event(event)
+
+		"market_update":
+			print("[ServerBackend] Market prices updated")
+			GameState.apply_market_update_event(event)
+
+		_:
+			if event_type != "":
+				print("[ServerBackend] Unhandled event type: %s" % event_type)

@@ -1,5 +1,5 @@
 # Claude Code Handoff Document
-**Last Updated:** 2026-02-27
+**Last Updated:** 2026-03-02
 **Current Instance:** HK-47 (Mac) → Dweezil (Windows)
 
 ---
@@ -64,8 +64,9 @@
 ✅ Trajectory visualization (Brachistochrone curves, Hohmann ellipses)
 ✅ Search & sort UI (alphabetical, name search for destinations)
 
-### Multiplayer Server (In Progress)
-✅ FastAPI backend with PostgreSQL
+### Multiplayer Server (Deployed!)
+✅ **Railway Deployment** — Server live at `https://claim-production-066b.up.railway.app`
+✅ FastAPI backend with PostgreSQL (Railway free tier)
 ✅ Authentication (JWT, password validation, rate limiting)
 ✅ Admin endpoints (secured with admin role requirement)
 ✅ Player management (registration, login, profiles)
@@ -73,6 +74,8 @@
 ✅ Blog/website system (SQLite, Markdown posts)
 ✅ Security hardening (HTTPS redirect, request size limits, exception handling)
 ✅ Event streaming (SSE endpoint for real-time updates)
+✅ **Server health indicator** — Title screen shows connection status (green/red light)
+✅ **Backend mode switching** — BackendManager toggles LOCAL (file saves) vs SERVER (HTTP)
 🔄 Game state synchronization (not yet implemented)
 🔄 Server-side simulation (not yet implemented)
 
@@ -167,6 +170,12 @@
 - At 200,000x speed, throttled functions skip most calls
 - Fixed in: `_process_contracts`, `_process_survey_events`
 - Still uses raw dt (low priority): `_update_ship_positions` (only affects derelict drift)
+
+### Stack Overflow in UI Tabs (FIXED 2026-03-02)
+- **Symptom:** Game crashes with "Stack overflow (stack size: 1024)" when opening HQ tab
+- **Root cause:** Helper function `_lbl()` called itself recursively instead of creating Label
+- **Fix:** Changed `var l := _lbl()` to `var l := Label.new()` in 6 tab files
+- **Affected files:** hq_tab.gd, workers_tab.gd, market_tab.gd, ship_outfitting_tab.gd, fleet_tab.gd, fleet_market_tab.gd
 
 ### Debugging Workflow
 - **Log-based debugging preferred:** Write to `res://` log files, read back with Read tool

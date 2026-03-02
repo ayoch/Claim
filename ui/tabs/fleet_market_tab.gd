@@ -1,8 +1,9 @@
 extends MarginContainer
 
 static func _lbl() -> Label:
-	var l := _lbl()
+	var l := Label.new()
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return l
 
 # Combined Fleet + Market tab with ship-centric view

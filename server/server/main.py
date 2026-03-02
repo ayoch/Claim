@@ -17,7 +17,7 @@ from server.blog_database import init_blog_db
 from server.config import settings
 from server.database import init_db
 from server.rate_limit import limiter, rate_limit_handler
-from server.routers import admin, auth, blog, events, game, leaderboard
+from server.routers import admin, admin_speed, auth, blog, events, game, leaderboard
 from server.simulation.runner import simulation_loop
 
 # Configure logging
@@ -80,6 +80,7 @@ app.include_router(auth.router)
 app.include_router(game.router)
 app.include_router(events.router)
 app.include_router(admin.router)
+app.include_router(admin_speed.router)  # Speed control for testing
 app.include_router(leaderboard.router)
 app.include_router(blog.router)
 app.include_router(blog.admin_router)

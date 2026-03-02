@@ -3709,3 +3709,168 @@ func load_game(file_name: String = "save_game.json") -> bool:
 		local_leaderboard.append(entry_data.duplicate())
 
 	return true
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SERVER STATE SYNC (Phase 1: Read-Only Polling)
+# ══════════════════════════════════════════════════════════════════════════════
+
+## Apply server state to local GameState
+## Called periodically when in SERVER mode to sync with server simulation
+func apply_server_state(server_data: Dictionary) -> void:
+	if server_data.is_empty():
+		return
+
+	# Track if state changed for logging
+	var old_money := money
+	var state_changed := false
+
+	# Update money (triggers money_changed signal)
+	var new_money: int = int(server_data.get("money", money))
+	if new_money != money:
+		money = new_money
+		state_changed = true
+
+	# Update player policies
+	thrust_policy = int(server_data.get("thrust_policy", thrust_policy))
+	supply_policy = int(server_data.get("supply_policy", supply_policy))
+	collection_policy = int(server_data.get("collection_policy", collection_policy))
+	encounter_policy = int(server_data.get("encounter_policy", encounter_policy))
+
+	# Update ships (server only has: id, ship_name, fuel, cargo, position, is_stationed)
+	var server_ships: Array = server_data.get("ships", [])
+	for ship_data in server_ships:
+		var ship_id: int = int(ship_data.get("id", 0))
+		# Find matching ship in local state
+		var found_ship: Ship = null
+		for ship in ships:
+			# Server uses database ID, client might not have it yet
+			# Match by ship_name for now (server ships should have unique names)
+			if ship.ship_name == ship_data.get("ship_name", ""):
+				found_ship = ship
+				break
+
+		if found_ship:
+			# Update ship state from server
+			found_ship.fuel = float(ship_data.get("fuel", found_ship.fuel))
+			found_ship.position_au.x = float(ship_data.get("position_x", found_ship.position_au.x))
+			found_ship.position_au.y = float(ship_data.get("position_y", found_ship.position_au.y))
+			found_ship.is_docked = bool(ship_data.get("is_stationed", found_ship.is_docked))
+			found_ship.engine_condition = float(ship_data.get("engine_condition", found_ship.engine_condition))
+			found_ship.is_derelict = bool(ship_data.get("is_derelict", found_ship.is_derelict))
+
+			# Update cargo
+			var server_cargo: Dictionary = ship_data.get("current_cargo", {})
+			if not server_cargo.is_empty():
+				found_ship.cargo.clear()
+				for ore_key in server_cargo:
+					# Map server ore names (lowercase strings) to OreType enum
+					var ore_type := _parse_ore_type(ore_key)
+					if ore_type >= 0:
+						found_ship.cargo[ore_type] = float(server_cargo[ore_key])
+
+	# Update workers (server only has: id, first_name, last_name, skills, xp, wage)
+	var server_workers: Array = server_data.get("workers", [])
+	for worker_data in server_workers:
+		var worker_id: int = int(worker_data.get("id", 0))
+		# Find matching worker by name (server IDs won't match client)
+		var full_name: String = str(worker_data.get("first_name", "")) + " " + str(worker_data.get("last_name", ""))
+		var found_worker: Worker = null
+		for worker in workers:
+			if worker.worker_name == full_name:
+				found_worker = worker
+				break
+
+		if found_worker:
+			# Update worker state from server
+			found_worker.pilot_skill = float(worker_data.get("pilot_skill", found_worker.pilot_skill))
+			found_worker.engineer_skill = float(worker_data.get("engineer_skill", found_worker.engineer_skill))
+			found_worker.mining_skill = float(worker_data.get("mining_skill", found_worker.mining_skill))
+			found_worker.pilot_xp = float(worker_data.get("pilot_xp", found_worker.pilot_xp))
+			found_worker.engineer_xp = float(worker_data.get("engineer_xp", found_worker.engineer_xp))
+			found_worker.mining_xp = float(worker_data.get("mining_xp", found_worker.mining_xp))
+			found_worker.wage = int(worker_data.get("wage", found_worker.wage))
+			found_worker.loyalty = float(worker_data.get("loyalty", found_worker.loyalty))
+			found_worker.fatigue = float(worker_data.get("fatigue", found_worker.fatigue))
+
+	# Update missions (server has: id, ship_id, status, elapsed_ticks, transit_time)
+	var server_missions: Array = server_data.get("active_missions", [])
+	# TODO: Sync mission state when server has full mission data
+	# For now, client-side missions are the source of truth
+
+	# Only log when state changes (less noisy)
+	if state_changed:
+		print("[GameState] Server sync: Money $%d → $%d" % [old_money, money])
+
+
+## Helper to map server ore names to client OreType enum
+func _parse_ore_type(ore_key: String) -> ResourceTypes.OreType:
+	match ore_key.to_lower():
+		"iron":
+			return ResourceTypes.OreType.IRON
+		"nickel":
+			return ResourceTypes.OreType.NICKEL
+		"platinum":
+			return ResourceTypes.OreType.PLATINUM
+		"water_ice", "water-ice":
+			return ResourceTypes.OreType.WATER_ICE
+		"carbon_organics", "carbon-organics", "carbon":
+			return ResourceTypes.OreType.CARBON_ORGANICS
+		_:
+			return -1  # Unknown ore type
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# SERVER EVENT HANDLERS (Phase 2.5)
+# ══════════════════════════════════════════════════════════════════════════════
+
+## Handle worker skill level-up event from server
+func apply_worker_skill_event(event: Dictionary) -> void:
+	var worker_name: String = event.get("worker_name", "")
+	var skill_type: String = event.get("skill_type", "")
+	var new_value: float = float(event.get("new_value", 0.0))
+
+	# Find matching worker by name
+	for worker in workers:
+		if worker.worker_name == worker_name:
+			# Update the appropriate skill
+			match skill_type:
+				"pilot":
+					worker.pilot_skill = new_value
+				"engineer":
+					worker.engineer_skill = new_value
+				"mining":
+					worker.mining_skill = new_value
+
+			# Recalculate wage based on total skill
+			var total_skill := worker.pilot_skill + worker.engineer_skill + worker.mining_skill
+			worker.wage = int(80 + total_skill * 40)
+
+			# Add activity log entry
+			add_warning(
+				"📈 %s: %s skill → %.2f" % [worker_name, skill_type.capitalize(), new_value],
+				"info",
+				"worker_skill",
+				Vector2.ZERO,
+				total_ticks
+			)
+
+			print("[GameState] Worker %s: %s skill updated to %.2f" % [worker_name, skill_type, new_value])
+			break
+
+
+## Handle market price update event from server
+func apply_market_update_event(event: Dictionary) -> void:
+	var prices: Dictionary = event.get("prices", {})
+
+	if prices.is_empty():
+		return
+
+	# Update market prices
+	for ore_key in prices:
+		var ore_type := _parse_ore_type(ore_key)
+		if ore_type >= 0:
+			var new_price: float = float(prices[ore_key])
+			# Update in MarketState (server controls global prices in Phase 2)
+			# For now, just log it - full market sync needs more work
+			print("[GameState] Market: %s → $%.0f" % [ore_key, new_price])
