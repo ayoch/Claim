@@ -1541,7 +1541,7 @@ func _get_game_date_text() -> String:
 
 	# Advance through months/years
 	while true:
-		var days_in_current_month := days_in_month[month - 1]
+		var days_in_current_month: int = days_in_month[month - 1]
 		# Simple leap year check (good enough for 2112-2200 range)
 		if month == 2 and year % 4 == 0:
 			days_in_current_month = 29
