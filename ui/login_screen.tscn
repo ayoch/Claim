@@ -62,6 +62,18 @@ custom_minimum_size = Vector2(0, 40)
 layout_mode = 2
 placeholder_text = "Enter username..."
 
+[node name="EmailLabel" type="Label" parent="VBox"]
+layout_mode = 2
+text = "Email:"
+theme_override_font_sizes/font_size = 16
+
+[node name="EmailInput" type="LineEdit" parent="VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+placeholder_text = "Enter email address..."
+clear_button_enabled = true
+
 [node name="PasswordLabel" type="Label" parent="VBox"]
 layout_mode = 2
 text = "Password:"
