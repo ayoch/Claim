@@ -121,18 +121,8 @@ def get_market_prices() -> dict[str, float]:
     return dict(_market_prices)
 
 def get_total_ticks() -> int:
-    """Get total ticks synchronized to real-world time in 2112."""
-    # Calculate seconds elapsed since epoch (Jan 1, 2112 00:00:00)
-    # This keeps total_ticks synchronized with the real-world calendar in 2112
-    current_time = time.time()
-
-    # Calculate what time it would be in 2112 based on current date/time
-    now = datetime.datetime.now(datetime.timezone.utc)
-    game_time = datetime.datetime(2112, now.month, now.day, now.hour,
-                                   now.minute, now.second, tzinfo=datetime.timezone.utc)
-
-    # Calculate ticks as seconds since epoch
-    return int((game_time.timestamp() - _GAME_EPOCH))
+    """Get current total_ticks value."""
+    return _total_ticks
 
 async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]:
     global _total_ticks
