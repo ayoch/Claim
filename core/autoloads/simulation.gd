@@ -207,9 +207,8 @@ func _process(delta: float) -> void:
 		EventBus.tick.emit(total_dt)
 
 func _process_tick(dt: float, emit_event: bool = true) -> void:
-	# Sync total_ticks to real-world time in 2112 (not just increment)
-	# This keeps display time and simulation time synchronized
-	GameState.total_ticks = _calculate_ticks_from_realtime()
+	# Increment total_ticks based on dt (allows speed multiplier to affect game time)
+	GameState.total_ticks += dt
 
 	# var t0 := Time.get_ticks_usec()
 	_process_orbits(dt)

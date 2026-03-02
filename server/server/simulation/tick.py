@@ -136,8 +136,8 @@ def get_total_ticks() -> int:
 
 async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]:
     global _total_ticks
-    # Sync total_ticks to real-world time (don't just increment)
-    _total_ticks = get_total_ticks()
+    # Increment total_ticks (allows speed multiplier to affect game time)
+    _total_ticks += int(dt)
     events: list[dict] = []
     try:
         events += await _process_missions(db, dt)

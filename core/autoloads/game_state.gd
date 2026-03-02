@@ -90,8 +90,12 @@ var total_ticks: float = 0.0
 var total_crew_deaths: int = 0
 
 const START_YEAR: int = 2112  # Game is set in year 2112
-const START_MONTH: int = 2    # No longer used - date syncs with real-world calendar
-const START_DAY: int = 18     # No longer used - date syncs with real-world calendar
+
+# Game epoch: Starting date/time for new games (set dynamically at game start)
+# This is stored as the real-world date when the game started, in 2112
+var game_start_month: int = 0
+var game_start_day: int = 0
+var game_start_year: int = 2112
 
 # Days per month (non-leap)
 const DAYS_IN_MONTH: Array[int] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -108,26 +112,45 @@ func _days_in_month(m: int, y: int) -> int:
 	return DAYS_IN_MONTH[m - 1]
 
 func get_game_date() -> Dictionary:
-	# Game time is synchronized 1:1 with real-world time, mapped to year 2112
-	# Whatever the current real-world date/time is, show that same date/time in 2112
-	var now := Time.get_datetime_dict_from_system()
+	# Calculate game date from total_ticks (allows speed multiplier to work!)
+	# Game starts at today's real-world date in 2112, then advances based on ticks
 
-	var year := START_YEAR  # Always 2112
-	var month: int = now["month"]
-	var day: int = now["day"]
-	var hours: int = now["hour"]
-	var minutes: int = now["minute"]
+	# If game just started, set start date to today's date in 2112
+	if game_start_month == 0:
+		var now := Time.get_datetime_dict_from_system()
+		game_start_month = now["month"]
+		game_start_day = now["day"]
+		game_start_year = START_YEAR
 
-	# Handle edge cases where day doesn't exist in 2112 calendar
-	# (e.g., Feb 29 in non-leap year, though 2112 IS a leap year)
-	var max_day := _days_in_month(month, year)
-	if day > max_day:
-		# Move to next valid day
-		day = 1
-		month += 1
-		if month > 12:
-			month = 1
-			year += 1  # Extremely unlikely edge case
+	# Calculate elapsed time from total_ticks
+	var elapsed_seconds: float = total_ticks
+	var elapsed_days := int(elapsed_seconds / 86400.0)
+	var remaining_seconds := int(elapsed_seconds) % 86400
+	var hours := remaining_seconds / 3600
+	var minutes := (remaining_seconds % 3600) / 60
+
+	# Start from game_start_date and add elapsed days
+	var year := game_start_year
+	var month := game_start_month
+	var day := game_start_day
+
+	# Add elapsed days
+	while elapsed_days > 0:
+		var days_in_current_month := _days_in_month(month, year)
+		var days_left_in_month := days_in_current_month - day + 1
+
+		if elapsed_days >= days_left_in_month:
+			# Move to next month
+			elapsed_days -= days_left_in_month
+			month += 1
+			day = 1
+			if month > 12:
+				month = 1
+				year += 1
+		else:
+			# Stay in current month
+			day += elapsed_days
+			elapsed_days = 0
 
 	return { "year": year, "month": month, "day": day, "hours": hours, "minutes": minutes }
 
