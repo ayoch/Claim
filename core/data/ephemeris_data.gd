@@ -21,46 +21,95 @@ const ELEMENTS := {
 	"Neptune": {"a": 30.06896,"e": 0.00895, "L0": 304.349, "w": 48.124,  "dL": 218.486},
 }
 
-# Game start date: Feb 18, 2026 = JD 2461089.5 (approximate)
-const START_JD: float = 2461089.5
+# Game start date: Today's date in year 2112 (calculated dynamically)
+# J2000 reference epoch
 const J2000_JD: float = 2451545.0
 const SECONDS_PER_DAY: float = 86400.0
 const DAYS_PER_CENTURY: float = 36525.0
 
-# Cached positions (updated each tick)
+# Calculate START_JD dynamically based on current system date in year 2112
+static func _calculate_start_jd() -> float:
+	# Get current system date (month and day)
+	var now := Time.get_datetime_dict_from_system()
+
+	# Create date in year 2112 with current month/day
+	var game_year := 2112
+	var month: int = now["month"]
+	var day: int = now["day"]
+
+	# Calculate Unix timestamp for this date
+	# Note: GDScript's Time.get_unix_time_from_datetime_dict expects UTC
+	var game_date := {
+		"year": game_year,
+		"month": month,
+		"day": day,
+		"hour": 0,
+		"minute": 0,
+		"second": 0
+	}
+
+	var unix_timestamp: int = Time.get_unix_time_from_datetime_dict(game_date)
+
+	# Convert Unix timestamp to Julian Date
+	# JD = 2440587.5 + (Unix seconds / 86400)
+	var jd: float = 2440587.5 + (float(unix_timestamp) / SECONDS_PER_DAY)
+
+	print("[EphemerisData] Game start: %s %d, %d = JD %.1f" % [
+		Time.get_datetime_string_from_datetime_dict(game_date, false).split(" ")[0],
+		day,
+		game_year,
+		jd
+	])
+
+	return jd
+
+# START_JD is no longer used - we calculate JD directly from system time
+# var START_JD: float = _calculate_start_jd()
+
+# Cached positions (updated each second of real time)
 var _cached_positions: Dictionary = {}  # body_name -> Vector2
-var _last_total_ticks: float = -1.0
+var _last_update_time: int = -1  # Unix timestamp of last update
 
 func initialize() -> void:
-	_update_all_positions(0.0)
+	_update_all_positions_from_realtime()
+
+## Get current Julian Date based on real-world time in 2112
+static func _get_current_jd() -> float:
+	var now := Time.get_datetime_dict_from_system()
+	var game_date := {
+		"year": 2112,
+		"month": now["month"],
+		"day": now["day"],
+		"hour": now["hour"],
+		"minute": now["minute"],
+		"second": now["second"]
+	}
+	var unix_timestamp: int = Time.get_unix_time_from_datetime_dict(game_date)
+	return 2440587.5 + (float(unix_timestamp) / SECONDS_PER_DAY)
 
 ## Compute position for a planet at the current game time
 func get_position(body_name: String) -> Vector2:
-	# Update cache if game time changed
-	var ticks: float = GameState.total_ticks if GameState else 0.0
-	if ticks != _last_total_ticks:
-		_update_all_positions(ticks)
+	# Update cache if real-world time changed (check once per second)
+	var current_time: int = Time.get_unix_time_from_system()
+	if current_time != _last_update_time:
+		_update_all_positions_from_realtime()
 	return _cached_positions.get(body_name, Vector2.ZERO)
 
-## Predict position at a future time (current time + dt_ticks)
-func get_position_at_time(body_name: String, dt_ticks: float) -> Vector2:
-	var ticks: float = GameState.total_ticks if GameState else 0.0
-	var future_ticks := ticks + dt_ticks
-
-	# Convert future ticks to Julian Date
-	var days_elapsed := future_ticks / SECONDS_PER_DAY
-	var jd := START_JD + days_elapsed
-	var T := (jd - J2000_JD) / DAYS_PER_CENTURY
+## Predict position at a future time (current time + dt_seconds)
+func get_position_at_time(body_name: String, dt_seconds: float) -> Vector2:
+	# Get current JD and add dt to predict future position
+	var current_jd := _get_current_jd()
+	var future_jd := current_jd + (dt_seconds / SECONDS_PER_DAY)
+	var T := (future_jd - J2000_JD) / DAYS_PER_CENTURY
 
 	return _compute_position(body_name, T)
 
-## Update all planet positions for current game time
-func _update_all_positions(total_ticks: float) -> void:
-	_last_total_ticks = total_ticks
+## Update all planet positions based on current real-world time
+func _update_all_positions_from_realtime() -> void:
+	_last_update_time = Time.get_unix_time_from_system()
 
-	# Convert game ticks to Julian Date
-	var days_elapsed := total_ticks / SECONDS_PER_DAY
-	var jd := START_JD + days_elapsed
+	# Get Julian Date for current real-world time in 2112
+	var jd := _get_current_jd()
 
 	# Julian centuries from J2000
 	var T := (jd - J2000_JD) / DAYS_PER_CENTURY

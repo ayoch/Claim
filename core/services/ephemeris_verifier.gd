@@ -172,8 +172,11 @@ func _compare_results() -> void:
 		_log("No ephemeris available")
 		return
 
+	# total_ticks is now seconds since GAME_EPOCH (Jan 1, 2112 00:00:00 UTC)
+	# GAME_EPOCH_JD = 2440587.5 + (4481654400 / 86400) = 2492458.5
+	const GAME_EPOCH_JD: float = 2492458.5
 	var days_elapsed := _verify_game_ticks / EphemerisData.SECONDS_PER_DAY
-	var jd := EphemerisData.START_JD + days_elapsed
+	var jd := GAME_EPOCH_JD + days_elapsed
 	var T := (jd - EphemerisData.J2000_JD) / EphemerisData.DAYS_PER_CENTURY
 
 	var max_error := 0.0

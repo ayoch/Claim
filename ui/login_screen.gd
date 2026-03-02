@@ -23,8 +23,8 @@ func _ready() -> void:
 	# Load saved username if exists
 	_load_saved_username()
 
-	# Try auto-login if session exists
-	await _try_auto_login()
+	# DISABLED: Don't auto-login - user may want to switch accounts
+	# await _try_auto_login()
 
 	# Focus appropriate field: password if username filled, otherwise username
 	if username_input.text.strip_edges() != "":

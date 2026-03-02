@@ -10,6 +10,7 @@ const TESTING_MODE: bool = true
 @onready var speed_bar: PanelContainer = $VBox/SpeedBar
 @onready var date_display: Label = %DateDisplay
 @onready var save_btn: Button = $VBox/TopBar/VBox/ButtonRow/SaveBtn
+@onready var server_speed_display: Label = %ServerSpeedDisplay
 
 var _settings_popup: PanelContainer = null
 var _speed_input: LineEdit = null
@@ -25,6 +26,11 @@ var _save_load_dialog: PopupPanel = null
 var _server_poll_timer: float = 0.0
 const SERVER_POLL_INTERVAL: float = 2.0  # Poll server every 2 seconds
 var _polling_server: bool = false  # Prevents overlapping async calls
+
+# Server speed display polling
+var _server_speed_poll_timer: float = 0.0
+const SERVER_SPEED_POLL_INTERVAL: float = 2.0  # Poll server speed every 2 seconds
+var _polling_server_speed: bool = false
 
 func _ready() -> void:
 	# Position window lower on screen
@@ -71,10 +77,13 @@ func _ready() -> void:
 
 	if BackendManager.current_mode == BackendManager.BackendMode.LOCAL:
 		_setup_speed_bar()
+		server_speed_display.visible = false
 	else:
 		speed_bar.visible = false
+		server_speed_display.visible = true
 		# Start server state polling (Phase 1)
 		_server_poll_timer = 0.0  # Poll immediately on load
+		_server_speed_poll_timer = 0.0  # Poll server speed immediately
 		print("[MainUI] Server mode detected - starting state polling")
 
 		# Subscribe to server events (Phase 2)
@@ -101,6 +110,12 @@ func _process(delta: float) -> void:
 		if _server_poll_timer >= SERVER_POLL_INTERVAL and not _polling_server:
 			_server_poll_timer = 0.0
 			_poll_server_state()  # Async call (doesn't block)
+
+		# Poll server speed for display
+		_server_speed_poll_timer += delta
+		if _server_speed_poll_timer >= SERVER_SPEED_POLL_INTERVAL and not _polling_server_speed:
+			_server_speed_poll_timer = 0.0
+			_poll_server_speed()  # Async call (doesn't block)
 
 	# Throttle date display updates - doesn't need to be every frame
 	_date_update_timer += delta
@@ -500,12 +515,53 @@ func _poll_server_state() -> void:
 		GameState.apply_world_state(world_data)
 
 
+func _poll_server_speed() -> void:
+	_polling_server_speed = true
+
+	var server_backend = BackendManager.get_server_backend()
+	if not server_backend:
+		_polling_server_speed = false
+		return
+
+	var http := HTTPRequest.new()
+	http.set_tls_options(TLSOptions.client_unsafe())
+	add_child(http)
+
+	var url: String = server_backend.base_url + "/admin/speed"
+	var headers: Array = [
+		"Authorization: Bearer " + server_backend.auth_token
+	]
+
+	http.request(url, headers, HTTPClient.METHOD_GET)
+	var result: Array = await http.request_completed
+
+	http.queue_free()
+	_polling_server_speed = false
+
+	var http_result: int = result[0]
+	var response_code: int = result[1]
+
+	if http_result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
+		var response_body: PackedByteArray = result[3]
+		var json := JSON.new()
+		if json.parse(response_body.get_string_from_utf8()) == OK:
+			var data: Dictionary = json.data
+			var speed: float = data.get("speed", 1.0)
+
+			# Update display
+			if server_speed_display:
+				if speed >= 1000:
+					server_speed_display.text = "%.0fkx" % (speed / 1000.0)
+				else:
+					server_speed_display.text = "%.0fx" % speed
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # SERVER SPEED CONTROL (Testing Feature)
 # ══════════════════════════════════════════════════════════════════════════════
 
 var _current_server_speed: float = 1.0
-const SERVER_SPEED_STEPS: Array[float] = [1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 200.0, 500.0, 1000.0]
+const SERVER_SPEED_STEPS: Array[float] = [1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 200000.0]
 var _server_speed_index: int = 0
 
 func _adjust_server_speed(keycode: int) -> void:

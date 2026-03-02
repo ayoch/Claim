@@ -1,5 +1,5 @@
 from __future__ import annotations
-import logging, math, random
+import logging, math, random, time
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -20,7 +20,13 @@ BASE_ORE_PRICES: dict[str, float] = {
 }
 _market_prices: dict[str, float] = dict(BASE_ORE_PRICES)
 _payroll_accum: dict[int, float] = {}
-_total_ticks: int = 0
+
+# Game epoch: Fixed point in time (Jan 1, 2112 00:00:00 UTC)
+# All total_ticks are calculated as seconds elapsed since this epoch
+# This keeps total_ticks synchronized with real-world time in 2112
+import datetime
+_GAME_EPOCH = datetime.datetime(2112, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc).timestamp()
+_total_ticks: int = 0  # Will be calculated from real-time, not incremented
 
 # Worker skill progression constants
 BASE_XP: float = 86400.0  # 1 game-day at skill 0.0
@@ -115,11 +121,23 @@ def get_market_prices() -> dict[str, float]:
     return dict(_market_prices)
 
 def get_total_ticks() -> int:
-    return _total_ticks
+    """Get total ticks synchronized to real-world time in 2112."""
+    # Calculate seconds elapsed since epoch (Jan 1, 2112 00:00:00)
+    # This keeps total_ticks synchronized with the real-world calendar in 2112
+    current_time = time.time()
+
+    # Calculate what time it would be in 2112 based on current date/time
+    now = datetime.datetime.now(datetime.timezone.utc)
+    game_time = datetime.datetime(2112, now.month, now.day, now.hour,
+                                   now.minute, now.second, tzinfo=datetime.timezone.utc)
+
+    # Calculate ticks as seconds since epoch
+    return int((game_time.timestamp() - _GAME_EPOCH))
 
 async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]:
     global _total_ticks
-    _total_ticks += 1
+    # Sync total_ticks to real-world time (don't just increment)
+    _total_ticks = get_total_ticks()
     events: list[dict] = []
     try:
         events += await _process_missions(db, dt)
