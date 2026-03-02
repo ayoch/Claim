@@ -1,8 +1,9 @@
 import random
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from server.auth import require_admin_key
+from server.auth import hash_password, require_admin_key
 from server.database import get_db, init_db
 from server.models.asteroid import Asteroid
 from server.models.colony import Colony
@@ -13,6 +14,50 @@ from server.rate_limit import limiter
 from server.simulation.tick import get_total_ticks
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin_key)])
+
+
+class AdminPasswordResetRequest(BaseModel):
+    username: str
+    new_password: str
+
+
+@router.post("/reset-password")
+@limiter.limit("10/hour")
+async def admin_reset_password(
+    payload: AdminPasswordResetRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Admin-only password reset (no user authentication required).
+    Requires X-Admin-Key header.
+    """
+    # Validate password strength
+    if len(payload.new_password) < 12:
+        raise HTTPException(status_code=400, detail="Password must be at least 12 characters")
+    if not any(c.isupper() for c in payload.new_password):
+        raise HTTPException(status_code=400, detail="Password must contain uppercase letter")
+    if not any(c.islower() for c in payload.new_password):
+        raise HTTPException(status_code=400, detail="Password must contain lowercase letter")
+    if not any(c.isdigit() for c in payload.new_password):
+        raise HTTPException(status_code=400, detail="Password must contain number")
+
+    # Find player
+    result = await db.execute(select(Player).where(Player.username == payload.username.lower()))
+    player = result.scalar_one_or_none()
+
+    if not player:
+        raise HTTPException(status_code=404, detail=f"User '{payload.username}' not found")
+
+    # Reset password
+    player.password_hash = hash_password(payload.new_password)
+    db.add(player)
+    await db.commit()
+
+    return {
+        "message": f"Password reset for user '{player.username}'",
+        "is_admin": player.is_admin
+    }
 
 
 @router.get("/status")
