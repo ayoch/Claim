@@ -3903,61 +3903,6 @@ func apply_market_update_event(event: Dictionary) -> void:
 		EventBus.market_state_changed.emit()
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SERVER EVENT HANDLERS (Phase 2.5)
-# ══════════════════════════════════════════════════════════════════════════════
-
-## Handle worker skill level-up event from server
-func apply_worker_skill_event(event: Dictionary) -> void:
-	var worker_name: String = event.get("worker_name", "")
-	var skill_type: String = event.get("skill_type", "")
-	var new_value: float = float(event.get("new_value", 0.0))
-
-	# Find matching worker by name
-	for worker in workers:
-		if worker.worker_name == worker_name:
-			# Update the appropriate skill
-			match skill_type:
-				"pilot":
-					worker.pilot_skill = new_value
-				"engineer":
-					worker.engineer_skill = new_value
-				"mining":
-					worker.mining_skill = new_value
-
-			# Recalculate wage based on total skill
-			var total_skill := worker.pilot_skill + worker.engineer_skill + worker.mining_skill
-			worker.wage = int(80 + total_skill * 40)
-
-			# Add activity log entry
-			add_warning(
-				"📈 %s: %s skill → %.2f" % [worker_name, skill_type.capitalize(), new_value],
-				"info",
-				"worker_skill",
-				Vector2.ZERO,
-				total_ticks
-			)
-
-			print("[GameState] Worker %s: %s skill updated to %.2f" % [worker_name, skill_type, new_value])
-			break
-
-
-## Handle market price update event from server
-func apply_market_update_event(event: Dictionary) -> void:
-	var prices: Dictionary = event.get("prices", {})
-
-	if prices.is_empty():
-		return
-
-	# Update market prices
-	for ore_key in prices:
-		var ore_type := _parse_ore_type(ore_key)
-		if ore_type >= 0:
-			var new_price: float = float(prices[ore_key])
-			# Update in MarketState (server controls global prices in Phase 2)
-			# For now, just log it - full market sync needs more work
-			print("[GameState] Market: %s → $%.0f" % [ore_key, new_price])
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MULTIPLAYER WORLD STATE (All Players' Ships)
