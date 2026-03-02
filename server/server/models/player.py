@@ -11,6 +11,7 @@ class Player(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     username: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True, index=True)
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
     money: Mapped[int] = mapped_column(Integer, default=14_000_000, nullable=False)
     reputation: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

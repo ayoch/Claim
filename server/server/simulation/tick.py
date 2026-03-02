@@ -9,6 +9,7 @@ from server.models.mission import (
 from server.models.player import Player
 from server.models.ship import Ship
 from server.models.worker import Worker
+from server.simulation.contracts import process_contracts as _process_contracts
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,7 @@ async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]
         events += await _process_missions(db, dt)
         events += await _process_market(dt)
         events += await _process_payroll(db, dt)
+        events += await _process_contracts(db, dt)
     except Exception as exc:
         logger.exception('Tick %d failed: %s', _total_ticks, exc)
     return events

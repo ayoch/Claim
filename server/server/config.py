@@ -88,6 +88,21 @@ class Settings(BaseSettings):
     # Logging
     LOG_LEVEL: str = Field(default="INFO", description="DEBUG|INFO|WARNING|ERROR")
 
+    # Email settings (for password reset)
+    SMTP_ENABLED: bool = Field(default=False, description="Enable email sending")
+    SMTP_HOST: str = Field(default="smtp.gmail.com", description="SMTP server host")
+    SMTP_PORT: int = Field(default=587, description="SMTP server port")
+    SMTP_TLS: bool = Field(default=True, description="Use TLS for SMTP")
+    SMTP_USERNAME: str = Field(default="", description="SMTP username")
+    SMTP_PASSWORD: str = Field(default="", description="SMTP password")
+    SMTP_FROM_EMAIL: str = Field(default="noreply@claim.game", description="From email address")
+
+    # Frontend URL (for email links)
+    FRONTEND_URL: str = Field(
+        default="http://localhost:8080",
+        description="Frontend URL for email links"
+    )
+
     @property
     def cors_origins_list(self) -> list[str]:
         """Parse comma-separated CORS origins into list."""

@@ -56,10 +56,18 @@ async def register(payload: PlayerCreate, request: Request, db: AsyncSession = D
     # Validate password strength
     validate_password_strength(payload.password)
 
+    # Check if username already exists
     result = await db.execute(select(Player).where(Player.username == payload.username))
     if result.scalar_one_or_none():
         logger.warning(f"Registration failed - username already taken: {payload.username} from IP: {client_ip}")
         raise HTTPException(status_code=400, detail="Username already taken")
+
+    # Check if email already exists (only if email provided)
+    if payload.email:
+        email_result = await db.execute(select(Player).where(Player.email == payload.email))
+        if email_result.scalar_one_or_none():
+            logger.warning(f"Registration failed - email already taken: {payload.email} from IP: {client_ip}")
+            raise HTTPException(status_code=400, detail="Email already taken")
 
     # Check if username should be admin (only if NO admin exists yet)
     from server.config import settings
@@ -74,6 +82,7 @@ async def register(payload: PlayerCreate, request: Request, db: AsyncSession = D
 
     player = Player(
         username=payload.username,
+        email=payload.email,
         password_hash=hash_password(payload.password),
         is_admin=is_admin,
     )

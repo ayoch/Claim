@@ -1,11 +1,12 @@
 from datetime import datetime
 import re
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class PlayerCreate(BaseModel):
     username: str = Field(..., min_length=3, max_length=32)
+    email: EmailStr | None = None  # Optional for backward compatibility
     password: str = Field(..., min_length=8, max_length=128)
 
     @field_validator("username")
