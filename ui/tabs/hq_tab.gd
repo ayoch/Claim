@@ -82,10 +82,9 @@ func _ready() -> void:
 	# Create session info label
 	_create_session_info_label()
 
-	# Create account settings button and admin controls (server mode only)
+	# Create admin controls (server mode only)
 	# Defer to ensure backend is fully initialized
 	await get_tree().create_timer(0.5).timeout
-	_create_account_settings_button()
 	_create_admin_speed_controls()
 
 	# Market events → activity
@@ -1564,110 +1563,6 @@ func _get_game_date_text() -> String:
 
 	var month_names := ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 	return "%s %d, %d" % [month_names[month - 1], day, year]
-
-
-func _create_account_settings_button() -> void:
-	"""Create account settings button (server mode only)"""
-	print("=== Creating Account Settings Button ===")
-	print("Backend mode: ", BackendManager.current_mode)
-
-	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
-		print("Not in SERVER mode, skipping account settings button")
-		return
-
-	var server_backend = BackendManager.get_server_backend()
-	print("Server backend: ", server_backend)
-	if server_backend:
-		print("Has auth_token: ", server_backend.auth_token != "")
-
-	if not server_backend or not server_backend.auth_token:
-		print("No server backend or no auth token, skipping button")
-		return
-
-	print("Creating account settings button!")
-	# Create settings button
-	var settings_btn := Button.new()
-	settings_btn.text = "⚙️ Account Settings"
-	settings_btn.custom_minimum_size = Vector2(150, 28)
-	settings_btn.add_theme_font_size_override("font_size", 11)
-	settings_btn.pressed.connect(_show_account_settings_dialog)
-
-	# Add to UI (after session info label)
-	if session_info_label and session_info_label.get_parent():
-		var parent := session_info_label.get_parent()
-		parent.add_child(settings_btn)
-		parent.move_child(settings_btn, 1)
-
-
-func _show_account_settings_dialog() -> void:
-	"""Show dialog for account settings (add email, change password)"""
-	var dialog := AcceptDialog.new()
-	dialog.title = "Account Settings"
-	dialog.dialog_text = ""
-	dialog.min_size = Vector2i(400, 200)
-
-	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 12)
-
-	# Add Email Section
-	var email_label := Label.new()
-	email_label.text = "Add Email (for password recovery):"
-	email_label.add_theme_font_size_override("font_size", 12)
-	vbox.add_child(email_label)
-
-	var email_input := LineEdit.new()
-	email_input.placeholder_text = "your-email@example.com"
-	email_input.custom_minimum_size = Vector2(300, 32)
-	vbox.add_child(email_input)
-
-	var add_email_btn := Button.new()
-	add_email_btn.text = "Add Email"
-	add_email_btn.custom_minimum_size = Vector2(0, 32)
-	add_email_btn.pressed.connect(func() -> void:
-		var email: String = email_input.text.strip_edges()
-		if email == "":
-			return
-		_add_email_to_account(email)
-		dialog.hide()
-	)
-	vbox.add_child(add_email_btn)
-
-	dialog.add_child(vbox)
-	add_child(dialog)
-	dialog.popup_centered()
-
-
-func _add_email_to_account(email: String) -> void:
-	"""Add email to account via server"""
-	var server_backend = BackendManager.get_server_backend()
-	if not server_backend:
-		return
-
-	var http := HTTPRequest.new()
-	add_child(http)
-
-	var url: String = server_backend.base_url + "/account/add-email"
-	var headers := ["Authorization: Bearer " + server_backend.auth_token, "Content-Type: application/json"]
-	var body: String = JSON.stringify({"email": email})
-
-	var error := http.request(url, headers, HTTPClient.METHOD_POST, body)
-	if error != OK:
-		print("[HQTab] Failed to send add-email request: ", error)
-		http.queue_free()
-		return
-
-	var result: Array = await http.request_completed
-	http.queue_free()
-
-	var response_code: int = result[1]
-	if response_code == 200:
-		print("[HQTab] Email added successfully: ", email)
-		_queue_activity("Email added to account: %s" % email, Color(0.3, 0.9, 0.4))
-	else:
-		var response_body: PackedByteArray = result[3]
-		var body_str: String = response_body.get_string_from_utf8()
-		print("[HQTab] Failed to add email - Code: %d, Body: %s" % [response_code, body_str])
-		_queue_alert("Failed to add email: %s" % body_str, Color(0.9, 0.3, 0.3))
 
 
 func _create_admin_speed_controls() -> void:
