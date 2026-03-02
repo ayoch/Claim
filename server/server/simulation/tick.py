@@ -160,6 +160,12 @@ def _advance_transit_out(mission: Mission, ship: Ship, dt: float) -> list[dict]:
     mission.elapsed_ticks += dt
     ship.fuel = max(0.0, ship.fuel - mission.fuel_per_tick * dt)
 
+    # Update ship position (interpolate between origin and destination)
+    if mission.transit_time > 0:
+        progress = min(mission.elapsed_ticks / mission.transit_time, 1.0)
+        ship.position_x = mission.origin_x + (mission.destination_x - mission.origin_x) * progress
+        ship.position_y = mission.origin_y + (mission.destination_y - mission.origin_y) * progress
+
     # Grant pilot and engineer XP to all crew during transit
     events: list[dict] = []
     for worker in ship.workers:
@@ -170,6 +176,9 @@ def _advance_transit_out(mission: Mission, ship: Ship, dt: float) -> list[dict]:
         mission.status = STATUS_MINING
         mission.elapsed_ticks = 0.0
         ship.is_stationed = False
+        # Snap to destination position
+        ship.position_x = mission.destination_x
+        ship.position_y = mission.destination_y
         logger.info('Mission %d: arrived, starting mining', mission.id)
         events.append({'type': 'mission_arrived', 'mission_id': mission.id, 'player_id': mission.player_id})
 
@@ -206,6 +215,12 @@ def _advance_transit_back(mission: Mission, ship: Ship, dt: float) -> list[dict]
     mission.elapsed_ticks += dt
     ship.fuel = max(0.0, ship.fuel - mission.fuel_per_tick * dt)
 
+    # Update ship position (interpolate from destination back to origin)
+    if mission.transit_time > 0:
+        progress = min(mission.elapsed_ticks / mission.transit_time, 1.0)
+        ship.position_x = mission.destination_x + (mission.origin_x - mission.destination_x) * progress
+        ship.position_y = mission.destination_y + (mission.origin_y - mission.destination_y) * progress
+
     # Grant pilot and engineer XP to all crew during transit
     events: list[dict] = []
     for worker in ship.workers:
@@ -216,6 +231,9 @@ def _advance_transit_back(mission: Mission, ship: Ship, dt: float) -> list[dict]
         mission.status = STATUS_COMPLETED
         ship.is_stationed = True
         ship.station_colony_id = None
+        # Snap to origin position
+        ship.position_x = mission.origin_x
+        ship.position_y = mission.origin_y
         total_value = _sell_cargo(ship)
         if total_value > 0:
             logger.info('Mission %d: completed, cargo %.1fM cr', mission.id, total_value / 1e6)

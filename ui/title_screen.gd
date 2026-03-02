@@ -6,8 +6,13 @@ extends Control
 @onready var online_btn: Button = %OnlineButton
 @onready var settings_btn: Button = %SettingsButton
 @onready var quit_btn: Button = %QuitButton
-@onready var status_light: ColorRect = %StatusLight
+@onready var status_icon: TextureRect = %StatusIcon
 @onready var status_label: Label = %StatusLabel
+
+# Server status icons
+var icon_connected := preload("res://ui/assets/icons/ServerConnected.png")
+var icon_connecting := preload("res://ui/assets/icons/Server_Connecting.png")
+var icon_not_connected := preload("res://ui/assets/icons/Server_NotConnected.png")
 
 var http_request: HTTPRequest
 var _save_load_dialog: PopupPanel = null
@@ -101,6 +106,10 @@ func _check_server_status() -> void:
 	add_child(http_request)
 	http_request.request_completed.connect(_on_server_status_received)
 
+	# Set connecting state
+	status_icon.texture = icon_connecting
+	status_label.text = "Server: Checking..."
+
 	var url: String = server_backend.base_url + "/health"
 	print("Checking server status at: ", url)
 	var error := http_request.request(url)
@@ -138,8 +147,8 @@ func _on_server_status_received(result: int, response_code: int, headers: Packed
 
 func _set_server_status(online: bool, label_text: String) -> void:
 	if online:
-		status_light.color = Color(0.2, 0.8, 0.2, 1.0)  # Green
+		status_icon.texture = icon_connected
 	else:
-		status_light.color = Color(0.8, 0.2, 0.2, 1.0)  # Red
+		status_icon.texture = icon_not_connected
 
 	status_label.text = label_text

@@ -70,6 +70,10 @@ class Mission(Base):
     origin_name: Mapped[str] = mapped_column(String(64), default="", nullable=False)
     origin_is_earth: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
+    # Destination snapshot (for interpolating ship position during transit)
+    destination_x: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    destination_y: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+
     return_to_station: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # How long to spend mining (in game seconds = real seconds at 1x)
