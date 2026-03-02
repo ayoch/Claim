@@ -10,7 +10,6 @@ const TESTING_MODE: bool = true
 @onready var speed_bar: PanelContainer = $VBox/SpeedBar
 @onready var date_display: Label = %DateDisplay
 @onready var save_btn: Button = $VBox/TopBar/VBox/ButtonRow/SaveBtn
-@onready var server_speed_display: Label = %ServerSpeedDisplay
 
 var _settings_popup: PanelContainer = null
 var _speed_input: LineEdit = null
@@ -75,12 +74,10 @@ func _ready() -> void:
 		_save_load_dialog.save_confirmed.connect(_on_save_confirmed)
 		_save_load_dialog.load_confirmed.connect(_on_load_confirmed)
 
-	if BackendManager.current_mode == BackendManager.BackendMode.LOCAL:
-		_setup_speed_bar()
-		server_speed_display.visible = false
-	else:
-		speed_bar.visible = false
-		server_speed_display.visible = true
+	# Speed bar visible in both LOCAL and SERVER modes
+	_setup_speed_bar()
+
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
 		# Start server state polling (Phase 1)
 		_server_poll_timer = 0.0  # Poll immediately on load
 		_server_speed_poll_timer = 0.0  # Poll server speed immediately
@@ -548,12 +545,7 @@ func _poll_server_speed() -> void:
 			var data: Dictionary = json.data
 			var speed: float = data.get("speed", 1.0)
 
-			# Update display
-			if server_speed_display:
-				if speed >= 1000:
-					server_speed_display.text = "%.0fkx" % (speed / 1000.0)
-				else:
-					server_speed_display.text = "%.0fx" % speed
+			# Speed is now displayed in the SpeedBar (visible in both modes)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
