@@ -92,4 +92,126 @@ This is why experienced operators keep ships working regionally rather than cons
 
 ---
 
+## The Whisper - Deep Space Syndrome
+
+### Overview
+
+A mysterious affliction is spreading through the deep space mining community. No one knows its cause, but death comes suddenly and without warning. Colonial health authorities have dubbed it **"The Whisper"** - named for the last sound witnesses report hearing from victims moments before they collapse.
+
+### Symptoms & Progression
+
+**Stage 1 - The Silence (Hours to Days)**
+- No detectable symptoms
+- Victims appear completely healthy
+- Standard medical scans show nothing unusual
+- Life support systems report normal readings
+
+**Stage 2 - The Whisper (Seconds)**
+- Victims report hearing a faint, incomprehensible whisper
+- Sound appears to come from everywhere and nowhere
+- No audio equipment has ever captured it
+- Described as "like static, but with intent"
+
+**Stage 3 - Collapse (Instantaneous)**
+- Complete systems failure
+- All vital signs cease simultaneously
+- No pain, no struggle - subjects simply stop
+- Autopsies reveal no physical cause of death
+
+### Who Is Affected?
+
+**High-Risk Population:**
+- Deep space miners operating beyond Mars orbit
+- Asteroid colony residents (particularly new arrivals)
+- Long-duration mission crews
+- Anyone spending extended time in the asteroid belt or outer system
+
+**Low-Risk Population:**
+- Earth orbital workers
+- Cislunar operations
+- Inner system (Earth-Mars) transport crews
+- Planetside populations
+
+**The Corporate Connection:**
+When an entire mining corporation ceases operations - whether through bankruptcy, dissolution, or command structure collapse - its workers die en masse. The Whisper claims them all within hours, regardless of physical location. This has led to dark speculation about corporate neural implants, shared life support networks, or something stranger.
+
+### Current Theories
+
+**Medical Explanations (Disputed):**
+- Unknown radiation exposure from asteroid composition
+- Neurological damage from prolonged microgravity
+- Prion-like infection transmitted through recycled air
+- Psychological breakdown from isolation ("space madness")
+
+**Economic Factors:**
+- Corporate life support contracts (if corp dissolves, support terminates?)
+- Shared medical implant networks tied to employment status
+- Automated health systems failing when parent company goes bankrupt
+
+**Fringe Theories:**
+- Alien artifacts in certain asteroid types
+- Quantum entanglement with corporate AI systems
+- Deliberate bioweapon targeting independent miners
+- Something in the dark between the asteroids
+
+### Impact on Industry
+
+**Why Mining Continues:**
+Despite The Whisper, the asteroid mining industry hasn't slowed. Why?
+- **Profit trumps fear**: Ore prices remain astronomical
+- **Selective targeting**: Only affects those who work beyond Mars
+- **Corporate incentives**: Hazard pay has tripled for outer-system work
+- **Replacement workers**: Desperate individuals willing to risk The Whisper for a chance at fortune
+
+**Corporate Strategies:**
+- Rapid hiring to replace lost crews
+- Minimal training to get workers operational quickly
+- No long-term employment contracts (harder for families to sue)
+- "Rotating assignments" to limit exposure (unproven effectiveness)
+
+**The Ghost Ships:**
+When a corporation dissolves, its ships continue on their last trajectory - now ownerless, crewless derelicts drifting through the belt. These ghost ships, still laden with equipment and cargo, become salvage prizes for surviving corporations. Some say the ships themselves are cursed. Others see opportunity.
+
+### Government Response
+
+**Official Position:**
+The Solar System Health Organization (SSHO) has issued the following statement:
+
+> "Current evidence suggests Deep Space Syndrome is a complex interaction between prolonged microgravity exposure, cosmic radiation, and psychological stressors. We recommend all mining corporations implement strict rotation schedules and comprehensive health monitoring. At this time, there is no evidence of infectious transmission or corporate liability."
+
+**Unofficial Reality:**
+- No quarantine protocols (would shut down the industry)
+- No mandatory health screening (too expensive, too slow)
+- No restrictions on deep space operations (lobbying prevents it)
+- Investigations quietly dropped when corporations "donate" to research
+
+**Colonial Authorities:**
+Individual colonies have banned workers from dissolved corporations from docking or seeking medical aid, fearing contamination. This has led to desperate situations where dying crews are turned away from the only help within weeks of travel.
+
+### What This Means For You
+
+As a corporation operator, you understand the risks:
+- **Your workers know**: They've signed waivers. Hazard pay compensates for risk.
+- **Your ships are assets**: If your company dissolves, they drift on as salvage.
+- **Your equipment remains**: Ghost ships still carry valuable mining lasers and scanners.
+- **Your legacy**: Other corporations will find your derelicts and wonder what happened.
+
+**The unspoken rule**: Keep your corporation operational. Bankruptcy isn't just financial ruin - it's a death sentence for everyone in your employ.
+
+### The Mystery Deepens
+
+Recent reports suggest The Whisper is becoming more aggressive:
+- Shorter time between corporate dissolution and worker death
+- Cases reported closer to Mars (previously limited to belt/outer system)
+- Ghost ships showing signs of movement (course corrections, power fluctuations?)
+- Whispers heard by observers near derelict vessels
+
+No one knows what The Whisper truly is. But in the darkness between the asteroids, something waits.
+
+---
+
+*Corporate Directive: All workers are advised that Deep Space Syndrome is covered under standard hazard insurance. Next of kin will be notified. Resume operations.*
+
+---
+
 *Note: As your company expands, you may invest in fuel processing equipment, establish fuel depots at key locations, or even contract with Jupiter atmosphere harvesters for He-3 supplies. The fuel economy is as much a game mechanic as the mining itself.*

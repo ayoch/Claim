@@ -339,3 +339,125 @@ async def give_starter_pack(
     db.add(player)
     await db.commit()
     return {"message": "Starter pack granted", "ship_id": ship.id, "colony_id": colony.id}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ACCOUNT DELETION
+# ══════════════════════════════════════════════════════════════════════════════
+
+from server.admin.account_deletion import (
+    delete_player_account,
+    cleanup_inactive_players,
+    get_deletion_preview
+)
+
+
+@router.get("/players/{player_id}/deletion-preview")
+@limiter.limit("30/minute")
+async def preview_player_deletion(
+    player_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Preview what would happen if a player account was deleted.
+
+    Shows ships, workers, equipment, missions that would be affected.
+    """
+    preview = await get_deletion_preview(db, player_id)
+
+    if "error" in preview:
+        raise HTTPException(status_code=404, detail=preview["error"])
+
+    return preview
+
+
+@router.delete("/players/{player_id}")
+@limiter.limit("10/minute")
+async def delete_player(
+    player_id: int,
+    reason: str = "Admin action",
+    request: Request = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Delete a player account.
+
+    Ships become derelict (maintain trajectory), workers die.
+
+    Lore: The Whisper (mysterious deep space disease) claims the
+    corporation's workers, and ships drift on as ghost vessels.
+    """
+    summary = await delete_player_account(db, player_id, reason)
+
+    if not summary.get("success"):
+        raise HTTPException(status_code=404, detail=summary.get("error", "Unknown error"))
+
+    return summary
+
+
+@router.post("/cleanup-inactive")
+@limiter.limit("5/hour")
+async def cleanup_inactive(
+    days_inactive: int = 90,
+    dry_run: bool = True,
+    request: Request = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Delete inactive player accounts.
+
+    Removes players who haven't logged in for specified days.
+    Use dry_run=true to preview without deleting.
+    """
+    results = await cleanup_inactive_players(db, days_inactive, dry_run)
+
+    return {
+        "dry_run": dry_run,
+        "days_inactive_threshold": days_inactive,
+        "players_affected": len(results),
+        "results": results
+    }
+
+
+@router.get("/server-stats")
+@limiter.limit("60/minute")
+async def get_server_stats(request: Request, db: AsyncSession = Depends(get_db)):
+    """Get server statistics (players, ships, workers, derelicts)."""
+    from server.models.mission import Mission
+
+    total_players = await db.scalar(select(func.count()).select_from(Player))
+    total_ships = await db.scalar(select(func.count()).select_from(Ship))
+    total_workers = await db.scalar(select(func.count()).select_from(Worker))
+    total_missions = await db.scalar(select(func.count()).select_from(Mission))
+
+    # Active players (last 7 days)
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    active_players = await db.scalar(
+        select(func.count()).select_from(Player).where(Player.last_seen >= cutoff)
+    )
+
+    # Derelict/ownerless ships
+    derelict_ships = await db.scalar(
+        select(func.count()).select_from(Ship).where(Ship.is_derelict == True)  # noqa: E712
+    )
+    ownerless_ships = await db.scalar(
+        select(func.count()).select_from(Ship).where(Ship.player_id == None)  # noqa: E711
+    )
+
+    return {
+        "players": {
+            "total": total_players,
+            "active_7d": active_players,
+            "inactive_7d": total_players - active_players
+        },
+        "ships": {
+            "total": total_ships,
+            "derelict": derelict_ships,
+            "ownerless": ownerless_ships,
+            "active": total_ships - derelict_ships
+        },
+        "workers": {"total": total_workers},
+        "missions": {"total": total_missions}
+    }
