@@ -1776,7 +1776,7 @@ func _poll_server_speed() -> void:
 		var http := HTTPRequest.new()
 		add_child(http)
 
-		var url: String = server_backend.base_url + "/admin/get-speed"
+		var url: String = server_backend.base_url + "/admin/speed"
 		var headers := ["Authorization: Bearer " + server_backend.auth_token]
 
 		var error := http.request(url, headers, HTTPClient.METHOD_GET)
@@ -1788,7 +1788,7 @@ func _poll_server_speed() -> void:
 				var json := JSON.new()
 				if json.parse(response_body.get_string_from_utf8()) == OK:
 					var data: Dictionary = json.data
-					var speed: float = data.get("multiplier", 1.0)
+					var speed: float = data.get("speed", 1.0)
 					var speed_display := _admin_speed_controls.get_node_or_null("SpeedDisplay")
 					if speed_display:
 						if speed >= 1000:

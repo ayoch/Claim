@@ -24,7 +24,7 @@ _simulation_speed_multiplier: float = 1.0
 
 
 class SpeedUpdate(BaseModel):
-    multiplier: float = Field(..., ge=0.1, le=1000.0, description="Speed multiplier (0.1x to 1000x)")
+    multiplier: float = Field(..., ge=0.1, le=200000.0, description="Speed multiplier (0.1x to 200000x)")
 
 
 def require_admin(player: Player = Depends(get_current_player)) -> Player:
