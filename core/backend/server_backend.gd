@@ -611,9 +611,9 @@ func _on_sse_closed(result: int, response_code: int, headers: PackedStringArray,
 
 	_sse_connected = false
 
-	# Auto-reconnect after 5 seconds if we're still in SERVER mode
+	# Auto-reconnect after 1 second if we're still in SERVER mode
 	if _backend_manager:
-		await _backend_manager.get_tree().create_timer(5.0).timeout
+		await _backend_manager.get_tree().create_timer(1.0).timeout
 		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
 			print("[ServerBackend] Reconnecting to event stream...")
 			subscribe_events(Callable())  # Reconnect

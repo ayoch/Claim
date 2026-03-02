@@ -26,7 +26,7 @@ async def stream_events(player: Player = Depends(get_current_player)):
             yield _sse_line(connected)
             while True:
                 try:
-                    event = await asyncio.wait_for(q.get(), timeout=30.0)
+                    event = await asyncio.wait_for(q.get(), timeout=5.0)
                     player_id = event.get("player_id")
                     if player_id is None or player_id == player.id:
                         yield _sse_line(event)
