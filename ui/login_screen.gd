@@ -45,27 +45,40 @@ func _load_saved_username() -> void:
 
 func _try_auto_login() -> void:
 	"""Attempt auto-login with saved session token"""
+	print("=== Auto-Login Attempt ===")
 	BackendManager.switch_mode(BackendManager.BackendMode.SERVER)
 	var server_backend = BackendManager.get_server_backend()
+
 	if not server_backend:
+		print("No server backend found")
 		return
+
+	print("Server backend exists")
+	print("Auth token: ", server_backend.auth_token if server_backend.auth_token != "" else "<empty>")
+	print("Player ID: ", server_backend.player_id)
+	print("Has saved session: ", server_backend.has_saved_session())
 
 	if not server_backend.has_saved_session():
+		print("No saved session, skipping auto-login")
 		return
 
+	print("Attempting to restore session...")
 	_show_status("Restoring session...", Color(0.8, 0.8, 0.8))
 	_set_processing(true)
 
 	# Verify token is still valid by fetching game state
 	var state: Dictionary = await BackendManager.get_game_state()
+	print("Game state response: ", state.keys() if not state.is_empty() else "<empty>")
 
-	if state.has("player") and state["player"] != null:
+	if state.has("player_id") and state.get("player_id", 0) > 0:
 		# Token is valid, proceed to game
+		print("Session valid! Auto-login successful")
 		_show_status("Session restored! Loading game...", Color(0.3, 0.9, 0.3))
 		await get_tree().create_timer(1.0).timeout
 		get_tree().change_scene_to_file("res://ui/main_ui.tscn")
 	else:
 		# Token expired or invalid, clear token but keep username
+		print("Session validation failed - clearing token but keeping username")
 		server_backend.auth_token = ""
 		server_backend.player_id = 0
 		server_backend._clear_auth_data()

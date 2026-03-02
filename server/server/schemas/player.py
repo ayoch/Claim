@@ -38,6 +38,7 @@ class PlayerLogin(BaseModel):
 class PlayerOut(BaseModel):
     id: int
     username: str
+    email: str | None
     money: int
     reputation: int
     hq_colony_id: int | None

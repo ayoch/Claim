@@ -332,6 +332,16 @@ func _show_settings() -> void:
 	)
 	vbox.add_child(date_option)
 
+	# Account Settings button (server mode only)
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		var account_btn := Button.new()
+		account_btn.text = "⚙️ Account Settings"
+		account_btn.custom_minimum_size = Vector2(0, 44)
+		account_btn.pressed.connect(func() -> void:
+			_show_account_settings_dialog()
+		)
+		vbox.add_child(account_btn)
+
 	var close_btn := Button.new()
 	close_btn.text = "Close"
 	close_btn.custom_minimum_size = Vector2(0, 44)
@@ -344,6 +354,110 @@ func _show_settings() -> void:
 	_settings_popup.add_child(vbox)
 	add_child(_settings_popup)
 	_settings_popup.position = (size - _settings_popup.custom_minimum_size) / 2
+
+
+func _show_account_settings_dialog() -> void:
+	"""Show dialog for account settings (add email, change password)"""
+	var server_backend = BackendManager.get_server_backend()
+	if not server_backend:
+		return
+
+	# Fetch current player info to get email
+	var http := HTTPRequest.new()
+	add_child(http)
+	var url: String = server_backend.base_url + "/auth/me"
+	var headers := ["Authorization: Bearer " + server_backend.auth_token]
+	http.request(url, headers, HTTPClient.METHOD_GET)
+	var result: Array = await http.request_completed
+	http.queue_free()
+
+	var current_email: String = ""
+	var response_code: int = result[1]
+	if response_code == 200:
+		var response_body: PackedByteArray = result[3]
+		var json := JSON.new()
+		if json.parse(response_body.get_string_from_utf8()) == OK:
+			var data: Dictionary = json.data
+			current_email = data.get("email", "")
+
+	# Build dialog
+	var dialog := AcceptDialog.new()
+	dialog.title = "Account Settings"
+	dialog.dialog_text = ""
+	dialog.min_size = Vector2(400, 250)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 12)
+
+	# Show current email
+	var current_email_label := Label.new()
+	if current_email != "":
+		current_email_label.text = "Current email: " + current_email
+		current_email_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+	else:
+		current_email_label.text = "No email on file"
+		current_email_label.add_theme_color_override("font_color", Color(0.9, 0.6, 0.3))
+	current_email_label.add_theme_font_size_override("font_size", 12)
+	vbox.add_child(current_email_label)
+
+	# Add/Change Email Section
+	var email_label := Label.new()
+	email_label.text = "Add or change email:"
+	email_label.add_theme_font_size_override("font_size", 12)
+	vbox.add_child(email_label)
+
+	var email_input := LineEdit.new()
+	email_input.placeholder_text = "your-email@example.com"
+	email_input.custom_minimum_size = Vector2(300, 32)
+	vbox.add_child(email_input)
+
+	var add_email_btn := Button.new()
+	add_email_btn.text = "Update Email"
+	add_email_btn.custom_minimum_size = Vector2(0, 32)
+	add_email_btn.pressed.connect(func() -> void:
+		var email: String = email_input.text.strip_edges()
+		if email == "":
+			return
+		_add_email_to_account(email)
+		dialog.hide()
+	)
+	vbox.add_child(add_email_btn)
+
+	dialog.add_child(vbox)
+	add_child(dialog)
+	dialog.popup_centered()
+
+
+func _add_email_to_account(email: String) -> void:
+	"""Add email to account via server"""
+	var server_backend = BackendManager.get_server_backend()
+	if not server_backend:
+		return
+
+	var http := HTTPRequest.new()
+	add_child(http)
+
+	var url: String = server_backend.base_url + "/account/add-email"
+	var headers := ["Authorization: Bearer " + server_backend.auth_token, "Content-Type: application/json"]
+	var body: String = JSON.stringify({"email": email})
+
+	var error := http.request(url, headers, HTTPClient.METHOD_POST, body)
+	if error != OK:
+		print("[MainUI] Failed to send add-email request: ", error)
+		http.queue_free()
+		return
+
+	var result: Array = await http.request_completed
+	http.queue_free()
+
+	var response_code: int = result[1]
+	if response_code == 200:
+		print("[MainUI] Email added successfully: ", email)
+	else:
+		var response_body: PackedByteArray = result[3]
+		var body_str: String = response_body.get_string_from_utf8()
+		print("[MainUI] Failed to add email - Code: %d, Body: %s" % [response_code, body_str])
+
 
 func _format_number(n: int) -> String:
 	var s := str(abs(n))
