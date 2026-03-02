@@ -6,32 +6,49 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Server Infrastructure & Auth Polish
+### Latest Work Session: Server Ship Position Sync
+**Date:** 2026-03-02 (Mac/HK-47) - Continued
+**Status:** Complete and deployed to Railway
+
+**What was done:**
+- ✅ Fixed server ship position interpolation during transit
+- ✅ Verified client simulation properly disabled in SERVER mode
+- ✅ Confirmed 2-second server polling is working correctly
+- ✅ Completed top 3 server integration priorities
+
+**The Bug:**
+- Server simulation was interpolating ship positions during transit using `mission.destination_x/destination_y`
+- However, these fields were NEVER set during mission creation
+- Ships interpolated toward (0, 0) instead of their actual destinations
+- Result: Ship positions in SERVER mode were completely wrong
+
+**The Fix:**
+- Added `destination_x=target_x` and `destination_y=target_y` to Mission constructor in `server/routers/game.py`
+- Now the complete position update flow works:
+  1. Server simulation updates ship.position_x/y during transit (tick.py)
+  2. Server sends positions via ShipOut schema (position_x, position_y)
+  3. Client polls every 2 seconds (main_ui.gd)
+  4. Client applies positions via GameState.apply_server_state()
+
+**Server Integration Status:**
+- ✅ Client simulation disabled in SERVER mode (simulation.gd:164-165)
+- ✅ Ship position updates from server working (just fixed)
+- ✅ State polling every 2 seconds (main_ui.gd:26)
+- ⏳ SSE event broadcasting (next priority)
+- ⏳ Multi-player features (future)
+
+**Files modified:**
+- `server/server/routers/game.py` - Added destination_x/y to mission creation
+
+### Previous Session: Server Infrastructure & Auth Polish
 **Date:** 2026-03-02 (Mac/HK-47)
 **Status:** Complete and deployed to Railway
 **Handoff Doc:** `HANDOFF_2026-03-02_SERVER_IMPROVEMENTS.md` (read this for full details)
 
-**What was done:**
-- ✅ Dark River splash screen with fade animation
-- ✅ Session persistence fix (auto-login now works!)
-- ✅ Server date/time synchronization (total_ticks from server)
-- ✅ Account settings UI (email management via Settings menu)
-- ✅ Admin speed controls (1x to 200kx with live display)
-- ✅ Server status icons (connected/connecting/offline)
-- ✅ UI polish (solar map search to bottom-left)
+- Dark River splash screen, session persistence, admin controls, account settings
+- See handoff doc for full details
 
-**Key fixes:**
-- Auto-login validation (was checking wrong key)
-- Admin auth (Bearer token instead of admin key)
-- Speed limit increased (1000x → 200,000x)
-- Email display in account settings
-- is_admin flag returned to client
-
-**Files modified:**
-- Server: `schemas/player.py`, `schemas/game.py`, `routers/game.py`, `routers/admin_speed.py`
-- Client: `login_screen.gd`, `main_ui.gd`, `hq_tab.gd`, `title_screen.*`, splash screen (new)
-
-### Previous Session: Local Economy System
+### Earlier Session: Local Economy System
 **Date:** 2026-02-27 (Mac/HK-47)
 **Status:** Backend complete, UI pending
 **Handoff Doc:** `HANDOFF_2026-02-27_LOCAL_ECONOMY.md`
