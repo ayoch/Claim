@@ -1646,7 +1646,7 @@ func _add_email_to_account(email: String) -> void:
 		http.queue_free()
 		return
 
-	var result := await http.request_completed
+	var result: Array = await http.request_completed
 	http.queue_free()
 
 	var response_code: int = result[1]
@@ -1717,7 +1717,7 @@ func _set_server_speed(speed: float) -> void:
 		http.queue_free()
 		return
 
-	var result := await http.request_completed
+	var result: Array = await http.request_completed
 	http.queue_free()
 
 	var response_code: int = result[1]
