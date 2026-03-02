@@ -19,19 +19,28 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Add email column to players table (nullable for backward compatibility)
-    op.add_column('players', sa.Column('email', sa.String(255), nullable=True, unique=True, index=True))
+    from sqlalchemy import inspect
+    from alembic import op
 
-    # Create password_reset_tokens table
-    op.create_table(
-        'password_reset_tokens',
-        sa.Column('id', sa.Integer(), primary_key=True, index=True),
-        sa.Column('player_id', sa.Integer(), sa.ForeignKey('players.id', ondelete='CASCADE'), nullable=False, index=True),
-        sa.Column('token', sa.String(255), unique=True, nullable=False, index=True),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
-        sa.Column('used_at', sa.DateTime(timezone=True), nullable=True),
-    )
+    conn = op.get_bind()
+    inspector = inspect(conn)
+
+    # Add email column to players table if it doesn't exist
+    columns = [col['name'] for col in inspector.get_columns('players')]
+    if 'email' not in columns:
+        op.add_column('players', sa.Column('email', sa.String(255), nullable=True, unique=True, index=True))
+
+    # Create password_reset_tokens table if it doesn't exist
+    if 'password_reset_tokens' not in inspector.get_table_names():
+        op.create_table(
+            'password_reset_tokens',
+            sa.Column('id', sa.Integer(), primary_key=True, index=True),
+            sa.Column('player_id', sa.Integer(), sa.ForeignKey('players.id', ondelete='CASCADE'), nullable=False, index=True),
+            sa.Column('token', sa.String(255), unique=True, nullable=False, index=True),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+            sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
+            sa.Column('used_at', sa.DateTime(timezone=True), nullable=True),
+        )
 
 
 def downgrade() -> None:
