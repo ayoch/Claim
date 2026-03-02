@@ -2,6 +2,7 @@ import math
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 from server.auth import get_current_player
 from server.database import get_db
 from server.models.asteroid import Asteroid
@@ -248,3 +249,50 @@ async def list_colonies(db: AsyncSession = Depends(get_db)):
 @router.get("/market")
 async def market_prices():
     return get_market_prices()
+
+
+@router.get("/world")
+async def get_world_state(
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Get shared world state - all ships from all players for multiplayer visibility.
+    Returns ships with owner information so clients can distinguish their own ships.
+    """
+    # Get all ships with their player relationship loaded
+    result = await db.execute(
+        select(Ship).options(selectinload(Ship.player))
+    )
+    all_ships = list(result.scalars().all())
+
+    # Convert to ShipOut with owner_username populated
+    ships_out = []
+    for ship in all_ships:
+        ship_dict = {
+            "id": ship.id,
+            "player_id": ship.player_id,
+            "owner_username": ship.player.username if ship.player else "Unknown",
+            "ship_name": ship.ship_name,
+            "ship_class": ship.ship_class,
+            "max_thrust_g": ship.max_thrust_g,
+            "thrust_setting": ship.thrust_setting,
+            "cargo_capacity": ship.cargo_capacity,
+            "cargo_volume": ship.cargo_volume,
+            "fuel_capacity": ship.fuel_capacity,
+            "fuel": ship.fuel,
+            "base_mass": ship.base_mass,
+            "min_crew": ship.min_crew,
+            "max_equipment_slots": ship.max_equipment_slots,
+            "engine_condition": ship.engine_condition,
+            "is_derelict": ship.is_derelict,
+            "position_x": ship.position_x,
+            "position_y": ship.position_y,
+            "is_stationed": ship.is_stationed,
+            "station_colony_id": ship.station_colony_id,
+            "current_cargo": ship.current_cargo or {},
+            "supplies": ship.supplies or {},
+        }
+        ships_out.append(ShipOut(**ship_dict))
+
+    return {"ships": ships_out}

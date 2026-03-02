@@ -174,6 +174,22 @@ func get_game_state() -> Dictionary:
 		return {}
 
 
+## Get shared world state (all players' ships for multiplayer)
+func get_world_state() -> Dictionary:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var result := await _http_request_async(http, base_url + "/game/world", headers, HTTPClient.METHOD_GET, "")
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to get world state: " + str(err))
+		return {}
+
+
 func save_game() -> void:
 	# Server saves continuously - this is a no-op for server mode
 	# In multiplayer, state is always on server

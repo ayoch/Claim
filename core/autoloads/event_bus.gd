@@ -49,6 +49,9 @@ signal trade_mission_redirect_failed(ship: Ship, reason: String)
 signal tick(delta_ticks: float)
 signal game_speed_changed(new_speed: float)
 
+# Multiplayer
+signal world_state_updated()  # Other players' ships updated
+
 # Random events
 signal survey_update(asteroid: AsteroidData, message: String)
 

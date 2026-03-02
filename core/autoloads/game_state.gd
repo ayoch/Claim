@@ -12,7 +12,8 @@ var resources: Dictionary = {} # OreType -> float (tons)
 var financial_history: Array[Dictionary] = []
 const MAX_FINANCIAL_HISTORY: int = 1000
 var workers: Array[Worker] = []
-var ships: Array[Ship] = []
+var ships: Array[Ship] = []  # Player's own ships
+var other_players_ships: Array[Dictionary] = []  # Other players' ships (multiplayer) - stored as dictionaries with owner info
 var missions: Array[Mission] = []
 var equipment_inventory: Array[Equipment] = []
 var upgrade_inventory: Array[ShipUpgrade] = []  # Purchased but not yet installed
@@ -3956,3 +3957,55 @@ func apply_market_update_event(event: Dictionary) -> void:
 			# Update in MarketState (server controls global prices in Phase 2)
 			# For now, just log it - full market sync needs more work
 			print("[GameState] Market: %s → $%.0f" % [ore_key, new_price])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MULTIPLAYER WORLD STATE (All Players' Ships)
+# ══════════════════════════════════════════════════════════════════════════════
+
+## Apply shared world state from server (multiplayer)
+## Shows all players' ships on solar map
+## Format: {ships: [{id, player_id, owner_username, ship_name, position_x, position_y, ...}, ...]}
+func apply_world_state(world_data: Dictionary) -> void:
+	var all_ships: Array = world_data.get("ships", [])
+
+	if all_ships.is_empty():
+		return
+
+	# Clear previous other players' ships
+	other_players_ships.clear()
+
+	# Current player's ID (from server backend)
+	var my_player_id: int = 0
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		var server_backend = BackendManager.get_server_backend()
+		if server_backend:
+			my_player_id = server_backend.player_id
+
+	# Separate own ships from others
+	for ship_data in all_ships:
+		var ship_player_id: int = int(ship_data.get("player_id", 0))
+
+		# Skip own ships (they're already in GameState.ships via apply_server_state)
+		if ship_player_id == my_player_id:
+			continue
+
+		# Store other players' ships as dictionaries
+		# Extract just the fields we need for display
+		var other_ship := {
+			"owner_username": ship_data.get("owner_username", "Unknown"),
+			"ship_name": ship_data.get("ship_name", "Ship"),
+			"ship_class": int(ship_data.get("ship_class", 0)),
+			"position_x": float(ship_data.get("position_x", 0.0)),
+			"position_y": float(ship_data.get("position_y", 0.0)),
+			"is_stationed": bool(ship_data.get("is_stationed", true)),
+			"is_derelict": bool(ship_data.get("is_derelict", false)),
+		}
+
+		other_players_ships.append(other_ship)
+
+	if other_players_ships.size() > 0:
+		print("[GameState] Multiplayer: Loaded %d other players' ships" % other_players_ships.size())
+
+		# Emit signal so solar map can update
+		EventBus.world_state_updated.emit()

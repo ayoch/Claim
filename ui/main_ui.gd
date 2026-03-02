@@ -477,15 +477,23 @@ func _format_number(n: int) -> String:
 
 func _poll_server_state() -> void:
 	_polling_server = true
+
+	# Fetch both personal state and shared world state
 	var server_data := await BackendManager.get_game_state()
+	var world_data := await BackendManager.get_server_backend().get_world_state() if BackendManager.get_server_backend() else {}
+
 	_polling_server = false
 
 	if server_data.is_empty():
 		print("[MainUI] Server poll failed - empty response")
 		return
 
-	# Apply server state to local GameState
+	# Apply server state to local GameState (own ships, workers, money)
 	GameState.apply_server_state(server_data)
+
+	# Apply world state (all players' ships for multiplayer visibility)
+	if not world_data.is_empty():
+		GameState.apply_world_state(world_data)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

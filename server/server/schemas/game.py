@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field, field_validator
 
 class ShipOut(BaseModel):
     id: int
+    player_id: int  # Owner of this ship
+    owner_username: str  # Owner's username for display
     ship_name: str
     ship_class: int
     max_thrust_g: float

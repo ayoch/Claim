@@ -9,6 +9,7 @@ var ship: Ship = null  # for idle/derelict ships without active missions
 var rescue_target_ship: Ship = null  # for rescue/refuel vessel markers
 var rescue_data: Dictionary = {}  # { source_pos, transit_time, elapsed_ticks, ... }
 var is_refuel_vessel: bool = false  # true = refuel, false = rescue
+var other_player_ship: Dictionary = {}  # for other players' ships (multiplayer) - {owner_username, ship_name, position_x, position_y, ...}
 
 # Cache positions for smooth motion
 var _target_pos: Vector2 = Vector2.ZERO
@@ -55,6 +56,18 @@ func _ready() -> void:
 	elif ship:
 		$Label.text = ship.ship_name
 		_target_pos = ship.position_au * AU_PIXELS
+		position = _target_pos
+		visible = true
+	elif not other_player_ship.is_empty():
+		# Other player's ship (multiplayer)
+		var owner: String = other_player_ship.get("owner_username", "Unknown")
+		var ship_name: String = other_player_ship.get("ship_name", "Ship")
+		$Label.text = "%s (%s)" % [ship_name, owner]
+		$Label.add_theme_color_override("font_color", Color(0.5, 0.7, 1.0))  # Cyan tint for other players
+		_target_pos = Vector2(
+			float(other_player_ship.get("position_x", 0.0)),
+			float(other_player_ship.get("position_y", 0.0))
+		) * AU_PIXELS
 		position = _target_pos
 		visible = true
 	else:
@@ -403,6 +416,29 @@ func _draw_trajectory() -> void:
 func _draw() -> void:
 	# Draw trajectory first (behind ship)
 	_draw_trajectory()
+
+	# Other players' ships (multiplayer): cyan diamond shape
+	if not other_player_ship.is_empty():
+		var cyan := Color(0.5, 0.7, 1.0)
+		# Draw as diamond (square rotated 45°)
+		var size := 6.0
+		var diamond := PackedVector2Array([
+			Vector2(0, -size),   # top
+			Vector2(size, 0),    # right
+			Vector2(0, size),    # bottom
+			Vector2(-size, 0)    # left
+		])
+		draw_colored_polygon(diamond, cyan)
+		# Outline
+		var outline := PackedVector2Array([
+			Vector2(0, -size),
+			Vector2(size, 0),
+			Vector2(0, size),
+			Vector2(-size, 0),
+			Vector2(0, -size)
+		])
+		draw_polyline(outline, Color(0.8, 0.9, 1.0), 1.5)
+		return
 
 	# Rescue/refuel vessel: amber triangle + trajectory line
 	if rescue_target_ship:

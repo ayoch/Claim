@@ -106,6 +106,7 @@ func _ready() -> void:
 	EventBus.tick.connect(_on_tick)
 	EventBus.mission_preview_started.connect(_on_preview_started)
 	EventBus.mission_preview_cancelled.connect(_on_preview_cancelled)
+	EventBus.world_state_updated.connect(func() -> void: _refresh_ships())  # Multiplayer: other players' ships updated
 
 func _refresh_ships() -> void:
 	# Debounce: at high speed, many signals fire per frame. Only rebuild once.
@@ -654,6 +655,16 @@ func _refresh_ship_markers() -> void:
 		marker.rescue_target_ship = target_ship
 		marker.rescue_data = GameState.refuel_missions[target_ship]
 		marker.is_refuel_vessel = true
+		ship_markers.add_child(marker)
+
+	# Other players' ships (multiplayer)
+	for other_ship_data: Dictionary in GameState.other_players_ships:
+		# Don't show stationed ships (they're docked, not visible on map)
+		if other_ship_data.get("is_stationed", true):
+			continue
+
+		var marker: Node2D = ship_marker_scene.instantiate()
+		marker.other_player_ship = other_ship_data  # Pass dictionary instead of Ship object
 		ship_markers.add_child(marker)
 
 func _process(delta: float) -> void:
