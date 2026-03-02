@@ -282,6 +282,11 @@ func new_game() -> void:
 	active_market_events.clear()
 	money = 10_000_000
 	total_ticks = 0.0
+	# Initialize game start date to today's date in 2112
+	var now := Time.get_datetime_dict_from_system()
+	game_start_month = now["month"]
+	game_start_day = now["day"]
+	game_start_year = START_YEAR
 	Reputation.score = 0.0
 	_init_resources()
 	_init_starter_ship()
@@ -2757,6 +2762,9 @@ func save_game(save_name: String = "") -> void:
 		"net_worth": calculate_net_worth(),
 		"money": money,
 		"total_ticks": total_ticks,
+		"game_start_month": game_start_month,
+		"game_start_day": game_start_day,
+		"game_start_year": game_start_year,
 		"total_crew_deaths": total_crew_deaths,
 		"thrust_policy": thrust_policy,
 		"supply_policy": supply_policy,
@@ -3316,6 +3324,9 @@ func load_game(file_name: String = "save_game.json") -> bool:
 
 	# Restore game clock and statistics
 	total_ticks = float(data.get("total_ticks", 0.0))
+	game_start_month = int(data.get("game_start_month", 0))
+	game_start_day = int(data.get("game_start_day", 0))
+	game_start_year = int(data.get("game_start_year", 2112))
 	total_crew_deaths = int(data.get("total_crew_deaths", 0))
 
 	# Reconnect ship crew from saved worker names
