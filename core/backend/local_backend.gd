@@ -18,8 +18,9 @@ func login(username: String, password: String) -> Dictionary:
 	}
 
 
-func register(username: String, password: String) -> Dictionary:
+func register(username: String, password: String, email: String) -> Dictionary:
 	# Local mode doesn't need registration - auto-success
+	# Email parameter ignored in local mode
 	return {
 		"success": true,
 		"player_id": 1,
