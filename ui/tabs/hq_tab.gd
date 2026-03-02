@@ -1703,6 +1703,15 @@ func _create_admin_speed_controls() -> void:
 	label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.3))  # Gold color for admin
 	_admin_speed_controls.add_child(label)
 
+	# Current speed display
+	var speed_display := Label.new()
+	speed_display.name = "SpeedDisplay"
+	speed_display.text = "..."
+	speed_display.add_theme_font_size_override("font_size", 14)
+	speed_display.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+	speed_display.custom_minimum_size = Vector2(80, 0)
+	_admin_speed_controls.add_child(speed_display)
+
 	# Speed buttons
 	var speeds := [1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 200000.0]
 	for speed in speeds:
@@ -1712,6 +1721,9 @@ func _create_admin_speed_controls() -> void:
 		btn.add_theme_font_size_override("font_size", 11)
 		btn.pressed.connect(func() -> void: _set_server_speed(speed))
 		_admin_speed_controls.add_child(btn)
+
+	# Start polling for current speed
+	_poll_server_speed()
 
 	# Add to UI (after session info label)
 	if session_info_label and session_info_label.get_parent():
@@ -1730,8 +1742,8 @@ func _set_server_speed(speed: float) -> void:
 	add_child(http)
 
 	var url: String = server_backend.base_url + "/admin/set-speed"
-	var headers := ["X-Admin-Key: 9e8650d3-9963-4336-9053-902cbd561994", "Content-Type: application/json"]
-	var body: String = JSON.stringify({"speed_multiplier": speed})
+	var headers := ["Authorization: Bearer " + server_backend.auth_token, "Content-Type: application/json"]
+	var body: String = JSON.stringify({"multiplier": speed})
 
 	var error := http.request(url, headers, HTTPClient.METHOD_POST, body)
 	if error != OK:
@@ -1749,6 +1761,43 @@ func _set_server_speed(speed: float) -> void:
 		var response_body: PackedByteArray = result[3]
 		var body_str: String = response_body.get_string_from_utf8()
 		print("[HQTab] Failed to set server speed - Code: %d, Body: %s" % [response_code, body_str])
+
+
+func _poll_server_speed() -> void:
+	"""Poll server for current simulation speed and update display"""
+	if not _admin_speed_controls or not is_instance_valid(_admin_speed_controls):
+		return
+
+	var server_backend = BackendManager.get_server_backend()
+	if not server_backend or not server_backend.is_admin:
+		return
+
+	while is_instance_valid(_admin_speed_controls):
+		var http := HTTPRequest.new()
+		add_child(http)
+
+		var url: String = server_backend.base_url + "/admin/get-speed"
+		var headers := ["Authorization: Bearer " + server_backend.auth_token]
+
+		var error := http.request(url, headers, HTTPClient.METHOD_GET)
+		if error == OK:
+			var result: Array = await http.request_completed
+			var response_code: int = result[1]
+			if response_code == 200:
+				var response_body: PackedByteArray = result[3]
+				var json := JSON.new()
+				if json.parse(response_body.get_string_from_utf8()) == OK:
+					var data: Dictionary = json.data
+					var speed: float = data.get("multiplier", 1.0)
+					var speed_display := _admin_speed_controls.get_node_or_null("SpeedDisplay")
+					if speed_display:
+						if speed >= 1000:
+							speed_display.text = "%.0fkx" % (speed / 1000.0)
+						else:
+							speed_display.text = "%.0fx" % speed
+
+		http.queue_free()
+		await get_tree().create_timer(2.0).timeout  # Poll every 2 seconds
 
 
 # ── Server broadcast messages ─────────────────────────────────────────────────
