@@ -48,7 +48,7 @@ def validate_password_strength(password: str) -> None:
 
 
 @router.post("/register", response_model=PlayerOut, status_code=status.HTTP_201_CREATED)
-@limiter.limit("5/hour")  # Strict limit for account creation
+@limiter.limit("10/hour")  # Reasonable limit for account creation
 async def register(payload: PlayerCreate, request: Request, db: AsyncSession = Depends(get_db)):
     # Get client IP for logging
     client_ip = request.client.host if request.client else "unknown"
@@ -85,6 +85,12 @@ async def register(payload: PlayerCreate, request: Request, db: AsyncSession = D
         email=payload.email,
         password_hash=hash_password(payload.password),
         is_admin=is_admin,
+        money=14_000_000,  # Default starting money
+        reputation=0,  # Default reputation
+        thrust_policy=1,  # BALANCED
+        supply_policy=1,  # ROUTINE
+        collection_policy=1,  # ROUTINE
+        encounter_policy=1,  # COEXIST
     )
     db.add(player)
     await db.commit()
@@ -110,7 +116,25 @@ async def register(payload: PlayerCreate, request: Request, db: AsyncSession = D
         await db.rollback()
         raise HTTPException(status_code=500, detail="Failed to create starter package")
 
-    return player
+    # Refresh player to get updated values and ensure all attributes are loaded
+    await db.refresh(player)
+
+    # Explicitly construct response to avoid relationship serialization issues
+    return PlayerOut(
+        id=player.id,
+        username=player.username,
+        email=player.email,
+        money=player.money,
+        reputation=player.reputation,
+        hq_colony_id=player.hq_colony_id,
+        thrust_policy=player.thrust_policy,
+        supply_policy=player.supply_policy,
+        collection_policy=player.collection_policy,
+        encounter_policy=player.encounter_policy,
+        is_admin=player.is_admin,
+        created_at=player.created_at,
+        last_seen=player.last_seen,
+    )
 
 
 @router.post("/login", response_model=Token)
