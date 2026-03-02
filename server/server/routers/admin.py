@@ -60,6 +60,32 @@ async def admin_reset_password(
     }
 
 
+@router.post("/grant-admin/{username}")
+@limiter.limit("5/hour")
+async def grant_admin(
+    username: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Grant admin privileges to a user (requires X-Admin-Key header).
+    """
+    result = await db.execute(select(Player).where(Player.username == username.lower()))
+    player = result.scalar_one_or_none()
+
+    if not player:
+        raise HTTPException(status_code=404, detail=f"User '{username}' not found")
+
+    player.is_admin = True
+    db.add(player)
+    await db.commit()
+
+    return {
+        "message": f"Admin privileges granted to '{player.username}'",
+        "is_admin": player.is_admin
+    }
+
+
 @router.get("/status")
 @limiter.limit("10/minute")
 async def server_status(
