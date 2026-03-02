@@ -14,6 +14,7 @@ const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at co
 
 @export var ship_name: String = ""
 @export var ship_class: int = -1        # ShipData.ShipClass enum value
+@export var server_id: int = 0          # Database ID when in SERVER mode (0 = LOCAL mode)
 @export var docked_at_colony: Colony = null  # Which colony the ship is docked at (if any)
 @export var max_thrust_g: float = 0.3   # maximum acceleration in g
 @export var thrust_setting: float = 1.0 # 0.0 to 1.0, percentage of max_thrust to use

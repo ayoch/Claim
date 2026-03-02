@@ -1647,10 +1647,12 @@ func _policy_dispatch_idle_ship(ship: Ship) -> void:
 			best_collect = asteroid
 		if best_collect != null:
 			ship.crew = crew
-			var m := GameState.start_collect_mission(ship, best_collect)
-			if m:
-				m.return_to_station = true
-				return
+			# SERVER mode: collection missions not yet implemented on server, skip for now
+			if BackendManager.current_mode == BackendManager.BackendMode.LOCAL:
+				var m := GameState.start_collect_mission(ship, best_collect)
+				if m:
+					m.return_to_station = true
+					return
 
 	# Priority 2: mine
 	if ship.get_cargo_remaining() < ship.get_effective_cargo_capacity() * 0.1:
@@ -1666,10 +1668,8 @@ func _policy_dispatch_idle_ship(ship: Ship) -> void:
 	if best_asteroid == null:
 		return
 	ship.crew = crew
-	var mission := GameState.start_mission(ship, best_asteroid)
-	if mission:
-		mission.return_to_station = true
-		EventBus.station_job_started.emit(ship, "mining", best_asteroid.asteroid_name)
+	GameState.dispatch_mission_any_mode(ship, best_asteroid)
+	EventBus.station_job_started.emit(ship, "mining", best_asteroid.asteroid_name)
 
 ## Score an asteroid for a mining trip from origin_pos with the given ship.
 ## Returns expected net profit per game-second, or -1 if the trip is infeasible.

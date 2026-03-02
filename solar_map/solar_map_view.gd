@@ -982,12 +982,16 @@ func _setup_dispatch_hint_label() -> void:
 	_dispatch_hint_label.text = "Select destination on map (RMB to cancel)"
 	_dispatch_hint_label.add_theme_font_size_override("font_size", 14)
 	_dispatch_hint_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
-	_dispatch_hint_label.anchors_preset = Control.PRESET_BOTTOM_WIDE
+	_dispatch_hint_label.anchors_preset = Control.PRESET_BOTTOM_RIGHT
+	_dispatch_hint_label.anchor_left = 1.0
 	_dispatch_hint_label.anchor_top = 1.0
+	_dispatch_hint_label.anchor_right = 1.0
 	_dispatch_hint_label.anchor_bottom = 1.0
+	_dispatch_hint_label.offset_left = -400
 	_dispatch_hint_label.offset_top = -30
-	_dispatch_hint_label.offset_bottom = 0
-	_dispatch_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_dispatch_hint_label.offset_right = -10
+	_dispatch_hint_label.offset_bottom = -10
+	_dispatch_hint_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_dispatch_hint_label.visible = false
 	$UI.add_child(_dispatch_hint_label)
 

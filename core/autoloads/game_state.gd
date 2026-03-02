@@ -1461,6 +1461,31 @@ func calculate_asteroid_intercept(start_pos: Vector2, asteroid: AsteroidData, th
 		"transit_time": transit_time
 	}
 
+## Mode-aware mission dispatch - works in both LOCAL and SERVER modes
+func dispatch_mission_any_mode(ship: Ship, asteroid: AsteroidData) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		# SERVER mode: route through BackendManager using server IDs
+		if ship.server_id == 0:
+			push_warning("Ship %s has no server_id, cannot dispatch in SERVER mode" % ship.ship_name)
+			return
+
+		# Find asteroid ID (index in asteroids array)
+		var asteroid_id: int = -1
+		for i in range(asteroids.size()):
+			if asteroids[i] == asteroid:
+				asteroid_id = i
+				break
+
+		if asteroid_id < 0:
+			push_warning("Asteroid not found: %s" % asteroid.asteroid_name)
+			return
+
+		# Dispatch via server backend (async, but we don't await - fire and forget for autoplay)
+		BackendManager.dispatch_mission(ship.server_id, asteroid_id, 0, 86400.0, false)
+	else:
+		# LOCAL mode: use local GameState directly
+		start_mission(ship, asteroid)
+
 func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
 	if ship.crew.size() < ship.min_crew:
 		push_warning("start_mission: not enough crew for %s (need %d, got %d)" % [ship.ship_name, ship.min_crew, ship.crew.size()])
@@ -3794,6 +3819,7 @@ func apply_server_state(server_data: Dictionary) -> void:
 
 		if found_ship:
 			# Update ship state from server
+			found_ship.server_id = ship_id  # Store server database ID for API calls
 			found_ship.fuel = float(ship_data.get("fuel", found_ship.fuel))
 			found_ship.position_au.x = float(ship_data.get("position_x", found_ship.position_au.x))
 			found_ship.position_au.y = float(ship_data.get("position_y", found_ship.position_au.y))
