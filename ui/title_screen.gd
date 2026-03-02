@@ -100,13 +100,19 @@ func _check_server_status() -> void:
 		_set_server_status(false, "Server: Offline")
 		return
 
+	# If already logged in and in SERVER mode, show as connected immediately
+	# (Skip the "connecting" flicker - we already know we're connected)
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER and server_backend.player_id > 0:
+		_set_server_status(true, "Server: Online (Logged In)")
+		return
+
 	# Create HTTP request node
 	http_request = HTTPRequest.new()
 	http_request.set_tls_options(TLSOptions.client_unsafe())
 	add_child(http_request)
 	http_request.request_completed.connect(_on_server_status_received)
 
-	# Set connecting state
+	# Set connecting state (only shown when not already logged in)
 	status_icon.texture = icon_connecting
 	status_label.text = "Server: Checking..."
 
