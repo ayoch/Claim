@@ -86,7 +86,7 @@ func _refresh_crew() -> void:
 
 		var name_label := _lbl()
 		name_label.text = worker.worker_name
-		name_label.add_theme_font_size_override("font_size", 18)
+		name_label.add_theme_font_size_override("font_size", 23)
 		info_vbox.add_child(name_label)
 
 		var details := _lbl()
@@ -129,7 +129,7 @@ func _refresh_crew() -> void:
 		personality_label.text = "%s — %s" % [worker.get_personality_name(), worker.get_personality_description()]
 		personality_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		personality_label.add_theme_color_override("font_color", Color(0.75, 0.65, 0.9))
-		personality_label.add_theme_font_size_override("font_size", 13)
+		personality_label.add_theme_font_size_override("font_size", 17)
 		info_vbox.add_child(personality_label)
 
 		# XP Progress Bars

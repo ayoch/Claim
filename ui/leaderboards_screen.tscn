@@ -52,7 +52,7 @@ size_flags_horizontal = 3
 [node name="Title" type="Label" parent="MarginContainer/VBox/Header"]
 layout_mode = 2
 text = "LEADERBOARDS"
-theme_override_font_sizes/font_size = 32
+theme_override_font_sizes/font_size = 42
 horizontal_alignment = 1
 
 [node name="Spacer2" type="Control" parent="MarginContainer/VBox/Header"]
@@ -82,19 +82,19 @@ layout_mode = 2
 custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 text = "Rank"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 
 [node name="PlayerLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Single Player/VBox/HeaderRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Player"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 
 [node name="NetWorthLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Single Player/VBox/HeaderRow"]
 custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
 text = "Net Worth"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 horizontal_alignment = 2
 
 [node name="Separator" type="HSeparator" parent="MarginContainer/VBox/TabContainer/Single Player/VBox"]
@@ -131,7 +131,7 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Your Rank: --"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 
 [node name="MPRefreshButton" type="Button" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox/TopBar"]
 unique_name_in_owner = true
@@ -143,7 +143,7 @@ text = "Refresh"
 unique_name_in_owner = true
 layout_mode = 2
 text = "Not loaded"
-theme_override_font_sizes/font_size = 12
+theme_override_font_sizes/font_size = 16
 theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
 
 [node name="HeaderRow" type="HBoxContainer" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox"]
@@ -153,19 +153,19 @@ layout_mode = 2
 custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 text = "Rank"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 
 [node name="PlayerLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox/HeaderRow"]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "Player"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 
 [node name="NetWorthLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox/HeaderRow"]
 custom_minimum_size = Vector2(150, 0)
 layout_mode = 2
 text = "Net Worth"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 horizontal_alignment = 2
 
 [node name="Separator" type="HSeparator" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox"]
@@ -189,5 +189,5 @@ layout_mode = 2
 [node name="Label" type="Label" parent="MarginContainer/VBox/TabContainer/Multiplayer/MPDisabledOverlay"]
 layout_mode = 2
 text = "Multiplayer Offline\n\nLog in to view global leaderboards"
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 26
 horizontal_alignment = 1

@@ -488,19 +488,19 @@ func _rebuild_ships() -> void:
 
 			var partner_icon := _lbl()
 			partner_icon.text = "🤝"
-			partner_icon.add_theme_font_size_override("font_size", 14)
+			partner_icon.add_theme_font_size_override("font_size", 18)
 			partnership_row.add_child(partner_icon)
 
 			var partner_label := _lbl()
 			var role := "Leader" if ship.is_partnership_leader else "Follower"
 			partner_label.text = "%s: Partnered with %s" % [role, ship.partner_ship_name]
 			partner_label.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))  # Cyan
-			partner_label.add_theme_font_size_override("font_size", 11)
+			partner_label.add_theme_font_size_override("font_size", 14)
 			partnership_row.add_child(partner_label)
 
 			var break_btn := Button.new()
 			break_btn.text = "Break Partnership"
-			break_btn.add_theme_font_size_override("font_size", 10)
+			break_btn.add_theme_font_size_override("font_size", 13)
 			break_btn.custom_minimum_size = Vector2(0, 24)
 			break_btn.pressed.connect(func() -> void:
 				GameState.break_partnership(ship, ship.partner_ship, "User terminated partnership")
@@ -514,7 +514,7 @@ func _rebuild_ships() -> void:
 		if ship.is_docked and not ship.is_partnered() and ship.current_mission == null:
 			var partner_btn := Button.new()
 			partner_btn.text = "Create Partnership"
-			partner_btn.add_theme_font_size_override("font_size", 11)
+			partner_btn.add_theme_font_size_override("font_size", 14)
 			partner_btn.custom_minimum_size = Vector2(0, 28)
 			partner_btn.pressed.connect(func() -> void:
 				_show_partnership_selection(ship)
@@ -529,7 +529,7 @@ func _rebuild_ships() -> void:
 		stats_header_btn.flat = true
 		stats_header_btn.alignment = HORIZONTAL_ALIGNMENT_LEFT
 		stats_header_btn.add_theme_color_override("font_color", Color(0.5, 0.7, 0.9))
-		stats_header_btn.add_theme_font_size_override("font_size", 13)
+		stats_header_btn.add_theme_font_size_override("font_size", 17)
 		stats_header_btn.custom_minimum_size = Vector2(0, 28)
 		vbox.add_child(stats_header_btn)
 
@@ -552,7 +552,7 @@ func _rebuild_ships() -> void:
 		dv_label.clip_text = true
 		dv_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		dv_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-		dv_label.add_theme_font_size_override("font_size", 12)
+		dv_label.add_theme_font_size_override("font_size", 16)
 		stats_grid.add_child(dv_label)
 		var dv_value := _lbl()
 		if abs(dv_eff - dv_base) > 0.05:
@@ -563,7 +563,7 @@ func _rebuild_ships() -> void:
 			dv_value.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 		dv_value.clip_text = true
 		dv_value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		dv_value.add_theme_font_size_override("font_size", 12)
+		dv_value.add_theme_font_size_override("font_size", 16)
 		stats_grid.add_child(dv_value)
 		_add_fleet_stat_row(stats_grid, "Cargo:", "%.0ft" % ship.cargo_capacity, ship.get_effective_cargo_capacity())
 		_add_fleet_stat_row(stats_grid, "Volume:", "%.0fm³" % ship.cargo_volume, ship.get_effective_cargo_volume())
@@ -750,7 +750,7 @@ func _rebuild_ships() -> void:
 				if not matching_contracts.is_empty():
 					var contract_header := _lbl()
 					contract_header.text = "Available Contracts at %s:" % at_colony.colony_name
-					contract_header.add_theme_font_size_override("font_size", 14)
+					contract_header.add_theme_font_size_override("font_size", 18)
 					contract_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 					vbox.add_child(contract_header)
 
@@ -791,7 +791,7 @@ func _rebuild_ships() -> void:
 				var signal_lbl := _lbl()
 				signal_lbl.text = "📡 Signal in transit: %s (%s remaining)" % [pending_order["label"], delay_str]
 				signal_lbl.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
-				signal_lbl.add_theme_font_size_override("font_size", 13)
+				signal_lbl.add_theme_font_size_override("font_size", 17)
 				signal_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 				vbox.add_child(signal_lbl)
 				_signal_labels[ship] = signal_lbl
@@ -920,7 +920,7 @@ func _rebuild_ships() -> void:
 					dest_name = ship.queued_destination.colony_name
 				queued_info.text = "Queued: %s (%d crew)" % [dest_name, ship.crew.size()]
 				queued_info.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
-				queued_info.add_theme_font_size_override("font_size", 14)
+				queued_info.add_theme_font_size_override("font_size", 18)
 				vbox.add_child(queued_info)
 
 			# Show pending order (lightspeed signal in transit)
@@ -933,7 +933,7 @@ func _rebuild_ships() -> void:
 				var pending_lbl := _lbl()
 				pending_lbl.text = "📡 Signal in transit: %s (%s remaining)" % [transit_pending["label"], transit_delay_str]
 				pending_lbl.add_theme_color_override("font_color", Color(0.9, 0.7, 0.2))
-				pending_lbl.add_theme_font_size_override("font_size", 13)
+				pending_lbl.add_theme_font_size_override("font_size", 17)
 				pending_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 				vbox.add_child(pending_lbl)
 
@@ -970,7 +970,7 @@ func _rebuild_ships() -> void:
 			var policy_expanded: bool = _policy_overrides_expanded.get(ship, false)
 			var policy_header := _lbl()
 			policy_header.text = ("▾ " if policy_expanded else "▸ ") + "Policy Overrides"
-			policy_header.add_theme_font_size_override("font_size", 11)
+			policy_header.add_theme_font_size_override("font_size", 14)
 			policy_header.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 			policy_header.mouse_filter = Control.MOUSE_FILTER_STOP
 			vbox.add_child(policy_header)
@@ -1053,14 +1053,14 @@ func _rebuild_ships() -> void:
 			for pd in policy_defs:
 				var lbl := _lbl()
 				lbl.text = pd["label"] + ":"
-				lbl.add_theme_font_size_override("font_size", 11)
+				lbl.add_theme_font_size_override("font_size", 14)
 				lbl.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 				policy_grid.add_child(lbl)
 
 				var opt := OptionButton.new()
 				opt.custom_minimum_size = Vector2(0, 32)
 				opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				opt.add_theme_font_size_override("font_size", 11)
+				opt.add_theme_font_size_override("font_size", 14)
 				opt.add_item("Company Default")
 				opt.set_item_metadata(0, -1)
 				var enum_names: Dictionary = pd["names"]
@@ -1092,7 +1092,7 @@ func _rebuild_ships() -> void:
 			name_lbl.text = w.worker_name
 			name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			name_lbl.clip_text = true
-			name_lbl.add_theme_font_size_override("font_size", 12)
+			name_lbl.add_theme_font_size_override("font_size", 16)
 			row.add_child(name_lbl)
 
 			var skills_lbl := _lbl()
@@ -1104,13 +1104,13 @@ func _rebuild_ships() -> void:
 			if w.mining_skill >= 0.05:
 				parts.append("M%.2f" % w.mining_skill)
 			skills_lbl.text = " ".join(parts) if parts.size() > 0 else "—"
-			skills_lbl.add_theme_font_size_override("font_size", 12)
+			skills_lbl.add_theme_font_size_override("font_size", 16)
 			skills_lbl.add_theme_color_override("font_color", Color(0.6, 0.85, 1.0))
 			row.add_child(skills_lbl)
 
 			var fatigue_lbl := _lbl()
 			fatigue_lbl.text = "Fatigue %d%%" % int(w.fatigue)
-			fatigue_lbl.add_theme_font_size_override("font_size", 11)
+			fatigue_lbl.add_theme_font_size_override("font_size", 14)
 			if w.fatigue >= 80.0:
 				fatigue_lbl.add_theme_color_override("font_color", Color(0.9, 0.4, 0.2))
 			else:
@@ -1123,7 +1123,7 @@ func _rebuild_ships() -> void:
 			var empty_lbl := _lbl()
 			empty_lbl.text = "No crew assigned"
 			empty_lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
-			empty_lbl.add_theme_font_size_override("font_size", 12)
+			empty_lbl.add_theme_font_size_override("font_size", 16)
 			crew_panel.add_child(empty_lbl)
 
 		var crew_btn := Button.new()
@@ -1311,7 +1311,7 @@ func _show_redirect_confirmation(message: String, on_confirm: Callable, feasible
 	_clear_dispatch_content()
 	var title := _lbl()
 	title.text = "Redirect Ship"
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 26)
 	dispatch_content.add_child(title)
 	var msg_label := _lbl()
 	msg_label.text = message
@@ -1379,7 +1379,7 @@ func _show_asteroid_selection() -> void:
 		title.text = "Redispatch — Select Destination"
 	else:
 		title.text = "Select Destination"
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 26)
 	dispatch_content.add_child(title)
 
 	# Show ship origin info and cargo
@@ -1416,7 +1416,7 @@ func _show_asteroid_selection() -> void:
 	if not derelict_fleet_ships.is_empty():
 		var fleet_header := _lbl()
 		fleet_header.text = "FLEET SHIPS NEEDING HELP"
-		fleet_header.add_theme_font_size_override("font_size", 18)
+		fleet_header.add_theme_font_size_override("font_size", 23)
 		fleet_header.add_theme_color_override("font_color", Color(0.9, 0.4, 0.2))
 		dispatch_content.add_child(fleet_header)
 
@@ -1450,7 +1450,7 @@ func _show_asteroid_selection() -> void:
 	var colonies_header := _lbl()
 	_colonies_header_label = colonies_header
 	colonies_header.text = "MARKET DESTINATIONS %s" % ("▾" if colonies_expanded else "▸")
-	colonies_header.add_theme_font_size_override("font_size", 18)
+	colonies_header.add_theme_font_size_override("font_size", 23)
 	colonies_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 	colonies_header.mouse_filter = Control.MOUSE_FILTER_STOP
 	colonies_header.gui_input.connect(func(event: InputEvent) -> void:
@@ -1612,7 +1612,7 @@ func _show_asteroid_selection() -> void:
 
 		var col_warning_label := _lbl()
 		col_warning_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		col_warning_label.add_theme_font_size_override("font_size", 12)
+		col_warning_label.add_theme_font_size_override("font_size", 16)
 		col_warning_label.text = fuel_status
 		if "CRITICAL" in fuel_status or "UNREACHABLE" in fuel_status:
 			col_warning_label.add_theme_color_override("font_color", Color(0.9, 0.3, 0.3))
@@ -1626,7 +1626,7 @@ func _show_asteroid_selection() -> void:
 		if cargo_breakdown != "":
 			var cargo_label := _lbl()
 			cargo_label.text = cargo_breakdown
-			cargo_label.add_theme_font_size_override("font_size", 12)
+			cargo_label.add_theme_font_size_override("font_size", 16)
 			cargo_label.add_theme_color_override("font_color", Color(0.5, 0.7, 0.5))
 			cargo_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			colony_row.add_child(cargo_label)
@@ -1735,7 +1735,7 @@ func _show_asteroid_selection() -> void:
 	var mining_header := _lbl()
 	_mining_header_label = mining_header
 	mining_header.text = "MINING DESTINATIONS %s" % ("▾" if mining_expanded else "▸")
-	mining_header.add_theme_font_size_override("font_size", 18)
+	mining_header.add_theme_font_size_override("font_size", 23)
 	mining_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
 	mining_header.mouse_filter = Control.MOUSE_FILTER_STOP
 	mining_header.gui_input.connect(func(event: InputEvent) -> void:
@@ -1974,7 +1974,7 @@ func _show_asteroid_selection() -> void:
 
 		var warning_label := _lbl()
 		warning_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		warning_label.add_theme_font_size_override("font_size", 12)
+		warning_label.add_theme_font_size_override("font_size", 16)
 		data_row.add_child(warning_label)
 
 		dest_row.add_child(data_row)
@@ -2449,7 +2449,7 @@ func _show_worker_selection() -> void:
 
 	var title := _lbl()
 	title.text = "Assign Crew"
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 26)
 	dispatch_content.add_child(title)
 
 	var dest_label := _lbl()
@@ -2477,7 +2477,7 @@ func _show_worker_selection() -> void:
 	dispatch_content.add_child(type_sep)
 	var type_label := _lbl()
 	type_label.text = "Mission Type:"
-	type_label.add_theme_font_size_override("font_size", 16)
+	type_label.add_theme_font_size_override("font_size", 21)
 	type_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 	dispatch_content.add_child(type_label)
 	var type_row := HFlowContainer.new()
@@ -2546,7 +2546,7 @@ func _show_worker_selection() -> void:
 		dispatch_content.add_child(du_sep)
 		var du_label := _lbl()
 		du_label.text = "Select Units to Deploy:"
-		du_label.add_theme_font_size_override("font_size", 14)
+		du_label.add_theme_font_size_override("font_size", 18)
 		du_label.add_theme_color_override("font_color", Color(0.5, 0.8, 1.0))
 		dispatch_content.add_child(du_label)
 
@@ -2791,7 +2791,7 @@ func _show_worker_selection() -> void:
 
 	var est_title := _lbl()
 	est_title.text = "MISSION ESTIMATE"
-	est_title.add_theme_font_size_override("font_size", 14)
+	est_title.add_theme_font_size_override("font_size", 18)
 	est_vbox.add_child(est_title)
 
 	# Transit mode selection buttons
@@ -2829,7 +2829,7 @@ func _show_worker_selection() -> void:
 	if not _available_slingshot_routes.is_empty():
 		var route_label := _lbl()
 		route_label.text = "Route Options:"
-		route_label.add_theme_font_size_override("font_size", 12)
+		route_label.add_theme_font_size_override("font_size", 16)
 		route_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 		est_vbox.add_child(route_label)
 
@@ -2840,7 +2840,7 @@ func _show_worker_selection() -> void:
 		else:
 			ai_route_info.text = "AI: Direct Route (%s)" % CompanyPolicy.THRUST_POLICY_NAMES[GameState.thrust_policy]
 		ai_route_info.add_theme_color_override("font_color", Color(0.5, 0.9, 0.5))
-		ai_route_info.add_theme_font_size_override("font_size", 11)
+		ai_route_info.add_theme_font_size_override("font_size", 14)
 		est_vbox.add_child(ai_route_info)
 
 		# Direct route button (always available)
@@ -3250,7 +3250,7 @@ func _show_dispatch_confirmation(message: String) -> void:
 		title.text = "Redispatch Ship"
 	else:
 		title.text = "Confirm Mission Dispatch"
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 26)
 	dispatch_content.add_child(title)
 
 	var msg_label := _lbl()
@@ -3265,7 +3265,7 @@ func _show_dispatch_confirmation(message: String) -> void:
 		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		note.add_theme_color_override("font_color", Color(0.6, 0.85, 0.6))
-		note.add_theme_font_size_override("font_size", 13)
+		note.add_theme_font_size_override("font_size", 17)
 		dispatch_content.add_child(note)
 	elif _is_redispatch_mode:
 		var note := _lbl()
@@ -3273,7 +3273,7 @@ func _show_dispatch_confirmation(message: String) -> void:
 		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		note.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		note.add_theme_color_override("font_color", Color(0.95, 0.7, 0.3))
-		note.add_theme_font_size_override("font_size", 13)
+		note.add_theme_font_size_override("font_size", 17)
 		dispatch_content.add_child(note)
 
 	var buttons: Array[Dictionary] = []
@@ -3428,7 +3428,7 @@ func _show_partnership_selection(ship: Ship) -> void:
 		found_eligible = true
 		var btn := Button.new()
 		btn.text = "%s (Cargo: %.0f t, Fuel: %.0f)" % [other.ship_name, other.cargo_capacity, other.fuel]
-		btn.add_theme_font_size_override("font_size", 11)
+		btn.add_theme_font_size_override("font_size", 14)
 		btn.custom_minimum_size = Vector2(300, 0)
 		btn.pressed.connect(func() -> void:
 			GameState.create_partnership(ship, other)
@@ -3440,7 +3440,7 @@ func _show_partnership_selection(ship: Ship) -> void:
 	if not found_eligible:
 		var no_ships := _lbl()
 		no_ships.text = "No eligible ships nearby"
-		no_ships.add_theme_font_size_override("font_size", 11)
+		no_ships.add_theme_font_size_override("font_size", 14)
 		vbox.add_child(no_ships)
 
 	dialog.add_child(vbox)
@@ -3472,7 +3472,7 @@ func _show_station_jobs(ship: Ship) -> void:
 
 	var title := _lbl()
 	title.text = "STATION AT %s" % colony_name.to_upper()
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 26)
 	dispatch_content.add_child(title)
 
 	var desc := _lbl()
@@ -3541,7 +3541,7 @@ func _rebuild_station_job_list(container: VBoxContainer, enabled_jobs: Array[Str
 
 	var priority_label := _lbl()
 	priority_label.text = "Priority (top = highest):"
-	priority_label.add_theme_font_size_override("font_size", 14)
+	priority_label.add_theme_font_size_override("font_size", 18)
 	container.add_child(priority_label)
 
 	for i in range(_station_job_order.size()):
@@ -3629,7 +3629,7 @@ func _show_fleet_rescue_dispatch(target_ship: Ship) -> void:
 
 	var title := _lbl()
 	title.text = "RESCUE: %s" % target_ship.ship_name
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 26)
 	title.add_theme_color_override("font_color", Color(0.9, 0.5, 0.2))
 	dispatch_content.add_child(title)
 
@@ -3674,7 +3674,7 @@ func _show_fleet_rescue_dispatch(target_ship: Ship) -> void:
 	food_spin.custom_minimum_size = Vector2(100, 0)
 	sup_grid.add_child(food_spin)
 	var food_est_lbl := _lbl()
-	food_est_lbl.add_theme_font_size_override("font_size", 12)
+	food_est_lbl.add_theme_font_size_override("font_size", 16)
 	food_est_lbl.add_theme_color_override("font_color", Color(0.5, 0.8, 0.5))
 	food_spin.value_changed.connect(func(v: float) -> void:
 		var days_f := v / (target_crew_est * 2.8) if target_crew_est > 0 else 0.0
@@ -3701,13 +3701,13 @@ func _show_fleet_rescue_dispatch(target_ship: Ship) -> void:
 	var crew_note := _lbl()
 	crew_note.text = "The ferry's crew will fly out together. On arrival, as many as possible will stay on %s (loyalty -20) and both ships will return for more crew." % target_ship.ship_name
 	crew_note.add_theme_color_override("font_color", Color(0.7, 0.7, 0.8))
-	crew_note.add_theme_font_size_override("font_size", 12)
+	crew_note.add_theme_font_size_override("font_size", 16)
 	crew_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dispatch_content.add_child(crew_note)
 
 	var warning_lbl := _lbl()
 	warning_lbl.add_theme_color_override("font_color", Color(0.8, 0.6, 0.3))
-	warning_lbl.add_theme_font_size_override("font_size", 12)
+	warning_lbl.add_theme_font_size_override("font_size", 16)
 	warning_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	dispatch_content.add_child(warning_lbl)
 
@@ -3738,7 +3738,7 @@ func _show_supply_shop(ship: Ship) -> void:
 
 	var title := _lbl()
 	title.text = "BUY SUPPLIES"
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 26)
 	dispatch_content.add_child(title)
 
 	var desc := _lbl()
@@ -3778,14 +3778,14 @@ func _show_supply_shop(ship: Ship) -> void:
 
 		var header := _lbl()
 		header.text = "%s — $%s/%s, %.3ft/%s" % [supply_name, _format_number(cost), unit_label, mass, unit_label]
-		header.add_theme_font_size_override("font_size", 14)
+		header.add_theme_font_size_override("font_size", 18)
 		row.add_child(header)
 
 		if current > 0:
 			var cur_label := _lbl()
 			cur_label.text = "  On board: %.1f %ss" % [current, unit_label]
 			cur_label.add_theme_color_override("font_color", Color(0.5, 0.7, 0.5))
-			cur_label.add_theme_font_size_override("font_size", 13)
+			cur_label.add_theme_font_size_override("font_size", 17)
 			row.add_child(cur_label)
 
 		var spin_row := HBoxContainer.new()
@@ -3860,7 +3860,7 @@ func _add_fleet_stat_row(grid: GridContainer, label_text: String, base_value: St
 	label.clip_text = true
 	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_font_size_override("font_size", 16)
 	grid.add_child(label)
 
 	var value := _lbl()
@@ -3873,7 +3873,7 @@ func _add_fleet_stat_row(grid: GridContainer, label_text: String, base_value: St
 		value.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	value.clip_text = true
 	value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	value.add_theme_font_size_override("font_size", 12)
+	value.add_theme_font_size_override("font_size", 16)
 	grid.add_child(value)
 
 func _calculate_colony_profit(colony: Colony) -> int:
@@ -4088,7 +4088,7 @@ func _show_confirmation_dialog(message: String, on_confirm: Callable) -> void:
 
 	var title := _lbl()
 	title.text = "Confirm Dispatch"
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 26)
 	dispatch_content.add_child(title)
 
 	var msg_label := _lbl()

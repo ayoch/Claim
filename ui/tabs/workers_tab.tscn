@@ -31,7 +31,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 text = "YOUR CREW"
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 26
 
 [node name="CrewCount" type="Label" parent="VBox/CrewSection/CrewHeader"]
 unique_name_in_owner = true
@@ -62,7 +62,7 @@ layout_mode = 2
 layout_mode = 2
 size_flags_horizontal = 3
 text = "AVAILABLE FOR HIRE"
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 26
 
 [node name="RefreshBtn" type="Button" parent="VBox/HireSection/HireHeader"]
 unique_name_in_owner = true

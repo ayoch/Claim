@@ -322,7 +322,7 @@ func _rebuild_ships() -> void:
 				var status := _lbl()
 				status.text = extra_text
 				status.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
-				status.add_theme_font_size_override("font_size", 12)
+				status.add_theme_font_size_override("font_size", 16)
 				header.add_child(status)
 				_status_labels[ship] = status
 
@@ -353,7 +353,7 @@ func _rebuild_ships() -> void:
 			bar_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			bar_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			bar_label.text = _get_route_text(ship)
-			bar_label.add_theme_font_size_override("font_size", 11)
+			bar_label.add_theme_font_size_override("font_size", 14)
 			bar_wrapper.add_child(bar_label)
 
 			vbox.add_child(bar_wrapper)
@@ -476,7 +476,7 @@ func _rebuild_ships() -> void:
 		if not ship.is_derelict:
 			var policy_header := _lbl()
 			policy_header.text = "Policy Overrides"
-			policy_header.add_theme_font_size_override("font_size", 11)
+			policy_header.add_theme_font_size_override("font_size", 14)
 			policy_header.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 			vbox.add_child(policy_header)
 
@@ -515,14 +515,14 @@ func _rebuild_ships() -> void:
 			for pd in policy_defs:
 				var lbl := _lbl()
 				lbl.text = pd["label"] + ":"
-				lbl.add_theme_font_size_override("font_size", 11)
+				lbl.add_theme_font_size_override("font_size", 14)
 				lbl.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 				policy_grid.add_child(lbl)
 
 				var opt := OptionButton.new()
 				opt.custom_minimum_size = Vector2(0, 32)
 				opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				opt.add_theme_font_size_override("font_size", 11)
+				opt.add_theme_font_size_override("font_size", 14)
 				opt.add_item("Company Default")
 				opt.set_item_metadata(0, -1)
 				var enum_names: Dictionary = pd["names"]
@@ -559,7 +559,7 @@ func _rebuild_ships() -> void:
 			name_lbl.text = w.worker_name
 			name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			name_lbl.clip_text = true
-			name_lbl.add_theme_font_size_override("font_size", 12)
+			name_lbl.add_theme_font_size_override("font_size", 16)
 			row.add_child(name_lbl)
 
 			var skills_lbl := _lbl()
@@ -571,13 +571,13 @@ func _rebuild_ships() -> void:
 			if w.mining_skill >= 0.05:
 				parts.append("M%.2f" % w.mining_skill)
 			skills_lbl.text = " ".join(parts) if parts.size() > 0 else "—"
-			skills_lbl.add_theme_font_size_override("font_size", 12)
+			skills_lbl.add_theme_font_size_override("font_size", 16)
 			skills_lbl.add_theme_color_override("font_color", Color(0.6, 0.85, 1.0))
 			row.add_child(skills_lbl)
 
 			var fatigue_lbl := _lbl()
 			fatigue_lbl.text = "Fatigue %d%%" % int(w.fatigue)
-			fatigue_lbl.add_theme_font_size_override("font_size", 11)
+			fatigue_lbl.add_theme_font_size_override("font_size", 14)
 			if w.fatigue >= 80.0:
 				fatigue_lbl.add_theme_color_override("font_color", Color(0.9, 0.4, 0.2))
 			else:
@@ -590,7 +590,7 @@ func _rebuild_ships() -> void:
 			var empty_lbl := _lbl()
 			empty_lbl.text = "No crew assigned"
 			empty_lbl.add_theme_color_override("font_color", Color(0.55, 0.55, 0.55))
-			empty_lbl.add_theme_font_size_override("font_size", 12)
+			empty_lbl.add_theme_font_size_override("font_size", 16)
 			crew_panel.add_child(empty_lbl)
 
 		var crew_btn := Button.new()
@@ -683,7 +683,7 @@ func _show_asteroid_selection() -> void:
 
 	var title := _lbl()
 	title.text = "Select Destination"
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 26)
 	dispatch_content.add_child(title)
 
 	# Show ship origin info and cargo
@@ -701,7 +701,7 @@ func _show_asteroid_selection() -> void:
 		# Fixed header for market destinations
 		var colonies_header := _lbl()
 		colonies_header.text = "MARKET DESTINATIONS"
-		colonies_header.add_theme_font_size_override("font_size", 18)
+		colonies_header.add_theme_font_size_override("font_size", 23)
 		colonies_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 		dispatch_content.add_child(colonies_header)
 
@@ -830,7 +830,7 @@ func _show_asteroid_selection() -> void:
 	# Fixed header for mining destinations
 	var mining_header := _lbl()
 	mining_header.text = "MINING DESTINATIONS"
-	mining_header.add_theme_font_size_override("font_size", 18)
+	mining_header.add_theme_font_size_override("font_size", 23)
 	mining_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
 	dispatch_content.add_child(mining_header)
 
@@ -1074,7 +1074,7 @@ func _show_worker_selection() -> void:
 
 	var title := _lbl()
 	title.text = "Assign Crew"
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 26)
 	dispatch_content.add_child(title)
 
 	var dest_label := _lbl()
@@ -1168,7 +1168,7 @@ func _show_worker_selection() -> void:
 
 	var est_title := _lbl()
 	est_title.text = "MISSION ESTIMATE"
-	est_title.add_theme_font_size_override("font_size", 14)
+	est_title.add_theme_font_size_override("font_size", 18)
 	est_vbox.add_child(est_title)
 
 	# Manual thrust control (hidden by default, AI-controlled)

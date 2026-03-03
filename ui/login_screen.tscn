@@ -38,13 +38,13 @@ theme_override_constants/separation = 16
 [node name="Title" type="Label" parent="VBox"]
 layout_mode = 2
 text = "MULTIPLAYER LOGIN"
-theme_override_font_sizes/font_size = 32
+theme_override_font_sizes/font_size = 42
 horizontal_alignment = 1
 
 [node name="Subtitle" type="Label" parent="VBox"]
 layout_mode = 2
 text = "Connect to server for multiplayer mode"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 horizontal_alignment = 1
 
 [node name="Spacer1" type="Control" parent="VBox"]
@@ -54,7 +54,7 @@ layout_mode = 2
 [node name="UsernameLabel" type="Label" parent="VBox"]
 layout_mode = 2
 text = "Username:"
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 21
 
 [node name="UsernameInput" type="LineEdit" parent="VBox"]
 unique_name_in_owner = true
@@ -65,7 +65,7 @@ placeholder_text = "Enter username..."
 [node name="EmailLabel" type="Label" parent="VBox"]
 layout_mode = 2
 text = "Email:"
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 21
 
 [node name="EmailInput" type="LineEdit" parent="VBox"]
 unique_name_in_owner = true
@@ -77,7 +77,7 @@ clear_button_enabled = true
 [node name="PasswordLabel" type="Label" parent="VBox"]
 layout_mode = 2
 text = "Password:"
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 21
 
 [node name="PasswordInput" type="LineEdit" parent="VBox"]
 unique_name_in_owner = true
@@ -94,7 +94,7 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 text = ""
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 horizontal_alignment = 1
 autowrap_mode = 3
 

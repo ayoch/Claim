@@ -278,7 +278,7 @@ func _show_settings() -> void:
 
 	var title := Label.new()
 	title.text = "SETTINGS"
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 26)
 	vbox.add_child(title)
 
 	var refuel_check := CheckBox.new()
@@ -319,7 +319,7 @@ func _show_settings() -> void:
 
 	var date_label := Label.new()
 	date_label.text = "Date format:"
-	date_label.add_theme_font_size_override("font_size", 16)
+	date_label.add_theme_font_size_override("font_size", 21)
 	vbox.add_child(date_label)
 
 	var date_formats := {
@@ -409,13 +409,13 @@ func _show_account_settings_dialog() -> void:
 	else:
 		current_email_label.text = "No email on file"
 		current_email_label.add_theme_color_override("font_color", Color(0.9, 0.6, 0.3))
-	current_email_label.add_theme_font_size_override("font_size", 12)
+	current_email_label.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(current_email_label)
 
 	# Add/Change Email Section
 	var email_label := Label.new()
 	email_label.text = "Add or change email:"
-	email_label.add_theme_font_size_override("font_size", 12)
+	email_label.add_theme_font_size_override("font_size", 16)
 	vbox.add_child(email_label)
 
 	var email_input := LineEdit.new()

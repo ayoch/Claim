@@ -55,7 +55,7 @@ func _refresh_all() -> void:
 	title.text = "SHIP OUTFITTING"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.clip_text = true
-	title.add_theme_font_size_override("font_size", 24)
+	title.add_theme_font_size_override("font_size", 31)
 	title.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 	ships_list.add_child(title)
 
@@ -68,7 +68,7 @@ func _refresh_all() -> void:
 		inv_header.text = "Upgrade Inventory (ready to install):"
 		inv_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		inv_header.clip_text = true
-		inv_header.add_theme_font_size_override("font_size", 18)
+		inv_header.add_theme_font_size_override("font_size", 23)
 		inv_header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 		ships_list.add_child(inv_header)
 
@@ -113,7 +113,7 @@ func _refresh_all() -> void:
 		ship_header.text = ship.ship_name
 		ship_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		ship_header.clip_text = true
-		ship_header.add_theme_font_size_override("font_size", 20)
+		ship_header.add_theme_font_size_override("font_size", 26)
 		ship_header.add_theme_color_override("font_color", Color(0.9, 0.9, 1.0))
 		ship_vbox.add_child(ship_header)
 
@@ -147,7 +147,7 @@ func _refresh_all() -> void:
 		base_stats.text = "BASE STATS:"
 		base_stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		base_stats.clip_text = true
-		base_stats.add_theme_font_size_override("font_size", 14)
+		base_stats.add_theme_font_size_override("font_size", 18)
 		base_stats.add_theme_color_override("font_color", Color(0.6, 0.8, 1.0))
 		ship_vbox.add_child(base_stats)
 
@@ -191,7 +191,7 @@ func _refresh_all() -> void:
 		upgrades_header.text = "INSTALLED UPGRADES:"
 		upgrades_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		upgrades_header.clip_text = true
-		upgrades_header.add_theme_font_size_override("font_size", 14)
+		upgrades_header.add_theme_font_size_override("font_size", 18)
 		upgrades_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 		ship_vbox.add_child(upgrades_header)
 
@@ -237,7 +237,7 @@ func _refresh_all() -> void:
 	purchase_header.text = "AVAILABLE UPGRADES TO PURCHASE"
 	purchase_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	purchase_header.clip_text = true
-	purchase_header.add_theme_font_size_override("font_size", 20)
+	purchase_header.add_theme_font_size_override("font_size", 26)
 	purchase_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 	ships_list.add_child(purchase_header)
 
@@ -272,7 +272,7 @@ func _refresh_all() -> void:
 	mu_header.text = "MINING UNITS"
 	mu_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mu_header.clip_text = true
-	mu_header.add_theme_font_size_override("font_size", 20)
+	mu_header.add_theme_font_size_override("font_size", 26)
 	mu_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 	ships_list.add_child(mu_header)
 
@@ -335,7 +335,7 @@ func _refresh_all() -> void:
 	mu_buy_header.text = "Available to Purchase:"
 	mu_buy_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mu_buy_header.clip_text = true
-	mu_buy_header.add_theme_font_size_override("font_size", 16)
+	mu_buy_header.add_theme_font_size_override("font_size", 21)
 	mu_buy_header.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
 	ships_list.add_child(mu_buy_header)
 
@@ -410,7 +410,7 @@ func _build_buy_ship_ui() -> void:
 
 	var title := _lbl()
 	title.text = "BUY NEW SHIP"
-	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_font_size_override("font_size", 26)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(title)
 
@@ -429,7 +429,7 @@ func _build_buy_ship_ui() -> void:
 	var money_label := _lbl()
 	money_label.text = "Available Funds: $%s" % _format_number(GameState.money)
 	money_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
-	money_label.add_theme_font_size_override("font_size", 16)
+	money_label.add_theme_font_size_override("font_size", 21)
 	buy_ship_content.add_child(money_label)
 
 	buy_ship_content.add_child(HSeparator.new())
@@ -454,14 +454,14 @@ func _build_buy_ship_ui() -> void:
 		var class_header := HBoxContainer.new()
 		var class_label := _lbl()
 		class_label.text = ShipData.CLASS_NAMES[ship_class]
-		class_label.add_theme_font_size_override("font_size", 18)
+		class_label.add_theme_font_size_override("font_size", 23)
 		class_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		class_header.add_child(class_label)
 
 		var price: int = ShipData.CLASS_PRICES[ship_class]
 		var price_label := _lbl()
 		price_label.text = "$%s" % _format_number(price)
-		price_label.add_theme_font_size_override("font_size", 18)
+		price_label.add_theme_font_size_override("font_size", 23)
 		if GameState.money >= price:
 			price_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
 		else:

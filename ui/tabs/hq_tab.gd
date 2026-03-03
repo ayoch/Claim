@@ -309,7 +309,7 @@ func _setup_stationed_ships_panel() -> void:
 	title.text = "STATIONED SHIPS"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.clip_text = true
-	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_font_size_override("font_size", 18)
 	title.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 	card_vbox.add_child(title)
 
@@ -354,7 +354,7 @@ func _refresh_stationed_ships() -> void:
 
 		var header := _lbl()
 		header.text = "%s @ %s" % [ship.ship_name, ship.station_colony.colony_name if ship.station_colony else "Unknown"]
-		header.add_theme_font_size_override("font_size", 16)
+		header.add_theme_font_size_override("font_size", 21)
 		header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		header.clip_text = true
 		ship_vbox.add_child(header)
@@ -420,7 +420,7 @@ func _setup_discipline_panel() -> void:
 	title.text = "CREW DISCIPLINE"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.clip_text = true
-	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_font_size_override("font_size", 18)
 	title.add_theme_color_override("font_color", Color(1.0, 0.6, 0.1))
 	card_vbox.add_child(title)
 
@@ -471,7 +471,7 @@ func _refresh_discipline() -> void:
 		# Name
 		var name_label := _lbl()
 		name_label.text = worker.worker_name
-		name_label.add_theme_font_size_override("font_size", 20)
+		name_label.add_theme_font_size_override("font_size", 26)
 		name_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
 		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		name_label.clip_text = true
@@ -553,7 +553,7 @@ func _setup_colony_standing_panel() -> void:
 	title.name = "Title"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.clip_text = true
-	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_font_size_override("font_size", 18)
 	title.add_theme_color_override("font_color", Color(1.0, 0.6, 0.1))
 	card_vbox.add_child(title)
 
@@ -608,7 +608,7 @@ func _refresh_colony_standing() -> void:
 		# Colony name
 		var name_label := _lbl()
 		name_label.text = colony.colony_name
-		name_label.add_theme_font_size_override("font_size", 16)
+		name_label.add_theme_font_size_override("font_size", 21)
 		var color := Color(1.0, 0.2, 0.2) if colony.player_banned else Color(1.0, 0.6, 0.1)
 		name_label.add_theme_color_override("font_color", color)
 		entry_vbox.add_child(name_label)
@@ -656,7 +656,7 @@ func _setup_warnings_panel() -> void:
 	title.text = "⚠️ ACTIVE WARNINGS"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.clip_text = true
-	title.add_theme_font_size_override("font_size", 16)
+	title.add_theme_font_size_override("font_size", 21)
 	title.add_theme_color_override("font_color", Color(1.0, 0.6, 0.1))
 	card_vbox.add_child(title)
 
@@ -737,7 +737,7 @@ func _setup_policies_ui() -> void:
 	var title_row := HBoxContainer.new()
 	var title := _lbl()
 	title.text = "COMPANY POLICIES"
-	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_font_size_override("font_size", 18)
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_row.add_child(title)
 
@@ -812,7 +812,7 @@ func _setup_policies_ui() -> void:
 		var desc := _lbl()
 		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		desc.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-		desc.add_theme_font_size_override("font_size", 11)
+		desc.add_theme_font_size_override("font_size", 14)
 		desc.text = descriptions.get(get_fn.call(), "")
 		opt.item_selected.connect(func(idx: int) -> void:
 			set_fn.call(idx)
@@ -1007,7 +1007,7 @@ func _refresh_resources() -> void:
 		var claims_header := _lbl()
 		claims_header.text = "MINING CLAIMS"
 		claims_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		claims_header.add_theme_font_size_override("font_size", 16)
+		claims_header.add_theme_font_size_override("font_size", 21)
 		claims_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 		resources_list.add_child(claims_header)
 
@@ -1350,7 +1350,7 @@ func _refresh_balance_history() -> void:
 	if history.is_empty():
 		var empty := _lbl()
 		empty.text = "No transactions yet"
-		empty.add_theme_font_size_override("font_size", 12)
+		empty.add_theme_font_size_override("font_size", 16)
 		empty.add_theme_color_override("font_color", Color(0.4, 0.4, 0.4))
 		transactions_list.add_child(empty)
 		return
@@ -1372,7 +1372,7 @@ func _refresh_balance_history() -> void:
 			day, hour, sign_str, _format_number(change), _format_number(balance),
 			desc, ship_str
 		]
-		row.add_theme_font_size_override("font_size", 11)
+		row.add_theme_font_size_override("font_size", 14)
 		row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		if change >= 0:
@@ -1439,7 +1439,7 @@ func _create_session_info_label() -> void:
 	session_info_label = _lbl()
 	session_info_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	session_info_label.clip_text = true
-	session_info_label.add_theme_font_size_override("font_size", 11)
+	session_info_label.add_theme_font_size_override("font_size", 14)
 	session_info_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 
 	# Add to top of dashboard (insert as first child of money label's parent)
@@ -1594,7 +1594,7 @@ func _create_admin_speed_controls() -> void:
 	# Label
 	var label := Label.new()
 	label.text = "Server Speed:"
-	label.add_theme_font_size_override("font_size", 12)
+	label.add_theme_font_size_override("font_size", 16)
 	label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.3))  # Gold color for admin
 	_admin_speed_controls.add_child(label)
 
@@ -1602,7 +1602,7 @@ func _create_admin_speed_controls() -> void:
 	var speed_display := Label.new()
 	speed_display.name = "SpeedDisplay"
 	speed_display.text = "..."
-	speed_display.add_theme_font_size_override("font_size", 14)
+	speed_display.add_theme_font_size_override("font_size", 18)
 	speed_display.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 	speed_display.custom_minimum_size = Vector2(80, 0)
 	_admin_speed_controls.add_child(speed_display)
@@ -1613,7 +1613,7 @@ func _create_admin_speed_controls() -> void:
 		var btn := Button.new()
 		btn.text = "%.0fx" % speed if speed < 1000 else "%.0fk" % (speed / 1000.0)
 		btn.custom_minimum_size = Vector2(50, 28)
-		btn.add_theme_font_size_override("font_size", 11)
+		btn.add_theme_font_size_override("font_size", 14)
 		btn.pressed.connect(func() -> void: _set_server_speed(speed))
 		_admin_speed_controls.add_child(btn)
 
@@ -1712,7 +1712,7 @@ func _setup_server_messages_panel() -> void:
 	title.text = "MESSAGE FROM EUTERPE CONTROL"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title.clip_text = true
-	title.add_theme_font_size_override("font_size", 14)
+	title.add_theme_font_size_override("font_size", 18)
 	title.add_theme_color_override("font_color", Color(1.0, 0.85, 0.15))
 	card_vbox.add_child(title)
 

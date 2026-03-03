@@ -559,7 +559,7 @@ func _spawn_planet_labels() -> void:
 		label.text = planet["name"]
 		var radius: float = planet["radius"]
 		label.position = Vector2(radius + 6, -10)
-		label.add_theme_font_size_override("font_size", 14)
+		label.add_theme_font_size_override("font_size", 18)
 		var color: Color = planet["color"]
 		label.add_theme_color_override("font_color", color)
 		node.add_child(label)
@@ -590,7 +590,7 @@ func _spawn_colony_markers() -> void:
 		var label := Label.new()
 		label.text = colony.colony_name
 		label.position = Vector2(10, -8)
-		label.add_theme_font_size_override("font_size", 12)
+		label.add_theme_font_size_override("font_size", 16)
 		label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 		marker.add_child(label)
 		var col_pos := colony.get_position_au() * AU_PIXELS
@@ -991,7 +991,7 @@ func _center_on_ship(ship: Ship) -> void:
 func _setup_dispatch_hint_label() -> void:
 	_dispatch_hint_label = Label.new()
 	_dispatch_hint_label.text = "Select destination on map (RMB to cancel)"
-	_dispatch_hint_label.add_theme_font_size_override("font_size", 14)
+	_dispatch_hint_label.add_theme_font_size_override("font_size", 18)
 	_dispatch_hint_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
 	_dispatch_hint_label.anchors_preset = Control.PRESET_BOTTOM_RIGHT
 	_dispatch_hint_label.anchor_left = 1.0

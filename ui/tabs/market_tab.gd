@@ -77,7 +77,7 @@ func _refresh_sell() -> void:
 	if not GameState.active_market_events.is_empty():
 		var events_header := _lbl()
 		events_header.text = "ACTIVE MARKET EVENTS"
-		events_header.add_theme_font_size_override("font_size", 16)
+		events_header.add_theme_font_size_override("font_size", 21)
 		events_header.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
 		sell_list.add_child(events_header)
 
@@ -91,7 +91,7 @@ func _refresh_sell() -> void:
 			event_title.text = event.get_display_text()
 			event_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			event_title.clip_text = true
-			event_title.add_theme_font_size_override("font_size", 14)
+			event_title.add_theme_font_size_override("font_size", 18)
 			if event.price_multiplier > 1.0:
 				event_title.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 			else:
@@ -182,7 +182,7 @@ func _refresh_equip() -> void:
 	if not GameState.fabrication_queue.is_empty():
 		var fab_header := _lbl()
 		fab_header.text = "FABRICATION QUEUE"
-		fab_header.add_theme_font_size_override("font_size", 16)
+		fab_header.add_theme_font_size_override("font_size", 21)
 		fab_header.add_theme_color_override("font_color", Color(0.8, 0.7, 0.2))
 		equip_list.add_child(fab_header)
 
@@ -269,7 +269,7 @@ func _refresh_equip() -> void:
 		]
 		ship_header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		ship_header.clip_text = true
-		ship_header.add_theme_font_size_override("font_size", 18)
+		ship_header.add_theme_font_size_override("font_size", 23)
 		ship_vbox.add_child(ship_header)
 
 		# Show installed equipment with durability and repair buttons
@@ -378,7 +378,7 @@ func _refresh_equip() -> void:
 
 	var upgrades_header := _lbl()
 	upgrades_header.text = "SHIP UPGRADES"
-	upgrades_header.add_theme_font_size_override("font_size", 20)
+	upgrades_header.add_theme_font_size_override("font_size", 26)
 	upgrades_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
 	equip_list.add_child(upgrades_header)
 
@@ -390,7 +390,7 @@ func _refresh_equip() -> void:
 	# ── MODULAR UPGRADES ─────────────────────────────────────────────────────
 	var modular_header := _lbl()
 	modular_header.text = "Modular Upgrades"
-	modular_header.add_theme_font_size_override("font_size", 16)
+	modular_header.add_theme_font_size_override("font_size", 21)
 	modular_header.add_theme_color_override("font_color", Color(0.7, 0.85, 1.0))
 	equip_list.add_child(modular_header)
 
@@ -446,7 +446,7 @@ func _refresh_equip() -> void:
 
 	var dry_header := _lbl()
 	dry_header.text = "Dry Dock Work"
-	dry_header.add_theme_font_size_override("font_size", 16)
+	dry_header.add_theme_font_size_override("font_size", 21)
 	dry_header.add_theme_color_override("font_color", Color(1.0, 0.75, 0.4))
 	equip_list.add_child(dry_header)
 
@@ -498,7 +498,7 @@ func _refresh_contracts() -> void:
 	if not GameState.active_contracts.is_empty():
 		var active_header := _lbl()
 		active_header.text = "Active Contracts:"
-		active_header.add_theme_font_size_override("font_size", 18)
+		active_header.add_theme_font_size_override("font_size", 23)
 		active_header.add_theme_color_override("font_color", Color(0.3, 0.8, 1.0))
 		contracts_list.add_child(active_header)
 
@@ -561,7 +561,7 @@ func _refresh_contracts() -> void:
 	# Available contracts
 	var avail_header := _lbl()
 	avail_header.text = "Available Contracts:"
-	avail_header.add_theme_font_size_override("font_size", 18)
+	avail_header.add_theme_font_size_override("font_size", 23)
 	contracts_list.add_child(avail_header)
 
 	if GameState.available_contracts.is_empty():
@@ -637,7 +637,7 @@ func _refresh_colony() -> void:
 		header.text = "%s (%.2f AU from Earth)" % [colony.colony_name, dist_from_earth]
 		header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		header.clip_text = true
-		header.add_theme_font_size_override("font_size", 18)
+		header.add_theme_font_size_override("font_size", 23)
 		header.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
 		vbox.add_child(header)
 

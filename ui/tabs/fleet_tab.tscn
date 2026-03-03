@@ -21,7 +21,7 @@ theme_override_constants/separation = 16
 [node name="Title" type="Label" parent="VBox"]
 layout_mode = 2
 text = "FLEET"
-theme_override_font_sizes/font_size = 20
+theme_override_font_sizes/font_size = 26
 
 [node name="ScrollContainer" type="ScrollContainer" parent="VBox"]
 layout_mode = 2

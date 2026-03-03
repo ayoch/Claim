@@ -50,7 +50,7 @@ func _populate_leaderboard(container: VBoxContainer, entries: Array) -> void:
 		empty_label.text = "No leaderboard entries yet.\nSave your game to create an entry!"
 		empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		empty_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		empty_label.add_theme_font_size_override("font_size", 16)
+		empty_label.add_theme_font_size_override("font_size", 21)
 		container.add_child(empty_label)
 		return
 
@@ -68,14 +68,14 @@ func _create_leaderboard_row(rank: int, entry: Dictionary) -> HBoxContainer:
 	var rank_label := Label.new()
 	rank_label.custom_minimum_size = Vector2(60, 0)
 	rank_label.text = "#%d" % rank
-	rank_label.add_theme_font_size_override("font_size", 14)
+	rank_label.add_theme_font_size_override("font_size", 18)
 	row.add_child(rank_label)
 
 	# Player name
 	var player_label := Label.new()
 	player_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	player_label.text = entry.get("player_name", "Unknown")
-	player_label.add_theme_font_size_override("font_size", 14)
+	player_label.add_theme_font_size_override("font_size", 18)
 	row.add_child(player_label)
 
 	# Net worth
@@ -83,7 +83,7 @@ func _create_leaderboard_row(rank: int, entry: Dictionary) -> HBoxContainer:
 	worth_label.custom_minimum_size = Vector2(150, 0)
 	worth_label.text = "$%s" % _format_number(entry.get("net_worth", 0))
 	worth_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	worth_label.add_theme_font_size_override("font_size", 14)
+	worth_label.add_theme_font_size_override("font_size", 18)
 	row.add_child(worth_label)
 
 	return row

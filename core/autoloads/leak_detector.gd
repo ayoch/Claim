@@ -45,7 +45,7 @@ func _create_overlay() -> void:
 	overlay_label.anchor_right = 1.0
 	overlay_label.offset_left = 4.0
 	overlay_label.offset_top = 4.0
-	overlay_label.add_theme_font_size_override("font_size", 16)
+	overlay_label.add_theme_font_size_override("font_size", 21)
 	overlay_label.add_theme_color_override("font_color", Color.WHITE)
 	overlay_label.visible = false
 	overlay_label.mouse_filter = Control.MOUSE_FILTER_IGNORE

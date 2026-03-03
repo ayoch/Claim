@@ -147,7 +147,7 @@ func _create_overlay() -> void:
 	overlay_label.anchor_top = 0.0
 	overlay_label.offset_left = 8.0
 	overlay_label.offset_top = 8.0
-	overlay_label.add_theme_font_size_override("font_size", 11)
+	overlay_label.add_theme_font_size_override("font_size", 14)
 	overlay_label.add_theme_color_override("font_color", Color.YELLOW)
 	overlay_label.z_index = 4096
 	overlay_label.visible = false

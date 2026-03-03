@@ -33,7 +33,7 @@ theme_override_constants/separation = 8
 [node name="Title" type="Label" parent="ScrollContainer/VBox/BalanceCard/VBox"]
 layout_mode = 2
 text = "NUMBERS"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 
 [node name="MoneyLabel" type="Label" parent="ScrollContainer/VBox/BalanceCard/VBox"]
 unique_name_in_owner = true
@@ -41,7 +41,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "$10,000"
 clip_text = true
-theme_override_font_sizes/font_size = 32
+theme_override_font_sizes/font_size = 42
 
 [node name="TransactionsCard" type="PanelContainer" parent="ScrollContainer/VBox"]
 layout_mode = 2
@@ -53,7 +53,7 @@ theme_override_constants/separation = 8
 [node name="Title" type="Label" parent="ScrollContainer/VBox/TransactionsCard/VBox"]
 layout_mode = 2
 text = "TRANSACTIONS"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 
 [node name="TransactionsScroll" type="ScrollContainer" parent="ScrollContainer/VBox/TransactionsCard/VBox"]
 unique_name_in_owner = true
@@ -77,7 +77,7 @@ theme_override_constants/separation = 8
 [node name="Title" type="Label" parent="ScrollContainer/VBox/ResourcesCard/VBox"]
 layout_mode = 2
 text = "STOCKPILE"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 
 [node name="ResourcesList" type="VBoxContainer" parent="ScrollContainer/VBox/ResourcesCard/VBox"]
 unique_name_in_owner = true
@@ -93,7 +93,7 @@ theme_override_constants/separation = 8
 [node name="Title" type="Label" parent="ScrollContainer/VBox/MissionsCard/VBox"]
 layout_mode = 2
 text = "ACTIVE MISSIONS"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 
 [node name="MissionsList" type="VBoxContainer" parent="ScrollContainer/VBox/MissionsCard/VBox"]
 unique_name_in_owner = true
@@ -109,7 +109,7 @@ theme_override_constants/separation = 8
 [node name="Title" type="Label" parent="ScrollContainer/VBox/WorkersCard/VBox"]
 layout_mode = 2
 text = "WORKFORCE"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 
 [node name="WorkersSummary" type="Label" parent="ScrollContainer/VBox/WorkersCard/VBox"]
 unique_name_in_owner = true
@@ -128,7 +128,7 @@ theme_override_constants/separation = 8
 [node name="Title" type="Label" parent="ScrollContainer/VBox/AlertsCard/VBox"]
 layout_mode = 2
 text = "ALERTS"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 theme_override_colors/font_color = Color(0.9, 0.3, 0.3, 1)
 
 [node name="AlertsScroll" type="ScrollContainer" parent="ScrollContainer/VBox/AlertsCard/VBox"]
@@ -153,7 +153,7 @@ theme_override_constants/separation = 8
 [node name="Title" type="Label" parent="ScrollContainer/VBox/ActivityCard/VBox"]
 layout_mode = 2
 text = "ACTIVITY"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 
 [node name="ActivityScroll" type="ScrollContainer" parent="ScrollContainer/VBox/ActivityCard/VBox"]
 unique_name_in_owner = true
@@ -177,7 +177,7 @@ theme_override_constants/separation = 8
 [node name="Title" type="Label" parent="ScrollContainer/VBox/ContractsCard/VBox"]
 layout_mode = 2
 text = "CONTRACTS"
-theme_override_font_sizes/font_size = 14
+theme_override_font_sizes/font_size = 18
 theme_override_colors/font_color = Color(0.3, 0.8, 1.0, 1)
 
 [node name="ContractsScroll" type="ScrollContainer" parent="ScrollContainer/VBox/ContractsCard/VBox"]
