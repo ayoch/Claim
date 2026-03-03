@@ -29,7 +29,8 @@ const ZOOM_MAX: float = 3.0
 const ZOOM_STEP: float = 0.1
 
 # Touch/pinch zoom state
-var _touches: Dictionary = {}  # finger index -> position
+var _touches: Dictionary = {}  # finger index -> current position
+var _touch_start_positions: Dictionary = {}  # finger index -> press position (for tap detection)
 var _last_pinch_distance: float = -1.0
 
 # Colony markers
@@ -917,13 +918,23 @@ func _unhandled_input(event: InputEvent) -> void:
 		camera.position += pan.delta * 20.0 / camera.zoom
 		_following_ship = null  # Stop following on manual pan
 
-	# Touch controls (pan and pinch-to-zoom)
+	# Touch controls (pan, pinch-to-zoom, tap-to-select/dispatch)
 	if event is InputEventScreenTouch:
 		var touch := event as InputEventScreenTouch
 		if touch.pressed:
 			_touches[touch.index] = touch.position
+			_touch_start_positions[touch.index] = touch.position
 		else:
+			# Tap detection: single finger, minimal movement
+			if _touches.size() == 1 and touch.index in _touch_start_positions:
+				var start: Vector2 = _touch_start_positions[touch.index]
+				if touch.position.distance_to(start) < 15.0:
+					if _map_selected_ship != null and _dispatch_ready:
+						_try_dispatch_to(touch.position)
+					elif _map_selected_ship == null:
+						_try_select_ship_at(touch.position)
 			_touches.erase(touch.index)
+			_touch_start_positions.erase(touch.index)
 			_last_pinch_distance = -1.0
 	elif event is InputEventScreenDrag:
 		var drag := event as InputEventScreenDrag
@@ -1042,7 +1053,8 @@ func _try_dispatch_to(screen_pos: Vector2) -> void:
 		if world_pos.distance_to(colony_px) < 40.0:
 			EventBus.map_dispatch_to_colony.emit(_map_selected_ship, colony)
 			return
-	# Empty space — no-op
+	# Empty space — cancel dispatch
+	_set_map_selected_ship(null)
 
 func _try_select_ship_at(screen_pos: Vector2) -> void:
 	# Convert screen position to world position
