@@ -1108,89 +1108,10 @@
 [2026-03-02T12:11:02] WARN: Failed to fetch Saturn: Bad response code 503
 [2026-03-02T12:11:02] WARN: Failed to fetch Neptune: Bad response code 503
 [2026-03-02T12:11:02] No JPL data received — skipping verification (network may be unavailable)
-[2026-03-02T13:54:17] Starting verification for game date 2026-02-18
-[2026-03-02T13:54:17] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T13:56:46] Starting verification for game date 2026-02-18
-[2026-03-02T13:56:46] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T14:11:16] Starting verification for game date 2026-02-18
-[2026-03-02T14:11:17] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T14:28:29] Starting verification for game date 2026-02-18
-[2026-03-02T14:28:29] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T14:30:29] Starting verification for game date 2026-02-18
-[2026-03-02T14:30:29] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T14:34:39] Starting verification for game date 2026-02-18
-[2026-03-02T14:34:39] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T15:05:33] Starting verification for game date 2026-02-18
-[2026-03-02T15:05:33] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T15:15:49] Starting verification for game date 2026-02-18
-[2026-03-02T15:15:49] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T15:30:22] Starting verification for game date 2026-02-18
-[2026-03-02T15:30:22] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T15:48:51] Starting verification for game date 2026-02-18
-[2026-03-02T15:48:51] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T15:50:49] Starting verification for game date 2026-02-18
-[2026-03-02T15:50:49] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:05:47] Starting verification for game date 2026-02-18
-[2026-03-02T16:05:47] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:11:06] Starting verification for game date 2026-02-18
-[2026-03-02T16:11:07] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:15:48] Starting verification for game date 2026-02-18
-[2026-03-02T16:15:49] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:28:58] Starting verification for game date 2026-02-18
-[2026-03-02T16:28:58] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:30:01] Starting verification for game date 2026-02-18
-[2026-03-02T16:30:01] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:30:59] Starting verification for game date 2026-02-18
-[2026-03-02T16:30:59] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:32:20] Starting verification for game date 2026-02-18
-[2026-03-02T16:32:20] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:33:58] Starting verification for game date 2026-02-18
-[2026-03-02T16:33:59] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:34:47] Starting verification for game date 2026-02-18
-[2026-03-02T16:34:48] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:35:57] Starting verification for game date 2026-02-18
-[2026-03-02T16:35:57] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:37:42] Starting verification for game date 2026-02-18
-[2026-03-02T16:37:42] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:41:34] Starting verification for game date 2026-02-18
-[2026-03-02T16:41:34] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:43:50] Starting verification for game date 2026-02-18
-[2026-03-02T16:43:50] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:53:02] Starting verification for game date 2026-02-18
-[2026-03-02T16:53:02] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T16:58:43] Starting verification for game date 2026-02-18
-[2026-03-02T16:58:43] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T17:00:07] Starting verification for game date 2026-02-18
-[2026-03-02T17:00:07] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T17:02:02] Starting verification for game date 2026-02-18
-[2026-03-02T17:02:02] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T17:07:22] Starting verification for game date 2026-02-18
-[2026-03-02T17:07:22] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T17:13:13] Starting verification for game date 2026-02-18
-[2026-03-02T17:13:13] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T18:20:59] Starting verification for game date 2026-02-18
-[2026-03-02T18:20:59] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T18:24:27] Starting verification for game date 2026-02-18
-[2026-03-02T18:24:27] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T18:28:24] Starting verification for game date 2026-02-18
-[2026-03-02T18:28:24] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T19:04:52] Starting verification for game date 2026-02-18
-[2026-03-02T19:04:52] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T20:07:32] Starting verification for game date 2112-03-02
-[2026-03-02T20:07:32] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T20:20:53] Starting verification for game date 2112-03-02
-[2026-03-02T20:20:53] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T20:28:45] Starting verification for game date 2112-03-02
-[2026-03-02T20:28:45] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T20:37:22] Starting verification for game date 2112-03-02
-[2026-03-02T20:37:22] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T20:54:11] Starting verification for game date 2112-03-02
-[2026-03-02T20:54:11] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T21:03:13] Starting verification for game date 2112-03-02
-[2026-03-02T21:03:14] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T21:14:29] Starting verification for game date 2112-03-02
-[2026-03-02T21:14:29] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T21:26:35] Starting verification for game date 2112-03-02
-[2026-03-02T21:26:35] Network unavailable — skipping verification. Will retry next cycle.
-[2026-03-02T21:33:44] Starting verification for game date 2112-03-02
-[2026-03-02T21:33:45] Network unavailable — skipping verification. Will retry next cycle.
+[2026-03-03T22:58:46] Starting verification for game date 2026-02-18
+[2026-03-03T22:58:47] WARN: Failed to fetch Mars: Bad response code 503
+[2026-03-03T22:58:47] WARN: Failed to fetch Jupiter: Bad response code 503
+[2026-03-03T22:58:47] WARN: Failed to fetch Saturn: Bad response code 503
+[2026-03-03T22:58:47] WARN: Failed to fetch Uranus: Bad response code 503
+[2026-03-03T22:58:47] WARN: Failed to fetch Neptune: Bad response code 503
+[2026-03-03T22:58:47] No JPL data received — skipping verification (network may be unavailable)
