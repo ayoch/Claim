@@ -544,8 +544,9 @@ func _poll_server_speed() -> void:
 		if json.parse(response_body.get_string_from_utf8()) == OK:
 			var data: Dictionary = json.data
 			var speed: float = data.get("speed", 1.0)
-
-			# Speed is now displayed in the SpeedBar (visible in both modes)
+			if speed != _current_server_speed:
+				_current_server_speed = speed
+				TimeScale.speed_multiplier = speed
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -571,6 +572,7 @@ func _adjust_server_speed(keycode: int) -> void:
 
 func _set_server_speed(speed: float) -> void:
 	_current_server_speed = speed
+	TimeScale.speed_multiplier = speed
 
 	# Call server admin endpoint
 	var server_backend = BackendManager.get_server_backend()
