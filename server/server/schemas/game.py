@@ -57,6 +57,30 @@ class WorkerOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Equipment ─────────────────────────────────────────────────────────────────
+
+class EquipmentOut(BaseModel):
+    id: int
+    ship_id: int
+    equipment_name: str
+    equipment_type: str
+    mining_bonus: float
+    cost: int
+    durability: float
+    max_durability: float
+    weapon_power: int
+    weapon_range: float
+    weapon_accuracy: float
+    weapon_role: str
+    ammo_capacity: int
+    current_ammo: int
+    ammo_cost: int
+    mass: float
+    mining_speed_bonus: float
+
+    model_config = {"from_attributes": True}
+
+
 # ── Mission ───────────────────────────────────────────────────────────────────
 
 class MissionOut(BaseModel):
@@ -139,6 +163,15 @@ class BuyShipRequest(BaseModel):
 class AssignWorkerRequest(BaseModel):
     worker_id: int
     ship_id: int
+
+
+class BuyEquipmentRequest(BaseModel):
+    ship_id: int = Field(..., gt=0)
+    equipment_name: str = Field(..., min_length=1, max_length=64)
+
+
+class SellEquipmentRequest(BaseModel):
+    equipment_id: int = Field(..., gt=0)
 
 
 class AsteroidOut(BaseModel):

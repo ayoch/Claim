@@ -1,5 +1,6 @@
 import math
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -7,14 +8,15 @@ from server.auth import get_current_player
 from server.database import get_db
 from server.models.asteroid import Asteroid
 from server.models.colony import Colony
+from server.models.equipment import Equipment
 from server.models.mission import Mission, STATUS_TRANSIT_OUT
 from server.models.player import Player
 from server.models.ship import Ship, SHIP_CLASS_STATS
 from server.models.worker import Worker
 from server.rate_limit import limiter
 from server.schemas.game import (
-    AsteroidOut, BuyShipRequest, ColonyOut, DispatchRequest,
-    GameState, HireRequest, MissionOut, ShipOut, WorkerOut,
+    AsteroidOut, BuyEquipmentRequest, BuyShipRequest, ColonyOut, DispatchRequest,
+    EquipmentOut, GameState, HireRequest, MissionOut, SellEquipmentRequest, ShipOut, WorkerOut,
 )
 from server.schemas.player import PolicyUpdate
 from server.simulation.tick import get_market_prices, get_total_ticks
@@ -222,6 +224,110 @@ async def buy_ship(
     await db.commit()
     await db.refresh(ship)
     return ship
+
+
+# Equipment catalog (simplified - matches client MarketData)
+EQUIPMENT_CATALOG = {
+    "Mining Processor": {"type": "processor", "mining_bonus": 1.5, "cost": 50000, "mass": 2.0},
+    "Advanced Refinery": {"type": "refinery", "mining_bonus": 2.0, "cost": 150000, "mass": 5.0},
+    "Laser Drill": {"type": "mining_laser", "mining_bonus": 1.3, "mining_speed_bonus": 0.2, "weapon_power": 5,
+                    "weapon_range": 0.01, "weapon_accuracy": 0.8, "weapon_role": "dual", "cost": 80000, "mass": 3.0},
+    "Railgun": {"type": "weapon", "weapon_power": 25, "weapon_range": 0.5, "weapon_accuracy": 0.7,
+                "weapon_role": "offensive", "cost": 200000, "mass": 8.0},
+    "Point Defense": {"type": "weapon", "weapon_power": 10, "weapon_range": 0.1, "weapon_accuracy": 0.85,
+                      "weapon_role": "defensive", "cost": 120000, "mass": 4.0},
+    "Torpedo Launcher": {"type": "weapon", "weapon_power": 50, "weapon_range": 2.0, "weapon_accuracy": 0.6,
+                         "weapon_role": "offensive", "ammo_capacity": 4, "ammo_cost": 15000, "cost": 300000, "mass": 12.0},
+}
+
+
+@router.post("/buy-equipment", response_model=EquipmentOut, status_code=status.HTTP_201_CREATED)
+@limiter.limit("10/minute")
+async def buy_equipment(
+    request: Request,
+    req: BuyEquipmentRequest,
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    # Get equipment template from catalog
+    if req.equipment_name not in EQUIPMENT_CATALOG:
+        raise HTTPException(status_code=404, detail="Equipment not found in catalog")
+
+    template = EQUIPMENT_CATALOG[req.equipment_name]
+    cost = template["cost"]
+
+    # Check funds
+    if player.money < cost:
+        raise HTTPException(status_code=402, detail=f"Insufficient funds (need {cost:,} cr)")
+
+    # Get ship and verify ownership
+    ship_result = await db.execute(
+        select(Ship).where(Ship.id == req.ship_id, Ship.player_id == player.id)
+    )
+    ship = ship_result.scalar_one_or_none()
+    if not ship:
+        raise HTTPException(status_code=404, detail="Ship not found")
+
+    # Check equipment slots
+    equipment_count = await db.scalar(
+        select(sa.func.count(Equipment.id)).where(Equipment.ship_id == ship.id)
+    )
+    if equipment_count >= ship.max_equipment_slots:
+        raise HTTPException(status_code=409, detail="Ship has no free equipment slots")
+
+    # Create equipment
+    equipment = Equipment(
+        ship_id=ship.id,
+        equipment_name=req.equipment_name,
+        equipment_type=template["type"],
+        mining_bonus=template.get("mining_bonus", 1.0),
+        cost=cost,
+        durability=100.0,
+        max_durability=100.0,
+        weapon_power=template.get("weapon_power", 0),
+        weapon_range=template.get("weapon_range", 0.0),
+        weapon_accuracy=template.get("weapon_accuracy", 0.0),
+        weapon_role=template.get("weapon_role", ""),
+        ammo_capacity=template.get("ammo_capacity", 0),
+        current_ammo=template.get("ammo_capacity", 0),  # Start with full ammo
+        ammo_cost=template.get("ammo_cost", 0),
+        mass=template.get("mass", 0.0),
+        mining_speed_bonus=template.get("mining_speed_bonus", 0.0),
+    )
+
+    player.money -= cost
+    db.add(equipment)
+    db.add(player)
+    await db.commit()
+    await db.refresh(equipment)
+    return equipment
+
+
+@router.post("/sell-equipment", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def sell_equipment(
+    request: Request,
+    req: SellEquipmentRequest,
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    # Get equipment and verify ownership via ship
+    equipment_result = await db.execute(
+        select(Equipment)
+        .join(Ship, Equipment.ship_id == Ship.id)
+        .where(Equipment.id == req.equipment_id, Ship.player_id == player.id)
+    )
+    equipment = equipment_result.scalar_one_or_none()
+    if not equipment:
+        raise HTTPException(status_code=404, detail="Equipment not found")
+
+    # Sell for 50% of cost
+    refund = equipment.cost // 2
+    player.money += refund
+
+    await db.delete(equipment)
+    db.add(player)
+    await db.commit()
 
 
 @router.post("/policies", response_model=dict)

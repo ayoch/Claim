@@ -339,6 +339,34 @@ func purchase_ship_any_mode(ship_class: ShipData.ShipClass, ship_name: String, c
 		# LOCAL mode: use local GameState directly
 		purchase_ship(ship_class)
 
+## Mode-aware equipment purchasing - works in both LOCAL and SERVER modes
+func purchase_equipment_any_mode(ship: Ship, equipment_name: String) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		# SERVER mode: route through BackendManager
+		if ship.server_id == 0:
+			push_warning("Ship %s has no server_id, cannot buy equipment in SERVER mode" % ship.ship_name)
+			return
+		BackendManager.buy_equipment(ship.server_id, equipment_name)
+		# State refresh will include new equipment via polling
+	else:
+		# LOCAL mode: look up equipment in catalog and purchase
+		# This requires the catalog entry - would need UI to pass it
+		# For now, just a stub
+		push_warning("purchase_equipment_any_mode() LOCAL mode not fully implemented")
+
+## Mode-aware equipment selling - works in both LOCAL and SERVER modes
+func sell_equipment_any_mode(equipment: Equipment, ship: Ship) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		# SERVER mode: equipment needs server_id
+		# For now, use equipment name to find it (requires server sync)
+		# TODO: Add equipment.server_id field
+		push_warning("sell_equipment_any_mode() SERVER mode requires equipment.server_id field")
+	else:
+		# LOCAL mode: remove from ship and refund 50% of cost
+		ship.equipment.erase(equipment)
+		money += equipment.cost / 2
+		EventBus.equipment_sold.emit(equipment, ship)
+
 ## Redirect a ship in transit to a new asteroid.
 ## Queues the order with lightspeed delay; returns true if order accepted/queued.
 func redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> bool:
@@ -3873,6 +3901,13 @@ func apply_server_state(server_data: Dictionary) -> void:
 					var ore_type := _parse_ore_type(ore_key)
 					if ore_type >= 0:
 						found_ship.cargo[ore_type] = float(server_cargo[ore_key])
+
+			# Update equipment (server has: id, equipment_name, durability, current_ammo, etc.)
+			var server_equipment: Array = ship_data.get("equipment", [])
+			if not server_equipment.is_empty():
+				# For now, just store count - full sync would require matching by name/type
+				# TODO: Full equipment sync when client needs it
+				pass
 
 	# Update workers (server only has: id, first_name, last_name, skills, xp, wage)
 	var server_workers: Array = server_data.get("workers", [])

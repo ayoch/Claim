@@ -348,6 +348,42 @@ func unassign_worker(worker_id: int) -> void:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# EQUIPMENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+func buy_equipment(ship_id: int, equipment_name: String):
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var body := JSON.stringify({
+		"ship_id": ship_id,
+		"equipment_name": equipment_name
+	})
+
+	var result := await _http_request_async(http, base_url + "/game/buy-equipment", headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to buy equipment: " + str(err))
+		return null
+
+
+func sell_equipment(equipment_id: int) -> void:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var body := JSON.stringify({"equipment_id": equipment_id})
+
+	var result := await _http_request_async(http, base_url + "/game/sell-equipment", headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if not result["success"]:
+		var err = result.get("error", "Unknown error")
+		push_warning("Failed to sell equipment: " + str(err))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # WORLD DATA
 # ══════════════════════════════════════════════════════════════════════════════
 

@@ -100,6 +100,7 @@ class Ship(Base):
     # Relationships
     player: Mapped["Player"] = relationship("Player", back_populates="ships")  # noqa: F821
     workers: Mapped[list["Worker"]] = relationship("Worker", back_populates="ship", lazy="selectin")  # noqa: F821
+    equipment: Mapped[list["Equipment"]] = relationship("Equipment", back_populates="ship", lazy="selectin")  # noqa: F821
     missions: Mapped[list["Mission"]] = relationship(  # noqa: F821
         "Mission", back_populates="ship", lazy="selectin", foreign_keys="[Mission.ship_id]"
     )
