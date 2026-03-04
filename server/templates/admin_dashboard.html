@@ -32,6 +32,45 @@ async function updateDashboard() {
 
 // Update every 2 seconds
 setInterval(updateDashboard, 2000);
+
+// Generate asteroid reserves
+async function generateReserves() {
+    const btn = document.getElementById('genReservesBtn');
+    const status = document.getElementById('reserveStatus');
+
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+    status.textContent = 'Please wait, this may take a few seconds...';
+
+    try {
+        const response = await fetch('/admin/generate-reserves', {
+            method: 'POST',
+            headers: {
+                'X-Admin-Key': '9e8650d3-9963-4336-9053-902cbd561994'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            status.innerHTML = `<span style="color: #4ade80;">✓ ${data.message}<br>Total reserves: ${data.total_reserves_tonnes.toLocaleString()} tonnes</span>`;
+            btn.style.display = 'none';
+            // Trigger immediate dashboard update
+            setTimeout(updateDashboard, 500);
+        } else if (data.status === 'already_generated') {
+            status.innerHTML = `<span style="color: #fbbf24;">⚠ ${data.message}</span>`;
+            btn.textContent = 'Already Generated';
+        } else {
+            status.innerHTML = `<span style="color: #ef4444;">✗ Error: ${data.detail || 'Unknown error'}</span>`;
+            btn.disabled = false;
+            btn.textContent = 'Retry';
+        }
+    } catch (error) {
+        status.innerHTML = `<span style="color: #ef4444;">✗ Error: ${error.message}</span>`;
+        btn.disabled = false;
+        btn.textContent = 'Retry';
+    }
+}
 </script>
 {% endblock %}
 
@@ -122,7 +161,9 @@ setInterval(updateDashboard, 2000);
             <div class="card-body">
                 <h5 class="card-title">Quick Actions</h5>
                 <a href="/admin-ui/players" class="btn btn-primary me-2">Manage Players</a>
-                <a href="/admin-ui/asteroids" class="btn btn-primary">View Asteroids</a>
+                <a href="/admin-ui/asteroids" class="btn btn-primary me-2">View Asteroids</a>
+                <button onclick="generateReserves()" class="btn btn-warning" id="genReservesBtn">Generate Asteroid Reserves</button>
+                <div id="reserveStatus" class="mt-2" style="font-size: 0.9rem;"></div>
             </div>
         </div>
     </div>
