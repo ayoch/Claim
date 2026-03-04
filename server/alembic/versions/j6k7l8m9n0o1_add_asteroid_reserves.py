@@ -1,7 +1,7 @@
 """add asteroid reserves
 
-Revision ID: add_asteroid_reserves
-Revises: add_is_admin
+Revision ID: j6k7l8m9n0o1
+Revises: i5j6k7l8m9n0
 Create Date: 2026-03-04
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = 'add_asteroid_reserves'
-down_revision = 'add_is_admin'
+revision = 'j6k7l8m9n0o1'
+down_revision = 'i5j6k7l8m9n0'
 branch_labels = None
 depends_on = None
 
