@@ -3958,6 +3958,36 @@ func apply_server_state(server_data: Dictionary) -> void:
 				# For now, just store count - full sync would require matching by name/type
 				# TODO: Full equipment sync when client needs it
 				pass
+		else:
+			# Ship not found locally - CREATE from server data
+			var new_ship := Ship.new()
+			new_ship.server_id = ship_id
+			new_ship.ship_name = ship_data.get("ship_name", "Ship")
+			new_ship.ship_class = int(ship_data.get("ship_class", 0))
+			new_ship.max_thrust_g = float(ship_data.get("max_thrust_g", 0.3))
+			new_ship.thrust_setting = float(ship_data.get("thrust_setting", 1.0))
+			new_ship.cargo_capacity = float(ship_data.get("cargo_capacity", 100.0))
+			new_ship.cargo_volume = float(ship_data.get("cargo_volume", 143.0))
+			new_ship.fuel_capacity = float(ship_data.get("fuel_capacity", 200.0))
+			new_ship.fuel = float(ship_data.get("fuel", 200.0))
+			new_ship.base_mass = float(ship_data.get("base_mass", 200.0))
+			new_ship.min_crew = int(ship_data.get("min_crew", 3))
+			new_ship.max_equipment_slots = int(ship_data.get("max_equipment_slots", 4))
+			new_ship.position_au.x = float(ship_data.get("position_x", 1.0))
+			new_ship.position_au.y = float(ship_data.get("position_y", 0.0))
+			new_ship.engine_condition = float(ship_data.get("engine_condition", 100.0))
+			new_ship.is_derelict = bool(ship_data.get("is_derelict", false))
+			new_ship.is_docked = bool(ship_data.get("is_stationed", true))
+
+			# Parse cargo
+			var server_cargo: Dictionary = ship_data.get("current_cargo", {})
+			for ore_key in server_cargo:
+				var ore_type := _parse_ore_type(ore_key)
+				if ore_type >= 0:
+					new_ship.cargo[ore_type] = float(server_cargo[ore_key])
+
+			ships.append(new_ship)
+			print("[GameState] Created ship from server: %s (class %d)" % [new_ship.ship_name, new_ship.ship_class])
 
 	# Update workers (server only has: id, first_name, last_name, skills, xp, wage)
 	var server_workers: Array = server_data.get("workers", [])
