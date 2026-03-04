@@ -1,7 +1,7 @@
 """add performance indexes
 
 Revision ID: perf_indexes_001
-Revises: 2a20b17739f3
+Revises: j6k7l8m9n0o1
 Create Date: 2026-03-04
 
 """
@@ -9,7 +9,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'perf_indexes_001'
-down_revision = '2a20b17739f3'
+down_revision = 'j6k7l8m9n0o1'
 branch_labels = None
 depends_on = None
 
