@@ -74,6 +74,34 @@ async def admin_logout(request: Request):
     return RedirectResponse(url="/admin-ui/login", status_code=303)
 
 
+@router.get("/debug")
+async def admin_debug(request: Request, db: AsyncSession = Depends(get_db)):
+    """Debug endpoint to test functionality."""
+    import traceback
+    try:
+        admin_key = check_admin_session(request)
+        is_valid = await validate_admin_key(admin_key or "invalid", db) if admin_key else False
+
+        # Test database query
+        result = await db.execute(select(func.count(Player.id)))
+        player_count = result.scalar() or 0
+
+        return {
+            "templates_dir": str(templates_dir),
+            "templates_exist": templates_dir.exists(),
+            "templates_files": [str(f.name) for f in templates_dir.glob("*.html")] if templates_dir.exists() else [],
+            "admin_key_in_session": admin_key is not None,
+            "admin_key_valid": is_valid,
+            "player_count": player_count,
+            "settings_admin_key_set": bool(settings.ADMIN_KEY),
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
 @router.get("/dashboard", response_class=HTMLResponse)
 async def admin_dashboard(
     request: Request,
