@@ -16,20 +16,20 @@ depends_on = None
 
 def upgrade():
     # Mission query optimization (player_id + status)
-    op.create_index('idx_mission_player_status', 'mission', ['player_id', 'status'])
+    op.create_index('idx_mission_player_status', 'missions', ['player_id', 'status'])
 
     # Worker query optimization (player_id)
-    op.create_index('idx_worker_player', 'worker', ['player_id'])
+    op.create_index('idx_worker_player', 'workers', ['player_id'])
 
     # Stockpile query optimization (player_id + asteroid_id)
-    op.create_index('idx_stockpile_player_asteroid', 'stockpile', ['player_id', 'asteroid_id'])
+    op.create_index('idx_stockpile_player_asteroid', 'stockpiles', ['player_id', 'asteroid_id'])
 
     # Ship query optimization (player_id)
-    op.create_index('idx_ship_player', 'ship', ['player_id'])
+    op.create_index('idx_ship_player', 'ships', ['player_id'])
 
 
 def downgrade():
-    op.drop_index('idx_ship_player', table_name='ship')
-    op.drop_index('idx_stockpile_player_asteroid', table_name='stockpile')
-    op.drop_index('idx_worker_player', table_name='worker')
-    op.drop_index('idx_mission_player_status', table_name='mission')
+    op.drop_index('idx_ship_player', table_name='ships')
+    op.drop_index('idx_stockpile_player_asteroid', table_name='stockpiles')
+    op.drop_index('idx_worker_player', table_name='workers')
+    op.drop_index('idx_mission_player_status', table_name='missions')
