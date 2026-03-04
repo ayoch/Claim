@@ -3299,6 +3299,11 @@ func save_game(save_name: String = "") -> void:
 	file.store_string(JSON.stringify(save_data, "\t"))
 
 func load_game(file_name: String = "save_game.json") -> bool:
+	# In SERVER mode, don't load local saves - server is the source of truth
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		print("[GameState] Skipping local save load in SERVER mode - using server data only")
+		return false
+
 	if not FileAccess.file_exists("user://" + file_name):
 		return false
 	var file := FileAccess.open("user://" + file_name, FileAccess.READ)
