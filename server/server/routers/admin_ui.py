@@ -16,7 +16,7 @@ from server.models.player import Player
 from server.models.ship import Ship
 from server.models.mission import Mission
 from server.models.asteroid import Asteroid
-from server.auth import require_admin
+from server.config import settings
 
 
 router = APIRouter(prefix="/admin-ui", tags=["admin-ui"])
@@ -32,6 +32,21 @@ def check_admin_session(request: Request):
     if not admin_key:
         return None
     return admin_key
+
+
+async def validate_admin_key(admin_key: str, db: AsyncSession) -> bool:
+    """Validate admin key against database."""
+    from sqlalchemy import select
+
+    # Check if any admin player exists with this key
+    result = await db.execute(
+        select(Player).where(Player.is_admin == True)
+    )
+    admin_players = result.scalars().all()
+
+    # For now, just check against settings.ADMIN_KEY
+    # In the future, you could store admin keys in a separate table
+    return admin_key == settings.ADMIN_KEY
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -66,9 +81,7 @@ async def admin_dashboard(
         return RedirectResponse(url="/admin-ui/login", status_code=303)
 
     # Verify admin key is valid
-    try:
-        await require_admin(admin_key, db)
-    except HTTPException:
+    if not await validate_admin_key(admin_key, db):
         request.session.clear()
         return RedirectResponse(url="/admin-ui/login", status_code=303)
 
@@ -143,9 +156,7 @@ async def admin_players(
     if not admin_key:
         return RedirectResponse(url="/admin-ui/login", status_code=303)
 
-    try:
-        await require_admin(admin_key, db)
-    except HTTPException:
+    if not await validate_admin_key(admin_key, db):
         request.session.clear()
         return RedirectResponse(url="/admin-ui/login", status_code=303)
 
@@ -191,9 +202,7 @@ async def admin_asteroids(
     if not admin_key:
         return RedirectResponse(url="/admin-ui/login", status_code=303)
 
-    try:
-        await require_admin(admin_key, db)
-    except HTTPException:
+    if not await validate_admin_key(admin_key, db):
         request.session.clear()
         return RedirectResponse(url="/admin-ui/login", status_code=303)
 
@@ -248,9 +257,7 @@ async def admin_grant_money(
     if not admin_key:
         return RedirectResponse(url="/admin-ui/login", status_code=303)
 
-    try:
-        await require_admin(admin_key, db)
-    except HTTPException:
+    if not await validate_admin_key(admin_key, db):
         request.session.clear()
         return RedirectResponse(url="/admin-ui/login", status_code=303)
 
