@@ -4,10 +4,34 @@
 
 {% block scripts %}
 <script>
-// Auto-refresh every 2 seconds
-setTimeout(function() {
-    location.reload();
-}, 2000);
+// AJAX refresh every 2 seconds
+async function updateDashboard() {
+    try {
+        const response = await fetch('/admin-ui/dashboard-data');
+        if (!response.ok) return;
+
+        const data = await response.json();
+
+        // Update all values
+        document.querySelectorAll('[data-stat]').forEach(el => {
+            const stat = el.dataset.stat;
+            if (data[stat] !== undefined) {
+                if (stat.includes('reserves') || stat.includes('iron') || stat.includes('water') || stat.includes('platinum')) {
+                    el.textContent = data[stat].toLocaleString('en-US', {maximumFractionDigits: 0}) + ' t';
+                } else if (stat === 'capacity_pct') {
+                    el.textContent = data[stat].toFixed(1) + '%';
+                } else {
+                    el.textContent = data[stat].toLocaleString('en-US');
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Dashboard update failed:', error);
+    }
+}
+
+// Update every 2 seconds
+setInterval(updateDashboard, 2000);
 </script>
 {% endblock %}
 
@@ -19,8 +43,8 @@ setTimeout(function() {
     <div class="col-md-3">
         <div class="card stat-card">
             <div class="stat-label">Active Players (30d)</div>
-            <div class="stat-value">{{ active_players }}</div>
-            <small class="text-muted">{{ total_players }} total</small>
+            <div class="stat-value" data-stat="active_players">{{ active_players }}</div>
+            <small class="text-muted"><span data-stat="total_players">{{ total_players }}</span> total</small>
         </div>
     </div>
 
@@ -28,7 +52,7 @@ setTimeout(function() {
     <div class="col-md-3">
         <div class="card stat-card">
             <div class="stat-label">Total Ships</div>
-            <div class="stat-value">{{ total_ships }}</div>
+            <div class="stat-value" data-stat="total_ships">{{ total_ships }}</div>
         </div>
     </div>
 
@@ -36,7 +60,7 @@ setTimeout(function() {
     <div class="col-md-3">
         <div class="card stat-card">
             <div class="stat-label">Active Missions</div>
-            <div class="stat-value">{{ active_missions }}</div>
+            <div class="stat-value" data-stat="active_missions">{{ active_missions }}</div>
         </div>
     </div>
 
@@ -44,8 +68,8 @@ setTimeout(function() {
     <div class="col-md-3">
         <div class="card stat-card">
             <div class="stat-label">Server Capacity</div>
-            <div class="stat-value">{{ "%.1f"|format(capacity_pct) }}%</div>
-            <small class="text-muted">{{ slots_available }} slots free</small>
+            <div class="stat-value" data-stat="capacity_pct">{{ "%.1f"|format(capacity_pct) }}%</div>
+            <small class="text-muted"><span data-stat="slots_available">{{ slots_available }}</span> slots free</small>
         </div>
     </div>
 </div>
@@ -59,32 +83,32 @@ setTimeout(function() {
                 <div class="row">
                     <div class="col-md-3">
                         <div class="stat-label">Total Reserves</div>
-                        <div class="stat-value" style="font-size: 1.5rem;">
+                        <div class="stat-value" style="font-size: 1.5rem;" data-stat="total_reserves">
                             {{ "{:,.0f}".format(total_reserves) }} t
                         </div>
                     </div>
                     <div class="col-md-3">
                         <div class="stat-label">Iron</div>
-                        <div class="stat-value" style="font-size: 1.5rem;">
+                        <div class="stat-value" style="font-size: 1.5rem;" data-stat="total_iron">
                             {{ "{:,.0f}".format(total_iron) }} t
                         </div>
                     </div>
                     <div class="col-md-3">
                         <div class="stat-label">Water Ice</div>
-                        <div class="stat-value" style="font-size: 1.5rem;">
+                        <div class="stat-value" style="font-size: 1.5rem;" data-stat="total_water_ice">
                             {{ "{:,.0f}".format(total_water_ice) }} t
                         </div>
                     </div>
                     <div class="col-md-3">
                         <div class="stat-label">Platinum</div>
-                        <div class="stat-value" style="font-size: 1.5rem;">
+                        <div class="stat-value" style="font-size: 1.5rem;" data-stat="total_platinum">
                             {{ "{:,.0f}".format(total_platinum) }} t
                         </div>
                     </div>
                 </div>
                 <hr>
                 <p class="mb-0">
-                    <strong>Max Players:</strong> {{ max_players }}
+                    <strong>Max Players:</strong> <span data-stat="max_players">{{ max_players }}</span>
                     (based on 50M tonnes per player minimum)
                 </p>
             </div>

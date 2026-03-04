@@ -74,6 +74,66 @@ async def admin_logout(request: Request):
     return RedirectResponse(url="/admin-ui/login", status_code=303)
 
 
+@router.get("/dashboard-data")
+async def admin_dashboard_data(request: Request, db: AsyncSession = Depends(get_db)):
+    """JSON endpoint for AJAX dashboard updates."""
+    admin_key = check_admin_session(request)
+    if not admin_key or not await validate_admin_key(admin_key, db):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+
+    result = await db.execute(
+        select(func.count(Player.id)).where(Player.last_seen >= thirty_days_ago)
+    )
+    active_players = result.scalar() or 0
+
+    result = await db.execute(select(func.count(Player.id)))
+    total_players = result.scalar() or 0
+
+    result = await db.execute(select(func.count(Ship.id)))
+    total_ships = result.scalar() or 0
+
+    result = await db.execute(
+        select(func.count(Mission.id)).where(Mission.status.in_([0, 1, 2]))
+    )
+    active_missions = result.scalar() or 0
+
+    result = await db.execute(select(Asteroid))
+    asteroids = result.scalars().all()
+
+    total_reserves = 0.0
+    total_iron = 0.0
+    total_water_ice = 0.0
+    total_platinum = 0.0
+
+    for asteroid in asteroids:
+        if asteroid.reserves:
+            total_reserves += sum(asteroid.reserves.values())
+            total_iron += asteroid.reserves.get("iron", 0.0)
+            total_water_ice += asteroid.reserves.get("water_ice", 0.0)
+            total_platinum += asteroid.reserves.get("platinum", 0.0)
+
+    MINIMUM_RESERVES_PER_PLAYER = 50_000_000
+    max_players = int(total_reserves / MINIMUM_RESERVES_PER_PLAYER) if total_reserves > 0 else 0
+    slots_available = max(0, max_players - active_players)
+    capacity_pct = (active_players / max_players * 100) if max_players > 0 else 0
+
+    return {
+        "active_players": active_players,
+        "total_players": total_players,
+        "total_ships": total_ships,
+        "active_missions": active_missions,
+        "total_reserves": total_reserves,
+        "total_iron": total_iron,
+        "total_water_ice": total_water_ice,
+        "total_platinum": total_platinum,
+        "max_players": max_players,
+        "slots_available": slots_available,
+        "capacity_pct": capacity_pct,
+    }
+
+
 @router.get("/debug")
 async def admin_debug(request: Request, db: AsyncSession = Depends(get_db)):
     """Debug endpoint to test functionality."""
