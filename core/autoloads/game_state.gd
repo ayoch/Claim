@@ -1284,11 +1284,19 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, units: Array[Minin
 	return mission
 
 func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+	# Capture origin location BEFORE clearing idle mission
+	var origin_location_name: String = ""
+	if ship.current_mission and ship.current_mission.asteroid:
+		origin_location_name = ship.current_mission.asteroid.asteroid_name
+	elif ship.current_trade_mission and ship.current_trade_mission.colony:
+		origin_location_name = ship.current_trade_mission.colony.colony_name
+
 	# Clean up any lingering idle mission so its stale worker list doesn't cause mismatches
 	if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
 		ship.current_mission.ship = null
 		missions.erase(ship.current_mission)
 		ship.current_mission = null
+
 	var mission := Mission.new()
 	mission.ship = ship
 	mission.asteroid = asteroid
@@ -1304,10 +1312,9 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int
 		mission.origin_name = "Earth"
 	elif ship.docked_at_colony:
 		mission.origin_name = ship.docked_at_colony.colony_name
-	elif ship.current_mission and ship.current_mission.asteroid:
-		mission.origin_name = ship.current_mission.asteroid.asteroid_name
-	elif ship.current_trade_mission and ship.current_trade_mission.colony:
-		mission.origin_name = ship.current_trade_mission.colony.colony_name
+	elif origin_location_name != "":
+		# Use captured location from before clearing idle mission
+		mission.origin_name = origin_location_name
 	else:
 		mission.origin_name = "deep space"
 
@@ -1574,11 +1581,20 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 	if ship.crew.size() < ship.min_crew:
 		push_warning("start_mission: not enough crew for %s (need %d, got %d)" % [ship.ship_name, ship.min_crew, ship.crew.size()])
 		return null
+
+	# Capture origin location BEFORE clearing idle mission
+	var origin_location_name: String = ""
+	if ship.current_mission and ship.current_mission.asteroid:
+		origin_location_name = ship.current_mission.asteroid.asteroid_name
+	elif ship.current_trade_mission and ship.current_trade_mission.colony:
+		origin_location_name = ship.current_trade_mission.colony.colony_name
+
 	# Clean up any lingering idle mission so its stale worker list doesn't cause mismatches
 	if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
 		ship.current_mission.ship = null
 		missions.erase(ship.current_mission)
 		ship.current_mission = null
+
 	var mission := Mission.new()
 	mission.ship = ship
 	mission.asteroid = asteroid  # Keep reference for mining/game logic
@@ -1594,12 +1610,9 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 		mission.origin_name = "Earth"
 	elif ship.docked_at_colony:
 		mission.origin_name = ship.docked_at_colony.colony_name
-	elif ship.current_mission and ship.current_mission.asteroid:
-		# Ship is at an asteroid from previous mission
-		mission.origin_name = ship.current_mission.asteroid.asteroid_name
-	elif ship.current_trade_mission and ship.current_trade_mission.colony:
-		# Ship is at a colony from previous trade mission
-		mission.origin_name = ship.current_trade_mission.colony.colony_name
+	elif origin_location_name != "":
+		# Use captured location from before clearing idle mission
+		mission.origin_name = origin_location_name
 	else:
 		# Ship is in deep space or unknown location
 		mission.origin_name = "deep space"
