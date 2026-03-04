@@ -3351,7 +3351,8 @@ func _execute_dispatch() -> void:
 		var return_to_station: bool = false
 
 		print("Calling BackendManager.dispatch_mission(ship_id=%d, asteroid_id=%d, type=%d)" % [_selected_ship.server_id, server_asteroid_id, mission_type_int])
-		BackendManager.dispatch_mission(_selected_ship.server_id, server_asteroid_id, mission_type_int, mining_duration, return_to_station)
+		await BackendManager.dispatch_mission(_selected_ship.server_id, server_asteroid_id, mission_type_int, mining_duration, return_to_station)
+		print("Dispatch call completed")
 	else:
 		# LOCAL mode: use local GameState functions
 		match _selected_mission_type:
