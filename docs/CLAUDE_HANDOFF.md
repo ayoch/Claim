@@ -1,12 +1,33 @@
 # Claude Code Handoff Document
-**Last Updated:** 2026-03-02
-**Current Instance:** HK-47 (Mac) → Dweezil (Windows)
+**Last Updated:** 2026-03-04
+**Current Instance:** Dweezil (Windows) → HK-47 (Mac)
 
 ---
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Server Integration Fixes & UX Polish
+### Latest Work Session: Market Tab UI Clipping Fix
+**Date:** 2026-03-04 (Windows/Dweezil)
+**Status:** Complete
+
+**What was done:**
+1. ✅ Reviewed all files in `docs/` folder
+2. ✅ Fixed market tab clipping on left/right after 30% global font size increase
+
+**Market Tab Fix:**
+- **Symptom:** Market tab content clipped on left and right edges (all other tabs already fixed)
+- **Root cause 1 (structure):** `ScrollContainer` was direct child of `MarginContainer` instead of nested inside an outer `VBoxContainer` — didn't match other tabs' layout pattern
+- **Root cause 2 (content):** "Install on X", "Commission on X" buttons were placed in `HBoxContainer`s, one per docked ship. With multiple ships + larger font, combined minimum width exceeded window width, overflowing the layout
+- **Fix 1:** `market_tab.tscn` — added outer `VBoxContainer` as direct child of `MarginContainer`; `ScrollContainer` nested inside with `size_flags_vertical = 3`. Now matches `fleet_market_tab`, `ship_outfitting_tab`, `workers_tab`, `fleet_tab` pattern exactly
+- **Fix 2:** `market_tab.gd` — changed three multi-ship button rows from `HBoxContainer` to `VBoxContainer`: equipment install buttons, upgrade install buttons, dry dock commission buttons. Ship buttons now stack vertically, eliminating horizontal overflow
+
+**Files modified:**
+- `ui/tabs/market_tab.tscn` — structural layout fix
+- `ui/tabs/market_tab.gd` — three multi-button rows HBox → VBox
+
+---
+
+### Previous Work Session: Server Integration Fixes & UX Polish
 **Date:** 2026-03-02 (Mac/HK-47) - Session 3
 **Status:** Complete and pushed to main
 

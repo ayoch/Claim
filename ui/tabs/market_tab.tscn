@@ -14,83 +14,87 @@ theme_override_constants/margin_right = 16
 theme_override_constants/margin_bottom = 16
 script = ExtResource("1")
 
-[node name="ScrollContainer" type="ScrollContainer" parent="."]
+[node name="VBox" type="VBoxContainer" parent="."]
 layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="VBox"]
+layout_mode = 2
+size_flags_vertical = 3
 horizontal_scroll_mode = 0
 
-[node name="VBox" type="VBoxContainer" parent="ScrollContainer"]
+[node name="VBox" type="VBoxContainer" parent="VBox/ScrollContainer"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 20
 
-[node name="SellSection" type="VBoxContainer" parent="ScrollContainer/VBox"]
+[node name="SellSection" type="VBoxContainer" parent="VBox/ScrollContainer/VBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
-[node name="SellTitle" type="Label" parent="ScrollContainer/VBox/SellSection"]
+[node name="SellTitle" type="Label" parent="VBox/ScrollContainer/VBox/SellSection"]
 layout_mode = 2
 text = "SELL ORE"
 theme_override_font_sizes/font_size = 26
 
-[node name="SellList" type="VBoxContainer" parent="ScrollContainer/VBox/SellSection"]
+[node name="SellList" type="VBoxContainer" parent="VBox/ScrollContainer/VBox/SellSection"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="Separator" type="HSeparator" parent="ScrollContainer/VBox"]
+[node name="Separator" type="HSeparator" parent="VBox/ScrollContainer/VBox"]
 layout_mode = 2
 
-[node name="BuySection" type="VBoxContainer" parent="ScrollContainer/VBox"]
+[node name="BuySection" type="VBoxContainer" parent="VBox/ScrollContainer/VBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
-[node name="BuyTitle" type="Label" parent="ScrollContainer/VBox/BuySection"]
+[node name="BuyTitle" type="Label" parent="VBox/ScrollContainer/VBox/BuySection"]
 layout_mode = 2
 text = "EQUIPMENT"
 theme_override_font_sizes/font_size = 26
 
-[node name="EquipList" type="VBoxContainer" parent="ScrollContainer/VBox/BuySection"]
+[node name="EquipList" type="VBoxContainer" parent="VBox/ScrollContainer/VBox/BuySection"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="Separator2" type="HSeparator" parent="ScrollContainer/VBox"]
+[node name="Separator2" type="HSeparator" parent="VBox/ScrollContainer/VBox"]
 layout_mode = 2
 
-[node name="ContractsSection" type="VBoxContainer" parent="ScrollContainer/VBox"]
+[node name="ContractsSection" type="VBoxContainer" parent="VBox/ScrollContainer/VBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
-[node name="ContractsTitle" type="Label" parent="ScrollContainer/VBox/ContractsSection"]
+[node name="ContractsTitle" type="Label" parent="VBox/ScrollContainer/VBox/ContractsSection"]
 layout_mode = 2
 text = "CONTRACTS"
 theme_override_font_sizes/font_size = 26
 
-[node name="ContractsList" type="VBoxContainer" parent="ScrollContainer/VBox/ContractsSection"]
+[node name="ContractsList" type="VBoxContainer" parent="VBox/ScrollContainer/VBox/ContractsSection"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 8
 
-[node name="Separator3" type="HSeparator" parent="ScrollContainer/VBox"]
+[node name="Separator3" type="HSeparator" parent="VBox/ScrollContainer/VBox"]
 layout_mode = 2
 
-[node name="ColonySection" type="VBoxContainer" parent="ScrollContainer/VBox"]
+[node name="ColonySection" type="VBoxContainer" parent="VBox/ScrollContainer/VBox"]
 layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/separation = 12
 
-[node name="ColonyTitle" type="Label" parent="ScrollContainer/VBox/ColonySection"]
+[node name="ColonyTitle" type="Label" parent="VBox/ScrollContainer/VBox/ColonySection"]
 layout_mode = 2
 text = "COLONY TRADE"
 theme_override_font_sizes/font_size = 26
 
-[node name="ColonyList" type="VBoxContainer" parent="ScrollContainer/VBox/ColonySection"]
+[node name="ColonyList" type="VBoxContainer" parent="VBox/ScrollContainer/VBox/ColonySection"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

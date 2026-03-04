@@ -240,6 +240,8 @@ func _refresh_equip() -> void:
 			inv_row.add_child(inv_info)
 
 			# Install buttons for each docked ship with open slots
+			var install_col := VBoxContainer.new()
+			install_col.add_theme_constant_override("separation", 4)
 			for ship in GameState.ships:
 				if ship.is_docked and ship.equipment.size() < ship.max_equipment_slots:
 					var install_btn := Button.new()
@@ -249,7 +251,8 @@ func _refresh_equip() -> void:
 						GameState.install_equipment(ship, equip)
 						_refresh_equip()
 					)
-					inv_row.add_child(install_btn)
+					install_col.add_child(install_btn)
+			inv_row.add_child(install_col)
 
 			equip_list.add_child(inv_row)
 
@@ -410,6 +413,8 @@ func _refresh_equip() -> void:
 		upgrade_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		upgrade_info.add_theme_color_override("font_color", Color(0.6, 0.9, 0.6))
 		upgrade_row.add_child(upgrade_info)
+		var install_col := VBoxContainer.new()
+		install_col.add_theme_constant_override("separation", 4)
 		for docked_ship in docked_ships:
 			var install_btn := Button.new()
 			install_btn.text = "Install on %s" % docked_ship.ship_name
@@ -418,7 +423,8 @@ func _refresh_equip() -> void:
 				GameState.install_upgrade(docked_ship, upgrade)
 				_refresh_equip()
 			)
-			upgrade_row.add_child(install_btn)
+			install_col.add_child(install_btn)
+		upgrade_row.add_child(install_col)
 		equip_list.add_child(upgrade_row)
 
 	for entry in modular_catalog:
@@ -470,8 +476,8 @@ func _refresh_equip() -> void:
 			no_ship.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 			dry_row.add_child(no_ship)
 		else:
-			var btn_row := HBoxContainer.new()
-			btn_row.add_theme_constant_override("separation", 6)
+			var btn_col := VBoxContainer.new()
+			btn_col.add_theme_constant_override("separation", 4)
 			for docked_ship in docked_ships:
 				var commission_btn := Button.new()
 				commission_btn.text = "Commission on %s" % docked_ship.ship_name
@@ -481,8 +487,8 @@ func _refresh_equip() -> void:
 					if GameState.commission_dry_dock(docked_ship, entry):
 						_refresh_equip()
 				)
-				btn_row.add_child(commission_btn)
-			dry_row.add_child(btn_row)
+				btn_col.add_child(commission_btn)
+			dry_row.add_child(btn_col)
 		equip_list.add_child(dry_row)
 
 # ═══════════════════════════════════════════════════

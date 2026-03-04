@@ -1,5 +1,14 @@
 ﻿# Claim — Work Log
-# Updated: 2026-02-27 EST
+# Updated: 2026-03-04 EST
+
+---
+
+## 2026-03-04 EST (Dweezil)
+
+- **Docs review**: Read and summarized all files in `docs/` folder.
+- **Market tab UI clipping fix (left/right after 30% font size increase)**:
+  - `market_tab.tscn`: Added outer `VBoxContainer` as direct child of `MarginContainer`; `ScrollContainer` nested inside it with `size_flags_vertical = 3`. Matches the structural pattern of all other tabs (fleet_market, ship_outfitting, workers, fleet).
+  - `market_tab.gd`: Three HBoxContainers with per-ship buttons ("Install on X", "Commission on X") were causing horizontal overflow when multiple ships are docked — with larger fonts their combined minimum width exceeded window width. Changed all three to `VBoxContainer` so ship buttons stack vertically instead of side-by-side.
 
 ---
 
