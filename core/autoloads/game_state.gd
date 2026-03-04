@@ -389,9 +389,9 @@ func _apply_redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> vo
 
 	# Calculate intercept trajectory (predicts where asteroid will be at arrival)
 	var intercept := calculate_asteroid_intercept(ship.position_au, new_asteroid, thrust, mission.transit_mode)
-	var new_dest := intercept["intercept_position"]
-	var dist := intercept["distance"]
-	var new_transit_time := intercept["transit_time"]
+	var new_dest: Vector2 = intercept["intercept_position"]
+	var dist: float = intercept["distance"]
+	var new_transit_time: float = intercept["transit_time"]
 	var avg_velocity := dist / new_transit_time if new_transit_time > 0.0 else 0.0
 
 	# Determine if a momentum arc is needed (ship is moving at significant angle to new dest)
