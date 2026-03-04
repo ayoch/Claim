@@ -1215,6 +1215,12 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, units: Array[Minin
 		mission.origin_name = "Earth"
 	elif ship.docked_at_colony:
 		mission.origin_name = ship.docked_at_colony.colony_name
+	elif ship.current_mission and ship.current_mission.asteroid:
+		mission.origin_name = ship.current_mission.asteroid.asteroid_name
+	elif ship.current_trade_mission and ship.current_trade_mission.colony:
+		mission.origin_name = ship.current_trade_mission.colony.colony_name
+	else:
+		mission.origin_name = "deep space"
 
 	var dist := ship.position_au.distance_to(asteroid.get_position_au())
 
@@ -1298,6 +1304,12 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int
 		mission.origin_name = "Earth"
 	elif ship.docked_at_colony:
 		mission.origin_name = ship.docked_at_colony.colony_name
+	elif ship.current_mission and ship.current_mission.asteroid:
+		mission.origin_name = ship.current_mission.asteroid.asteroid_name
+	elif ship.current_trade_mission and ship.current_trade_mission.colony:
+		mission.origin_name = ship.current_trade_mission.colony.colony_name
+	else:
+		mission.origin_name = "deep space"
 
 	var dist := ship.position_au.distance_to(asteroid.get_position_au())
 
@@ -1582,7 +1594,15 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 		mission.origin_name = "Earth"
 	elif ship.docked_at_colony:
 		mission.origin_name = ship.docked_at_colony.colony_name
-	# else: left blank; dispatch_idle_ship will fill it in from the previous mission
+	elif ship.current_mission and ship.current_mission.asteroid:
+		# Ship is at an asteroid from previous mission
+		mission.origin_name = ship.current_mission.asteroid.asteroid_name
+	elif ship.current_trade_mission and ship.current_trade_mission.colony:
+		# Ship is at a colony from previous trade mission
+		mission.origin_name = ship.current_trade_mission.colony.colony_name
+	else:
+		# Ship is in deep space or unknown location
+		mission.origin_name = "deep space"
 
 	# Calculate intercept trajectory to predict where asteroid will be at arrival
 	var intercept := calculate_asteroid_intercept(ship.position_au, asteroid, ship.get_effective_thrust(), transit_mode)
