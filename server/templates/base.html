@@ -58,7 +58,6 @@
     </style>
 </head>
 <body>
-    {% if request.session.get('admin_key') %}
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container-fluid">
             <a class="navbar-brand" href="/admin-ui/dashboard">
@@ -90,7 +89,6 @@
             </div>
         </div>
     </nav>
-    {% endif %}
 
     <div class="container-fluid mt-4">
         {% block content %}{% endblock %}
