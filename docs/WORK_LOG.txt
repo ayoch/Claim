@@ -3,7 +3,7 @@
 
 ---
 
-## 2026-03-04 EST (HK-47) [3660c70 → 0fa597b]
+## 2026-03-04 ~13:49–16:35 EST (HK-47) [bacf9b1 → 0fa597b]
 
 - **Worker Location System (complete)**: Workers now physically located at specific colonies. Can only crew ships at their own location. Workers tab groups workers and ships by location, crew selection filtered to ship's location. `assign_worker_to_ship()` now returns `Dictionary {success, error}` and validates location match. Auto-assign for stationed ships filters to local workers. Save/load backward compat auto-relocates workers from old saves to match their assigned ship's location.
 - **Server: Worker spawning**: New `worker_spawning.py` — background system generates workers colony-by-colony on independent timers (Earth: 1/day, outer colonies: 1–2 weeks). Integrated into tick loop. New DB migration (`add_worker_location.py`) adds `location_colony_id` FK to workers table.
@@ -17,7 +17,7 @@
 
 ---
 
-## 2026-03-04 EST (Dweezil) [4015cfe]
+## 2026-03-04 ~07:44 EST (Dweezil) [4015cfe]
 
 - **Docs review**: Read and summarized all files in `docs/` folder.
 - **Market tab UI clipping fix (left/right after 30% font size increase)**:
