@@ -1,4 +1,4 @@
-[gd_scene load_steps=12 format=3]
+[gd_scene load_steps=13 format=3]
 
 [ext_resource type="Script" path="res://ui/main_ui.gd" id="1"]
 [ext_resource type="Theme" path="res://ui/theme/claim_theme.tres" id="7"]
@@ -20,6 +20,11 @@
 ;shader_parameter/static_frequency = 0.08
 ;shader_parameter/static_duration = 0.2
 ;shader_parameter/static_intensity = 0.15
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_TopBar"]
+bg_color = Color(0.25, 0.27, 0.3, 1)
+border_width_bottom = 2
+border_color = Color(0.15, 0.17, 0.2, 1)
 
 [node name="MainUI" type="Control"]
 layout_mode = 3
@@ -63,6 +68,7 @@ grow_vertical = 2
 [node name="TopBar" type="PanelContainer" parent="VBox"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 70)
+theme_override_styles/panel = SubResource("StyleBoxFlat_TopBar")
 
 [node name="VBox" type="VBoxContainer" parent="VBox/TopBar"]
 layout_mode = 2

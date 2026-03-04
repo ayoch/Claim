@@ -687,8 +687,7 @@ async def spawn_available_workers(
             engineer_skill=engineer_val,
             mining_skill=mining_val,
             wage=wage,
-            personality=random.choice(PERSONALITIES),
-            home_colony=random.choice(HOME_COLONIES)
+            personality=random.choice(PERSONALITIES)
         )
 
         db.add(worker)
