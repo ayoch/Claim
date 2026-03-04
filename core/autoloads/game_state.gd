@@ -1257,6 +1257,8 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, units: Array[Minin
 	for u in units:
 		mining_unit_inventory.erase(u)
 
+	# Clear any existing trade mission before assigning new regular mission
+	ship.current_trade_mission = null
 	ship.current_mission = mission
 
 	# Provision supplies before departure (if at Earth or colony)
@@ -1328,6 +1330,8 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int
 	var total_transit_ticks := mission.transit_time * 2.0
 	mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
 
+	# Clear any existing trade mission before assigning new regular mission
+	ship.current_trade_mission = null
 	ship.current_mission = mission
 
 	# Provision supplies before departure (if at Earth or colony)
@@ -1708,6 +1712,8 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 		var total_transit_ticks := mission.transit_time * 2.0
 		mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
 
+	# Clear any existing trade mission before assigning new regular mission
+	ship.current_trade_mission = null
 	ship.current_mission = mission
 	# Stationed ships keep existing cargo (they accumulate over multiple mining runs)
 	if not ship.is_stationed:
@@ -1982,6 +1988,8 @@ func _apply_order_return_to_earth(ship: Ship) -> void:
 		var cargo_mass := ship.get_cargo_total()
 		var total_fuel := ship.calc_fuel_for_distance(dist, cargo_mass)
 		mission.fuel_per_tick = total_fuel / mission.transit_time if mission.transit_time > 0 else 0.0
+		# Clear any existing trade mission before assigning new regular mission
+		ship.current_trade_mission = null
 		ship.current_mission = mission
 		missions.append(mission)
 		EventBus.mission_started.emit(mission)
