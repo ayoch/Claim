@@ -293,7 +293,6 @@ async def admin_players(
                 "email": player.email,
                 "money": player.money,
                 "reputation": player.reputation,
-                "total_ticks": player.total_ticks,
                 "ship_count": ship_count,
                 "last_seen": player.last_seen,
                 "created_at": player.created_at,
