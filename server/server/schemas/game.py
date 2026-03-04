@@ -146,6 +146,8 @@ class GameState(BaseModel):
     ships: list[ShipOut]
     workers: list[WorkerOut]
     active_missions: list[MissionOut]
+    rigs: list[RigOut]
+    stockpiles: list[StockpileOut]
 
 
 # ── Action requests ───────────────────────────────────────────────────────────

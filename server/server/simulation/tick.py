@@ -4,10 +4,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from server.models.mission import (
-    Mission, STATUS_COMPLETED, STATUS_MINING, STATUS_TRANSIT_BACK, STATUS_TRANSIT_OUT,
+    Mission, MISSION_COLLECT_ORE, STATUS_COLLECTING, STATUS_COMPLETED,
+    STATUS_MINING, STATUS_TRANSIT_BACK, STATUS_TRANSIT_OUT,
 )
 from server.models.player import Player
+from server.models.rig import Rig
 from server.models.ship import Ship
+from server.models.stockpile import Stockpile
 from server.models.worker import Worker
 from server.models.world_state import WorldState
 from server.simulation.contracts import process_contracts as _process_contracts
@@ -33,6 +36,9 @@ _total_ticks: int = 0  # Will be calculated from real-time, not incremented
 BASE_XP: float = 86400.0  # 1 game-day at skill 0.0
 SKILL_CAP: float = 2.0
 SKILL_INCREMENT: float = 0.05
+
+# Rig mining constants
+BASE_MINING_RATE: float = 0.0001  # Scales abstract ore yields to tons/tick
 
 def _get_xp_for_next_level(current_skill: float) -> float:
     """Calculate XP needed for next level. Returns 0 if at cap."""
@@ -167,6 +173,7 @@ async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]
     events: list[dict] = []
     try:
         events += await _process_missions(db, dt)
+        events += await _process_rigs(db, dt)
         events += await _process_market(dt)
         events += await _process_payroll(db, dt)
         events += await _process_contracts(db, dt)
@@ -184,7 +191,7 @@ async def _process_missions(db: AsyncSession, dt: float) -> list[dict]:
     events: list[dict] = []
     result = await db.execute(
         select(Mission)
-        .where(Mission.status.in_([STATUS_TRANSIT_OUT, STATUS_MINING, STATUS_TRANSIT_BACK]))
+        .where(Mission.status.in_([STATUS_TRANSIT_OUT, STATUS_MINING, STATUS_COLLECTING, STATUS_TRANSIT_BACK]))
         .options(selectinload(Mission.ship), selectinload(Mission.asteroid))
     )
     missions = list(result.scalars().all())
@@ -194,9 +201,11 @@ async def _process_missions(db: AsyncSession, dt: float) -> list[dict]:
             continue
         prev_status = mission.status
         if mission.status == STATUS_TRANSIT_OUT:
-            events += _advance_transit_out(mission, ship, dt)
+            events += await _advance_transit_out(mission, ship, dt, db)
         elif mission.status == STATUS_MINING:
             events += _advance_mining(mission, ship, dt)
+        elif mission.status == STATUS_COLLECTING:
+            events += await _advance_collecting(mission, ship, dt, db)
         elif mission.status == STATUS_TRANSIT_BACK:
             events += _advance_transit_back(mission, ship, dt)
         db.add(mission)
@@ -206,7 +215,7 @@ async def _process_missions(db: AsyncSession, dt: float) -> list[dict]:
                 'old_status': prev_status, 'new_status': mission.status})
     return events
 
-def _advance_transit_out(mission: Mission, ship: Ship, dt: float) -> list[dict]:
+async def _advance_transit_out(mission: Mission, ship: Ship, dt: float, db: AsyncSession) -> list[dict]:
     mission.elapsed_ticks += dt
     ship.fuel = max(0.0, ship.fuel - mission.fuel_per_tick * dt)
 
@@ -223,13 +232,20 @@ def _advance_transit_out(mission: Mission, ship: Ship, dt: float) -> list[dict]:
         events += _add_worker_xp(worker, 1, dt)  # 1 = engineer skill
 
     if mission.elapsed_ticks >= mission.transit_time:
-        mission.status = STATUS_MINING
         mission.elapsed_ticks = 0.0
         ship.is_stationed = False
         # Snap to destination position
         ship.position_x = mission.destination_x
         ship.position_y = mission.destination_y
-        logger.info('Mission %d: arrived, starting mining', mission.id)
+
+        # Check mission type to determine next status
+        if mission.mission_type == MISSION_COLLECT_ORE:
+            mission.status = STATUS_COLLECTING
+            logger.info('Mission %d: arrived, starting collection', mission.id)
+        else:
+            mission.status = STATUS_MINING
+            logger.info('Mission %d: arrived, starting mining', mission.id)
+
         events.append({'type': 'mission_arrived', 'mission_id': mission.id, 'player_id': mission.player_id})
 
     return events
@@ -258,6 +274,77 @@ def _advance_mining(mission: Mission, ship: Ship, dt: float) -> list[dict]:
         mission.elapsed_ticks = 0.0
         logger.info('Mission %d: mining complete, heading back', mission.id)
         events.append({'type': 'mission_mining_complete', 'mission_id': mission.id, 'player_id': mission.player_id})
+
+    return events
+
+
+async def _advance_collecting(mission: Mission, ship: Ship, dt: float, db: AsyncSession) -> list[dict]:
+    """
+    Handle collection mission status - load ore from stockpiles into ship cargo.
+
+    Takes 1800 ticks (30 minutes) to complete loading.
+    """
+    mission.elapsed_ticks += dt
+    events: list[dict] = []
+
+    COLLECTION_DURATION = 1800.0  # 30 minutes
+
+    if mission.elapsed_ticks >= COLLECTION_DURATION:
+        # Load ore from stockpiles into ship cargo
+        if mission.asteroid:
+            # Query all stockpiles for this player at this asteroid
+            result = await db.execute(
+                select(Stockpile).where(
+                    Stockpile.player_id == mission.player_id,
+                    Stockpile.asteroid_id == mission.asteroid.id,
+                    Stockpile.tonnes > 0
+                )
+            )
+            stockpiles = list(result.scalars().all())
+
+            cargo = dict(ship.current_cargo or {})
+            current_cargo_total = sum(cargo.values())
+            available_capacity = ship.cargo_capacity - current_cargo_total
+            total_loaded = 0.0
+
+            for stockpile in stockpiles:
+                if available_capacity <= 0:
+                    break
+
+                # Load as much as possible from this stockpile
+                to_load = min(stockpile.tonnes, available_capacity)
+                cargo[stockpile.ore_type] = cargo.get(stockpile.ore_type, 0.0) + to_load
+                stockpile.tonnes -= to_load
+                available_capacity -= to_load
+                total_loaded += to_load
+
+                # Delete stockpile if empty
+                if stockpile.tonnes <= 0:
+                    await db.delete(stockpile)
+                else:
+                    db.add(stockpile)
+
+                logger.info(
+                    'Mission %d: loaded %.1f t of %s from stockpile',
+                    mission.id, to_load, stockpile.ore_type
+                )
+
+            ship.current_cargo = cargo
+
+            if total_loaded > 0.0:
+                events.append({
+                    'type': 'stockpile_collected',
+                    'mission_id': mission.id,
+                    'player_id': mission.player_id,
+                    'asteroid_id': mission.asteroid.id,
+                    'tonnes_loaded': round(total_loaded, 2)
+                })
+
+        # Transition to return trip
+        mission.status = STATUS_TRANSIT_BACK
+        mission.elapsed_ticks = 0.0
+        logger.info('Mission %d: collection complete, heading back', mission.id)
+        events.append({'type': 'mission_collection_complete', 'mission_id': mission.id, 'player_id': mission.player_id})
 
     return events
 
@@ -337,4 +424,119 @@ async def _process_payroll(db: AsyncSession, dt: float) -> list[dict]:
                     'amount': deduction, 'days': days, 'new_balance': player.money})
                 logger.info('Payroll: player %d --%d cr (%d days)', player.id, deduction, days)
         _payroll_accum[player.id] = acc % _PAYROLL_INTERVAL
+    return events
+
+
+async def _process_rigs(db: AsyncSession, dt: float) -> list[dict]:
+    """
+    Process deployed rigs (AMUs) to generate ore stockpiles.
+
+    Each functional rig with assigned workers mines ore from its asteroid
+    and accumulates it in stockpiles. Workers gain mining XP, and rigs
+    degrade over time.
+    """
+    events: list[dict] = []
+    days = dt / 86400.0
+
+    # Load all deployed rigs with relationships
+    result = await db.execute(
+        select(Rig)
+        .where(Rig.deployed_at_asteroid_id.isnot(None))
+        .options(
+            selectinload(Rig.asteroid),
+            selectinload(Rig.assigned_workers)
+        )
+    )
+    rigs = list(result.scalars().all())
+
+    for rig in rigs:
+        # Skip non-functional or uncrewed rigs
+        if not rig.is_functional:
+            continue
+        if not rig.assigned_workers:
+            continue
+
+        asteroid = rig.asteroid
+        if not asteroid or not asteroid.ore_yields:
+            continue
+
+        # Calculate total crew mining skill
+        skill_total = sum(w.mining_skill for w in rig.assigned_workers)
+        if skill_total < 0.1:
+            skill_total = 0.1
+
+        # Grant mining XP to all assigned workers
+        for worker in rig.assigned_workers:
+            xp_events = _add_worker_xp(worker, 2, dt)  # 2 = mining skill
+            events += xp_events
+            db.add(worker)  # Ensure worker changes are tracked
+
+        # Mine each ore type
+        for ore_type, base_yield in asteroid.ore_yields.items():
+            # Calculate ore generated this tick
+            ore_per_tick = (
+                base_yield *
+                skill_total *
+                rig.mining_multiplier *
+                BASE_MINING_RATE *
+                dt
+            )
+
+            if ore_per_tick <= 0.0:
+                continue
+
+            # Find or create stockpile entry
+            stockpile_result = await db.execute(
+                select(Stockpile).where(
+                    Stockpile.player_id == rig.player_id,
+                    Stockpile.asteroid_id == asteroid.id,
+                    Stockpile.ore_type == ore_type
+                )
+            )
+            stockpile = stockpile_result.scalar_one_or_none()
+
+            if stockpile is None:
+                # Create new stockpile
+                stockpile = Stockpile(
+                    player_id=rig.player_id,
+                    asteroid_id=asteroid.id,
+                    ore_type=ore_type,
+                    tonnes=ore_per_tick
+                )
+                db.add(stockpile)
+                logger.info(
+                    'Rig %d: created stockpile at asteroid %d for %s (%.2f t)',
+                    rig.id, asteroid.id, ore_type, ore_per_tick
+                )
+            else:
+                # Add to existing stockpile
+                stockpile.tonnes += ore_per_tick
+                db.add(stockpile)
+
+        # Degrade rig durability
+        # Base wear reduced slightly by best engineer skill
+        best_eng = max((w.engineer_skill for w in rig.assigned_workers), default=0.0)
+        eng_wear_factor = 1.0 - (best_eng * 0.2)  # 0.0 eng = full wear, 1.5 eng = 70% wear
+
+        rig.durability -= rig.wear_per_day * eng_wear_factor * days
+        rig.max_durability -= rig.wear_per_day * 0.05 * eng_wear_factor * days  # 5% max durability decay
+
+        if rig.durability < 0.0:
+            rig.durability = 0.0
+        if rig.max_durability < 0.0:
+            rig.max_durability = 0.0
+
+        db.add(rig)
+
+        # Emit event if rig becomes non-functional
+        if not rig.is_functional and rig.durability == 0.0:
+            events.append({
+                'type': 'rig_broken',
+                'rig_id': rig.id,
+                'player_id': rig.player_id,
+                'rig_name': rig.unit_name,
+                'asteroid_id': asteroid.id
+            })
+            logger.warning('Rig %d (%s) broken at asteroid %d', rig.id, rig.unit_name, asteroid.id)
+
     return events

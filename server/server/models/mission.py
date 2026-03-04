@@ -30,6 +30,7 @@ STATUS_TRANSIT_BACK = 2
 STATUS_COMPLETED = 3
 STATUS_FAILED = 4
 STATUS_ABORTED = 5
+STATUS_COLLECTING = 6  # Loading ore from stockpiles
 
 STATUS_NAMES = {
     STATUS_TRANSIT_OUT: "Transit Out",
@@ -38,6 +39,7 @@ STATUS_NAMES = {
     STATUS_COMPLETED: "Completed",
     STATUS_FAILED: "Failed",
     STATUS_ABORTED: "Aborted",
+    STATUS_COLLECTING: "Collecting",
 }
 
 

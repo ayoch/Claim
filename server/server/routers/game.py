@@ -11,12 +11,15 @@ from server.models.colony import Colony
 from server.models.equipment import Equipment
 from server.models.mission import Mission, STATUS_TRANSIT_OUT
 from server.models.player import Player
+from server.models.rig import Rig, UNIT_TYPE_BASIC, UNIT_TYPE_ADVANCED, UNIT_TYPE_REFINERY
 from server.models.ship import Ship, SHIP_CLASS_STATS
+from server.models.stockpile import Stockpile
 from server.models.worker import Worker
 from server.rate_limit import limiter
 from server.schemas.game import (
     AsteroidOut, BuyEquipmentRequest, BuyShipRequest, ColonyOut, DispatchRequest,
-    EquipmentOut, GameState, HireRequest, MissionOut, SellEquipmentRequest, ShipOut, WorkerOut,
+    EquipmentOut, GameState, HireRequest, MissionOut, RigOut, SellEquipmentRequest,
+    ShipOut, StockpileOut, WorkerOut,
 )
 from server.schemas.player import PolicyUpdate
 from server.simulation.tick import get_market_prices, get_total_ticks
@@ -44,6 +47,15 @@ async def get_state(
         Mission.status.in_([0, 1, 2]),
     ))
     active_missions = list(result.scalars().all())
+
+    # Load player's rigs
+    rigs_result = await db.execute(select(Rig).where(Rig.player_id == player.id))
+    rigs = list(rigs_result.scalars().all())
+
+    # Load player's stockpiles
+    stockpiles_result = await db.execute(select(Stockpile).where(Stockpile.player_id == player.id))
+    stockpiles = list(stockpiles_result.scalars().all())
+
     return GameState(
         player_id=player.id,
         username=player.username,
@@ -57,6 +69,8 @@ async def get_state(
         ships=[ShipOut.model_validate(s) for s in player.ships],
         workers=[WorkerOut.model_validate(w) for w in player.workers],
         active_missions=[MissionOut.model_validate(m) for m in active_missions],
+        rigs=[RigOut.model_validate(r) for r in rigs],
+        stockpiles=[StockpileOut.model_validate(s) for s in stockpiles],
     )
 
 @router.post("/dispatch", response_model=MissionOut, status_code=status.HTTP_201_CREATED)
@@ -328,6 +342,123 @@ async def sell_equipment(
     await db.delete(equipment)
     db.add(player)
     await db.commit()
+
+
+# Rig (AMU) catalog
+RIG_CATALOG = {
+    "Basic Mining Unit": {
+        "type": UNIT_TYPE_BASIC,
+        "mass": 5.0,
+        "workers_required": 1,
+        "mining_multiplier": 1.0,
+        "wear_per_day": 0.3,
+        "cost": 500000,
+    },
+    "Advanced Mining Unit": {
+        "type": UNIT_TYPE_ADVANCED,
+        "mass": 8.0,
+        "workers_required": 2,
+        "mining_multiplier": 2.5,
+        "wear_per_day": 0.5,
+        "cost": 1500000,
+    },
+    "Refinery Unit": {
+        "type": UNIT_TYPE_REFINERY,
+        "mass": 12.0,
+        "workers_required": 3,
+        "mining_multiplier": 4.0,
+        "wear_per_day": 0.8,
+        "cost": 3000000,
+    },
+}
+
+
+@router.post("/buy-rig", response_model=RigOut, status_code=status.HTTP_201_CREATED)
+@limiter.limit("5/minute")
+async def buy_rig(
+    request: Request,
+    rig_name: str,
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    """Purchase a rig (AMU) and add to inventory"""
+    if rig_name not in RIG_CATALOG:
+        raise HTTPException(status_code=404, detail="Rig type not found")
+
+    template = RIG_CATALOG[rig_name]
+    cost = template["cost"]
+
+    if player.money < cost:
+        raise HTTPException(status_code=402, detail=f"Insufficient funds (need {cost:,} cr)")
+
+    rig = Rig(
+        player_id=player.id,
+        unit_type=template["type"],
+        unit_name=rig_name,
+        mass=template["mass"],
+        workers_required=template["workers_required"],
+        mining_multiplier=template["mining_multiplier"],
+        cost=cost,
+        wear_per_day=template["wear_per_day"],
+        durability=100.0,
+        max_durability=100.0,
+        deployed_at_asteroid_id=None,
+        deployed_at_tick=0.0,
+    )
+
+    player.money -= cost
+    db.add(rig)
+    db.add(player)
+    await db.commit()
+    await db.refresh(rig)
+    return rig
+
+
+@router.post("/deploy-rig", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def deploy_rig(
+    request: Request,
+    rig_id: int,
+    asteroid_id: int,
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    """Deploy a rig to an asteroid"""
+    # Get rig and verify ownership
+    rig_result = await db.execute(
+        select(Rig).where(Rig.id == rig_id, Rig.player_id == player.id)
+    )
+    rig = rig_result.scalar_one_or_none()
+    if not rig:
+        raise HTTPException(status_code=404, detail="Rig not found")
+
+    if rig.deployed_at_asteroid_id is not None:
+        raise HTTPException(status_code=409, detail="Rig already deployed")
+
+    # Verify asteroid exists
+    asteroid_result = await db.execute(select(Asteroid).where(Asteroid.id == asteroid_id))
+    asteroid = asteroid_result.scalar_one_or_none()
+    if not asteroid:
+        raise HTTPException(status_code=404, detail="Asteroid not found")
+
+    # Deploy rig
+    rig.deployed_at_asteroid_id = asteroid_id
+    rig.deployed_at_tick = get_total_ticks()
+
+    db.add(rig)
+    await db.commit()
+
+
+@router.get("/stockpiles", response_model=list[StockpileOut])
+async def list_stockpiles(
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get all ore stockpiles for player"""
+    result = await db.execute(
+        select(Stockpile).where(Stockpile.player_id == player.id)
+    )
+    return [StockpileOut.model_validate(s) for s in result.scalars().all()]
 
 
 @router.post("/policies", response_model=dict)
