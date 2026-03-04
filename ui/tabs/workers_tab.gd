@@ -79,7 +79,52 @@ func _refresh_crew() -> void:
 		workers_list.add_child(label)
 		return
 
+	# Group workers by location and ships by docked location
+	var workers_by_location: Dictionary = {}  # location_name -> Array[Worker]
+	var ships_by_location: Dictionary = {}    # location_name -> Array[Ship]
+
+	# Group workers by their current location
 	for worker: Worker in GameState.workers:
+		var location: String = worker.home_colony if worker.home_colony != "" else "Earth"
+		if not workers_by_location.has(location):
+			workers_by_location[location] = []
+		workers_by_location[location].append(worker)
+
+	# Group docked ships by their station location
+	for ship: Ship in GameState.ships:
+		if ship.is_docked:
+			var location: String = "Earth"  # Default
+			if ship.station_colony:
+				location = ship.station_colony.colony_name
+			if not ships_by_location.has(location):
+				ships_by_location[location] = []
+			ships_by_location[location].append(ship)
+
+	# Get all unique locations (union of worker locations and ship locations)
+	var all_locations: Array[String] = []
+	for loc in workers_by_location.keys():
+		if loc not in all_locations:
+			all_locations.append(loc)
+	for loc in ships_by_location.keys():
+		if loc not in all_locations:
+			all_locations.append(loc)
+
+	all_locations.sort()
+
+	# Create section for each location
+	for location in all_locations:
+		_create_location_section(location, workers_by_location.get(location, []), ships_by_location.get(location, []))
+
+func _create_location_section(location: String, workers: Array, ships: Array) -> void:
+	# Location header
+	var header := Label.new()
+	header.text = "━━━ %s (%d workers, %d ships docked) ━━━" % [location, workers.size(), ships.size()]
+	header.add_theme_font_size_override("font_size", 16)
+	header.add_theme_color_override("font_color", Color(0.7, 0.8, 1.0))
+	workers_list.add_child(header)
+
+	# Show workers at this location
+	for worker: Worker in workers:
 		var panel := PanelContainer.new()
 		var hbox := HBoxContainer.new()
 		hbox.add_theme_constant_override("separation", 8)
@@ -200,6 +245,11 @@ func _refresh_crew() -> void:
 		panel.add_child(hbox)
 		workers_list.add_child(panel)
 
+	# Add spacing between location sections
+	var spacer := Control.new()
+	spacer.custom_minimum_size = Vector2(0, 20)
+	workers_list.add_child(spacer)
+
 func _generate_candidates() -> void:
 	_candidates.clear()
 
@@ -266,35 +316,84 @@ func _fetch_server_candidates() -> void:
 func _refresh_candidates() -> void:
 	_free_children(candidates_list)
 
+	# Get locations where player has docked ships
+	var docked_locations: Array[String] = []
+	for ship: Ship in GameState.ships:
+		if ship.is_docked:
+			var location: String = "Earth"
+			if ship.station_colony:
+				location = ship.station_colony.colony_name
+			if location not in docked_locations:
+				docked_locations.append(location)
+
+	docked_locations.sort()
+
+	# Group candidates by location
+	var candidates_by_location: Dictionary = {}  # location_name -> Array[Worker]
 	for candidate in _candidates:
 		# Skip candidates that were already hired
 		if candidate in GameState.workers:
 			continue
 
-		var panel := PanelContainer.new()
-		var hbox := HBoxContainer.new()
-		hbox.add_theme_constant_override("separation", 8)
+		var location: String = candidate.home_colony if candidate.home_colony != "" else "Earth"
 
-		var info := _lbl()
-		info.text = "%s  |  %s  |  $%d/pay  |  %s" % [
-			candidate.worker_name, candidate.get_specialties_text(), candidate.wage, candidate.get_personality_name()
-		]
-		info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		hbox.add_child(info)
+		# Only show candidates at locations where player has docked ships
+		if location not in docked_locations:
+			continue
 
-		var btn := Button.new()
-		btn.text = "Hire"
-		btn.custom_minimum_size = Vector2(0, 44)
-		btn.pressed.connect(_hire_candidate.bind(candidate))
-		hbox.add_child(btn)
+		if not candidates_by_location.has(location):
+			candidates_by_location[location] = []
+		candidates_by_location[location].append(candidate)
 
-		panel.add_child(hbox)
-		candidates_list.add_child(panel)
+	# Display candidates grouped by location
+	var total_shown := 0
+	for location in docked_locations:
+		var candidates_here: Array = candidates_by_location.get(location, [])
+		if candidates_here.is_empty():
+			continue
 
-	if candidates_list.get_child_count() == 0:
+		# Location header
+		var header := Label.new()
+		header.text = "━━━ Available at %s (%d) ━━━" % [location, candidates_here.size()]
+		header.add_theme_font_size_override("font_size", 14)
+		header.add_theme_color_override("font_color", Color(0.6, 0.9, 0.6))
+		candidates_list.add_child(header)
+
+		# Show candidates at this location
+		for candidate in candidates_here:
+			var panel := PanelContainer.new()
+			var hbox := HBoxContainer.new()
+			hbox.add_theme_constant_override("separation", 8)
+
+			var info := _lbl()
+			info.text = "%s  |  %s  |  $%d/pay  |  %s" % [
+				candidate.worker_name, candidate.get_specialties_text(), candidate.wage, candidate.get_personality_name()
+			]
+			info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			hbox.add_child(info)
+
+			var btn := Button.new()
+			btn.text = "Hire"
+			btn.custom_minimum_size = Vector2(0, 44)
+			btn.pressed.connect(_hire_candidate.bind(candidate))
+			hbox.add_child(btn)
+
+			panel.add_child(hbox)
+			candidates_list.add_child(panel)
+			total_shown += 1
+
+		# Add spacing between locations
+		var spacer := Control.new()
+		spacer.custom_minimum_size = Vector2(0, 12)
+		candidates_list.add_child(spacer)
+
+	if total_shown == 0:
 		var label := _lbl()
-		label.text = "All candidates hired. Press New Candidates for more."
+		if docked_locations.is_empty():
+			label.text = "No ships docked. Dock at a colony to hire workers there."
+		else:
+			label.text = "No candidates available at docked locations. Click 'New Candidates' to refresh."
 		label.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		candidates_list.add_child(label)
@@ -304,9 +403,13 @@ func _hire_candidate(worker: Worker) -> void:
 	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
 		# SERVER mode: use server_id to hire via API
 		if worker.server_id > 0:
-			GameState.hire_worker_any_mode(worker.server_id)
+			await GameState.hire_worker_any_mode(worker.server_id)
+			# Wait a moment for state poll to sync, then refresh
+			await get_tree().create_timer(1.0).timeout
+			_dirty_all = true
 		else:
 			push_error("Cannot hire worker in SERVER mode: worker has no server_id")
 	else:
 		# LOCAL mode: hire directly
 		GameState.hire_worker(worker)
+		# UI will refresh via worker_hired signal (connected in _ready)

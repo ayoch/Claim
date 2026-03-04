@@ -2623,6 +2623,19 @@ func _show_worker_selection() -> void:
 	# Determine available crew based on ship location
 	var available := GameState.get_available_workers()
 	var crew_locked := false  # True when crew can't be changed (ship is remote)
+
+	# Filter workers to only those at the same location as the ship
+	var ship_location := ""
+	if _selected_ship.docked_at_earth:
+		ship_location = "Earth"
+	elif _selected_ship.docked_at_colony != null:
+		ship_location = _selected_ship.docked_at_colony.colony_name
+
+	if not ship_location.is_empty():
+		available = available.filter(func(w: Worker) -> bool:
+			return w.home_colony == ship_location
+		)
+
 	if _selected_ship.is_idle_remote and _selected_ship.last_crew.size() > 0:
 		# Ship is at a remote location — can only use crew that's aboard
 		available = _selected_ship.last_crew.duplicate()

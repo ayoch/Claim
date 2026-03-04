@@ -662,14 +662,29 @@ func hire_worker(worker: Worker) -> void:
 	_invalidate_worker_cache()
 	EventBus.worker_hired.emit(worker)
 
-func assign_worker_to_ship(worker: Worker, ship: Ship) -> void:
+func assign_worker_to_ship(worker: Worker, ship: Ship) -> Dictionary:
+	# Location validation: worker must be at same colony as ship
+	if ship:
+		var ship_location := ""
+		if ship.docked_at_earth:
+			ship_location = "Earth"
+		elif ship.docked_at_colony != null:
+			ship_location = ship.docked_at_colony.colony_name
+		else:
+			return {"success": false, "error": "Ship must be docked to assign crew"}
+
+		if worker.home_colony != ship_location:
+			return {"success": false, "error": "Worker at %s cannot crew ship at %s" % [worker.home_colony, ship_location]}
+
+	# Proceed with assignment
 	if worker.assigned_ship == ship:
-		return
+		return {"success": true}
 	if worker.assigned_ship:
 		worker.assigned_ship.crew.erase(worker)
 	worker.assigned_ship = ship
 	if ship and worker not in ship.crew:
 		ship.crew.append(worker)
+	return {"success": true}
 
 func remove_worker_from_ship(worker: Worker, ship: Ship) -> void:
 	ship.crew.erase(worker)
@@ -697,8 +712,9 @@ func fire_worker(worker: Worker) -> void:
 func hire_worker_any_mode(worker_id: int) -> void:
 	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
 		# SERVER mode: route through BackendManager
-		BackendManager.hire_worker(worker_id)
-		# State refresh will include new worker via polling
+		await BackendManager.hire_worker(worker_id)
+		# Note: Worker will appear in GameState on next automatic state poll
+		# UI should set dirty flag after await completes
 	else:
 		push_warning("hire_worker_any_mode() called in LOCAL mode - use hire_worker(worker) instead")
 
@@ -2423,8 +2439,15 @@ func station_ship(ship: Ship, colony: Colony, jobs: Array[String]) -> void:
 	# Ensure ship has a crew assigned (use existing crew or auto-assign from available)
 	if ship.crew.is_empty() or ship.crew.size() < ship.min_crew:
 		var available := get_available_workers()
-		for i in range(mini(ship.min_crew - ship.crew.size(), available.size())):
-			assign_worker_to_ship(available[i], ship)
+		# Filter to workers at the same colony
+		var local_workers: Array[Worker] = []
+		for w in available:
+			if w.home_colony == colony.colony_name:
+				local_workers.append(w)
+		for i in range(mini(ship.min_crew - ship.crew.size(), local_workers.size())):
+			var result := assign_worker_to_ship(local_workers[i], ship)
+			if not result["success"]:
+				push_warning("Failed to auto-assign worker to stationed ship: %s" % result["error"])
 	else:
 		for w in ship.crew:
 			w.assigned_ship = ship
@@ -3524,7 +3547,17 @@ func load_game(file_name: String = "save_game.json") -> bool:
 				for wname in sd.get("crew", []):
 					for w in workers:
 						if w.worker_name == wname:
-							assign_worker_to_ship(w, ship)
+							var result := assign_worker_to_ship(w, ship)
+							if not result["success"]:
+								# Backward compat: relocate worker to ship's location on load
+								if ship.docked_at_earth:
+									w.home_colony = "Earth"
+								elif ship.docked_at_colony:
+									w.home_colony = ship.docked_at_colony.colony_name
+								# Try assignment again
+								result = assign_worker_to_ship(w, ship)
+								if not result["success"]:
+									push_warning("Failed to assign crew from save: %s" % result["error"])
 							break
 				break
 

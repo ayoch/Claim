@@ -124,8 +124,8 @@ func sell_ship(ship_id: int) -> void:
 
 
 # Workers
-func hire_worker(colony_id: int):
-	return await _active_backend.hire_worker(colony_id)
+func hire_worker(worker_id: int):
+	return await _active_backend.hire_worker(worker_id)
 
 
 func fire_worker(worker_id: int) -> void:
