@@ -14,6 +14,7 @@ from server.models.player import Player
 from server.models.rig import Rig, UNIT_TYPE_BASIC, UNIT_TYPE_ADVANCED, UNIT_TYPE_REFINERY
 from server.models.ship import Ship, SHIP_CLASS_STATS
 from server.models.stockpile import Stockpile
+from server.models.trade_mission import TradeMission
 from server.models.worker import Worker
 from server.rate_limit import limiter
 from server.schemas.game import (
@@ -48,6 +49,13 @@ async def get_state(
     ))
     active_missions = list(result.scalars().all())
 
+    # Load player's trade missions
+    trade_result = await db.execute(select(TradeMission).where(
+        TradeMission.player_id == player.id,
+        TradeMission.status.in_([0, 1, 2, 3, 4]),  # All statuses except COMPLETED
+    ))
+    trade_missions = list(trade_result.scalars().all())
+
     # Load player's rigs
     rigs_result = await db.execute(select(Rig).where(Rig.player_id == player.id))
     rigs = list(rigs_result.scalars().all())
@@ -69,6 +77,7 @@ async def get_state(
         ships=[ShipOut.model_validate(s) for s in player.ships],
         workers=[WorkerOut.model_validate(w) for w in player.workers],
         active_missions=[MissionOut.model_validate(m) for m in active_missions],
+        trade_missions=[TradeMissionOut.model_validate(tm) for tm in trade_missions],
         rigs=[RigOut.model_validate(r) for r in rigs],
         stockpiles=[StockpileOut.model_validate(s) for s in stockpiles],
     )
@@ -459,6 +468,86 @@ async def list_stockpiles(
         select(Stockpile).where(Stockpile.player_id == player.id)
     )
     return [StockpileOut.model_validate(s) for s in result.scalars().all()]
+
+
+@router.post("/dispatch-trade", response_model=TradeMissionOut, status_code=status.HTTP_201_CREATED)
+@limiter.limit("20/minute")  # 20 trade dispatches per minute
+async def dispatch_trade_mission(
+    request: Request,
+    ship_id: int,
+    colony_id: int,
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Dispatch a ship to a colony to sell ore.
+
+    The ship's current cargo is transferred to the trade mission.
+    Ship must be stationed and have cargo.
+    """
+    # Get ship and verify ownership
+    ship_result = await db.execute(
+        select(Ship).where(Ship.id == ship_id, Ship.player_id == player.id)
+    )
+    ship = ship_result.scalar_one_or_none()
+    if not ship:
+        raise HTTPException(status_code=404, detail="Ship not found")
+
+    if not ship.is_stationed:
+        raise HTTPException(status_code=409, detail="Ship is already on a mission")
+
+    if ship.is_derelict:
+        raise HTTPException(status_code=409, detail="Ship is derelict")
+
+    if not ship.current_cargo or sum(ship.current_cargo.values()) == 0:
+        raise HTTPException(status_code=422, detail="Ship has no cargo to trade")
+
+    # Get colony
+    colony_result = await db.execute(select(Colony).where(Colony.id == colony_id))
+    colony = colony_result.scalar_one_or_none()
+    if not colony:
+        raise HTTPException(status_code=404, detail="Colony not found")
+
+    # Calculate transit (simplified - colony at Mars orbit ~1.52 AU)
+    origin_x = ship.position_x
+    origin_y = ship.position_y
+    target_x = 1.52  # Mars orbit
+    target_y = 0.0
+
+    dist = math.sqrt((target_x - origin_x) ** 2 + (target_y - origin_y) ** 2)
+    transit_sec = _transit_time_seconds(dist, ship.max_thrust_g * ship.thrust_setting)
+    fuel_per_tick = (ship.fuel_capacity * 0.001) * ship.thrust_setting
+
+    # Create trade mission
+    trade_mission = TradeMission(
+        player_id=player.id,
+        ship_id=ship.id,
+        colony_id=colony_id,
+        status=0,  # STATUS_TRANSIT_TO_COLONY
+        transit_time=max(transit_sec, 30.0),
+        elapsed_ticks=0.0,
+        fuel_per_tick=fuel_per_tick,
+        cargo=dict(ship.current_cargo),  # Copy cargo
+        revenue=0,
+        origin_x=origin_x,
+        origin_y=origin_y,
+        origin_name="Earth" if ship.position_x < 0.1 and ship.position_y < 0.1 else "Unknown",
+        origin_is_earth=ship.position_x < 0.1 and ship.position_y < 0.1,
+        destination_x=target_x,
+        destination_y=target_y,
+    )
+
+    db.add(trade_mission)
+
+    # Clear ship cargo and mark as not stationed
+    ship.current_cargo = {}
+    ship.is_stationed = False
+    db.add(ship)
+
+    await db.commit()
+    await db.refresh(trade_mission)
+
+    return TradeMissionOut.model_validate(trade_mission)
 
 
 @router.post("/policies", response_model=dict)

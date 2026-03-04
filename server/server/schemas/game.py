@@ -131,6 +131,23 @@ class MissionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TradeMissionOut(BaseModel):
+    id: int
+    ship_id: int
+    colony_id: int | None
+    status: int
+    transit_time: float
+    elapsed_ticks: float
+    fuel_per_tick: float
+    cargo: dict
+    revenue: int
+    origin_name: str
+    origin_is_earth: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── Full game state ───────────────────────────────────────────────────────────
 
 class GameState(BaseModel):
@@ -146,6 +163,7 @@ class GameState(BaseModel):
     ships: list[ShipOut]
     workers: list[WorkerOut]
     active_missions: list[MissionOut]
+    trade_missions: list[TradeMissionOut]
     rigs: list[RigOut]
     stockpiles: list[StockpileOut]
 

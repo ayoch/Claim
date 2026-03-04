@@ -11,6 +11,11 @@ from server.models.player import Player
 from server.models.rig import Rig
 from server.models.ship import Ship
 from server.models.stockpile import Stockpile
+from server.models.trade_mission import (
+    TradeMission, STATUS_TRANSIT_TO_COLONY as TM_TRANSIT_TO,
+    STATUS_SELLING as TM_SELLING, STATUS_TRANSIT_BACK as TM_TRANSIT_BACK,
+    STATUS_COMPLETED as TM_COMPLETED
+)
 from server.models.worker import Worker
 from server.models.world_state import WorldState
 from server.simulation.contracts import process_contracts as _process_contracts
@@ -173,6 +178,7 @@ async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]
     events: list[dict] = []
     try:
         events += await _process_missions(db, dt)
+        events += await _process_trade_missions(db, dt)
         events += await _process_rigs(db, dt)
         events += await _process_market(dt)
         events += await _process_payroll(db, dt)
@@ -389,6 +395,135 @@ def _sell_cargo(ship: Ship) -> float:
                 for ore, tonnes in ship.current_cargo.items())
     ship.current_cargo = {}
     return total
+
+
+async def _process_trade_missions(db: AsyncSession, dt: float) -> list[dict]:
+    """
+    Process active trade missions.
+
+    Trade missions go through these phases:
+    1. TRANSIT_TO_COLONY: Travel to colony
+    2. SELLING: Sell cargo, calculate revenue
+    3. TRANSIT_BACK: Return to origin
+    4. COMPLETED: Pay player and mark ship as stationed
+    """
+    events: list[dict] = []
+    result = await db.execute(
+        select(TradeMission)
+        .where(TradeMission.status.in_([TM_TRANSIT_TO, TM_SELLING, TM_TRANSIT_BACK]))
+        .options(selectinload(TradeMission.ship), selectinload(TradeMission.player))
+    )
+    trade_missions = list(result.scalars().all())
+
+    for tm in trade_missions:
+        ship = tm.ship
+        if ship is None or ship.is_derelict:
+            continue
+
+        prev_status = tm.status
+
+        if tm.status == TM_TRANSIT_TO:
+            # Travel to colony
+            tm.elapsed_ticks += dt
+            ship.fuel = max(0.0, ship.fuel - tm.fuel_per_tick * dt)
+
+            # Update ship position
+            if tm.transit_time > 0:
+                progress = min(tm.elapsed_ticks / tm.transit_time, 1.0)
+                ship.position_x = tm.origin_x + (tm.destination_x - tm.origin_x) * progress
+                ship.position_y = tm.origin_y + (tm.destination_y - tm.origin_y) * progress
+
+            # Grant pilot/engineer XP
+            for worker in ship.workers:
+                events += _add_worker_xp(worker, 0, dt)  # pilot
+                events += _add_worker_xp(worker, 1, dt)  # engineer
+
+            if tm.elapsed_ticks >= tm.transit_time:
+                tm.status = TM_SELLING
+                tm.elapsed_ticks = 0.0
+                ship.position_x = tm.destination_x
+                ship.position_y = tm.destination_y
+                logger.info('Trade mission %d: arrived at colony, selling', tm.id)
+
+        elif tm.status == TM_SELLING:
+            # Sell cargo (instant for now, could add duration)
+            SELLING_DURATION = 300.0  # 5 minutes to offload and sell
+            tm.elapsed_ticks += dt
+
+            if tm.elapsed_ticks >= SELLING_DURATION:
+                # Calculate revenue from cargo
+                revenue = 0
+                for ore_type, tonnes in tm.cargo.items():
+                    ore_price = _market_prices.get(ore_type, BASE_ORE_PRICES.get(ore_type, 1000.0))
+                    revenue += int(tonnes * ore_price)
+
+                tm.revenue = revenue
+                tm.cargo = {}  # Clear cargo
+
+                # Pay player
+                player = tm.player
+                if player:
+                    player.money += revenue
+                    db.add(player)
+
+                # Transition to return trip
+                tm.status = TM_TRANSIT_BACK
+                tm.elapsed_ticks = 0.0
+                logger.info('Trade mission %d: sold cargo for %d cr, returning', tm.id, revenue)
+
+                events.append({
+                    'type': 'trade_cargo_sold',
+                    'mission_id': tm.id,
+                    'player_id': tm.player_id,
+                    'revenue': revenue
+                })
+
+        elif tm.status == TM_TRANSIT_BACK:
+            # Return to origin
+            tm.elapsed_ticks += dt
+            ship.fuel = max(0.0, ship.fuel - tm.fuel_per_tick * dt)
+
+            # Update ship position
+            if tm.transit_time > 0:
+                progress = min(tm.elapsed_ticks / tm.transit_time, 1.0)
+                ship.position_x = tm.destination_x + (tm.origin_x - tm.destination_x) * progress
+                ship.position_y = tm.destination_y + (tm.origin_y - tm.destination_y) * progress
+
+            # Grant pilot/engineer XP
+            for worker in ship.workers:
+                events += _add_worker_xp(worker, 0, dt)  # pilot
+                events += _add_worker_xp(worker, 1, dt)  # engineer
+
+            if tm.elapsed_ticks >= tm.transit_time:
+                tm.status = TM_COMPLETED
+                ship.is_stationed = True
+                ship.station_colony_id = None
+                ship.position_x = tm.origin_x
+                ship.position_y = tm.origin_y
+                logger.info('Trade mission %d: completed, revenue %d cr', tm.id, tm.revenue)
+
+                events.append({
+                    'type': 'trade_mission_completed',
+                    'mission_id': tm.id,
+                    'player_id': tm.player_id,
+                    'ship_id': tm.ship_id,
+                    'revenue': tm.revenue
+                })
+
+        db.add(tm)
+        db.add(ship)
+
+        if prev_status != tm.status:
+            events.append({
+                'type': 'trade_mission_status_changed',
+                'mission_id': tm.id,
+                'player_id': tm.player_id,
+                'old_status': prev_status,
+                'new_status': tm.status
+            })
+
+    return events
+
 
 async def _process_market(dt: float) -> list[dict]:
     changed: dict[str, float] = {}
