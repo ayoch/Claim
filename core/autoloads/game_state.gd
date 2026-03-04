@@ -3927,16 +3927,22 @@ func apply_server_state(server_data: Dictionary) -> void:
 	# Update ships (server only has: id, ship_name, fuel, cargo, position, is_stationed)
 	# In SERVER mode, replace local ships entirely with server ships (server is source of truth)
 	var server_ships: Array = server_data.get("ships", [])
+	print("[GameState] Server sent %d ships (local has %d)" % [server_ships.size(), ships.size()])
 	if not server_ships.is_empty():
+		print("[GameState] Clearing local ships, creating from server data")
 		ships.clear()  # Clear old local ships before syncing from server
 
 	for ship_data in server_ships:
 		# Create ship from server data (we cleared local ships above)
 		var ship_id: int = int(ship_data.get("id", 0))
+		var ship_name: String = ship_data.get("ship_name", "Ship")
+		var ship_class: int = int(ship_data.get("ship_class", 0))
+		print("[GameState] Creating ship: %s (class %d, id %d)" % [ship_name, ship_class, ship_id])
+
 		var new_ship := Ship.new()
 		new_ship.server_id = ship_id
-		new_ship.ship_name = ship_data.get("ship_name", "Ship")
-		new_ship.ship_class = int(ship_data.get("ship_class", 0))
+		new_ship.ship_name = ship_name
+		new_ship.ship_class = ship_class
 		new_ship.max_thrust_g = float(ship_data.get("max_thrust_g", 0.3))
 		new_ship.thrust_setting = float(ship_data.get("thrust_setting", 1.0))
 		new_ship.cargo_capacity = float(ship_data.get("cargo_capacity", 100.0))
