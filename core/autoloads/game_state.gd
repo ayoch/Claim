@@ -3379,7 +3379,7 @@ func load_game(file_name: String = "save_game.json") -> bool:
 	ships.clear()
 	for sd in data.get("ships", []):
 		var s := Ship.new()
-		s.ship_name = sd.get("name", "Ship")
+		s.ship_name = sd.get("ship_name", "Ship")
 		# Backward compatibility: old saves have thrust_g, new saves have max_thrust_g
 		if sd.has("max_thrust_g"):
 			s.max_thrust_g = float(sd.get("max_thrust_g", 0.3))
