@@ -222,6 +222,9 @@ async def admin_dashboard(
         slots_available = max(0, max_players - active_players)
         capacity_pct = (active_players / max_players * 100) if max_players > 0 else 0
 
+        # Check if reserves already generated
+        has_reserves = any(a.reserves and len(a.reserves) > 0 for a in asteroids)
+
         return templates.TemplateResponse("admin_dashboard.html", {
             "request": request,
             "admin_key": admin_key,
@@ -236,6 +239,7 @@ async def admin_dashboard(
             "max_players": max_players,
             "slots_available": slots_available,
             "capacity_pct": capacity_pct,
+            "has_reserves": has_reserves,
         })
     except Exception as e:
         import traceback
@@ -260,44 +264,60 @@ async def admin_players(
     db: AsyncSession = Depends(get_db)
 ):
     """Player management page."""
-    admin_key = check_admin_session(request)
-    if not admin_key:
-        return RedirectResponse(url="/admin-ui/login", status_code=303)
+    try:
+        admin_key = check_admin_session(request)
+        if not admin_key:
+            return RedirectResponse(url="/admin-ui/login", status_code=303)
 
-    if not await validate_admin_key(admin_key, db):
-        request.session.clear()
-        return RedirectResponse(url="/admin-ui/login", status_code=303)
+        if not await validate_admin_key(admin_key, db):
+            request.session.clear()
+            return RedirectResponse(url="/admin-ui/login", status_code=303)
 
-    # Get all players with their ship counts
-    result = await db.execute(
-        select(Player).order_by(Player.last_seen.desc())
-    )
-    players = result.scalars().all()
-
-    # Get ship counts for each player
-    player_data = []
-    for player in players:
+        # Get all players with their ship counts
         result = await db.execute(
-            select(func.count(Ship.id)).where(Ship.player_id == player.id)
+            select(Player).order_by(Player.last_seen.desc())
         )
-        ship_count = result.scalar() or 0
+        players = result.scalars().all()
 
-        player_data.append({
-            "id": player.id,
-            "username": player.username,
-            "email": player.email,
-            "money": player.money,
-            "reputation": player.reputation,
-            "total_ticks": player.total_ticks,
-            "ship_count": ship_count,
-            "last_seen": player.last_seen,
-            "created_at": player.created_at,
+        # Get ship counts for each player
+        player_data = []
+        for player in players:
+            result = await db.execute(
+                select(func.count(Ship.id)).where(Ship.player_id == player.id)
+            )
+            ship_count = result.scalar() or 0
+
+            player_data.append({
+                "id": player.id,
+                "username": player.username,
+                "email": player.email,
+                "money": player.money,
+                "reputation": player.reputation,
+                "total_ticks": player.total_ticks,
+                "ship_count": ship_count,
+                "last_seen": player.last_seen,
+                "created_at": player.created_at,
+            })
+
+        return templates.TemplateResponse("admin_players.html", {
+            "request": request,
+            "players": player_data,
         })
-
-    return templates.TemplateResponse("admin_players.html", {
-        "request": request,
-        "players": player_data,
-    })
+    except Exception as e:
+        import traceback
+        error_html = f"""
+        <html>
+        <head><title>Players Error</title></head>
+        <body style="font-family: monospace; padding: 20px;">
+            <h1>Players Page Error</h1>
+            <h2>Error: {type(e).__name__}</h2>
+            <p>{str(e)}</p>
+            <h3>Traceback:</h3>
+            <pre>{traceback.format_exc()}</pre>
+        </body>
+        </html>
+        """
+        return HTMLResponse(content=error_html, status_code=500)
 
 
 @router.get("/asteroids", response_class=HTMLResponse)

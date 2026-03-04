@@ -162,8 +162,12 @@ async function generateReserves() {
                 <h5 class="card-title">Quick Actions</h5>
                 <a href="/admin-ui/players" class="btn btn-primary me-2">Manage Players</a>
                 <a href="/admin-ui/asteroids" class="btn btn-primary me-2">View Asteroids</a>
+                {% if not has_reserves %}
                 <button onclick="generateReserves()" class="btn btn-warning" id="genReservesBtn">Generate Asteroid Reserves</button>
                 <div id="reserveStatus" class="mt-2" style="font-size: 0.9rem;"></div>
+                {% else %}
+                <p class="text-muted mb-0">Asteroid reserves already generated</p>
+                {% endif %}
             </div>
         </div>
     </div>
