@@ -23,6 +23,10 @@ router = APIRouter(prefix="/admin-ui", tags=["admin-ui"])
 
 # Templates directory is at server/templates (one level up from server/server)
 templates_dir = Path(__file__).parent.parent.parent / "templates"
+print(f"Admin UI templates directory: {templates_dir}")
+print(f"Templates directory exists: {templates_dir.exists()}")
+if templates_dir.exists():
+    print(f"Templates files: {list(templates_dir.glob('*.html'))}")
 templates = Jinja2Templates(directory=str(templates_dir))
 
 
@@ -76,14 +80,20 @@ async def admin_dashboard(
     db: AsyncSession = Depends(get_db)
 ):
     """Main admin dashboard."""
-    admin_key = check_admin_session(request)
-    if not admin_key:
-        return RedirectResponse(url="/admin-ui/login", status_code=303)
+    try:
+        admin_key = check_admin_session(request)
+        if not admin_key:
+            return RedirectResponse(url="/admin-ui/login", status_code=303)
 
-    # Verify admin key is valid
-    if not await validate_admin_key(admin_key, db):
-        request.session.clear()
-        return RedirectResponse(url="/admin-ui/login", status_code=303)
+        # Verify admin key is valid
+        if not await validate_admin_key(admin_key, db):
+            request.session.clear()
+            return RedirectResponse(url="/admin-ui/login", status_code=303)
+    except Exception as e:
+        import traceback
+        print(f"Error in auth check: {e}")
+        traceback.print_exc()
+        raise
 
     # Get server stats
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
