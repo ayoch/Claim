@@ -280,6 +280,7 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Cloud Saves** - Server-persisted game state
 - ✅ **Shared Economy** - All players in same world
 - ✅ **Backend Abstraction Layer** - LOCAL vs SERVER mode routing
+- ✅ **Fog-of-War for Other Players** - Other players' ships use ghost contact system (light-speed delay, confidence decay, same as NPC rivals)
 - 🚧 **Local Leaderboards** - Backend complete, UI integration needed
 - ❌ **Player-to-Player Trading** - Direct ore/credit/ship exchanges
 - ❌ **Shared Asteroids** - Multiple players mining same locations
@@ -338,9 +339,9 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 
 **Total Features Listed:** ~178
 
-**Implemented (✅):** ~141 features (79%)
+**Implemented (✅):** ~142 features (80%)
 **Partial (🚧):** ~7 features (4%)
-**Planned (❌):** ~30 features (17%)
+**Planned (❌):** ~29 features (16%)
 
 **Lines of Code:** ~39,000 total
 - GDScript: 30,693 lines (client)
@@ -351,5 +352,5 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 
 ---
 
-*Last Updated: 2026-03-04*
+*Last Updated: 2026-03-04 (fog-of-war for other players' ships implemented)*
 *This document should be updated as features are completed or new features are designed.*

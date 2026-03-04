@@ -658,15 +658,8 @@ func _refresh_ship_markers() -> void:
 		marker.is_refuel_vessel = true
 		ship_markers.add_child(marker)
 
-	# Other players' ships (multiplayer)
-	for other_ship_data: Dictionary in GameState.other_players_ships:
-		# Don't show stationed ships (they're docked, not visible on map)
-		if other_ship_data.get("is_stationed", true):
-			continue
-
-		var marker: Node2D = ship_marker_scene.instantiate()
-		marker.other_player_ship = other_ship_data  # Pass dictionary instead of Ship object
-		ship_markers.add_child(marker)
+	# Other players' ships are now rendered via ghost contacts (fog-of-war system)
+	# Removed direct rendering to apply same visibility constraints as NPC rivals
 
 func _process(delta: float) -> void:
 	# Skip rendering updates when solar map tab is not visible

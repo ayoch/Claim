@@ -98,6 +98,10 @@ const CONTACT_COLORS: Array = [
 var _leave_accumulator: float = 0.0
 const LEAVE_CHECK_INTERVAL: float = 86400.0  # Check once per game-day
 
+# Other players' ship tracking for velocity calculation (multiplayer fog-of-war)
+# Key: "owner_username|ship_name" -> {"position": Vector2, "ticks": float}
+var _other_player_ship_prev_data: Dictionary = {}
+
 # Greedy worker wage pressure
 var _greedy_wage_accumulator: float = 0.0
 const GREEDY_WAGE_INTERVAL: float = 86400.0 * 30.0  # Every 30 game-days
@@ -3281,6 +3285,80 @@ func _update_ghost_contacts(dt: float) -> void:
 
 			contact.update_obs(obs, current_ticks)
 			_infer_contact_corp(contact)
+
+	# Process other players' ships (multiplayer) with same fog-of-war constraints
+	for other_ship_data: Dictionary in GameState.other_players_ships:
+		# Skip stationed ships (docked, not in space)
+		if other_ship_data.get("is_stationed", true):
+			continue
+		# Skip derelict ships (not actively moving)
+		if other_ship_data.get("is_derelict", false):
+			continue
+
+		var ship_key: String = "%s|%s" % [other_ship_data.get("owner_username", ""), other_ship_data.get("ship_name", "")]
+		var ship_pos := Vector2(
+			float(other_ship_data.get("position_x", 0.0)),
+			float(other_ship_data.get("position_y", 0.0))
+		)
+
+		# Calculate velocity from position delta (needs previous observation)
+		var velocity := Vector2.ZERO
+		if ship_key in _other_player_ship_prev_data:
+			var prev_data: Dictionary = _other_player_ship_prev_data[ship_key]
+			var prev_pos: Vector2 = prev_data["position"]
+			var prev_ticks: float = prev_data["ticks"]
+			var dt_ticks: float = current_ticks - prev_ticks
+			if dt_ticks > 0.0:
+				velocity = (ship_pos - prev_pos) / dt_ticks
+
+		# Store current data for next observation
+		_other_player_ship_prev_data[ship_key] = {"position": ship_pos, "ticks": current_ticks}
+
+		# Skip if stationary (no velocity data yet or not moving)
+		if velocity.length_squared() < 1e-10:
+			continue
+
+		# Visibility calculation: assume active ships are visible (simplified, no thrust state available)
+		# Use moderate baseline visibility (equivalent to medium thrust)
+		var best_visibility: float = 0.5
+		var best_observer: Vector2 = earth_pos
+
+		# Find best observer (closest player ship or HQ)
+		var best_dist: float = ship_pos.distance_to(earth_pos)
+		for obs_pos: Vector2 in observers:
+			var dist: float = ship_pos.distance_to(obs_pos)
+			if dist < best_dist:
+				best_dist = dist
+				best_observer = obs_pos
+
+		# Light-speed delay: other player ship → observer → HQ
+		var dist_to_obs: float = ship_pos.distance_to(best_observer)
+		var dist_obs_to_hq: float = best_observer.distance_to(earth_pos)
+		var total_delay: float = (dist_to_obs + dist_obs_to_hq) * GameState.LIGHT_SECONDS_PER_AU
+
+		# Back-calculate position: where was the ship when photons left it?
+		var observed_pos := ship_pos - velocity * total_delay
+
+		var obs := GhostObservation.new()
+		obs.observed_position_au = observed_pos
+		obs.observed_velocity_au_per_tick = velocity
+		obs.received_at_ticks = current_ticks
+		obs.initial_confidence = best_visibility
+
+		# Match to existing contact or create new one
+		var contact = _find_matching_contact(observed_pos, velocity, current_ticks)
+		if contact == null:
+			contact = GhostContact.new()
+			contact.contact_id = _next_contact_id
+			_next_contact_id += 1
+			contact.contact_color = CONTACT_COLORS[contact.contact_id % CONTACT_COLORS.size()]
+			contact.first_seen_ticks = current_ticks
+			GameState.ghost_contacts.append(contact)
+
+		contact.update_obs(obs, current_ticks)
+		# Directly attribute to player instead of inferring from trajectory
+		contact.inferred_corp = other_ship_data.get("owner_username", "Unknown Player")
+		contact.corp_confidence = 1.0  # Certain attribution (we know the owner)
 
 	# Prune contacts that have decayed past the display threshold
 	var pruned: Array = []  # Array[GhostContact]
