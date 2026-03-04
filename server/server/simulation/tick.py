@@ -344,6 +344,7 @@ async def _advance_collecting(mission: Mission, ship: Ship, dt: float, db: Async
             current_cargo_total = sum(cargo.values())
             available_capacity = ship.cargo_capacity - current_cargo_total
             total_loaded = 0.0
+            stockpiles_to_delete = []
 
             for stockpile in stockpiles:
                 if available_capacity <= 0:
@@ -356,9 +357,9 @@ async def _advance_collecting(mission: Mission, ship: Ship, dt: float, db: Async
                 available_capacity -= to_load
                 total_loaded += to_load
 
-                # Delete stockpile if empty
+                # Mark for deletion if empty
                 if stockpile.tonnes <= 0:
-                    await db.delete(stockpile)
+                    stockpiles_to_delete.append(stockpile.id)
                 else:
                     db.add(stockpile)
 
@@ -366,6 +367,11 @@ async def _advance_collecting(mission: Mission, ship: Ship, dt: float, db: Async
                     'Mission %d: loaded %.1f t of %s from stockpile',
                     mission.id, to_load, stockpile.ore_type
                 )
+
+            # Batch delete empty stockpiles
+            if stockpiles_to_delete:
+                from sqlalchemy import delete
+                await db.execute(delete(Stockpile).where(Stockpile.id.in_(stockpiles_to_delete)))
 
             ship.current_cargo = cargo
 

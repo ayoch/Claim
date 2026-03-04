@@ -386,8 +386,14 @@ func _refresh_equip() -> void:
 	equip_list.add_child(upgrades_header)
 
 	var all_upgrades := UpgradeCatalog.get_available_upgrades()
-	var modular_catalog := all_upgrades.filter(func(e): return not e.get("requires_dry_dock", false))
-	var dry_dock_catalog := all_upgrades.filter(func(e): return e.get("requires_dry_dock", false))
+	var modular_catalog: Array = []
+	var dry_dock_catalog: Array = []
+	# Single pass instead of two filters
+	for upgrade in all_upgrades:
+		if upgrade.get("requires_dry_dock", false):
+			dry_dock_catalog.append(upgrade)
+		else:
+			modular_catalog.append(upgrade)
 	var docked_ships := GameState.get_docked_ships()
 
 	# ── MODULAR UPGRADES ─────────────────────────────────────────────────────

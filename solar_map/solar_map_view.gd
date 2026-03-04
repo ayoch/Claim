@@ -845,9 +845,8 @@ func _on_tick(_dt: float) -> void:
 	if now - _last_tick_msec < TICK_THROTTLE_MSEC:
 		return
 	_last_tick_msec = now
-	_update_planet_targets()
-	_update_asteroid_targets()
-	_update_colony_targets()
+	# Planet/asteroid/colony targets already updated in _process with adaptive throttling
+	# No need to duplicate here
 
 func _update_asteroid_targets() -> void:
 	for marker in asteroid_markers.get_children():
@@ -1054,12 +1053,21 @@ func _try_select_ship_at(screen_pos: Vector2) -> void:
 	var world_pos := camera.position + (screen_pos - get_viewport_rect().size / 2.0) / camera.zoom
 	var best_ship: Ship = null
 	var best_dist := 30.0  # Max click distance in pixels (generous for touch)
+	var best_dist_sq := best_dist * best_dist
+
 	for ship in GameState.ships:
 		var ship_px := ship.position_au * AU_PIXELS
-		var dist := world_pos.distance_to(ship_px)
-		if dist < best_dist:
-			best_dist = dist
+		# Quick bounding box check before expensive distance calculation
+		var dx := abs(world_pos.x - ship_px.x)
+		var dy := abs(world_pos.y - ship_px.y)
+		if dx > best_dist or dy > best_dist:
+			continue
+
+		var dist_sq := world_pos.distance_squared_to(ship_px)
+		if dist_sq < best_dist_sq:
+			best_dist_sq = dist_sq
 			best_ship = ship
+
 	if best_ship:
 		_center_on_ship(best_ship)
 
