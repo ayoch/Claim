@@ -517,3 +517,101 @@ async def get_server_capacity(request: Request, db: AsyncSession = Depends(get_d
         },
         "message": "Server accepting new players" if can_join else "Server at capacity - no slots available"
     }
+
+
+@router.post("/generate-reserves")
+@limiter.limit("1/hour")
+async def generate_asteroid_reserves(
+    request: Request,
+    admin_key: str = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Generate initial reserves for all asteroids.
+
+    Only needs to be run once. Checks if reserves already exist before generating.
+    """
+    import random
+
+    # Check if reserves already generated
+    result = await db.execute(select(Asteroid).limit(10))
+    sample_asteroids = result.scalars().all()
+
+    has_reserves = any(a.reserves and len(a.reserves) > 0 for a in sample_asteroids)
+    if has_reserves:
+        return {
+            "status": "already_generated",
+            "message": "Asteroid reserves already exist. Not regenerating."
+        }
+
+    # Composition by asteroid type
+    COMPOSITION_BY_TYPE = {
+        "C-type": {"iron": 8, "nickel": 6, "platinum": 0.01, "water_ice": 20, "silicates": 65},
+        "S-type": {"iron": 18, "nickel": 8, "platinum": 0.02, "water_ice": 3, "silicates": 70},
+        "M-type": {"iron": 70, "nickel": 20, "platinum": 0.5, "water_ice": 1, "silicates": 8},
+        "asteroid": {"iron": 15, "nickel": 7, "platinum": 0.015, "water_ice": 8, "silicates": 68},
+        "NEO": {"iron": 12, "nickel": 6, "platinum": 0.01, "water_ice": 5, "silicates": 75},
+        "trojan": {"iron": 10, "nickel": 5, "platinum": 0.008, "water_ice": 15, "silicates": 68},
+        "comet": {"water_ice": 60, "iron": 3, "silicates": 35, "nickel": 1, "platinum": 0.001},
+    }
+
+    def estimate_mass(semi_major_axis: float, body_type: str) -> float:
+        if body_type.lower() == "neo":
+            return random.uniform(5e10, 5e12)
+        elif body_type.lower() == "comet":
+            return random.uniform(1e10, 1e13)
+        elif semi_major_axis < 2.0:
+            return random.uniform(1e12, 1e15)
+        elif semi_major_axis < 3.5:
+            return random.uniform(1e13, 1e17)
+        elif body_type.lower() in ("trojan", "centaur"):
+            return random.uniform(1e15, 1e18)
+        else:
+            return random.uniform(1e14, 1e17)
+
+    # Get all asteroids
+    result = await db.execute(select(Asteroid))
+    asteroids = result.scalars().all()
+
+    generated_count = 0
+    for asteroid in asteroids:
+        if asteroid.reserves and len(asteroid.reserves) > 0:
+            continue  # Skip if already has reserves
+
+        # Estimate mass
+        mass_kg = estimate_mass(asteroid.semi_major_axis, asteroid.body_type)
+
+        # Get composition
+        composition = COMPOSITION_BY_TYPE.get(asteroid.body_type.lower(), COMPOSITION_BY_TYPE["asteroid"])
+
+        # Calculate extractable reserves (0.5-3% of total mass)
+        accessibility_pct = random.uniform(0.005, 0.03)
+
+        reserves = {}
+        for material, pct in composition.items():
+            total_material_kg = mass_kg * (pct / 100.0)
+            extractable_kg = total_material_kg * accessibility_pct
+            extractable_tonnes = extractable_kg / 1000.0
+            reserves[material] = round(extractable_tonnes, 2)
+
+        # Update asteroid
+        asteroid.estimated_mass_kg = mass_kg
+        asteroid.composition = composition
+        asteroid.reserves = reserves
+        asteroid.original_reserves = reserves.copy()
+        generated_count += 1
+
+    await db.commit()
+
+    # Calculate totals
+    result = await db.execute(select(Asteroid))
+    all_asteroids = result.scalars().all()
+    total_reserves = sum(sum(a.reserves.values()) for a in all_asteroids if a.reserves)
+
+    return {
+        "status": "success",
+        "asteroids_updated": generated_count,
+        "total_asteroids": len(asteroids),
+        "total_reserves_tonnes": round(total_reserves, 2),
+        "message": f"Generated reserves for {generated_count} asteroids"
+    }
