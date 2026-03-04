@@ -224,6 +224,7 @@ async def admin_dashboard(
 
         return templates.TemplateResponse("admin_dashboard.html", {
             "request": request,
+            "admin_key": admin_key,
             "active_players": active_players,
             "total_players": total_players,
             "total_ships": total_ships,

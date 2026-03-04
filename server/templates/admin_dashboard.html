@@ -46,7 +46,7 @@ async function generateReserves() {
         const response = await fetch('/admin/generate-reserves', {
             method: 'POST',
             headers: {
-                'X-Admin-Key': '9e8650d3-9963-4336-9053-902cbd561994'
+                'X-Admin-Key': '{{ admin_key }}'
             }
         });
 

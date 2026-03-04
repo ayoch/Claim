@@ -523,7 +523,6 @@ async def get_server_capacity(request: Request, db: AsyncSession = Depends(get_d
 @limiter.limit("1/hour")
 async def generate_asteroid_reserves(
     request: Request,
-    admin_key: str = Depends(require_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """
