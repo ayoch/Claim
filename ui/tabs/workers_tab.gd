@@ -23,9 +23,13 @@ const REFRESH_INTERVAL_MSEC: int = 200
 func _ready() -> void:
 	refresh_btn.pressed.connect(_generate_candidates)
 	EventBus.worker_hired.connect(func(w: Worker) -> void:
-		# Remove hired worker from candidates and generate a new one to maintain pool of 3
-		_candidates.erase(w)
-		_candidates.append(Worker.generate_random())
+		# In SERVER mode, refetch candidates from server
+		# In LOCAL mode, generate a new random candidate to maintain pool
+		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+			_generate_candidates()  # Refetch from server
+		else:
+			_candidates.erase(w)
+			_candidates.append(Worker.generate_random())
 		_dirty_all = true
 	)
 	EventBus.worker_fired.connect(func(_w: Worker) -> void: _dirty_all = true)
@@ -198,8 +202,61 @@ func _refresh_crew() -> void:
 
 func _generate_candidates() -> void:
 	_candidates.clear()
-	for i in range(3):
-		_candidates.append(Worker.generate_random())
+
+	# Check if we're in SERVER mode
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		# SERVER mode: fetch candidates from server
+		_fetch_server_candidates()
+	else:
+		# LOCAL mode: generate candidates locally
+		for i in range(3):
+			_candidates.append(Worker.generate_random())
+		_refresh_candidates()
+
+func _fetch_server_candidates() -> void:
+	var log_file := FileAccess.open("res://candidate_fetch.log", FileAccess.WRITE)
+
+	var server_backend = BackendManager._active_backend
+	if not server_backend:
+		if log_file:
+			log_file.store_line("ERROR: No server backend available")
+			log_file.close()
+		push_error("No server backend available")
+		_refresh_candidates()
+		return
+
+	if log_file:
+		log_file.store_line("Fetching available workers from server...")
+		log_file.close()
+
+	var available_workers = await server_backend.get_available_workers()
+
+	log_file = FileAccess.open("res://candidate_fetch.log", FileAccess.READ_WRITE)
+	if log_file:
+		log_file.seek_end()
+		log_file.store_line("Received %d workers from server" % available_workers.size())
+		log_file.store_line("Workers data: %s" % str(available_workers))
+		log_file.close()
+
+	# Convert server worker data to Worker objects
+	for worker_data in available_workers:
+		var w := Worker.new()
+		w.server_id = worker_data.get("id", 0)
+		w.worker_name = worker_data.get("first_name", "") + " " + worker_data.get("last_name", "")
+		w.pilot_skill = float(worker_data.get("pilot_skill", 0.5))
+		w.engineer_skill = float(worker_data.get("engineer_skill", 0.5))
+		w.mining_skill = float(worker_data.get("mining_skill", 0.5))
+		w.wage = int(worker_data.get("wage", 100))
+		w.personality = int(worker_data.get("personality", 2))
+		w.home_colony = worker_data.get("home_colony", "Earth")
+		_candidates.append(w)
+
+	log_file = FileAccess.open("res://candidate_fetch.log", FileAccess.READ_WRITE)
+	if log_file:
+		log_file.seek_end()
+		log_file.store_line("Created %d candidate Worker objects" % _candidates.size())
+		log_file.close()
+
 	_refresh_candidates()
 
 func _refresh_candidates() -> void:
@@ -239,4 +296,13 @@ func _refresh_candidates() -> void:
 		candidates_list.add_child(label)
 
 func _hire_candidate(worker: Worker) -> void:
-	GameState.hire_worker(worker)
+	# Check if we're in SERVER mode
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		# SERVER mode: use server_id to hire via API
+		if worker.server_id > 0:
+			GameState.hire_worker_any_mode(worker.server_id)
+		else:
+			push_error("Cannot hire worker in SERVER mode: worker has no server_id")
+	else:
+		# LOCAL mode: hire directly
+		GameState.hire_worker(worker)

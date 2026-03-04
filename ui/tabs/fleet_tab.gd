@@ -884,7 +884,7 @@ func _show_asteroid_selection() -> void:
 		est_workers.assign(_selected_ship.last_crew)
 	else:
 		var available := GameState.get_available_workers()
-		var crew_size := maxi(_selected_ship.min_crew, 1)
+		var crew_size: int = maxi(_selected_ship.min_crew, 1)
 		est_workers.assign(available.slice(0, crew_size))
 	if est_workers.is_empty():
 		var placeholder := Worker.new()

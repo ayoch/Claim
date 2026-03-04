@@ -746,7 +746,7 @@ func _start_trade(colony: Colony) -> void:
 	for ore_type in ResourceTypes.OreType.values():
 		var available: float = GameState.resources.get(ore_type, 0.0)
 		if available > 0.01:
-			var can_load := minf(available, ship.cargo_capacity - total_loaded)
+			var can_load: float = minf(available, ship.cargo_capacity - total_loaded)
 			if can_load > 0.01:
 				cargo[ore_type] = can_load
 				total_loaded += can_load

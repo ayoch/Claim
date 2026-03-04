@@ -1355,7 +1355,7 @@ func _refresh_balance_history() -> void:
 		transactions_list.add_child(empty)
 		return
 	const MAX_DISPLAY := 40
-	var start := maxi(0, history.size() - MAX_DISPLAY)
+	var start: int = maxi(0, history.size() - MAX_DISPLAY)
 	for i in range(history.size() - 1, start - 1, -1):
 		var entry: Dictionary = history[i]
 		var change: int = int(entry["change"])

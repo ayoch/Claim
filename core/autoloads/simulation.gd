@@ -201,7 +201,7 @@ func _process(delta: float) -> void:
 	var total_dt := 0.0
 	while _tick_accumulator >= TICK_INTERVAL and steps < MAX_STEPS_PER_FRAME:
 		# Batch ticks into larger steps when backlog is large
-		var dt := minf(_tick_accumulator, MAX_DT_PER_STEP)
+		var dt: float = minf(_tick_accumulator, MAX_DT_PER_STEP)
 		_tick_accumulator -= dt
 		_process_tick(dt, false)  # Don't emit tick per step — emit once below
 		total_dt += dt
@@ -570,7 +570,7 @@ func _partnership_mutual_aid(leader: Ship, follower: Ship) -> void:
 
 	# Fuel transfer
 	if follower.derelict_reason == "out_of_fuel":
-		var fuel_to_transfer := minf(leader.fuel * 0.5, follower.get_effective_fuel_capacity() - follower.fuel)
+		var fuel_to_transfer: float = minf(leader.fuel * 0.5, follower.get_effective_fuel_capacity() - follower.fuel)
 		if fuel_to_transfer > 10.0:
 			leader.fuel -= fuel_to_transfer
 			follower.fuel += fuel_to_transfer
@@ -1030,7 +1030,7 @@ func _update_ship_positions(dt: float) -> void:
 			var dist_sq := r_sun.length_squared()
 			var accel := Vector2.ZERO
 			if dist_sq > 1e-12:
-				var dist := sqrt(dist_sq)
+				var dist: float = sqrt(dist_sq)
 				accel = r_sun * (CelestialData.GM_SUN / (dist_sq * dist))
 
 			ship.velocity_au_per_tick += accel * dt
@@ -1124,7 +1124,7 @@ func _update_ship_transit_physics(ship: Ship, start_pos: Vector2, end_pos_stored
 	var r_sun := -ship.position_au
 	var dist_sq := r_sun.length_squared()
 	if dist_sq > 1e-12:
-		var dist := sqrt(dist_sq)
+		var dist: float = sqrt(dist_sq)
 		var grav_accel := r_sun * (CelestialData.GM_SUN / (dist_sq * dist))
 		# Apply only perpendicular component (along-track handled by thrust model)
 		var perp := grav_accel - direction * grav_accel.dot(direction)
@@ -1695,7 +1695,7 @@ func _score_mining_trip(ship: Ship, asteroid: AsteroidData, origin_pos: Vector2,
 	var haul_value := 0.0
 	for ore_type in asteroid.ore_yields:
 		var rate: float = float(asteroid.ore_yields[ore_type])  # tons/day
-		var tons := minf(rate * (mining_duration / 86400.0), ship.get_effective_cargo_capacity())
+		var tons: float = minf(rate * (mining_duration / 86400.0), ship.get_effective_cargo_capacity())
 		haul_tons += tons
 		haul_value += tons * GameState.market.get_price(ore_type)
 	haul_tons = minf(haul_tons, ship.get_effective_cargo_capacity())
@@ -2305,7 +2305,7 @@ func _complete_repair_job(mission: Mission) -> void:
 			other_ship.derelict_reason = ""
 			other_ship.engine_condition = maxf(other_ship.engine_condition, 50.0)
 			other_ship.fuel = minf(other_ship.fuel + other_ship.get_effective_fuel_capacity() * 0.25, other_ship.get_effective_fuel_capacity())
-			var crew_count := maxi(other_ship.crew.size(), 1)
+			var crew_count: int = maxi(other_ship.crew.size(), 1)
 			other_ship.reset_life_support(crew_count)
 
 			mission.ship.add_station_log("Repaired %s" % other_ship.ship_name, "repair")
@@ -2449,7 +2449,7 @@ func _complete_boarding_job(mission: Mission) -> void:
 			# Auto-determine rescue crew: give target ship as many as possible while
 			# keeping at least 1 on the ferry.
 			if mission.rescue_crew.is_empty() and ferry_ship.crew.size() > 1:
-				var rescue_count := mini(ferry_ship.crew.size() - 1, target_ship.min_crew)
+				var rescue_count: int = mini(ferry_ship.crew.size() - 1, target_ship.min_crew)
 				rescue_count = maxi(rescue_count, 1)
 				for i in rescue_count:
 					mission.rescue_crew.append(ferry_ship.crew[i])
@@ -2587,7 +2587,7 @@ func _complete_deploy(mission: Mission) -> void:
 		var food_on_ship: float = mission.ship.supplies.get("food", 0.0)
 		var return_days := 30.0  # conservative estimate
 		var return_buffer: float = staying_workers * 0.028 * return_days * 1.5
-		var food_to_transfer := maxf(0.0, food_on_ship - return_buffer)
+		var food_to_transfer: float = maxf(0.0, food_on_ship - return_buffer)
 		if food_to_transfer > 0.0:
 			mission.ship.supplies["food"] = food_on_ship - food_to_transfer
 			GameState.add_to_asteroid_supplies(asteroid_name, "food", food_to_transfer)
@@ -2987,7 +2987,7 @@ func _process_survey_events(dt: float) -> void:
 
 	# Shift yield by -30% to +50% (slight upward bias to keep things interesting)
 	var change := randf_range(-0.3, 0.5)
-	var new_yield := maxf(old_yield * (1.0 + change), 0.1)
+	var new_yield: float = maxf(old_yield * (1.0 + change), 0.1)
 	asteroid.ore_yields[ore_type] = new_yield
 
 	var ore_name: String = ResourceTypes.get_ore_name(ore_type)
@@ -3404,7 +3404,7 @@ func _infer_contact_corp(contact) -> void:  # contact: GhostContact
 			continue
 		var to_home_dir := to_home.normalized()
 		# Inbound (heading toward home) or outbound (heading away) both count
-		var score := maxf(vel_dir.dot(to_home_dir), vel_dir.dot(-to_home_dir))
+		var score: float = maxf(vel_dir.dot(to_home_dir), vel_dir.dot(-to_home_dir))
 		if score > best_score:
 			best_score = score
 			best_corp = corp.corp_name
@@ -4122,7 +4122,7 @@ func _resolve_combat(attacker: Ship, defender: Ship, distance: float) -> void:
 	for torpedo in incoming_torpedoes:
 		var quality_stats := MunitionsData.get_quality_stats(torpedo.ammo_quality)
 		var power_mod: float = quality_stats.get("power_mod", 0.0)
-		var effective_power := torpedo.weapon_power * (1.0 + power_mod)
+		var effective_power: float = torpedo.weapon_power * (1.0 + power_mod)
 		atk_damage += effective_power
 		if torpedo.equipment_name == "EMP Torpedo Launcher":
 			is_emp_hit = true

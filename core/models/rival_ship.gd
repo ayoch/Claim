@@ -27,14 +27,14 @@ func get_position_au() -> Vector2:
 		Status.TRANSIT_TO:
 			if transit_time <= 0.0:
 				return target_position_au
-			var t := clampf(elapsed_ticks / transit_time, 0.0, 1.0)
+			var t: float = clampf(elapsed_ticks / transit_time, 0.0, 1.0)
 			return home_position_au.lerp(target_position_au, t)
 		Status.MINING:
 			return target_position_au
 		Status.TRANSIT_HOME:
 			if transit_time <= 0.0:
 				return home_position_au
-			var t := clampf(elapsed_ticks / transit_time, 0.0, 1.0)
+			var t: float = clampf(elapsed_ticks / transit_time, 0.0, 1.0)
 			return target_position_au.lerp(home_position_au, t)
 	return home_position_au
 
@@ -46,13 +46,13 @@ func get_thrust_direction() -> Vector2:
 			if transit_time <= 0.0:
 				return Vector2.ZERO
 			var dir := (target_position_au - home_position_au).normalized()
-			var t := clampf(elapsed_ticks / transit_time, 0.0, 1.0)
+			var t: float = clampf(elapsed_ticks / transit_time, 0.0, 1.0)
 			return dir if t < 0.5 else -dir
 		Status.TRANSIT_HOME:
 			if transit_time <= 0.0:
 				return Vector2.ZERO
 			var dir := (home_position_au - target_position_au).normalized()
-			var t := clampf(elapsed_ticks / transit_time, 0.0, 1.0)
+			var t: float = clampf(elapsed_ticks / transit_time, 0.0, 1.0)
 			return dir if t < 0.5 else -dir
 	return Vector2.ZERO
 

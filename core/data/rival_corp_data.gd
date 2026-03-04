@@ -37,7 +37,7 @@ static func _roll_normal_trait(mean: float, std_dev: float) -> float:
 	# Most values near mean (0.5), fewer at extremes
 	var u1 := randf()
 	var u2 := randf()
-	var z := sqrt(-2.0 * log(u1)) * cos(2.0 * PI * u2)  # Standard normal (mean=0, std=1)
+	var z: float = sqrt(-2.0 * log(u1)) * cos(2.0 * PI * u2)  # Standard normal (mean=0, std=1)
 	var value := mean + z * std_dev  # Scale to desired mean/std_dev
 	return clampf(value, 0.0, 1.0)  # Clamp to valid range
 

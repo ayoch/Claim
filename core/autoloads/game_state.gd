@@ -447,8 +447,8 @@ func _apply_redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> vo
 	var velocity_dir := ship.velocity_au_per_tick.normalized() if ship.speed_au_per_tick > 1e-8 else Vector2.ZERO
 	var dest_dir := (new_dest - ship.position_au).normalized() if dist > 1e-6 else Vector2.ZERO
 	var dot := velocity_dir.dot(dest_dir) if ship.speed_au_per_tick > 1e-8 else 1.0
-	var speed_fraction := clampf(ship.speed_au_per_tick / (2.0 * avg_velocity), 0.0, 1.0) if avg_velocity > 0.0 else 0.0
-	var arc_fraction := clampf(sqrt((1.0 - dot) * 0.5) * speed_fraction * 0.4, 0.0, 0.30)
+	var speed_fraction: float = clampf(ship.speed_au_per_tick / (2.0 * avg_velocity), 0.0, 1.0) if avg_velocity > 0.0 else 0.0
+	var arc_fraction: float = clampf(sqrt((1.0 - dot) * 0.5) * speed_fraction * 0.4, 0.0, 0.30)
 
 	# Compute arc waypoint and check if it makes sense
 	var waypoint := ship.position_au + velocity_dir * (arc_fraction * dist)
@@ -579,8 +579,8 @@ func _apply_redirect_trade_mission(trade_mission: TradeMission, new_colony: Colo
 	var velocity_dir := ship.velocity_au_per_tick.normalized() if ship.speed_au_per_tick > 1e-8 else Vector2.ZERO
 	var dest_dir := (new_dest - ship.position_au).normalized() if dist > 1e-6 else Vector2.ZERO
 	var dot := velocity_dir.dot(dest_dir) if ship.speed_au_per_tick > 1e-8 else 1.0
-	var speed_fraction := clampf(ship.speed_au_per_tick / (2.0 * avg_velocity), 0.0, 1.0) if avg_velocity > 0.0 else 0.0
-	var arc_fraction := clampf(sqrt((1.0 - dot) * 0.5) * speed_fraction * 0.4, 0.0, 0.30)
+	var speed_fraction: float = clampf(ship.speed_au_per_tick / (2.0 * avg_velocity), 0.0, 1.0) if avg_velocity > 0.0 else 0.0
+	var arc_fraction: float = clampf(sqrt((1.0 - dot) * 0.5) * speed_fraction * 0.4, 0.0, 0.30)
 
 	var waypoint := ship.position_au + velocity_dir * (arc_fraction * dist)
 	var dist1 := arc_fraction * dist
@@ -2640,7 +2640,7 @@ func fulfill_contract_from_ship(contract: Contract, ship: Ship, amount: float) -
 
 	# Calculate how much to deliver
 	var remaining := contract.get_remaining_quantity()
-	var to_deliver := minf(ship_cargo, minf(amount, remaining))
+	var to_deliver: float = minf(ship_cargo, minf(amount, remaining))
 
 	if to_deliver <= 0:
 		return result
@@ -2707,7 +2707,7 @@ func start_trade_mission(ship: Ship, colony_target: Colony, cargo_to_load: Dicti
 			else:
 				# Remote ship: use cargo already on board
 				var on_board: float = ship.current_cargo.get(ore_type, 0.0)
-				var to_load := minf(amount, on_board)
+				var to_load: float = minf(amount, on_board)
 				if to_load > 0:
 					tm.cargo[ore_type] = to_load
 

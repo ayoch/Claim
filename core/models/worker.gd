@@ -114,9 +114,9 @@ static func generate_random() -> Worker:
 	var secondary: int = skills[1]
 	var tertiary: int = skills[2]
 
-	var primary_val := snappedf(randf_range(0.8, 1.5), 0.05)
-	var secondary_val := snappedf(randf_range(0.4, 0.9), 0.05)
-	var tertiary_val := snappedf(randf_range(0.0, 0.3), 0.05)
+	var primary_val: float = snappedf(randf_range(0.8, 1.5), 0.05)
+	var secondary_val: float = snappedf(randf_range(0.4, 0.9), 0.05)
+	var tertiary_val: float = snappedf(randf_range(0.0, 0.3), 0.05)
 
 	# Rare generalist: ~5% chance all skills are decent
 	if randf() < 0.05:

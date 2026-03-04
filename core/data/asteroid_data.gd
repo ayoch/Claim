@@ -78,7 +78,7 @@ func get_max_mining_slots() -> int:
 ## T = a^1.5 years for bodies orbiting the Sun
 func get_orbital_period() -> float:
 	const SECONDS_PER_YEAR := 31557600.0  # 365.25 days
-	var period_years := pow(orbit_au, 1.5)
+	var period_years: float = pow(orbit_au, 1.5)
 	return period_years * SECONDS_PER_YEAR
 
 ## Advance orbital position by dt ticks

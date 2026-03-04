@@ -109,7 +109,7 @@ static func gravitational_acceleration(pos_au: Vector2, cached_planet_positions:
 	var r_sun := -pos_au  # Vector from pos to Sun (origin)
 	var dist_sq := r_sun.length_squared()
 	if dist_sq > 1e-12:  # Avoid singularity
-		var dist := sqrt(dist_sq)
+		var dist: float = sqrt(dist_sq)
 		accel += r_sun * (GM_SUN / (dist_sq * dist))
 
 	# Planets
@@ -123,7 +123,7 @@ static func gravitational_acceleration(pos_au: Vector2, cached_planet_positions:
 		var r := planet_pos - pos_au  # Vector from pos to planet
 		dist_sq = r.length_squared()
 		if dist_sq > 1e-12:
-			var dist := sqrt(dist_sq)
+			var dist: float = sqrt(dist_sq)
 			accel += r * (GM_PLANETS[i] / (dist_sq * dist))
 
 	return accel

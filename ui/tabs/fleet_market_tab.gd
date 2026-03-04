@@ -349,7 +349,7 @@ func _rebuild_ships() -> void:
 				var elapsed: float = ferry_mission.elapsed_ticks
 				var total: float = ferry_mission.transit_time
 				var progress: float = clampf(elapsed / total if total > 0 else 0.0, 0.0, 1.0)
-				var remaining := maxf(0.0, total - elapsed)
+				var remaining: float = maxf(0.0, total - elapsed)
 				var rescue_label := _lbl()
 				rescue_label.text = "Fleet Rescue: %s en route (%d%% — ETA %s)" % [
 					ferry_ship.ship_name, int(progress * 100), TimeScale.format_time(remaining)
@@ -631,7 +631,7 @@ func _rebuild_ships() -> void:
 		if _sup_mass > 0.01:
 			var sup_label := _lbl()
 			var sup_lines: Array[String] = ["Supplies (%.1ft):" % _sup_mass]
-			var crew_count := maxi(ship.crew.size(), 1)
+			var crew_count: int = maxi(ship.crew.size(), 1)
 			var _food_kg: float = ship.supplies.get("food", 0.0)
 			if _food_kg > 0.01:
 				var food_days := _food_kg / (crew_count * 2.8)
@@ -1250,7 +1250,7 @@ func _on_map_dispatch_colony(ship: Ship, colony: Colony) -> void:
 		var fuel_needed := fuel_out_tm + fuel_ret_tm
 		var feasible := fuel_needed <= ship.fuel
 		var avg_velocity := dist / new_transit_time if new_transit_time > 0.0 else 0.0
-		var entry_t := clampf(ship.speed_au_per_tick / (4.0 * avg_velocity), 0.0, 0.5) if avg_velocity > 0.0 else 0.0
+		var entry_t: float = clampf(ship.speed_au_per_tick / (4.0 * avg_velocity), 0.0, 0.5) if avg_velocity > 0.0 else 0.0
 		var effective_transit_time := (1.0 - entry_t) * new_transit_time
 		var transit_str := TimeScale.format_time(effective_transit_time)
 		_dispatched_from_map = true
@@ -2999,7 +2999,7 @@ func _optimize_crew(available: Array, mode: String) -> void:
 					var avg_b := (b.pilot_skill + b.engineer_skill + b.mining_skill) / 3.0
 					return avg_a > avg_b
 				)
-		var count := mini(sorted_workers.size(), _selected_ship.min_crew)
+		var count: int = mini(sorted_workers.size(), _selected_ship.min_crew)
 		for i in count:
 			_selected_workers.append(sorted_workers[i])
 
@@ -3676,7 +3676,7 @@ func _show_fleet_rescue_dispatch(target_ship: Ship) -> void:
 	# Supplies to send
 	var food_on_ferry: float = ferry.supplies.get("food", 0.0)
 	var parts_on_ferry: float = ferry.supplies.get("repair_parts", 0.0)
-	var target_crew_est := maxi(target_ship.crew.size(), 1)
+	var target_crew_est: int = maxi(target_ship.crew.size(), 1)
 
 	var sup_label := _lbl()
 	sup_label.text = "Ferry supplies available: Food %.0f kg, Repair Parts %.0f units" % [food_on_ferry, parts_on_ferry]
@@ -4156,7 +4156,7 @@ func _add_contract_fulfillment_ui(container: VBoxContainer, ship: Ship, contract
 	var ore_name := ResourceTypes.get_ore_name(contract.ore_type)
 	var ship_has: float = ship.current_cargo.get(contract.ore_type, 0.0)
 	var remaining := contract.get_remaining_quantity()
-	var can_deliver := minf(ship_has, remaining)
+	var can_deliver: float = minf(ship_has, remaining)
 	var contract_price_per_ton := float(contract.reward) / contract.quantity
 	var spot_price := colony.get_ore_price(contract.ore_type, GameState.market)
 

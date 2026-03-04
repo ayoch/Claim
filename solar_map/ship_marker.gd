@@ -122,7 +122,7 @@ func _process(delta: float) -> void:
 
 	# Smooth progress to avoid jitter while preserving acceleration
 	# Much higher minimum at low speeds to smooth infrequent tick updates
-	var progress_lerp_speed := maxf(50.0, 12.0 * TimeScale.speed_multiplier)
+	var progress_lerp_speed: float = maxf(50.0, 12.0 * TimeScale.speed_multiplier)
 	_smooth_progress = lerp(_smooth_progress, actual_progress, minf(progress_lerp_speed * delta, 1.0))
 
 	# Update target position — use ship.position_au directly for transit
@@ -172,13 +172,13 @@ func _process(delta: float) -> void:
 		if _smooth_progress > 0.5:
 			target_angle += PI
 		# Smooth rotation
-		var rotation_lerp_speed := maxf(40.0, 15.0 * TimeScale.speed_multiplier)
+		var rotation_lerp_speed: float = maxf(40.0, 15.0 * TimeScale.speed_multiplier)
 		var angle_diff := fmod(target_angle - _rotation_angle + PI, TAU) - PI
 		_rotation_angle += angle_diff * minf(rotation_lerp_speed * delta, 1.0)
 
 	# Smooth position lerp to avoid jitter
 	# Very aggressive at low speeds to smooth between infrequent tick updates
-	var position_lerp_speed := maxf(50.0, 12.0 * TimeScale.speed_multiplier)
+	var position_lerp_speed: float = maxf(50.0, 12.0 * TimeScale.speed_multiplier)
 	position = position.lerp(_target_pos, minf(position_lerp_speed * delta, 1.0))
 
 	# Update label with current speed
@@ -215,8 +215,8 @@ func _update_label() -> void:
 	elif trade_mission and (trade_mission.status == TradeMission.Status.TRANSIT_TO_COLONY or trade_mission.status == TradeMission.Status.TRANSIT_BACK):
 		active_mission = trade_mission
 	if active_mission and active_mission.transit_time > 0.0:
-		var t_frac := clampf(active_mission.elapsed_ticks / active_mission.transit_time, 0.0, 1.0)
-		var speed_factor := minf(t_frac, 1.0 - t_frac)
+		var t_frac: float = clampf(active_mission.elapsed_ticks / active_mission.transit_time, 0.0, 1.0)
+		var speed_factor: float = minf(t_frac, 1.0 - t_frac)
 		speed_km_s = s.get_effective_thrust() * 9.81 * active_mission.transit_time * speed_factor / 1000.0
 
 	var new_text: String
@@ -246,7 +246,7 @@ func _update_rescue_target() -> void:
 	var source_pos: Vector2 = data_dict.get("source_pos", CelestialData.get_earth_position_au())
 	var elapsed: float = data_dict["elapsed_ticks"]
 	var total: float = data_dict["transit_time"]
-	var progress := clampf(elapsed / total, 0.0, 1.0) if total > 0 else 0.0
+	var progress: float = clampf(elapsed / total, 0.0, 1.0) if total > 0 else 0.0
 
 	var source_px := source_pos * AU_PIXELS
 	var target_px := rescue_target_ship.position_au * AU_PIXELS

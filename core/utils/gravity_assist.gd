@@ -143,7 +143,7 @@ static func _calculate_gravity_assist_delta_v(planet_index: int, ship: Ship) -> 
 	var mu: float = GRAVITATIONAL_CONSTANT * planet_mass
 
 	# Escape velocity at periapsis: v_esc = sqrt(2*μ/r)
-	var v_escape := sqrt(2.0 * mu / FLYBY_PERIAPSIS_AU)
+	var v_escape: float = sqrt(2.0 * mu / FLYBY_PERIAPSIS_AU)
 
 	# For optimal gravity assist, deflection angle ~90 degrees
 	# Delta-v ≈ 2 * v_esc * sin(θ/2) ≈ 1.4 * v_esc for θ=90°
@@ -151,7 +151,7 @@ static func _calculate_gravity_assist_delta_v(planet_index: int, ship: Ship) -> 
 
 	# Scale by ship's velocity relative to planet (higher velocity = less benefit)
 	# Simplified: assume ship velocity ~ sqrt(thrust * distance)
-	var ship_velocity_scale := sqrt(ship.get_effective_thrust())
+	var ship_velocity_scale: float = sqrt(ship.get_effective_thrust())
 	delta_v = delta_v / (1.0 + ship_velocity_scale * 0.5)
 
 	return delta_v

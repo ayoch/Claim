@@ -108,7 +108,7 @@ func get_orbital_period() -> float:
 		return orbit_au * 1_000_000_000.0
 
 	# Bodies orbiting Sun: Kepler's third law T = a^1.5 years
-	var period_years := pow(orbit_au, 1.5)
+	var period_years: float = pow(orbit_au, 1.5)
 	return period_years * SECONDS_PER_YEAR
 
 

@@ -614,3 +614,96 @@ async def generate_asteroid_reserves(
         "total_reserves_tonnes": round(total_reserves, 2),
         "message": f"Generated reserves for {generated_count} asteroids"
     }
+
+
+@router.post("/spawn-workers")
+@limiter.limit("10/minute")
+async def spawn_available_workers(
+    request: Request,
+    count: int = 10,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Spawn workers available for hire (player_id = NULL).
+    Creates random workers in the labor pool.
+    """
+    FIRST_NAMES = ["Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Avery", "Quinn", "Reese", "Skyler"]
+    LAST_NAMES = ["Chen", "Patel", "Smith", "Garcia", "Kim", "Johnson", "Rodriguez", "Martinez", "Lee", "Davis"]
+
+    HOME_COLONIES = ["Earth", "Lunar Base", "Mars Colony", "Ceres Station", "Europa Lab"]
+    PERSONALITIES = [0, 1, 2, 3, 4]  # Cautious, Balanced, Bold, Greedy, Loyal
+
+    spawned = []
+
+    for _ in range(count):
+        # Generate random skills
+        skills = [0, 1, 2]  # pilot, engineer, mining
+        random.shuffle(skills)
+
+        primary_skill = skills[0]
+        secondary_skill = skills[1]
+        tertiary_skill = skills[2]
+
+        pilot_val = 0.0
+        engineer_val = 0.0
+        mining_val = 0.0
+
+        primary_val = round(random.uniform(0.8, 1.5), 2)
+        secondary_val = round(random.uniform(0.4, 0.9), 2)
+        tertiary_val = round(random.uniform(0.0, 0.3), 2)
+
+        if primary_skill == 0:
+            pilot_val = primary_val
+        elif primary_skill == 1:
+            engineer_val = primary_val
+        else:
+            mining_val = primary_val
+
+        if secondary_skill == 0:
+            pilot_val = secondary_val
+        elif secondary_skill == 1:
+            engineer_val = secondary_val
+        else:
+            mining_val = secondary_val
+
+        if tertiary_skill == 0:
+            pilot_val = tertiary_val
+        elif tertiary_skill == 1:
+            engineer_val = tertiary_val
+        else:
+            mining_val = tertiary_val
+
+        # Calculate wage based on total skill
+        total_skill = pilot_val + engineer_val + mining_val
+        base_wage = 80
+        skill_bonus = int(total_skill * 40)
+        wage = base_wage + skill_bonus
+
+        worker = Worker(
+            player_id=None,  # Available for hire
+            first_name=random.choice(FIRST_NAMES),
+            last_name=random.choice(LAST_NAMES),
+            pilot_skill=pilot_val,
+            engineer_skill=engineer_val,
+            mining_skill=mining_val,
+            wage=wage,
+            personality=random.choice(PERSONALITIES),
+            home_colony=random.choice(HOME_COLONIES)
+        )
+
+        db.add(worker)
+        spawned.append({
+            "name": f"{worker.first_name} {worker.last_name}",
+            "pilot": pilot_val,
+            "engineer": engineer_val,
+            "mining": mining_val,
+            "wage": wage
+        })
+
+    await db.commit()
+
+    return {
+        "status": "success",
+        "workers_spawned": len(spawned),
+        "workers": spawned
+    }

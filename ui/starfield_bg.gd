@@ -69,7 +69,7 @@ func _get_draw_size() -> Vector2:
 	if not _texture:
 		return size
 	var tex_size := Vector2(_texture.get_width(), _texture.get_height())
-	var cover_scale := maxf(size.x / tex_size.x, size.y / tex_size.y)
+	var cover_scale: float = maxf(size.x / tex_size.x, size.y / tex_size.y)
 	return tex_size * cover_scale * SCALE_FACTOR
 
 func _draw() -> void:

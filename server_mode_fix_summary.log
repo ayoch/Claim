@@ -1,0 +1,42 @@
+=== SERVER MODE HIRE BUTTON FIX ===
+Date: 2026-03-04
+Instance: HK-47 (Mac)
+
+PROBLEM IDENTIFIED:
+- Game was running in SERVER mode, not LOCAL mode
+- Hire button was calling GameState.hire_worker() which only works in LOCAL mode
+- Worker candidates were being generated locally, without server IDs
+- In SERVER mode, candidates must be fetched from server API
+
+CHANGES MADE:
+
+1. workers_tab.gd::_generate_candidates()
+   - Now checks BackendManager.current_mode
+   - SERVER mode: calls _fetch_server_candidates() to get workers from API
+   - LOCAL mode: generates workers locally as before
+
+2. workers_tab.gd::_fetch_server_candidates() [NEW FUNCTION]
+   - Calls server_backend.get_available_workers()
+   - Converts server JSON data to Worker objects
+   - Populates server_id field for each worker
+
+3. workers_tab.gd::_hire_candidate()
+   - SERVER mode: calls GameState.hire_worker_any_mode(worker.server_id)
+   - LOCAL mode: calls GameState.hire_worker(worker) as before
+
+4. workers_tab.gd::EventBus.worker_hired signal handler
+   - SERVER mode: refetches candidates from server
+   - LOCAL mode: generates new random candidate as before
+
+EXPECTED RESULT:
+- Hire button should now work in SERVER mode
+- Clicking hire will send POST request to /game/hire with worker_id
+- Server will add worker to player's roster
+- Next state sync will show hired worker in crew list
+
+TEST PROCEDURE:
+1. Open Workers tab
+2. Click "New Candidates" button
+3. Verify candidates appear (fetched from server)
+4. Click "Hire" on a candidate
+5. Verify worker appears in crew list after state refresh

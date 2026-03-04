@@ -276,9 +276,9 @@ func _draw_orbit_ellipse(el: Dictionary, color: Color, width: float) -> void:
 	var e: float = el["e"]       # eccentricity
 	var w: float = el["w"]       # longitude of perihelion (degrees)
 
-	var b := a * sqrt(1.0 - e * e)  # semi-minor axis
-	var c := a * e                    # distance from center to focus
-	var w_rad := deg_to_rad(w)        # orientation angle
+	var b: float = a * sqrt(1.0 - e * e)  # semi-minor axis
+	var c: float = a * e                    # distance from center to focus
+	var w_rad: float = deg_to_rad(w)        # orientation angle
 
 	var points := 96
 	for i in range(points):
@@ -502,7 +502,7 @@ func _search_celestial_objects(query: String, results_vbox: VBoxContainer, resul
 	)
 
 	# Limit to 10 results
-	var max_results := mini(matches.size(), 10)
+	var max_results: int = mini(matches.size(), 10)
 
 	if max_results == 0:
 		var no_results := Label.new()
@@ -687,7 +687,7 @@ func _process(delta: float) -> void:
 
 	# Lerp at a rate that keeps up with high sim speeds
 	# At high speed, targets jump far — use a higher lerp factor to keep up
-	var t := minf(LERP_SPEED * delta, 1.0)
+	var t: float = minf(LERP_SPEED * delta, 1.0)
 
 	# Interpolate planet positions and labels
 	for i in range(_planet_positions.size()):
@@ -1058,8 +1058,8 @@ func _try_select_ship_at(screen_pos: Vector2) -> void:
 	for ship in GameState.ships:
 		var ship_px := ship.position_au * AU_PIXELS
 		# Quick bounding box check before expensive distance calculation
-		var dx := abs(world_pos.x - ship_px.x)
-		var dy := abs(world_pos.y - ship_px.y)
+		var dx: float = abs(world_pos.x - ship_px.x)
+		var dy: float = abs(world_pos.y - ship_px.y)
 		if dx > best_dist or dy > best_dist:
 			continue
 
