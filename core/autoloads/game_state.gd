@@ -3907,6 +3907,12 @@ func apply_server_state(server_data: Dictionary) -> void:
 	# Update total_ticks from server (for date/time display)
 	total_ticks = int(server_data.get("total_ticks", total_ticks))
 
+	# Update speed multiplier from server (sync client display with server speed)
+	var server_speed: float = float(server_data.get("speed_multiplier", 1.0))
+	if TimeScale.speed_multiplier != server_speed:
+		TimeScale.speed_multiplier = server_speed
+		print("Synced speed with server: %.1fx" % server_speed)
+
 	# Update player policies
 	thrust_policy = int(server_data.get("thrust_policy", thrust_policy))
 	supply_policy = int(server_data.get("supply_policy", supply_policy))

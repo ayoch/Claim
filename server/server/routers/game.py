@@ -17,6 +17,7 @@ from server.models.stockpile import Stockpile
 from server.models.trade_mission import TradeMission
 from server.models.worker import Worker
 from server.rate_limit import limiter
+from server.routers import admin_speed
 from server.schemas.game import (
     AsteroidOut, BuyEquipmentRequest, BuyShipRequest, ColonyOut, DispatchRequest,
     EquipmentOut, GameState, HireRequest, MissionOut, RigOut, SellEquipmentRequest,
@@ -74,6 +75,7 @@ async def get_state(
         collection_policy=player.collection_policy,
         encounter_policy=player.encounter_policy,
         total_ticks=get_total_ticks(),
+        speed_multiplier=admin_speed.get_speed_multiplier(),
         ships=[ShipOut.model_validate(s) for s in player.ships],
         workers=[WorkerOut.model_validate(w) for w in player.workers],
         active_missions=[MissionOut.model_validate(m) for m in active_missions],

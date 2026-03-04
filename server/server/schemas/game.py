@@ -160,6 +160,7 @@ class GameState(BaseModel):
     collection_policy: int
     encounter_policy: int
     total_ticks: int
+    speed_multiplier: float  # Server simulation speed
     ships: list[ShipOut]
     workers: list[WorkerOut]
     active_missions: list[MissionOut]
