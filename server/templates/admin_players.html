@@ -18,7 +18,7 @@
                         <th>Reputation</th>
                         <th>Ships</th>
                         <th>Ticks</th>
-                        <th>Last Login</th>
+                        <th>Last Seen</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -33,8 +33,8 @@
                         <td>{{ player.ship_count }}</td>
                         <td>{{ "{:,}".format(player.total_ticks) }}</td>
                         <td>
-                            {% if player.last_login %}
-                                {{ player.last_login.strftime('%Y-%m-%d %H:%M') }}
+                            {% if player.last_seen %}
+                                {{ player.last_seen.strftime('%Y-%m-%d %H:%M') }}
                             {% else %}
                                 Never
                             {% endif %}
