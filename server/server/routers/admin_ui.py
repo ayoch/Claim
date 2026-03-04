@@ -3,6 +3,7 @@ Admin UI router - Web interface for server administration.
 
 Requires admin key for all operations.
 """
+from pathlib import Path
 from fastapi import APIRouter, Request, Form, Depends, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -19,7 +20,10 @@ from server.dependencies import require_admin
 
 
 router = APIRouter(prefix="/admin-ui", tags=["admin-ui"])
-templates = Jinja2Templates(directory="templates")
+
+# Templates directory is at server/templates (one level up from server/server)
+templates_dir = Path(__file__).parent.parent.parent / "templates"
+templates = Jinja2Templates(directory=str(templates_dir))
 
 
 def check_admin_session(request: Request):
