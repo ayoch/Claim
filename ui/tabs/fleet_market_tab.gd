@@ -3302,13 +3302,16 @@ func _abort_and_dispatch() -> void:
 	_execute_dispatch()
 
 func _execute_dispatch() -> void:
+	print("=== _execute_dispatch() CALLED ===")
 	# Actually execute the dispatch after confirmation
 	# Check fuel
 	if GameState.settings.get("auto_refuel", true):
 		var dist := _selected_ship.position_au.distance_to(_selected_asteroid.get_position_au())
 		var fuel_needed := _selected_ship.calc_fuel_for_distance(dist)
 		var fuel_cost := int(fuel_needed * Ship.FUEL_COST_PER_UNIT)
+		print("Fuel check: need %.0f, cost $%d, have $%d" % [fuel_needed, fuel_cost, GameState.money])
 		if GameState.money < fuel_cost:
+			print("ERROR: Cannot afford fuel!")
 			return  # Can't afford fuel
 		# Refuel and charge
 		_selected_ship.fuel = _selected_ship.fuel_capacity
