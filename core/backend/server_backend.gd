@@ -233,13 +233,23 @@ func dispatch_mission(ship_id: int, asteroid_id: int, mission_type: int, mining_
 		"return_to_station": return_to_station
 	})
 
+	print("[ServerBackend] Dispatching mission to server:")
+	print("  ship_id=%d, asteroid_id=%d, mission_type=%d" % [ship_id, asteroid_id, mission_type])
+	print("  URL: %s" % (base_url + "/game/dispatch"))
+
 	var result := await _http_request_async(http, base_url + "/game/dispatch", headers, HTTPClient.METHOD_POST, body)
 	_return_http_request(http)
 
+	print("[ServerBackend] Dispatch response: success=%s" % result["success"])
+	if result.has("data"):
+		print("  Response data: %s" % str(result["data"]).substr(0, 200))
+
 	if result["success"]:
+		print("[ServerBackend] Dispatch succeeded!")
 		return result["data"]
 	else:
 		var err = result.get("error", "Unknown error")
+		print("[ServerBackend] Dispatch FAILED: %s" % str(err))
 		push_warning("Failed to dispatch mission: " + str(err))
 		return null
 
