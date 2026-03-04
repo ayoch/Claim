@@ -3920,99 +3920,71 @@ func apply_server_state(server_data: Dictionary) -> void:
 	encounter_policy = int(server_data.get("encounter_policy", encounter_policy))
 
 	# Update ships (server only has: id, ship_name, fuel, cargo, position, is_stationed)
+	# In SERVER mode, replace local ships entirely with server ships (server is source of truth)
 	var server_ships: Array = server_data.get("ships", [])
+	if not server_ships.is_empty():
+		ships.clear()  # Clear old local ships before syncing from server
+
 	for ship_data in server_ships:
+		# Create ship from server data (we cleared local ships above)
 		var ship_id: int = int(ship_data.get("id", 0))
-		# Find matching ship in local state
-		var found_ship: Ship = null
-		for ship in ships:
-			# Server uses database ID, client might not have it yet
-			# Match by ship_name for now (server ships should have unique names)
-			if ship.ship_name == ship_data.get("ship_name", ""):
-				found_ship = ship
-				break
+		var new_ship := Ship.new()
+		new_ship.server_id = ship_id
+		new_ship.ship_name = ship_data.get("ship_name", "Ship")
+		new_ship.ship_class = int(ship_data.get("ship_class", 0))
+		new_ship.max_thrust_g = float(ship_data.get("max_thrust_g", 0.3))
+		new_ship.thrust_setting = float(ship_data.get("thrust_setting", 1.0))
+		new_ship.cargo_capacity = float(ship_data.get("cargo_capacity", 100.0))
+		new_ship.cargo_volume = float(ship_data.get("cargo_volume", 143.0))
+		new_ship.fuel_capacity = float(ship_data.get("fuel_capacity", 200.0))
+		new_ship.fuel = float(ship_data.get("fuel", 200.0))
+		new_ship.base_mass = float(ship_data.get("base_mass", 200.0))
+		new_ship.min_crew = int(ship_data.get("min_crew", 3))
+		new_ship.max_equipment_slots = int(ship_data.get("max_equipment_slots", 4))
+		new_ship.position_au.x = float(ship_data.get("position_x", 1.0))
+		new_ship.position_au.y = float(ship_data.get("position_y", 0.0))
+		new_ship.engine_condition = float(ship_data.get("engine_condition", 100.0))
+		new_ship.is_derelict = bool(ship_data.get("is_derelict", false))
+		new_ship.is_docked = bool(ship_data.get("is_stationed", true))
 
-		if found_ship:
-			# Update ship state from server
-			found_ship.server_id = ship_id  # Store server database ID for API calls
-			found_ship.fuel = float(ship_data.get("fuel", found_ship.fuel))
-			found_ship.position_au.x = float(ship_data.get("position_x", found_ship.position_au.x))
-			found_ship.position_au.y = float(ship_data.get("position_y", found_ship.position_au.y))
-			found_ship.is_docked = bool(ship_data.get("is_stationed", found_ship.is_docked))
-			found_ship.engine_condition = float(ship_data.get("engine_condition", found_ship.engine_condition))
-			found_ship.is_derelict = bool(ship_data.get("is_derelict", found_ship.is_derelict))
+		# Parse cargo
+		var server_cargo: Dictionary = ship_data.get("current_cargo", {})
+		for ore_key in server_cargo:
+			var ore_type := _parse_ore_type(ore_key)
+			if ore_type >= 0:
+				new_ship.cargo[ore_type] = float(server_cargo[ore_key])
 
-			# Update cargo
-			var server_cargo: Dictionary = ship_data.get("current_cargo", {})
-			if not server_cargo.is_empty():
-				found_ship.cargo.clear()
-				for ore_key in server_cargo:
-					# Map server ore names (lowercase strings) to OreType enum
-					var ore_type := _parse_ore_type(ore_key)
-					if ore_type >= 0:
-						found_ship.cargo[ore_type] = float(server_cargo[ore_key])
-
-			# Update equipment (server has: id, equipment_name, durability, current_ammo, etc.)
-			var server_equipment: Array = ship_data.get("equipment", [])
-			if not server_equipment.is_empty():
-				# For now, just store count - full sync would require matching by name/type
-				# TODO: Full equipment sync when client needs it
-				pass
-		else:
-			# Ship not found locally - CREATE from server data
-			var new_ship := Ship.new()
-			new_ship.server_id = ship_id
-			new_ship.ship_name = ship_data.get("ship_name", "Ship")
-			new_ship.ship_class = int(ship_data.get("ship_class", 0))
-			new_ship.max_thrust_g = float(ship_data.get("max_thrust_g", 0.3))
-			new_ship.thrust_setting = float(ship_data.get("thrust_setting", 1.0))
-			new_ship.cargo_capacity = float(ship_data.get("cargo_capacity", 100.0))
-			new_ship.cargo_volume = float(ship_data.get("cargo_volume", 143.0))
-			new_ship.fuel_capacity = float(ship_data.get("fuel_capacity", 200.0))
-			new_ship.fuel = float(ship_data.get("fuel", 200.0))
-			new_ship.base_mass = float(ship_data.get("base_mass", 200.0))
-			new_ship.min_crew = int(ship_data.get("min_crew", 3))
-			new_ship.max_equipment_slots = int(ship_data.get("max_equipment_slots", 4))
-			new_ship.position_au.x = float(ship_data.get("position_x", 1.0))
-			new_ship.position_au.y = float(ship_data.get("position_y", 0.0))
-			new_ship.engine_condition = float(ship_data.get("engine_condition", 100.0))
-			new_ship.is_derelict = bool(ship_data.get("is_derelict", false))
-			new_ship.is_docked = bool(ship_data.get("is_stationed", true))
-
-			# Parse cargo
-			var server_cargo: Dictionary = ship_data.get("current_cargo", {})
-			for ore_key in server_cargo:
-				var ore_type := _parse_ore_type(ore_key)
-				if ore_type >= 0:
-					new_ship.cargo[ore_type] = float(server_cargo[ore_key])
-
-			ships.append(new_ship)
-			print("[GameState] Created ship from server: %s (class %d)" % [new_ship.ship_name, new_ship.ship_class])
+		ships.append(new_ship)
 
 	# Update workers (server only has: id, first_name, last_name, skills, xp, wage)
+	# In SERVER mode, replace local workers entirely with server workers (server is source of truth)
 	var server_workers: Array = server_data.get("workers", [])
-	for worker_data in server_workers:
-		var worker_id: int = int(worker_data.get("id", 0))
-		# Find matching worker by name (server IDs won't match client)
-		var full_name: String = str(worker_data.get("first_name", "")) + " " + str(worker_data.get("last_name", ""))
-		var found_worker: Worker = null
-		for worker in workers:
-			if worker.worker_name == full_name:
-				found_worker = worker
-				break
+	if not server_workers.is_empty():
+		workers.clear()  # Clear old local workers before syncing from server
 
-		if found_worker:
-			# Update worker state from server
-			found_worker.server_id = worker_id  # Store server database ID for API calls
-			found_worker.pilot_skill = float(worker_data.get("pilot_skill", found_worker.pilot_skill))
-			found_worker.engineer_skill = float(worker_data.get("engineer_skill", found_worker.engineer_skill))
-			found_worker.mining_skill = float(worker_data.get("mining_skill", found_worker.mining_skill))
-			found_worker.pilot_xp = float(worker_data.get("pilot_xp", found_worker.pilot_xp))
-			found_worker.engineer_xp = float(worker_data.get("engineer_xp", found_worker.engineer_xp))
-			found_worker.mining_xp = float(worker_data.get("mining_xp", found_worker.mining_xp))
-			found_worker.wage = int(worker_data.get("wage", found_worker.wage))
-			found_worker.loyalty = float(worker_data.get("loyalty", found_worker.loyalty))
-			found_worker.fatigue = float(worker_data.get("fatigue", found_worker.fatigue))
+	for worker_data in server_workers:
+		# Create worker from server data (we cleared local workers above)
+		var worker_id: int = int(worker_data.get("id", 0))
+		var first_name: String = str(worker_data.get("first_name", ""))
+		var last_name: String = str(worker_data.get("last_name", ""))
+
+		var new_worker := Worker.new()
+		new_worker.server_id = worker_id
+		new_worker.worker_name = first_name + " " + last_name
+		new_worker.pilot_skill = float(worker_data.get("pilot_skill", 0.0))
+		new_worker.engineer_skill = float(worker_data.get("engineer_skill", 0.0))
+		new_worker.mining_skill = float(worker_data.get("mining_skill", 0.0))
+		new_worker.pilot_xp = float(worker_data.get("pilot_xp", 0.0))
+		new_worker.engineer_xp = float(worker_data.get("engineer_xp", 0.0))
+		new_worker.mining_xp = float(worker_data.get("mining_xp", 0.0))
+		new_worker.wage = int(worker_data.get("wage", 100))
+		new_worker.loyalty = float(worker_data.get("loyalty", 50.0))
+		new_worker.fatigue = float(worker_data.get("fatigue", 0.0))
+		new_worker.personality = int(worker_data.get("personality", 2))  # Default: LOYAL
+		new_worker.is_available = bool(worker_data.get("is_available", true))
+		new_worker.leave_status = int(worker_data.get("leave_status", 0))
+
+		workers.append(new_worker)
 
 	# Update missions (server has: id, ship_id, status, elapsed_ticks, transit_time)
 	var server_missions: Array = server_data.get("active_missions", [])
