@@ -3,7 +3,21 @@
 
 ---
 
-## 2026-03-04 EST (Dweezil)
+## 2026-03-04 EST (HK-47) [3660c70 → 0fa597b]
+
+- **Worker Location System (complete)**: Workers now physically located at specific colonies. Can only crew ships at their own location. Workers tab groups workers and ships by location, crew selection filtered to ship's location. `assign_worker_to_ship()` now returns `Dictionary {success, error}` and validates location match. Auto-assign for stationed ships filters to local workers. Save/load backward compat auto-relocates workers from old saves to match their assigned ship's location.
+- **Server: Worker spawning**: New `worker_spawning.py` — background system generates workers colony-by-colony on independent timers (Earth: 1/day, outer colonies: 1–2 weeks). Integrated into tick loop. New DB migration (`add_worker_location.py`) adds `location_colony_id` FK to workers table.
+- **Server: Admin spawn endpoint**: `POST /admin/spawn-workers` — manually seeds worker pool across colonies by population weight. Was needed because DB had zero available workers. See `SPAWN_WORKERS_INSTRUCTIONS.md`.
+- **Server: New models and migrations**: Equipment, Rig, Stockpile, TradeMission models added. New migrations for worker location, nullable player_id, equipment table, trade missions table, rigs/stockpiles, asteroid reserves, performance indexes.
+- **Server: Admin UI**: Full HTML web dashboard (`admin_ui.py` + Jinja2 templates) — login, player list, asteroid management, admin dashboard. Separate from the API admin endpoints.
+- **Workers tab (SERVER mode)**: Now fetches candidates from server API and hires via server API. Previously local-only.
+- **Fog-of-war for other players**: Other players' ships now use the ghost contact system (lightspeed delay, confidence decay) identical to NPC rivals, instead of showing live positions.
+- **`docs/FEATURES.md` (NEW)**: Comprehensive feature list — ~178 features, ~80% implemented, ~39k LOC breakdown.
+- **Files modified**: `core/autoloads/game_state.gd`, `core/autoloads/simulation.gd`, `core/data/colony_data.gd`, `core/models/worker.gd`, `ui/tabs/workers_tab.gd`, `ui/tabs/fleet_market_tab.gd`, `server/server/models/worker.py`, `server/server/simulation/tick.py`, `server/server/routers/admin.py`, `server/server/routers/admin_ui.py`, plus new models, migrations, templates, and scripts.
+
+---
+
+## 2026-03-04 EST (Dweezil) [4015cfe]
 
 - **Docs review**: Read and summarized all files in `docs/` folder.
 - **Market tab UI clipping fix (left/right after 30% font size increase)**:

@@ -1,12 +1,69 @@
 # Claude Code Handoff Document
 **Last Updated:** 2026-03-04
-**Current Instance:** Dweezil (Windows) → HK-47 (Mac)
+**Current Instance:** HK-47 (Mac) → Dweezil (Windows)
 
 ---
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Market Tab UI Clipping Fix
+### Latest Work Session: Worker Location System
+**Date:** 2026-03-04 (Mac/HK-47)
+**Status:** Complete — deployed, Railway migration required
+
+**What was done:**
+1. ✅ Worker location system — workers tied to specific colonies, can only crew ships at their location
+2. ✅ Server-side worker spawning — auto-generates workers per colony on independent timers
+3. ✅ Admin spawn endpoint — `/admin/spawn-workers` for manual seeding
+4. ✅ New server models — Equipment, Rig, Stockpile, TradeMission + 6 new migrations
+5. ✅ Admin web UI — HTML dashboard for server administration
+6. ✅ Workers tab SERVER mode — candidates fetched from server, hire via API
+7. ✅ Fog-of-war for other players — ghost contact system (lightspeed delay/confidence decay)
+8. ✅ `docs/FEATURES.md` created — comprehensive feature list
+
+**Worker Location System Details:**
+- `worker.home_colony` (String) is the source of truth for location
+- `assign_worker_to_ship()` now returns `Dictionary {success, error}`, validates location match
+- Workers tab groups workers and ships by location, crew selection filtered to ship's location
+- Fleet tab filters available crew to ship's docked location
+- Save/load backward compat: auto-relocates workers to match assigned ship's location
+- Server: `location_colony_id` FK added to workers table (`add_worker_location.py` migration)
+- Server: `worker_spawning.py` — colony-based spawn timers (Earth: 1/day → Triton: 1/2 weeks)
+
+**⚠️ Railway Action Required:**
+- Run `alembic upgrade head` to apply worker location migration
+- Seed workers: `POST /admin/spawn-workers` with count=30 (see `SPAWN_WORKERS_INSTRUCTIONS.md`)
+
+**Fog-of-War:**
+- Other players' ships now use ghost contact system (same as NPC rivals)
+- Lightspeed delay + confidence decay — no more live positions for other players
+
+**Unresolved / Needs Testing:**
+- Railway DB migration not yet verified
+- End-to-end gameplay at multiple colonies untested
+- SERVER mode multiplayer with location system untested
+- Old save backward compatibility needs user verification
+- See `WORKER_LOCATION_TEST_CHECKLIST.md`
+
+**Files modified:**
+- `core/autoloads/game_state.gd` — location validation, backward compat save/load
+- `core/autoloads/simulation.gd` — fog-of-war for other players
+- `core/data/colony_data.gd` — colony ID→name mapping
+- `core/models/worker.gd` — minor updates
+- `ui/tabs/workers_tab.gd` — location-grouped UI, SERVER mode candidates/hire
+- `ui/tabs/fleet_market_tab.gd` — crew filtered by ship location
+- `server/server/models/worker.py` — location_colony_id field
+- `server/server/simulation/tick.py` — worker spawning integrated
+- `server/server/simulation/worker_spawning.py` (NEW)
+- `server/server/routers/admin.py` — spawn-workers endpoint
+- `server/server/routers/admin_ui.py` (NEW) — HTML admin dashboard
+- `server/server/models/` — equipment.py, rig.py, stockpile.py, trade_mission.py (NEW)
+- `server/alembic/versions/` — 6 new migrations
+- `server/templates/` — admin HTML templates (NEW)
+- `docs/FEATURES.md` (NEW)
+
+---
+
+### Previous Work Session: Market Tab UI Clipping Fix
 **Date:** 2026-03-04 (Windows/Dweezil)
 **Status:** Complete
 
