@@ -132,6 +132,7 @@ signal asteroid_supplies_low(asteroid_name: String, supply_key: String, days_rem
 
 # Backend mode (single-player vs multiplayer)
 signal backend_mode_changed(mode: int)  # BackendManager.BackendMode enum
+signal server_state_synced()  # Emitted after server state is applied (SERVER mode only)
 signal ship_sold(ship_id: int)
 
 # Criminal ban system

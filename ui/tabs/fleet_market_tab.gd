@@ -104,6 +104,19 @@ func _ready() -> void:
 	EventBus.map_dispatch_to_colony.connect(_on_map_dispatch_colony)
 	EventBus.order_queued.connect(func(_s: Ship, _l: String, _d: float) -> void: _mark_dirty())
 	EventBus.order_executed.connect(func(_s: Ship, _l: String) -> void: _mark_dirty())
+	EventBus.server_state_synced.connect(func() -> void:
+		print("[FleetTab] Received server_state_synced (ships: %d, visible: %s)" % [GameState.ships.size(), is_visible_in_tree()])
+		if is_visible_in_tree():
+			_rebuild_ships()
+		else:
+			_mark_dirty()
+	)
+	visibility_changed.connect(func() -> void:
+		if visible and _needs_full_rebuild:
+			print("[FleetTab] Became visible with dirty flag, rebuilding (ships: %d)" % GameState.ships.size())
+			_needs_full_rebuild = false
+			_rebuild_ships()
+	)
 	_rebuild_ships()
 
 func _mark_dirty() -> void:
@@ -262,6 +275,7 @@ func _get_wrench_texture(ship: Ship) -> Texture2D:
 	return null
 
 func _rebuild_ships() -> void:
+	print("[FleetTab] _rebuild_ships called (ships: %d)" % GameState.ships.size())
 	_progress_bars.clear()
 	_status_labels.clear()
 	_detail_labels.clear()

@@ -47,6 +47,8 @@ func switch_mode(mode: BackendMode) -> void:
 			if _server_backend:
 				_active_backend = _server_backend
 				print("Switched to SERVER backend")
+				# Reset local state for server mode (server is source of truth)
+				GameState.reset_for_server_mode()
 			else:
 				push_error("Server backend not yet implemented")
 				_active_backend = _local_backend

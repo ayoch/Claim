@@ -55,11 +55,42 @@ async function generateReserves() {
         if (data.status === 'success') {
             status.innerHTML = `<span style="color: #4ade80;">✓ ${data.message}<br>Total reserves: ${data.total_reserves_tonnes.toLocaleString()} tonnes</span>`;
             btn.style.display = 'none';
-            // Trigger immediate dashboard update
             setTimeout(updateDashboard, 500);
         } else if (data.status === 'already_generated') {
             status.innerHTML = `<span style="color: #fbbf24;">⚠ ${data.message}</span>`;
             btn.textContent = 'Already Generated';
+        } else {
+            status.innerHTML = `<span style="color: #ef4444;">✗ Error: ${data.detail || 'Unknown error'}</span>`;
+            btn.disabled = false;
+            btn.textContent = 'Retry';
+        }
+    } catch (error) {
+        status.innerHTML = `<span style="color: #ef4444;">✗ Error: ${error.message}</span>`;
+        btn.disabled = false;
+        btn.textContent = 'Retry';
+    }
+}
+
+async function renameShips() {
+    const btn = document.getElementById('renameShipsBtn');
+    const status = document.getElementById('renameStatus');
+
+    btn.disabled = true;
+    btn.textContent = 'Renaming...';
+
+    try {
+        const response = await fetch('/admin/rename-ships', {
+            method: 'POST',
+            headers: {
+                'X-Admin-Key': '{{ admin_key }}'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            status.innerHTML = `<span style="color: #4ade80;">✓ ${data.message}</span>`;
+            setTimeout(() => { btn.disabled = false; btn.textContent = 'Rename Ships'; }, 2000);
         } else {
             status.innerHTML = `<span style="color: #ef4444;">✗ Error: ${data.detail || 'Unknown error'}</span>`;
             btn.disabled = false;
@@ -162,11 +193,13 @@ async function generateReserves() {
                 <h5 class="card-title">Quick Actions</h5>
                 <a href="/admin-ui/players" class="btn btn-primary me-2">Manage Players</a>
                 <a href="/admin-ui/asteroids" class="btn btn-primary me-2">View Asteroids</a>
+                <button onclick="renameShips()" class="btn btn-info me-2" id="renameShipsBtn">Rename Ships</button>
+                <div id="renameStatus" class="mt-2" style="font-size: 0.9rem;"></div>
                 {% if not has_reserves %}
-                <button onclick="generateReserves()" class="btn btn-warning" id="genReservesBtn">Generate Asteroid Reserves</button>
+                <button onclick="generateReserves()" class="btn btn-warning mt-2" id="genReservesBtn">Generate Asteroid Reserves</button>
                 <div id="reserveStatus" class="mt-2" style="font-size: 0.9rem;"></div>
                 {% else %}
-                <p class="text-muted mb-0">Asteroid reserves already generated</p>
+                <p class="text-muted mb-0 mt-2">Asteroid reserves already generated</p>
                 {% endif %}
             </div>
         </div>

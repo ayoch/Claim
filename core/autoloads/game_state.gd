@@ -296,6 +296,47 @@ func new_game() -> void:
 	colonies = ColonyData.get_colonies()
 	rival_corps = RivalCorpData.create_all()
 
+## Reset state for SERVER mode (server is source of truth, don't use LOCAL defaults)
+func reset_for_server_mode() -> void:
+	print("[GameState] Resetting for SERVER mode (was: money=$%d, ships=%d)" % [money, ships.size()])
+	# Clear LOCAL mode state
+	ships.clear()
+	workers.clear()
+	missions.clear()
+	trade_missions.clear()
+	rescue_missions.clear()
+	refuel_missions.clear()
+	stranger_offers.clear()
+	pending_orders.clear()
+	deployed_crews.clear()
+	mining_unit_inventory.clear()
+	deployed_mining_units.clear()
+	ore_stockpiles.clear()
+	asteroid_supplies.clear()
+	security_zones.clear()
+	hitchhike_pool.clear()
+	tardy_workers.clear()
+	active_warnings.clear()
+	_next_warning_id = 0
+	available_contracts.clear()
+	active_contracts.clear()
+	active_market_events.clear()
+
+	# Reset to 0 until server sends actual value
+	money = 0
+	total_ticks = 0.0
+
+	# Keep shared data (asteroids, colonies, market)
+	# These are reference data, not player state
+	if asteroids.is_empty():
+		asteroids = CelestialData.get_asteroids()
+	if colonies.is_empty():
+		colonies = ColonyData.get_colonies()
+	if market == null:
+		market = MarketState.new()
+	if rival_corps.is_empty():
+		rival_corps = RivalCorpData.create_all()
+
 func _init_resources() -> void:
 	for ore in ResourceTypes.OreType.values():
 		resources[ore] = 0.0
@@ -3901,6 +3942,8 @@ func apply_server_state(server_data: Dictionary) -> void:
 
 	# Track if state changed for logging
 	var old_money := money
+	var old_ship_count := ships.size()
+	var old_worker_count := workers.size()
 	var state_changed := false
 
 	# Update money (triggers money_changed signal)
@@ -3925,86 +3968,147 @@ func apply_server_state(server_data: Dictionary) -> void:
 	encounter_policy = int(server_data.get("encounter_policy", encounter_policy))
 
 	# Update ships (server only has: id, ship_name, fuel, cargo, position, is_stationed)
-	# In SERVER mode, replace local ships entirely with server ships (server is source of truth)
+	# In SERVER mode, match by server_id and update existing ships or create new ones
 	var server_ships: Array = server_data.get("ships", [])
 	print("[GameState] Server sent %d ships (local has %d)" % [server_ships.size(), ships.size()])
-	if not server_ships.is_empty():
-		print("[GameState] Clearing local ships, creating from server data")
-		ships.clear()  # Clear old local ships before syncing from server
+
+	# Build map of existing ships by server_id for fast lookup
+	var local_ships_by_id: Dictionary = {}
+	for ship in ships:
+		if ship.server_id > 0:
+			local_ships_by_id[ship.server_id] = ship
+
+	# Track which server_ids we've seen (to remove deleted ships later)
+	var seen_server_ids: Array[int] = []
 
 	for ship_data in server_ships:
-		# Create ship from server data (we cleared local ships above)
 		var ship_id: int = int(ship_data.get("id", 0))
-		var ship_name: String = ship_data.get("ship_name", "Ship")
-		var ship_class: int = int(ship_data.get("ship_class", 0))
-		print("[GameState] Creating ship: %s (class %d, id %d)" % [ship_name, ship_class, ship_id])
+		seen_server_ids.append(ship_id)
 
-		var new_ship := Ship.new()
-		new_ship.server_id = ship_id
-		new_ship.ship_name = ship_name
-		new_ship.ship_class = ship_class
-		new_ship.max_thrust_g = float(ship_data.get("max_thrust_g", 0.3))
-		new_ship.thrust_setting = float(ship_data.get("thrust_setting", 1.0))
-		new_ship.cargo_capacity = float(ship_data.get("cargo_capacity", 100.0))
-		new_ship.cargo_volume = float(ship_data.get("cargo_volume", 143.0))
-		new_ship.fuel_capacity = float(ship_data.get("fuel_capacity", 200.0))
-		new_ship.fuel = float(ship_data.get("fuel", 200.0))
-		new_ship.base_mass = float(ship_data.get("base_mass", 200.0))
-		new_ship.min_crew = int(ship_data.get("min_crew", 3))
-		new_ship.max_equipment_slots = int(ship_data.get("max_equipment_slots", 4))
-		new_ship.position_au.x = float(ship_data.get("position_x", 1.0))
-		new_ship.position_au.y = float(ship_data.get("position_y", 0.0))
-		new_ship.engine_condition = float(ship_data.get("engine_condition", 100.0))
-		new_ship.is_derelict = bool(ship_data.get("is_derelict", false))
-		new_ship.is_docked = bool(ship_data.get("is_stationed", true))
+		var ship: Ship = null
+		var is_new := false
 
-		# Parse cargo
+		# Match by server_id
+		if local_ships_by_id.has(ship_id):
+			ship = local_ships_by_id[ship_id]
+			print("[GameState] Updating existing ship: %s (id %d)" % [ship.ship_name, ship_id])
+		else:
+			ship = ShipData.create_ship(
+				int(ship_data.get("ship_class", 0)),
+				str(ship_data.get("ship_name", "Ship"))
+			)
+			ship.server_id = ship_id
+			is_new = true
+			print("[GameState] Creating new ship (id %d)" % ship_id)
+
+		# Update all fields from server data (overwrites ShipData defaults for existing/new ships)
+		ship.ship_name = ship_data.get("ship_name", "Ship")
+		ship.ship_class = int(ship_data.get("ship_class", 0))
+		ship.max_thrust_g = float(ship_data.get("max_thrust_g", 0.3))
+		ship.thrust_setting = float(ship_data.get("thrust_setting", 1.0))
+		ship.cargo_capacity = float(ship_data.get("cargo_capacity", 100.0))
+		ship.cargo_volume = float(ship_data.get("cargo_volume", 143.0))
+		ship.fuel_capacity = float(ship_data.get("fuel_capacity", 200.0))
+		ship.fuel = float(ship_data.get("fuel", 200.0))
+		ship.base_mass = float(ship_data.get("base_mass", 200.0))
+		ship.min_crew = int(ship_data.get("min_crew", 3))
+		ship.max_equipment_slots = int(ship_data.get("max_equipment_slots", 4))
+		ship.position_au.x = float(ship_data.get("position_x", 1.0))
+		ship.position_au.y = float(ship_data.get("position_y", 0.0))
+		ship.engine_condition = float(ship_data.get("engine_condition", 100.0))
+		ship.is_derelict = bool(ship_data.get("is_derelict", false))
+		ship.is_docked = bool(ship_data.get("is_stationed", true))
+
+		# Parse cargo (assign new dict instead of clear to avoid error on new ships)
+		ship.current_cargo = {}
 		var server_cargo: Dictionary = ship_data.get("current_cargo", {})
 		for ore_key in server_cargo:
 			var ore_type := _parse_ore_type(ore_key)
 			if ore_type >= 0:
-				new_ship.cargo[ore_type] = float(server_cargo[ore_key])
+				ship.current_cargo[ore_type] = float(server_cargo[ore_key])
 
-		ships.append(new_ship)
+		# Add new ships to the array
+		if is_new:
+			ships.append(ship)
+
+	# Remove ships that no longer exist on server
+	for i in range(ships.size() - 1, -1, -1):
+		var ship := ships[i]
+		if ship.server_id > 0 and not seen_server_ids.has(ship.server_id):
+			print("[GameState] Removing ship no longer on server: %s (id %d)" % [ship.ship_name, ship.server_id])
+			ships.remove_at(i)
 
 	# Update workers (server only has: id, first_name, last_name, skills, xp, wage)
-	# In SERVER mode, replace local workers entirely with server workers (server is source of truth)
+	# In SERVER mode, match by server_id and update existing workers or create new ones
 	var server_workers: Array = server_data.get("workers", [])
-	if not server_workers.is_empty():
-		workers.clear()  # Clear old local workers before syncing from server
+
+	# Build map of existing workers by server_id for fast lookup
+	var local_workers_by_id: Dictionary = {}
+	for worker in workers:
+		if worker.server_id > 0:
+			local_workers_by_id[worker.server_id] = worker
+
+	# Track which server_ids we've seen (to remove deleted workers later)
+	var seen_worker_ids: Array[int] = []
 
 	for worker_data in server_workers:
-		# Create worker from server data (we cleared local workers above)
 		var worker_id: int = int(worker_data.get("id", 0))
+		seen_worker_ids.append(worker_id)
+
+		var worker: Worker = null
+		var is_new := false
+
+		# Match by server_id
+		if local_workers_by_id.has(worker_id):
+			worker = local_workers_by_id[worker_id]
+		else:
+			# Create new worker
+			worker = Worker.new()
+			worker.server_id = worker_id
+			is_new = true
+
+		# Update all fields from server data
 		var first_name: String = str(worker_data.get("first_name", ""))
 		var last_name: String = str(worker_data.get("last_name", ""))
+		worker.worker_name = first_name + " " + last_name
+		worker.pilot_skill = float(worker_data.get("pilot_skill", 0.0))
+		worker.engineer_skill = float(worker_data.get("engineer_skill", 0.0))
+		worker.mining_skill = float(worker_data.get("mining_skill", 0.0))
+		worker.pilot_xp = float(worker_data.get("pilot_xp", 0.0))
+		worker.engineer_xp = float(worker_data.get("engineer_xp", 0.0))
+		worker.mining_xp = float(worker_data.get("mining_xp", 0.0))
+		worker.wage = int(worker_data.get("wage", 100))
+		worker.loyalty = float(worker_data.get("loyalty", 50.0))
+		worker.fatigue = float(worker_data.get("fatigue", 0.0))
+		worker.personality = int(worker_data.get("personality", 2))  # Default: LOYAL
+		worker.is_available = bool(worker_data.get("is_available", true))
+		worker.leave_status = int(worker_data.get("leave_status", 0))
 
-		var new_worker := Worker.new()
-		new_worker.server_id = worker_id
-		new_worker.worker_name = first_name + " " + last_name
-		new_worker.pilot_skill = float(worker_data.get("pilot_skill", 0.0))
-		new_worker.engineer_skill = float(worker_data.get("engineer_skill", 0.0))
-		new_worker.mining_skill = float(worker_data.get("mining_skill", 0.0))
-		new_worker.pilot_xp = float(worker_data.get("pilot_xp", 0.0))
-		new_worker.engineer_xp = float(worker_data.get("engineer_xp", 0.0))
-		new_worker.mining_xp = float(worker_data.get("mining_xp", 0.0))
-		new_worker.wage = int(worker_data.get("wage", 100))
-		new_worker.loyalty = float(worker_data.get("loyalty", 50.0))
-		new_worker.fatigue = float(worker_data.get("fatigue", 0.0))
-		new_worker.personality = int(worker_data.get("personality", 2))  # Default: LOYAL
-		new_worker.is_available = bool(worker_data.get("is_available", true))
-		new_worker.leave_status = int(worker_data.get("leave_status", 0))
+		# Add new workers to the array
+		if is_new:
+			workers.append(worker)
 
-		workers.append(new_worker)
+	# Remove workers that no longer exist on server
+	for i in range(workers.size() - 1, -1, -1):
+		var worker := workers[i]
+		if worker.server_id > 0 and not seen_worker_ids.has(worker.server_id):
+			workers.remove_at(i)
 
 	# Update missions (server has: id, ship_id, status, elapsed_ticks, transit_time)
 	var server_missions: Array = server_data.get("active_missions", [])
 	# TODO: Sync mission state when server has full mission data
 	# For now, client-side missions are the source of truth
 
-	# Only log when state changes (less noisy)
+	# Check if ships or workers changed
+	if ships.size() != old_ship_count or workers.size() != old_worker_count:
+		state_changed = true
+
+	# Only log and emit when state changes (less noisy)
 	if state_changed:
-		print("[GameState] Server sync: Money $%d → $%d" % [old_money, money])
+		if money != old_money:
+			print("[GameState] Server sync: Money $%d → $%d" % [old_money, money])
+		print("[GameState] Emitting server_state_synced (ships: %d, workers: %d)" % [ships.size(), workers.size()])
+		EventBus.server_state_synced.emit()
 
 
 ## Helper to map server ore names to client OreType enum
