@@ -16,7 +16,7 @@ from server.models.player import Player
 from server.models.ship import Ship
 from server.models.mission import Mission
 from server.models.asteroid import Asteroid
-from server.dependencies import require_admin
+from server.auth import require_admin
 
 
 router = APIRouter(prefix="/admin-ui", tags=["admin-ui"])
