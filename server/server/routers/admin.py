@@ -630,8 +630,31 @@ async def spawn_available_workers(
     FIRST_NAMES = ["Alex", "Jordan", "Taylor", "Morgan", "Casey", "Riley", "Avery", "Quinn", "Reese", "Skyler"]
     LAST_NAMES = ["Chen", "Patel", "Smith", "Garcia", "Kim", "Johnson", "Rodriguez", "Martinez", "Lee", "Davis"]
 
-    HOME_COLONIES = ["Earth", "Lunar Base", "Mars Colony", "Ceres Station", "Europa Lab"]
     PERSONALITIES = [0, 1, 2, 3, 4]  # Cautious, Balanced, Bold, Greedy, Loyal
+
+    # Colony spawn weights - workers spawn more often at major colonies
+    COLONY_WEIGHTS = [
+        (1, 0.40),   # Earth - 40%
+        (2, 0.20),   # Lunar Base - 20%
+        (3, 0.15),   # Mars Colony - 15%
+        (4, 0.10),   # Ceres Station - 10%
+        (5, 0.05),   # Europa Lab - 5%
+        (6, 0.03),   # Ganymede Port - 3%
+        (7, 0.03),   # Vesta Refinery - 3%
+        (8, 0.02),   # Titan Outpost - 2%
+        (9, 0.01),   # Callisto Base - 1%
+        (10, 0.01),  # Triton Station - 1%
+    ]
+
+    def pick_colony() -> int:
+        """Pick a colony_id based on population weights"""
+        roll = random.random()
+        cumulative = 0.0
+        for colony_id, weight in COLONY_WEIGHTS:
+            cumulative += weight
+            if roll <= cumulative:
+                return colony_id
+        return 1  # Default to Earth
 
     spawned = []
 
@@ -679,8 +702,11 @@ async def spawn_available_workers(
         skill_bonus = int(total_skill * 40)
         wage = base_wage + skill_bonus
 
+        colony_id = pick_colony()
+
         worker = Worker(
             player_id=None,  # Available for hire
+            location_colony_id=colony_id,
             first_name=random.choice(FIRST_NAMES),
             last_name=random.choice(LAST_NAMES),
             pilot_skill=pilot_val,

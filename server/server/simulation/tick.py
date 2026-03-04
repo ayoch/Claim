@@ -19,6 +19,7 @@ from server.models.trade_mission import (
 from server.models.worker import Worker
 from server.models.world_state import WorldState
 from server.simulation.contracts import process_contracts as _process_contracts
+from server.simulation.worker_spawning import process_worker_spawning
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,7 @@ async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]
         events += await _process_market(dt)
         events += await _process_payroll(db, dt)
         events += await _process_contracts(db, dt)
+        events += await process_worker_spawning(db, dt)
 
         # Periodically save world state
         if _save_counter >= _SAVE_INTERVAL:

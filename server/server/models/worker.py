@@ -35,6 +35,9 @@ class Worker(Base):
     player_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("players.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    location_colony_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("colonies.id", ondelete="CASCADE"), nullable=False, index=True
+    )
 
     first_name: Mapped[str] = mapped_column(String(32), nullable=False)
     last_name: Mapped[str] = mapped_column(String(32), nullable=False)
