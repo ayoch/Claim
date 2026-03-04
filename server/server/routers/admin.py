@@ -461,3 +461,59 @@ async def get_server_stats(request: Request, db: AsyncSession = Depends(get_db))
         "workers": {"total": total_workers},
         "missions": {"total": total_missions}
     }
+
+
+@router.get("/server-capacity")
+@limiter.limit("60/minute")
+async def get_server_capacity(request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Check server capacity based on asteroid reserves and active players.
+
+    Returns whether new players can join based on resource availability.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    # Count active players (logged in within last 30 days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    active_players = await db.scalar(
+        select(func.count()).select_from(Player).where(Player.last_seen >= cutoff)
+    )
+
+    # Calculate total remaining reserves across all asteroids
+    result = await db.execute(select(Asteroid))
+    asteroids = result.scalars().all()
+
+    total_reserves = 0.0
+    total_iron = 0.0
+    total_water_ice = 0.0
+
+    for asteroid in asteroids:
+        if not asteroid.reserves:
+            continue
+        total_reserves += sum(asteroid.reserves.values())
+        total_iron += asteroid.reserves.get("iron", 0.0)
+        total_water_ice += asteroid.reserves.get("water_ice", 0.0)
+
+    # Minimum reserves per player threshold (50 million tonnes)
+    MINIMUM_RESERVES_PER_PLAYER = 50_000_000
+
+    # Calculate available slots
+    max_players = int(total_reserves / MINIMUM_RESERVES_PER_PLAYER) if total_reserves > 0 else 0
+    slots_available = max(0, max_players - active_players)
+    reserves_per_player = total_reserves / max(active_players, 1)
+
+    can_join = slots_available > 0
+
+    return {
+        "can_join": can_join,
+        "active_players": active_players,
+        "max_players": max_players,
+        "slots_available": slots_available,
+        "total_reserves_tonnes": round(total_reserves, 2),
+        "reserves_per_player_tonnes": round(reserves_per_player, 2),
+        "reserves_by_type": {
+            "iron": round(total_iron, 2),
+            "water_ice": round(total_water_ice, 2)
+        },
+        "message": "Server accepting new players" if can_join else "Server at capacity - no slots available"
+    }

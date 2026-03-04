@@ -267,13 +267,45 @@ def _advance_mining(mission: Mission, ship: Ship, dt: float) -> list[dict]:
     if mission.asteroid and mission.asteroid.ore_yields:
         cargo = dict(ship.current_cargo or {})
         cap = ship.cargo_capacity - sum(cargo.values())
+
+        # Get asteroid reserves (mutable dict we'll update)
+        reserves = dict(mission.asteroid.reserves or {})
+        reserves_updated = False
+
         for ore_type, rate_per_day in mission.asteroid.ore_yields.items():
             if cap <= 0:
                 break
+
+            # Calculate mining rate
             mined = min((rate_per_day / 86400.0) * dt, cap)
-            cargo[ore_type] = cargo.get(ore_type, 0.0) + mined
-            cap -= mined
+
+            # Check reserves (if reserves system is initialized)
+            if ore_type in reserves:
+                available = reserves[ore_type]
+                if available <= 0:
+                    # This ore type is depleted - skip it
+                    continue
+
+                # Cap mining to available reserves
+                actual_mined = min(mined, available)
+
+                # Update reserves
+                reserves[ore_type] = available - actual_mined
+                reserves_updated = True
+
+                # Add to cargo
+                cargo[ore_type] = cargo.get(ore_type, 0.0) + actual_mined
+                cap -= actual_mined
+            else:
+                # Reserves not initialized for this ore type - use old behavior
+                cargo[ore_type] = cargo.get(ore_type, 0.0) + mined
+                cap -= mined
+
         ship.current_cargo = cargo
+
+        # Save updated reserves back to asteroid (if changed)
+        if reserves_updated:
+            mission.asteroid.reserves = reserves
 
     if mission.elapsed_ticks >= mission.mining_duration:
         mission.status = STATUS_TRANSIT_BACK

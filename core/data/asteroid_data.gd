@@ -25,8 +25,44 @@ const BODY_TYPE_NAMES: Dictionary = {
 @export var ore_yields: Dictionary = {} # OreType -> tons per tick per worker
 @export var orbital_angle: float = 0.0  # radians, current position on orbit
 
+# Reserve depletion system
+@export var estimated_mass_kg: float = 0.0  # Total asteroid mass
+@export var composition_pct: Dictionary = {}  # Material -> percentage (e.g. {"iron": 25.0, "water_ice": 15.0})
+@export var reserves: Dictionary = {}  # Material -> remaining tonnes
+@export var original_reserves: Dictionary = {}  # Material -> original tonnes (for UI display)
+
 func get_type_name() -> String:
 	return BODY_TYPE_NAMES.get(body_type, "Unknown")
+
+## Get reserve status for a specific ore type
+## Returns {remaining: float, original: float, pct: float, status_color: Color}
+func get_reserve_status(ore_type: String) -> Dictionary:
+	if ore_type not in reserves:
+		return {"remaining": 0.0, "original": 0.0, "pct": 0.0, "status_color": Color.GRAY}
+
+	var remaining: float = reserves[ore_type]
+	var original: float = original_reserves.get(ore_type, 0.0)
+	var pct: float = (remaining / original * 100.0) if original > 0.0 else 0.0
+
+	# Color-code by depletion level
+	var color := Color.GREEN
+	if pct < 10.0:
+		color = Color.RED
+	elif pct < 25.0:
+		color = Color.ORANGE
+	elif pct < 75.0:
+		color = Color.YELLOW
+
+	return {
+		"remaining": remaining,
+		"original": original,
+		"pct": pct,
+		"status_color": color
+	}
+
+## Check if an ore type is depleted (less than 1 tonne remaining)
+func is_depleted(ore_type: String) -> bool:
+	return reserves.get(ore_type, 0.0) < 1.0
 
 func get_max_mining_slots() -> int:
 	match body_type:

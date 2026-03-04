@@ -33,5 +33,11 @@ class Asteroid(Base):
     ore_yields: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     max_mining_slots: Mapped[int] = mapped_column(Integer, default=6, nullable=False)
 
+    # ---------- Reserve depletion system ----------
+    estimated_mass_kg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    composition: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)  # {material: percentage}
+    reserves: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)  # {material: remaining tonnes}
+    original_reserves: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)  # {material: original tonnes}
+
     def __repr__(self) -> str:
         return f"<Asteroid id={self.id} name={self.asteroid_name!r} type={self.body_type}>"

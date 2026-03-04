@@ -232,6 +232,10 @@ class AsteroidOut(BaseModel):
     eccentricity: float
     ore_yields: dict
     max_mining_slots: int
+    estimated_mass_kg: float
+    composition: dict
+    reserves: dict
+    original_reserves: dict
 
     model_config = {"from_attributes": True}
 
