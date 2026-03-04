@@ -122,7 +122,7 @@ async def admin_dashboard(
 
         # Count active players (last 30 days)
         result = await db.execute(
-            select(func.count(Player.id)).where(Player.last_login >= thirty_days_ago)
+            select(func.count(Player.id)).where(Player.last_seen >= thirty_days_ago)
         )
         active_players = result.scalar() or 0
 
@@ -209,7 +209,7 @@ async def admin_players(
 
     # Get all players with their ship counts
     result = await db.execute(
-        select(Player).order_by(Player.last_login.desc())
+        select(Player).order_by(Player.last_seen.desc())
     )
     players = result.scalars().all()
 
@@ -229,7 +229,7 @@ async def admin_players(
             "reputation": player.reputation,
             "total_ticks": player.total_ticks,
             "ship_count": ship_count,
-            "last_login": player.last_login,
+            "last_seen": player.last_seen,
             "created_at": player.created_at,
         })
 
