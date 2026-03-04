@@ -3318,20 +3318,49 @@ func _execute_dispatch() -> void:
 	_selected_ship.crew = _selected_workers.duplicate()
 	_selected_ship.last_crew = _selected_workers.duplicate()
 
-	match _selected_mission_type:
-		Mission.MissionType.DEPLOY_UNIT:
-			GameState.start_deploy_mission(_selected_ship, _selected_asteroid, _selected_deploy_units, _selected_deploy_workers, _selected_transit_mode, _selected_slingshot_route)
-		Mission.MissionType.COLLECT_ORE:
-			GameState.start_collect_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
-		Mission.MissionType.REPOSITION:
-			var mission := GameState.start_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
-			if mission:
-				mission.mission_type = Mission.MissionType.REPOSITION
-		_:
-			if _selected_ship.is_idle_remote:
-				GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
-			else:
-				GameState.start_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
+	# SERVER mode: route to BackendManager
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		print("Dispatching in SERVER mode: ship=%s asteroid=%s" % [_selected_ship.ship_name, _selected_asteroid.asteroid_name])
+
+		if _selected_ship.server_id == 0:
+			push_error("Cannot dispatch in SERVER mode: ship has no server_id")
+			return
+
+		# Find asteroid server ID (DB IDs start at 1, array indices start at 0)
+		var asteroid_index: int = -1
+		for i in range(GameState.asteroids.size()):
+			if GameState.asteroids[i] == _selected_asteroid:
+				asteroid_index = i
+				break
+
+		if asteroid_index < 0:
+			push_error("Cannot dispatch: asteroid not found in GameState.asteroids")
+			return
+
+		var server_asteroid_id: int = asteroid_index + 1
+		var mission_type_int: int = _selected_mission_type as int
+		var mining_duration: float = 86400.0  # Default 1 day
+		var return_to_station: bool = false
+
+		print("Calling BackendManager.dispatch_mission(ship_id=%d, asteroid_id=%d, type=%d)" % [_selected_ship.server_id, server_asteroid_id, mission_type_int])
+		BackendManager.dispatch_mission(_selected_ship.server_id, server_asteroid_id, mission_type_int, mining_duration, return_to_station)
+	else:
+		# LOCAL mode: use local GameState functions
+		match _selected_mission_type:
+			Mission.MissionType.DEPLOY_UNIT:
+				GameState.start_deploy_mission(_selected_ship, _selected_asteroid, _selected_deploy_units, _selected_deploy_workers, _selected_transit_mode, _selected_slingshot_route)
+			Mission.MissionType.COLLECT_ORE:
+				GameState.start_collect_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
+			Mission.MissionType.REPOSITION:
+				var mission := GameState.start_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
+				if mission:
+					mission.mission_type = Mission.MissionType.REPOSITION
+			_:
+				if _selected_ship.is_idle_remote:
+					GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
+				else:
+					GameState.start_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
+
 	_cancel_preview()
 	_return_to_map_if_needed()
 	_hide_dispatch()
