@@ -13,6 +13,10 @@ var financial_history: Array[Dictionary] = []
 const MAX_FINANCIAL_HISTORY: int = 1000
 var workers: Array[Worker] = []
 var ships: Array[Ship] = []  # Player's own ships
+var _available_workers_cache: Array[Worker] = []
+var _available_workers_dirty: bool = true
+var _docked_ships_cache: Array[Ship] = []
+var _docked_ships_dirty: bool = true
 var other_players_ships: Array[Dictionary] = []  # Other players' ships (multiplayer) - stored as dictionaries with owner info
 var missions: Array[Mission] = []
 var equipment_inventory: Array[Equipment] = []
@@ -216,6 +220,7 @@ const MAX_ACTIVE_EVENTS: int = 3
 
 # Phase 2: Colonies & Trade
 var colonies: Array[Colony] = []
+var _colony_by_name: Dictionary = {}  # Cache for O(1) colony lookups
 var trade_missions: Array[TradeMission] = []
 
 # Rescue missions: ship -> {elapsed_ticks, transit_time, workers}
@@ -294,6 +299,7 @@ func new_game() -> void:
 	asteroids = CelestialData.get_asteroids()
 	market = MarketState.new()
 	colonies = ColonyData.get_colonies()
+	_rebuild_colony_cache()
 	rival_corps = RivalCorpData.create_all()
 
 ## Reset state for SERVER mode (server is source of truth, don't use LOCAL defaults)
@@ -332,6 +338,7 @@ func reset_for_server_mode() -> void:
 		asteroids = CelestialData.get_asteroids()
 	if colonies.is_empty():
 		colonies = ColonyData.get_colonies()
+		_rebuild_colony_cache()
 	if market == null:
 		market = MarketState.new()
 	if rival_corps.is_empty():
@@ -360,6 +367,7 @@ func purchase_ship(ship_class: ShipData.ShipClass) -> Ship:
 	money -= price
 	var new_ship := ShipData.create_ship(ship_class)
 	ships.append(new_ship)
+	_invalidate_ship_cache()
 	# Provision new ship with 30 days of supplies (uses min_crew for calculation)
 	var crew_size := new_ship.min_crew
 	new_ship.supplies["food"] = crew_size * 30.0 * 2.8
@@ -651,6 +659,7 @@ func remove_resource(ore_type: ResourceTypes.OreType, amount: float) -> bool:
 
 func hire_worker(worker: Worker) -> void:
 	workers.append(worker)
+	_invalidate_worker_cache()
 	EventBus.worker_hired.emit(worker)
 
 func assign_worker_to_ship(worker: Worker, ship: Ship) -> void:
@@ -670,6 +679,7 @@ func remove_worker_from_ship(worker: Worker, ship: Ship) -> void:
 func fire_worker(worker: Worker) -> void:
 	Worker.release_name(worker.worker_name)
 	workers.erase(worker)
+	_invalidate_worker_cache()
 	# Remove from ship crew
 	if worker.assigned_ship:
 		worker.assigned_ship.crew.erase(worker)
@@ -777,11 +787,12 @@ func _is_corp_banned_from_colony(corp: RivalCorp, colony: Colony) -> bool:
 	return standing.get("banned", false)
 
 func _find_colony_by_name(name: String) -> Colony:
-	# Search all colonies for matching name
-	for col in colonies:
-		if col.colony_name == name:
-			return col
-	return null
+	return _colony_by_name.get(name, null)
+
+func _rebuild_colony_cache() -> void:
+	_colony_by_name.clear()
+	for colony in colonies:
+		_colony_by_name[colony.colony_name] = colony
 
 func check_game_over_banned() -> bool:
 	# Check if player is banned from ALL colonies
@@ -827,25 +838,9 @@ func add_warning(message: String, severity: String, category: String, position_a
 		return _deliver_warning(message, severity, category, 0.0, actual_event_time, ship)
 
 func _deliver_warning(message: String, severity: String, category: String, delay: float, event_time: float, ship: Ship = null) -> String:
-	# Check if duplicate exists BEFORE adding timestamp/delay prefixes (base message deduplication)
+	# Check if duplicate exists using stored base message (O(1) comparison)
 	for warning in active_warnings:
-		# Strip timestamp and delay prefixes to get base message
-		# Format: "[D1 12:34] [+5m delay] Message" or "[D1 12:34] Message"
-		var existing_base: String = warning["message"]
-
-		# Strip timestamp: "[D1 12:34]"
-		if existing_base.begins_with("[D"):
-			var bracket_end := existing_base.find("]")
-			if bracket_end > 0:
-				existing_base = existing_base.substr(bracket_end + 2)  # +2 to skip "] "
-
-		# Strip delay: "[+5m delay]"
-		if existing_base.begins_with("[+"):
-			var bracket_end := existing_base.find("]")
-			if bracket_end > 0:
-				existing_base = existing_base.substr(bracket_end + 2)  # +2 to skip "] "
-
-		if existing_base == message and warning["category"] == category and warning["severity"] == severity:
+		if warning.get("base_message", "") == message and warning["category"] == category and warning["severity"] == severity:
 			return warning["id"]  # Duplicate - don't create again
 
 	# Format event timestamp
@@ -867,6 +862,7 @@ func _deliver_warning(message: String, severity: String, category: String, delay
 	active_warnings.append({
 		"id": warning_id,
 		"message": final_message,
+		"base_message": message,  # Store for O(1) deduplication
 		"severity": severity,  # "warning" or "critical"
 		"category": category,  # "violation", "crew", "debt", "loan", "combat"
 		"delivered_at": total_ticks,  # When warning arrived at player
@@ -977,19 +973,29 @@ func _send_ios_notification(title: String, body: String) -> void:
 		# Fallback: log for debugging
 		print("iOS notification (plugin required): %s - %s" % [title, body])
 
+func _invalidate_worker_cache() -> void:
+	_available_workers_dirty = true
+
+func _invalidate_ship_cache() -> void:
+	_docked_ships_dirty = true
+
 func get_available_workers() -> Array[Worker]:
-	var available: Array[Worker] = []
-	for w in workers:
-		if w.is_available:
-			available.append(w)
-	return available
+	if _available_workers_dirty:
+		_available_workers_cache.clear()
+		for w in workers:
+			if w.is_available:
+				_available_workers_cache.append(w)
+		_available_workers_dirty = false
+	return _available_workers_cache
 
 func get_docked_ships() -> Array[Ship]:
-	var docked: Array[Ship] = []
-	for s in ships:
-		if s.is_docked:
-			docked.append(s)
-	return docked
+	if _docked_ships_dirty:
+		_docked_ships_cache.clear()
+		for s in ships:
+			if s.is_docked:
+				_docked_ships_cache.append(s)
+		_docked_ships_dirty = false
+	return _docked_ships_cache
 
 func get_idle_remote_ships() -> Array[Ship]:
 	var idle: Array[Ship] = []
@@ -4001,31 +4007,53 @@ func apply_server_state(server_data: Dictionary) -> void:
 			is_new = true
 			print("[GameState] Creating new ship (id %d)" % ship_id)
 
-		# Update all fields from server data (overwrites ShipData defaults for existing/new ships)
-		ship.ship_name = ship_data.get("ship_name", "Ship")
-		ship.ship_class = int(ship_data.get("ship_class", 0))
-		ship.max_thrust_g = float(ship_data.get("max_thrust_g", 0.3))
-		ship.thrust_setting = float(ship_data.get("thrust_setting", 1.0))
-		ship.cargo_capacity = float(ship_data.get("cargo_capacity", 100.0))
-		ship.cargo_volume = float(ship_data.get("cargo_volume", 143.0))
-		ship.fuel_capacity = float(ship_data.get("fuel_capacity", 200.0))
-		ship.fuel = float(ship_data.get("fuel", 200.0))
-		ship.base_mass = float(ship_data.get("base_mass", 200.0))
-		ship.min_crew = int(ship_data.get("min_crew", 3))
-		ship.max_equipment_slots = int(ship_data.get("max_equipment_slots", 4))
-		ship.position_au.x = float(ship_data.get("position_x", 1.0))
-		ship.position_au.y = float(ship_data.get("position_y", 0.0))
-		ship.engine_condition = float(ship_data.get("engine_condition", 100.0))
-		ship.is_derelict = bool(ship_data.get("is_derelict", false))
-		ship.is_docked = bool(ship_data.get("is_stationed", true))
+		# Update fields from server data (only if changed for existing ships)
+		var ship_changed := is_new
 
-		# Parse cargo (assign new dict instead of clear to avoid error on new ships)
-		ship.current_cargo = {}
+		# Helper macro to update if different
+		var new_fuel := float(ship_data.get("fuel", 200.0))
+		if ship.fuel != new_fuel:
+			ship.fuel = new_fuel
+			ship_changed = true
+
+		var new_pos_x := float(ship_data.get("position_x", 1.0))
+		var new_pos_y := float(ship_data.get("position_y", 0.0))
+		if ship.position_au.x != new_pos_x or ship.position_au.y != new_pos_y:
+			ship.position_au.x = new_pos_x
+			ship.position_au.y = new_pos_y
+			ship_changed = true
+
+		var new_condition := float(ship_data.get("engine_condition", 100.0))
+		if ship.engine_condition != new_condition:
+			ship.engine_condition = new_condition
+			ship_changed = true
+
+		var new_derelict := bool(ship_data.get("is_derelict", false))
+		if ship.is_derelict != new_derelict:
+			ship.is_derelict = new_derelict
+			ship_changed = true
+
+		var new_docked := bool(ship_data.get("is_stationed", true))
+		if ship.is_docked != new_docked:
+			ship.is_docked = new_docked
+			ship_changed = true
+
+		# Parse cargo and check if changed
 		var server_cargo: Dictionary = ship_data.get("current_cargo", {})
+		var cargo_changed := false
+		var new_cargo := {}
 		for ore_key in server_cargo:
 			var ore_type := _parse_ore_type(ore_key)
 			if ore_type >= 0:
-				ship.current_cargo[ore_type] = float(server_cargo[ore_key])
+				new_cargo[ore_type] = float(server_cargo[ore_key])
+
+		if new_cargo != ship.current_cargo:
+			ship.current_cargo = new_cargo
+			cargo_changed = true
+			ship_changed = true
+
+		if ship_changed:
+			state_changed = true
 
 		# Add new ships to the array
 		if is_new:
@@ -4067,22 +4095,39 @@ func apply_server_state(server_data: Dictionary) -> void:
 			worker.server_id = worker_id
 			is_new = true
 
-		# Update all fields from server data
-		var first_name: String = str(worker_data.get("first_name", ""))
-		var last_name: String = str(worker_data.get("last_name", ""))
-		worker.worker_name = first_name + " " + last_name
-		worker.pilot_skill = float(worker_data.get("pilot_skill", 0.0))
-		worker.engineer_skill = float(worker_data.get("engineer_skill", 0.0))
-		worker.mining_skill = float(worker_data.get("mining_skill", 0.0))
-		worker.pilot_xp = float(worker_data.get("pilot_xp", 0.0))
-		worker.engineer_xp = float(worker_data.get("engineer_xp", 0.0))
-		worker.mining_xp = float(worker_data.get("mining_xp", 0.0))
-		worker.wage = int(worker_data.get("wage", 100))
-		worker.loyalty = float(worker_data.get("loyalty", 50.0))
-		worker.fatigue = float(worker_data.get("fatigue", 0.0))
-		worker.personality = int(worker_data.get("personality", 2))  # Default: LOYAL
-		worker.is_available = bool(worker_data.get("is_available", true))
-		worker.leave_status = int(worker_data.get("leave_status", 0))
+		# Update fields from server data (only if changed for existing workers)
+		var worker_changed := is_new
+
+		var new_xp_p := float(worker_data.get("pilot_xp", 0.0))
+		var new_xp_e := float(worker_data.get("engineer_xp", 0.0))
+		var new_xp_m := float(worker_data.get("mining_xp", 0.0))
+		if worker.pilot_xp != new_xp_p or worker.engineer_xp != new_xp_e or worker.mining_xp != new_xp_m:
+			worker.pilot_xp = new_xp_p
+			worker.engineer_xp = new_xp_e
+			worker.mining_xp = new_xp_m
+			worker_changed = true
+
+		var new_skill_p := float(worker_data.get("pilot_skill", 0.0))
+		var new_skill_e := float(worker_data.get("engineer_skill", 0.0))
+		var new_skill_m := float(worker_data.get("mining_skill", 0.0))
+		if worker.pilot_skill != new_skill_p or worker.engineer_skill != new_skill_e or worker.mining_skill != new_skill_m:
+			worker.pilot_skill = new_skill_p
+			worker.engineer_skill = new_skill_e
+			worker.mining_skill = new_skill_m
+			worker_changed = true
+
+		var new_wage := int(worker_data.get("wage", 100))
+		if worker.wage != new_wage:
+			worker.wage = new_wage
+			worker_changed = true
+
+		var new_fatigue := float(worker_data.get("fatigue", 0.0))
+		if worker.fatigue != new_fatigue:
+			worker.fatigue = new_fatigue
+			worker_changed = true
+
+		if worker_changed:
+			state_changed = true
 
 		# Add new workers to the array
 		if is_new:

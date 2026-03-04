@@ -147,7 +147,10 @@ func get_status_text() -> String:
 			return "Refueling at %s (%s)" % [colony_name, home]
 		Status.TRANSIT_OUT:
 			var fuel_stop_suffix := ""
-			var refuel_count := outbound_legs.filter(func(l: WaypointLeg) -> bool: return l.waypoint_type == WaypointLeg.WaypointType.REFUEL_STOP).size()
+			var refuel_count := 0
+			for leg in outbound_legs:
+				if leg.waypoint_type == WaypointLeg.WaypointType.REFUEL_STOP:
+					refuel_count += 1
 			if refuel_count > 0:
 				fuel_stop_suffix = " [%d fuel stop%s]" % [refuel_count, "s" if refuel_count > 1 else ""]
 			return "%s → %s (%s)%s%s%s" % [home, dest, home, mode_suffix, slingshot_suffix, fuel_stop_suffix]
@@ -157,7 +160,10 @@ func get_status_text() -> String:
 			return "Idle at %s (%s)" % [dest, home]
 		Status.TRANSIT_BACK:
 			var fuel_stop_suffix := ""
-			var refuel_count := return_legs.filter(func(l: WaypointLeg) -> bool: return l.waypoint_type == WaypointLeg.WaypointType.REFUEL_STOP).size()
+			var refuel_count := 0
+			for leg in return_legs:
+				if leg.waypoint_type == WaypointLeg.WaypointType.REFUEL_STOP:
+					refuel_count += 1
 			if refuel_count > 0:
 				fuel_stop_suffix = " [%d fuel stop%s]" % [refuel_count, "s" if refuel_count > 1 else ""]
 			return "%s → %s%s%s%s" % [dest, home, mode_suffix, slingshot_suffix, fuel_stop_suffix]

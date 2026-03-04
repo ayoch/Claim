@@ -44,10 +44,14 @@ async def get_state(
     player: Player = Depends(get_current_player),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Mission).where(
-        Mission.player_id == player.id,
-        Mission.status.in_([0, 1, 2]),
-    ))
+    result = await db.execute(
+        select(Mission)
+        .options(selectinload(Mission.ship), selectinload(Mission.asteroid))
+        .where(
+            Mission.player_id == player.id,
+            Mission.status.in_([0, 1, 2]),
+        )
+    )
     active_missions = list(result.scalars().all())
 
     # Load player's trade missions

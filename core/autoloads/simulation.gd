@@ -3008,16 +3008,13 @@ func _process_market_events(dt: float) -> void:
 		return
 
 	# Advance time on active events
-	var expired: Array[MarketEvent] = []
-	for event in GameState.active_market_events:
+	# Remove expired events (iterate backwards to avoid O(n²))
+	for i in range(GameState.active_market_events.size() - 1, -1, -1):
+		var event := GameState.active_market_events[i]
 		event.advance_time(dt)
 		if not event.is_active:
-			expired.append(event)
-
-	# Remove expired events
-	for event in expired:
-		GameState.active_market_events.erase(event)
-		EventBus.market_event_ended.emit(event)
+			GameState.active_market_events.remove_at(i)
+			EventBus.market_event_ended.emit(event)
 
 	_market_accumulator += dt
 	if _market_accumulator < MARKET_INTERVAL:
@@ -3053,21 +3050,21 @@ func _process_contracts(dt: float) -> void:
 			contract.status = Contract.Status.FAILED
 			failed.append(contract)
 
-	for contract in failed:
-		GameState.active_contracts.erase(contract)
-		EventBus.contract_failed.emit(contract)
+	# Remove failed contracts (iterate backwards to avoid O(n²))
+	for i in range(GameState.active_contracts.size() - 1, -1, -1):
+		var contract := GameState.active_contracts[i]
+		if contract in failed:
+			GameState.active_contracts.remove_at(i)
+			EventBus.contract_failed.emit(contract)
 
 	# Expire available contracts
-	var expired: Array[Contract] = []
-	for contract in GameState.available_contracts:
+	for i in range(GameState.available_contracts.size() - 1, -1, -1):
+		var contract := GameState.available_contracts[i]
 		contract.deadline_ticks -= accum_dt
 		if contract.deadline_ticks <= 0:
 			contract.status = Contract.Status.EXPIRED
-			expired.append(contract)
-
-	for contract in expired:
-		GameState.available_contracts.erase(contract)
-		EventBus.contract_expired.emit(contract)
+			GameState.available_contracts.remove_at(i)
+			EventBus.contract_expired.emit(contract)
 
 	# Generate new contracts periodically
 	_contract_accumulator += accum_dt
