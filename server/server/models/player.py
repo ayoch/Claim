@@ -48,6 +48,7 @@ class Player(Base):
     workers: Mapped[list["Worker"]] = relationship("Worker", back_populates="player", lazy="selectin")  # noqa: F821
     missions: Mapped[list["Mission"]] = relationship("Mission", back_populates="player", lazy="selectin")  # noqa: F821
     trade_missions: Mapped[list["TradeMission"]] = relationship("TradeMission", back_populates="player", lazy="selectin")  # noqa: F821
+    rigs: Mapped[list["Rig"]] = relationship("Rig", back_populates="player", lazy="selectin")  # noqa: F821
 
     def __repr__(self) -> str:
         return f"<Player id={self.id} username={self.username!r} money={self.money}>"

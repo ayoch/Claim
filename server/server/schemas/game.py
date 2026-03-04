@@ -81,6 +81,36 @@ class EquipmentOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Rigs (AMUs) ───────────────────────────────────────────────────────────────
+
+class RigOut(BaseModel):
+    id: int
+    player_id: int
+    unit_type: int
+    unit_name: str
+    mass: float
+    workers_required: int
+    mining_multiplier: float
+    cost: int
+    durability: float
+    max_durability: float
+    wear_per_day: float
+    deployed_at_asteroid_id: int | None
+    deployed_at_tick: float
+
+    model_config = {"from_attributes": True}
+
+
+class StockpileOut(BaseModel):
+    id: int
+    player_id: int
+    asteroid_id: int
+    ore_type: str
+    tonnes: float
+
+    model_config = {"from_attributes": True}
+
+
 # ── Mission ───────────────────────────────────────────────────────────────────
 
 class MissionOut(BaseModel):

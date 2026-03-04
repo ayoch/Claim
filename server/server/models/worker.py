@@ -60,6 +60,9 @@ class Worker(Base):
     assigned_mission_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("missions.id", ondelete="SET NULL"), nullable=True
     )
+    assigned_rig_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("rigs.id", ondelete="SET NULL"), nullable=True
+    )
 
     is_available: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     leave_status: Mapped[int] = mapped_column(Integer, default=LEAVE_NONE, nullable=False)
