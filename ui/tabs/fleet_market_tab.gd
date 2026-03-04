@@ -543,7 +543,9 @@ func _rebuild_ships() -> void:
 		stats_grid.add_theme_constant_override("v_separation", 4)
 
 		# Add stat rows
-		_add_fleet_stat_row(stats_grid, "Thrust:", "%.2fg" % ship.max_thrust_g, ship.get_effective_thrust())
+		# Docked/idle ships show 0g thrust (not thrusting), ships on missions show effective thrust
+		var current_thrust := 0.0 if (ship.is_docked or ship.is_stationed or ship.is_idle_remote) else ship.get_effective_thrust()
+		_add_fleet_stat_row(stats_grid, "Thrust:", "%.2fg" % ship.max_thrust_g, current_thrust)
 		_add_fleet_stat_row(stats_grid, "Fuel:", "%.0ft" % ship.fuel_capacity, ship.get_effective_fuel_capacity())
 		var dv_base := ship.get_delta_v(ship.fuel_capacity)
 		var dv_eff := ship.get_delta_v(ship.get_effective_fuel_capacity())
