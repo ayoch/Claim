@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Claim Server Admin{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #0a0e1a;
+            color: #e0e0e0;
+        }
+        .navbar {
+            background-color: #1a1f2e !important;
+            border-bottom: 2px solid #2a3f5f;
+        }
+        .card {
+            background-color: #1a1f2e;
+            border: 1px solid #2a3f5f;
+        }
+        .table {
+            color: #e0e0e0;
+        }
+        .table-dark {
+            background-color: #1a1f2e;
+        }
+        .stat-card {
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem;
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #4da6ff;
+        }
+        .stat-label {
+            font-size: 0.9rem;
+            color: #a0a0a0;
+        }
+        .nav-link {
+            color: #a0a0a0 !important;
+        }
+        .nav-link:hover, .nav-link.active {
+            color: #4da6ff !important;
+        }
+        .btn-primary {
+            background-color: #2a5f8f;
+            border-color: #2a5f8f;
+        }
+        .btn-primary:hover {
+            background-color: #3a7faf;
+            border-color: #3a7faf;
+        }
+        .depletion-high { color: #ff6b6b; }
+        .depletion-medium { color: #ffa500; }
+        .depletion-low { color: #4da6ff; }
+    </style>
+</head>
+<body>
+    {% if request.session.get('admin_key') %}
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/admin-ui/dashboard">
+                <strong>CLAIM</strong> Server Admin
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav">
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/admin-ui/dashboard' %}active{% endif %}"
+                           href="/admin-ui/dashboard">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/admin-ui/players' %}active{% endif %}"
+                           href="/admin-ui/players">Players</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/admin-ui/asteroids' %}active{% endif %}"
+                           href="/admin-ui/asteroids">Asteroids</a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/admin-ui/logout">Logout</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+    {% endif %}
+
+    <div class="container-fluid mt-4">
+        {% block content %}{% endblock %}
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

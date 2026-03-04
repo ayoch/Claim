@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Claim Server Admin{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">Server Overview</h2>
+
+<div class="row">
+    <!-- Players -->
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="stat-label">Active Players (30d)</div>
+            <div class="stat-value">{{ active_players }}</div>
+            <small class="text-muted">{{ total_players }} total</small>
+        </div>
+    </div>
+
+    <!-- Ships -->
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="stat-label">Total Ships</div>
+            <div class="stat-value">{{ total_ships }}</div>
+        </div>
+    </div>
+
+    <!-- Missions -->
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="stat-label">Active Missions</div>
+            <div class="stat-value">{{ active_missions }}</div>
+        </div>
+    </div>
+
+    <!-- Server Capacity -->
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="stat-label">Server Capacity</div>
+            <div class="stat-value">{{ "%.1f"|format(capacity_pct) }}%</div>
+            <small class="text-muted">{{ slots_available }} slots free</small>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <!-- Total Reserves -->
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Asteroid Reserves</h5>
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="stat-label">Total Reserves</div>
+                        <div class="stat-value" style="font-size: 1.5rem;">
+                            {{ "{:,.0f}".format(total_reserves) }} t
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-label">Iron</div>
+                        <div class="stat-value" style="font-size: 1.5rem;">
+                            {{ "{:,.0f}".format(total_iron) }} t
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-label">Water Ice</div>
+                        <div class="stat-value" style="font-size: 1.5rem;">
+                            {{ "{:,.0f}".format(total_water_ice) }} t
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-label">Platinum</div>
+                        <div class="stat-value" style="font-size: 1.5rem;">
+                            {{ "{:,.0f}".format(total_platinum) }} t
+                        </div>
+                    </div>
+                </div>
+                <hr>
+                <p class="mb-0">
+                    <strong>Max Players:</strong> {{ max_players }}
+                    (based on 50M tonnes per player minimum)
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Quick Actions</h5>
+                <a href="/admin-ui/players" class="btn btn-primary me-2">Manage Players</a>
+                <a href="/admin-ui/asteroids" class="btn btn-primary">View Asteroids</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Server Info</h5>
+                <p class="mb-1"><strong>API Endpoints:</strong></p>
+                <ul class="mb-0">
+                    <li><code>/health</code> - Server health check</li>
+                    <li><code>/docs</code> - API documentation</li>
+                    <li><code>/admin/*</code> - Admin API endpoints</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

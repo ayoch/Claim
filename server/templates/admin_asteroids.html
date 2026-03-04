@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Asteroids - Claim Server Admin{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">Asteroid Reserves</h2>
+
+<div class="card">
+    <div class="card-body">
+        <div class="mb-3">
+            <input type="text" id="searchInput" class="form-control" placeholder="Search asteroids...">
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-dark table-striped table-hover" id="asteroidTable">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Distance (AU)</th>
+                        <th>Mass (kg)</th>
+                        <th>Total Reserves</th>
+                        <th>Iron</th>
+                        <th>Nickel</th>
+                        <th>Platinum</th>
+                        <th>Water Ice</th>
+                        <th>Depletion</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for asteroid in asteroids %}
+                    <tr>
+                        <td>{{ asteroid.name }}</td>
+                        <td>{{ asteroid.body_type }}</td>
+                        <td>{{ "%.2f"|format(asteroid.semi_major_axis) }}</td>
+                        <td>{{ "%.2e"|format(asteroid.mass_kg) }}</td>
+                        <td>{{ "{:,.0f}".format(asteroid.total_reserves) }} t</td>
+                        <td>{{ "{:,.0f}".format(asteroid.iron) }} t</td>
+                        <td>{{ "{:,.0f}".format(asteroid.nickel) }} t</td>
+                        <td>{{ "{:,.0f}".format(asteroid.platinum) }} t</td>
+                        <td>{{ "{:,.0f}".format(asteroid.water_ice) }} t</td>
+                        <td>
+                            {% set depletion = asteroid.depletion_pct %}
+                            {% if depletion >= 50 %}
+                                <span class="depletion-high">{{ "%.1f"|format(depletion) }}%</span>
+                            {% elif depletion >= 25 %}
+                                <span class="depletion-medium">{{ "%.1f"|format(depletion) }}%</span>
+                            {% else %}
+                                <span class="depletion-low">{{ "%.1f"|format(depletion) }}%</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Simple search filter
+document.getElementById('searchInput').addEventListener('keyup', function() {
+    const searchTerm = this.value.toLowerCase();
+    const rows = document.querySelectorAll('#asteroidTable tbody tr');
+
+    rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        row.style.display = text.includes(searchTerm) ? '' : 'none';
+    });
+});
+</script>
+{% endblock %}

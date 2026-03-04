@@ -1,0 +1,264 @@
+"""
+Admin UI router - Web interface for server administration.
+
+Requires admin key for all operations.
+"""
+from fastapi import APIRouter, Request, Form, Depends, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from sqlalchemy import select, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime, timedelta
+
+from server.database import get_db
+from server.models.player import Player
+from server.models.ship import Ship
+from server.models.mission import Mission
+from server.models.asteroid import Asteroid
+from server.dependencies import require_admin
+
+
+router = APIRouter(prefix="/admin-ui", tags=["admin-ui"])
+templates = Jinja2Templates(directory="templates")
+
+
+def check_admin_session(request: Request):
+    """Check if admin key is in session."""
+    admin_key = request.session.get("admin_key")
+    if not admin_key:
+        return None
+    return admin_key
+
+
+@router.get("/login", response_class=HTMLResponse)
+async def admin_login_page(request: Request):
+    """Display admin login form."""
+    return templates.TemplateResponse("admin_login.html", {"request": request})
+
+
+@router.post("/login")
+async def admin_login(request: Request, admin_key: str = Form(...)):
+    """Process admin login."""
+    # Store in session
+    request.session["admin_key"] = admin_key
+    return RedirectResponse(url="/admin-ui/dashboard", status_code=303)
+
+
+@router.get("/logout")
+async def admin_logout(request: Request):
+    """Clear admin session."""
+    request.session.clear()
+    return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+
+@router.get("/dashboard", response_class=HTMLResponse)
+async def admin_dashboard(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Main admin dashboard."""
+    admin_key = check_admin_session(request)
+    if not admin_key:
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    # Verify admin key is valid
+    try:
+        await require_admin(admin_key, db)
+    except HTTPException:
+        request.session.clear()
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    # Get server stats
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+
+    # Count active players (last 30 days)
+    result = await db.execute(
+        select(func.count(Player.id)).where(Player.last_login >= thirty_days_ago)
+    )
+    active_players = result.scalar() or 0
+
+    # Count total players
+    result = await db.execute(select(func.count(Player.id)))
+    total_players = result.scalar() or 0
+
+    # Count ships
+    result = await db.execute(select(func.count(Ship.id)))
+    total_ships = result.scalar() or 0
+
+    # Count active missions
+    result = await db.execute(
+        select(func.count(Mission.id)).where(Mission.status.in_([0, 1, 2]))
+    )
+    active_missions = result.scalar() or 0
+
+    # Calculate total reserves
+    result = await db.execute(select(Asteroid))
+    asteroids = result.scalars().all()
+
+    total_reserves = 0.0
+    total_iron = 0.0
+    total_water_ice = 0.0
+    total_platinum = 0.0
+
+    for asteroid in asteroids:
+        if asteroid.reserves:
+            total_reserves += sum(asteroid.reserves.values())
+            total_iron += asteroid.reserves.get("iron", 0.0)
+            total_water_ice += asteroid.reserves.get("water_ice", 0.0)
+            total_platinum += asteroid.reserves.get("platinum", 0.0)
+
+    # Calculate server capacity
+    MINIMUM_RESERVES_PER_PLAYER = 50_000_000  # 50M tonnes
+    max_players = int(total_reserves / MINIMUM_RESERVES_PER_PLAYER) if total_reserves > 0 else 0
+    slots_available = max(0, max_players - active_players)
+    capacity_pct = (active_players / max_players * 100) if max_players > 0 else 0
+
+    return templates.TemplateResponse("admin_dashboard.html", {
+        "request": request,
+        "active_players": active_players,
+        "total_players": total_players,
+        "total_ships": total_ships,
+        "active_missions": active_missions,
+        "total_reserves": total_reserves,
+        "total_iron": total_iron,
+        "total_water_ice": total_water_ice,
+        "total_platinum": total_platinum,
+        "max_players": max_players,
+        "slots_available": slots_available,
+        "capacity_pct": capacity_pct,
+    })
+
+
+@router.get("/players", response_class=HTMLResponse)
+async def admin_players(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Player management page."""
+    admin_key = check_admin_session(request)
+    if not admin_key:
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    try:
+        await require_admin(admin_key, db)
+    except HTTPException:
+        request.session.clear()
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    # Get all players with their ship counts
+    result = await db.execute(
+        select(Player).order_by(Player.last_login.desc())
+    )
+    players = result.scalars().all()
+
+    # Get ship counts for each player
+    player_data = []
+    for player in players:
+        result = await db.execute(
+            select(func.count(Ship.id)).where(Ship.player_id == player.id)
+        )
+        ship_count = result.scalar() or 0
+
+        player_data.append({
+            "id": player.id,
+            "username": player.username,
+            "email": player.email,
+            "money": player.money,
+            "reputation": player.reputation,
+            "total_ticks": player.total_ticks,
+            "ship_count": ship_count,
+            "last_login": player.last_login,
+            "created_at": player.created_at,
+        })
+
+    return templates.TemplateResponse("admin_players.html", {
+        "request": request,
+        "players": player_data,
+    })
+
+
+@router.get("/asteroids", response_class=HTMLResponse)
+async def admin_asteroids(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Asteroid reserves browser."""
+    admin_key = check_admin_session(request)
+    if not admin_key:
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    try:
+        await require_admin(admin_key, db)
+    except HTTPException:
+        request.session.clear()
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    # Get all asteroids with reserves
+    result = await db.execute(
+        select(Asteroid).order_by(Asteroid.semi_major_axis)
+    )
+    asteroids = result.scalars().all()
+
+    asteroid_data = []
+    for asteroid in asteroids:
+        if not asteroid.reserves:
+            continue
+
+        total_reserves = sum(asteroid.reserves.values())
+        total_original = sum(asteroid.original_reserves.values()) if asteroid.original_reserves else total_reserves
+
+        depletion_pct = 0
+        if total_original > 0:
+            depletion_pct = ((total_original - total_reserves) / total_original) * 100
+
+        asteroid_data.append({
+            "id": asteroid.id,
+            "name": asteroid.asteroid_name,
+            "body_type": asteroid.body_type,
+            "semi_major_axis": asteroid.semi_major_axis,
+            "mass_kg": asteroid.estimated_mass_kg,
+            "total_reserves": total_reserves,
+            "total_original": total_original,
+            "depletion_pct": depletion_pct,
+            "iron": asteroid.reserves.get("iron", 0),
+            "nickel": asteroid.reserves.get("nickel", 0),
+            "platinum": asteroid.reserves.get("platinum", 0),
+            "water_ice": asteroid.reserves.get("water_ice", 0),
+        })
+
+    return templates.TemplateResponse("admin_asteroids.html", {
+        "request": request,
+        "asteroids": asteroid_data,
+    })
+
+
+@router.post("/grant-money")
+async def admin_grant_money(
+    request: Request,
+    player_id: int = Form(...),
+    amount: int = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Grant money to a player."""
+    admin_key = check_admin_session(request)
+    if not admin_key:
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    try:
+        await require_admin(admin_key, db)
+    except HTTPException:
+        request.session.clear()
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    # Find player
+    result = await db.execute(select(Player).where(Player.id == player_id))
+    player = result.scalar_one_or_none()
+
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    # Grant money
+    player.money += amount
+    await db.commit()
+
+    return RedirectResponse(url="/admin-ui/players", status_code=303)

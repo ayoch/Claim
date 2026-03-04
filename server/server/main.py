@@ -12,12 +12,13 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
 from server.blog_database import init_blog_db
 from server.config import settings
 from server.database import init_db
 from server.rate_limit import limiter, rate_limit_handler
-from server.routers import account_settings, admin, admin_speed, auth, blog, events, game, leaderboard, password_reset
+from server.routers import account_settings, admin, admin_speed, admin_ui, auth, blog, events, game, leaderboard, password_reset
 from server.simulation.runner import simulation_loop
 
 # Configure logging
@@ -65,6 +66,15 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
 # Request size limiting (always enabled)
 app.add_middleware(LimitUploadSize, max_upload_size=10 * 1024 * 1024)  # 10MB
 
+# Session middleware for admin UI
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.SECRET_KEY,
+    session_cookie="claim_admin_session",
+    max_age=86400,  # 24 hours
+    https_only=settings.ENVIRONMENT == "production",
+)
+
 # CORS — configured via environment variables
 app.add_middleware(
     CORSMiddleware,
@@ -83,6 +93,7 @@ app.include_router(game.router)
 app.include_router(events.router)
 app.include_router(admin.router)
 app.include_router(admin_speed.router)  # Speed control for testing
+app.include_router(admin_ui.router)  # Admin web UI
 app.include_router(leaderboard.router)
 app.include_router(blog.router)
 app.include_router(blog.admin_router)
