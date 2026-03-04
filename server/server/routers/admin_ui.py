@@ -108,17 +108,73 @@ async def admin_dashboard(
     db: AsyncSession = Depends(get_db)
 ):
     """Main admin dashboard."""
-    # Simple test - just return plain HTML
-    return HTMLResponse(content="""
-    <html>
-    <head><title>Test Dashboard</title></head>
-    <body>
-        <h1>Admin Dashboard Test</h1>
-        <p>If you can see this, routing and auth are working!</p>
-        <p>Session check and template rendering will be added back once this works.</p>
-    </body>
-    </html>
-    """)
+    admin_key = check_admin_session(request)
+    if not admin_key:
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    if not await validate_admin_key(admin_key, db):
+        request.session.clear()
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    # Get server stats
+    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+
+    # Count active players (last 30 days)
+    result = await db.execute(
+        select(func.count(Player.id)).where(Player.last_login >= thirty_days_ago)
+    )
+    active_players = result.scalar() or 0
+
+    # Count total players
+    result = await db.execute(select(func.count(Player.id)))
+    total_players = result.scalar() or 0
+
+    # Count ships
+    result = await db.execute(select(func.count(Ship.id)))
+    total_ships = result.scalar() or 0
+
+    # Count active missions
+    result = await db.execute(
+        select(func.count(Mission.id)).where(Mission.status.in_([0, 1, 2]))
+    )
+    active_missions = result.scalar() or 0
+
+    # Calculate total reserves
+    result = await db.execute(select(Asteroid))
+    asteroids = result.scalars().all()
+
+    total_reserves = 0.0
+    total_iron = 0.0
+    total_water_ice = 0.0
+    total_platinum = 0.0
+
+    for asteroid in asteroids:
+        if asteroid.reserves:
+            total_reserves += sum(asteroid.reserves.values())
+            total_iron += asteroid.reserves.get("iron", 0.0)
+            total_water_ice += asteroid.reserves.get("water_ice", 0.0)
+            total_platinum += asteroid.reserves.get("platinum", 0.0)
+
+    # Calculate server capacity
+    MINIMUM_RESERVES_PER_PLAYER = 50_000_000  # 50M tonnes
+    max_players = int(total_reserves / MINIMUM_RESERVES_PER_PLAYER) if total_reserves > 0 else 0
+    slots_available = max(0, max_players - active_players)
+    capacity_pct = (active_players / max_players * 100) if max_players > 0 else 0
+
+    return templates.TemplateResponse("admin_dashboard.html", {
+        "request": request,
+        "active_players": active_players,
+        "total_players": total_players,
+        "total_ships": total_ships,
+        "active_missions": active_missions,
+        "total_reserves": total_reserves,
+        "total_iron": total_iron,
+        "total_water_ice": total_water_ice,
+        "total_platinum": total_platinum,
+        "max_players": max_players,
+        "slots_available": slots_available,
+        "capacity_pct": capacity_pct,
+    })
 
 
 @router.get("/players", response_class=HTMLResponse)
