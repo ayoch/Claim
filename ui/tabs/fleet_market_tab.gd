@@ -940,11 +940,11 @@ func _rebuild_ships() -> void:
 			var plan_row := HBoxContainer.new()
 			plan_row.add_theme_constant_override("separation", 8)
 
-			var redispatch_btn := Button.new()
-			redispatch_btn.text = "Redispatch"
-			redispatch_btn.custom_minimum_size = Vector2(0, 44)
-			redispatch_btn.pressed.connect(_start_dispatch.bind(ship, false, true))
-			plan_row.add_child(redispatch_btn)
+			var redirect_btn := Button.new()
+			redirect_btn.text = "Redirect"
+			redirect_btn.custom_minimum_size = Vector2(0, 44)
+			redirect_btn.pressed.connect(_start_dispatch.bind(ship, false, true))
+			plan_row.add_child(redirect_btn)
 
 			var plan_btn := Button.new()
 			plan_btn.text = "Plan Next Mission" if not ship.has_queued_mission() else "Change Queued Mission"
@@ -1168,7 +1168,7 @@ func _cancel_preview() -> void:
 	EventBus.mission_preview_cancelled.emit()
 
 var _is_planning_mode: bool = false    # Queue mission for after current task completes
-var _is_redispatch_mode: bool = false  # Abort current mission and immediately reroute
+var _is_redirect_mode: bool = false  # Abort current mission and immediately reroute
 var _dispatched_from_map: bool = false  # If true, return to Map tab after dispatch
 const MAP_TAB_INDEX: int = 4
 
@@ -1184,47 +1184,19 @@ func _on_map_dispatch_asteroid(ship: Ship, asteroid: AsteroidData) -> void:
 		ship.current_mission.status == Mission.Status.REFUELING
 	)
 	if in_transit:
-		# Ship is underway — redirect, no crew reassignment
-		var dist := ship.position_au.distance_to(asteroid.get_position_au())
-		var new_transit_time := Brachistochrone.transit_time(dist, ship.get_effective_thrust())
-		var fuel_out := ship.calc_fuel_for_distance(dist)
-		var return_origin := ship.station_colony.get_position_au() if (ship.is_stationed and ship.station_colony) else CelestialData.get_earth_position_au()
-		var return_dist := asteroid.get_position_au().distance_to(return_origin)
-		var fuel_ret := ship.calc_fuel_for_distance(return_dist, ship.cargo_capacity)
-		var fuel_needed := fuel_out + fuel_ret
-		var feasible := fuel_needed <= ship.fuel
-		# Adjust displayed transit time for existing velocity (ship enters brachistochrone mid-curve)
-		var avg_velocity := dist / new_transit_time if new_transit_time > 0.0 else 0.0
-		var entry_t := clampf(ship.speed_au_per_tick / (4.0 * avg_velocity), 0.0, 0.5) if avg_velocity > 0.0 else 0.0
-		var effective_transit_time := (1.0 - entry_t) * new_transit_time
-		var transit_str := TimeScale.format_time(effective_transit_time)
-		_dispatched_from_map = true
-		_switch_to_self()
-		dispatch_popup.visible = true
-		if feasible:
-			var cost := int(fuel_out * Ship.FUEL_COST_PER_UNIT * 2.0)
-			var signal_delay_secs := GameState.calc_signal_delay(ship)
-			var delay_suffix := ""
-			if signal_delay_secs > 0.0:
-				var sd_mins := int(signal_delay_secs / 60.0)
-				var sd_secs := int(fmod(signal_delay_secs, 60.0))
-				var sd_str := "%dm %02ds" % [sd_mins, sd_secs] if sd_mins > 0 else "%ds" % sd_secs
-				delay_suffix = "\nSignal delay: %s" % sd_str
-			_show_redirect_confirmation(
-				"Redirect %s to %s?\n\nNew transit: %s\nRedirect cost: $%s%s" % [
-					ship.ship_name, asteroid.asteroid_name,
-					transit_str, _format_number(cost), delay_suffix
-				],
-				func() -> void: GameState.redirect_mission(ship.current_mission, asteroid)
-			)
-		else:
-			_show_redirect_confirmation(
-				"Cannot redirect %s to %s: not enough fuel for redirect + return\n\nFuel needed: %.0f  Available: %.0f\nNew transit if refueled: %s" % [
-					ship.ship_name, asteroid.asteroid_name,
-					fuel_needed, ship.fuel, transit_str
-				],
-				Callable(), false
-			)
+		# Ship is underway — show full dispatch panel in redirect mode
+		_selected_asteroid = asteroid
+		_selected_workers.clear()  # Crew doesn't change during redirect
+		_selected_mission_type = Mission.MissionType.MINING
+		_selected_deploy_units.clear()
+		_selected_deploy_workers.clear()
+		_selected_transit_mode = ship.current_mission.transit_mode  # Keep current transit mode as default
+		_is_redirect_mode = true
+		_sort_by = "profit"
+		_filter_type = -1
+		_is_planning_mode = false
+		_colonies_section_expanded = -1
+		_mining_section_expanded = -1
 	else:
 		# Docked or idle at destination — normal dispatch with crew selection
 		_selected_asteroid = asteroid
@@ -1232,6 +1204,8 @@ func _on_map_dispatch_asteroid(ship: Ship, asteroid: AsteroidData) -> void:
 		_selected_mission_type = Mission.MissionType.MINING
 		_selected_deploy_units.clear()
 		_selected_deploy_workers.clear()
+		_selected_transit_mode = Mission.TransitMode.BRACHISTOCHRONE
+		_is_redirect_mode = false
 		_sort_by = "profit"
 		_filter_type = -1
 		_is_planning_mode = false
@@ -1333,7 +1307,7 @@ func _show_redirect_confirmation(message: String, on_confirm: Callable, feasible
 			{"text": "Close", "callback": close_cb},
 		])
 
-func _start_dispatch(ship: Ship, planning_mode: bool = false, redispatch_mode: bool = false) -> void:
+func _start_dispatch(ship: Ship, planning_mode: bool = false, redirect_mode: bool = false) -> void:
 	_selected_ship = ship
 	_selected_asteroid = null
 	_selected_workers.clear()
@@ -1343,7 +1317,7 @@ func _start_dispatch(ship: Ship, planning_mode: bool = false, redispatch_mode: b
 	_sort_by = "profit"
 	_filter_type = -1
 	_is_planning_mode = planning_mode
-	_is_redispatch_mode = redispatch_mode
+	_is_redirect_mode = redirect_mode
 	_colonies_section_expanded = -1  # Reset to cargo-based default
 	_mining_section_expanded = -1
 
@@ -1375,8 +1349,8 @@ func _show_asteroid_selection() -> void:
 	var title := _lbl()
 	if _is_planning_mode:
 		title.text = "Plan Next Mission — Select Destination"
-	elif _is_redispatch_mode:
-		title.text = "Redispatch — Select Destination"
+	elif _is_redirect_mode:
+		title.text = "Redirect — Select Destination"
 	else:
 		title.text = "Select Destination"
 	title.add_theme_font_size_override("font_size", 26)
@@ -1385,7 +1359,7 @@ func _show_asteroid_selection() -> void:
 	# Show ship origin info and cargo
 	var origin_label := _lbl()
 	var ore_total: float = _selected_ship.get_ore_total()
-	var origin_prefix := "Current position:" if _is_redispatch_mode else "Dispatching from:"
+	var origin_prefix := "Current position:" if _is_redirect_mode else "Dispatching from:"
 	if ore_total > 0:
 		origin_label.text = "%s %s (%.1ft ore)" % [origin_prefix, _get_location_text(_selected_ship), ore_total]
 	else:
@@ -1999,7 +1973,7 @@ func _show_asteroid_selection() -> void:
 
 		# Select / Dispatch button
 		var btn := Button.new()
-		btn.text = "Select" if (_is_planning_mode or _is_redispatch_mode) else "Dispatch"
+		btn.text = "Select" if (_is_planning_mode or _is_redirect_mode) else "Dispatch"
 		btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 		btn.custom_minimum_size = Vector2(0, 36)
 		btn.focus_mode = Control.FOCUS_NONE
@@ -2957,8 +2931,8 @@ func _show_worker_selection() -> void:
 	if _is_planning_mode:
 		next_btn_text = "Queue Destination"
 		next_btn_cb = _queue_mission
-	elif _is_redispatch_mode:
-		next_btn_text = "Confirm Redispatch"
+	elif _is_redirect_mode:
+		next_btn_text = "Confirm Redirect"
 		next_btn_cb = _abort_and_dispatch
 	else:
 		next_btn_text = "Confirm Dispatch"
@@ -3246,8 +3220,8 @@ func _show_dispatch_confirmation(message: String) -> void:
 	var title := _lbl()
 	if _is_planning_mode:
 		title.text = "Plan Next Mission"
-	elif _is_redispatch_mode:
-		title.text = "Redispatch Ship"
+	elif _is_redirect_mode:
+		title.text = "Redirect Ship"
 	else:
 		title.text = "Confirm Mission Dispatch"
 	title.add_theme_font_size_override("font_size", 26)
@@ -3267,7 +3241,7 @@ func _show_dispatch_confirmation(message: String) -> void:
 		note.add_theme_color_override("font_color", Color(0.6, 0.85, 0.6))
 		note.add_theme_font_size_override("font_size", 17)
 		dispatch_content.add_child(note)
-	elif _is_redispatch_mode:
+	elif _is_redirect_mode:
 		var note := _lbl()
 		note.text = "The current mission will be aborted. The ship changes course immediately from its current position."
 		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -3280,9 +3254,9 @@ func _show_dispatch_confirmation(message: String) -> void:
 	if _is_planning_mode:
 		var _queue_cb := func() -> void: _queue_mission()
 		buttons.append({"text": "Queue Destination", "callback": _queue_cb})
-	elif _is_redispatch_mode:
-		var _redispatch_cb := func() -> void: _abort_and_dispatch()
-		buttons.append({"text": "Confirm Redispatch", "color": Color(0.95, 0.7, 0.3), "callback": _redispatch_cb})
+	elif _is_redirect_mode:
+		var _redirect_cb := func() -> void: _abort_and_dispatch()
+		buttons.append({"text": "Confirm Redirect", "color": Color(0.95, 0.7, 0.3), "callback": _redirect_cb})
 	else:
 		var _confirm_cb := func() -> void: _execute_dispatch()
 		buttons.append({"text": "Confirm Dispatch", "callback": _confirm_cb})
