@@ -327,6 +327,18 @@ func purchase_ship(ship_class: ShipData.ShipClass) -> Ship:
 	EventBus.ship_purchased.emit(new_ship, price)
 	return new_ship
 
+## Mode-aware ship purchasing - works in both LOCAL and SERVER modes
+func purchase_ship_any_mode(ship_class: ShipData.ShipClass, ship_name: String, colony_id: int = 0) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		# SERVER mode: route through BackendManager
+		# Server uses int ship_class, client uses enum - convert to int
+		var ship_class_int: int = int(ship_class)
+		BackendManager.buy_ship(ship_class_int, ship_name, colony_id)
+		# State refresh will include new ship via polling
+	else:
+		# LOCAL mode: use local GameState directly
+		purchase_ship(ship_class)
+
 ## Redirect a ship in transit to a new asteroid.
 ## Queues the order with lightspeed delay; returns true if order accepted/queued.
 func redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> bool:
@@ -598,6 +610,28 @@ func fire_worker(worker: Worker) -> void:
 			unit.assigned_workers.erase(worker)
 	worker.assigned_mining_unit = null
 	EventBus.worker_fired.emit(worker)
+
+## Mode-aware worker hiring - works in both LOCAL and SERVER modes
+func hire_worker_any_mode(worker_id: int) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		# SERVER mode: route through BackendManager
+		BackendManager.hire_worker(worker_id)
+		# State refresh will include new worker via polling
+	else:
+		push_warning("hire_worker_any_mode() called in LOCAL mode - use hire_worker(worker) instead")
+
+## Mode-aware worker firing - works in both LOCAL and SERVER modes
+func fire_worker_any_mode(worker: Worker) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		# SERVER mode: route through BackendManager using server ID
+		if worker.server_id > 0:
+			BackendManager.fire_worker(worker.server_id)
+			# State refresh will remove worker via polling
+		else:
+			push_warning("Worker %s has no server_id, cannot fire in SERVER mode" % worker.worker_name)
+	else:
+		# LOCAL mode: use local GameState directly
+		fire_worker(worker)
 
 ## Criminal Ban System: Record violations at colonies
 func record_worker_death_violation(worker: Worker, reason: String) -> void:
@@ -3854,6 +3888,7 @@ func apply_server_state(server_data: Dictionary) -> void:
 
 		if found_worker:
 			# Update worker state from server
+			found_worker.server_id = worker_id  # Store server database ID for API calls
 			found_worker.pilot_skill = float(worker_data.get("pilot_skill", found_worker.pilot_skill))
 			found_worker.engineer_skill = float(worker_data.get("engineer_skill", found_worker.engineer_skill))
 			found_worker.mining_skill = float(worker_data.get("mining_skill", found_worker.mining_skill))

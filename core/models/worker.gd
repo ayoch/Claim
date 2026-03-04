@@ -2,6 +2,7 @@ class_name Worker
 extends Resource
 
 @export var worker_name: String = ""
+@export var server_id: int = 0  # Database ID when in SERVER mode (0 = LOCAL mode)
 @export var pilot_skill: float = 0.0    # 0.0–1.5, affects transit speed
 @export var engineer_skill: float = 0.0 # 0.0–1.5, reduces wear/breakdowns
 @export var mining_skill: float = 0.0   # 0.0–1.5, affects ore output

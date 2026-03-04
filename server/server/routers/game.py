@@ -126,6 +126,17 @@ async def dispatch(
     await db.refresh(mission)
     return mission
 
+@router.get("/available-workers", response_model=list[WorkerOut])
+async def list_available_workers(
+    db: AsyncSession = Depends(get_db),
+):
+    """Get list of workers available for hire (no player assigned)"""
+    result = await db.execute(
+        select(Worker).where(Worker.player_id.is_(None))
+    )
+    return [WorkerOut.model_validate(w) for w in result.scalars().all()]
+
+
 @router.post("/hire", status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/minute")  # 10 worker hires per minute
 async def hire(

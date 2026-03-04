@@ -32,8 +32,8 @@ class Worker(Base):
     __tablename__ = "workers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    player_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("players.id", ondelete="CASCADE"), nullable=False, index=True
+    player_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("players.id", ondelete="CASCADE"), nullable=True, index=True
     )
 
     first_name: Mapped[str] = mapped_column(String(32), nullable=False)

@@ -253,7 +253,7 @@ func buy_ship(ship_class: int, ship_name: String, colony_id: int):
 		"colony_id": colony_id
 	})
 
-	var result := await _http_request_async(http, base_url + "/api/ships", headers, HTTPClient.METHOD_POST, body)
+	var result := await _http_request_async(http, base_url + "/game/buy-ship", headers, HTTPClient.METHOD_POST, body)
 	_return_http_request(http)
 
 	if result["success"]:
@@ -280,12 +280,26 @@ func sell_ship(ship_id: int) -> void:
 # WORKERS
 # ══════════════════════════════════════════════════════════════════════════════
 
-func hire_worker(colony_id: int):
+func get_available_workers() -> Array:
 	var http := _get_http_request()
 	var headers := _auth_headers()
-	var body := JSON.stringify({"colony_id": colony_id})
 
-	var result := await _http_request_async(http, base_url + "/api/workers", headers, HTTPClient.METHOD_POST, body)
+	var result := await _http_request_async(http, base_url + "/game/available-workers", headers, HTTPClient.METHOD_GET)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		push_warning("Failed to get available workers: " + str(result.get("error", "Unknown error")))
+		return []
+
+
+func hire_worker(worker_id: int):
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var body := JSON.stringify({"worker_id": worker_id})
+
+	var result := await _http_request_async(http, base_url + "/game/hire", headers, HTTPClient.METHOD_POST, body)
 	_return_http_request(http)
 
 	if result["success"]:
@@ -300,7 +314,7 @@ func fire_worker(worker_id: int) -> void:
 	var http := _get_http_request()
 	var headers := _auth_headers()
 
-	var result := await _http_request_async(http, base_url + "/api/workers/%d" % worker_id, headers, HTTPClient.METHOD_DELETE)
+	var result := await _http_request_async(http, base_url + "/game/fire/%d" % worker_id, headers, HTTPClient.METHOD_POST)
 	_return_http_request(http)
 
 	if not result["success"]:
