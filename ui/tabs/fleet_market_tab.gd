@@ -3306,16 +3306,19 @@ func _execute_dispatch() -> void:
 	# Actually execute the dispatch after confirmation
 	# Check fuel
 	if GameState.settings.get("auto_refuel", true):
-		var dist := _selected_ship.position_au.distance_to(_selected_asteroid.get_position_au())
-		var fuel_needed := _selected_ship.calc_fuel_for_distance(dist)
-		var fuel_cost := int(fuel_needed * Ship.FUEL_COST_PER_UNIT)
-		print("Fuel check: need %.0f, cost $%d, have $%d" % [fuel_needed, fuel_cost, GameState.money])
-		if GameState.money < fuel_cost:
-			print("ERROR: Cannot afford fuel!")
-			return  # Can't afford fuel
-		# Refuel and charge
-		_selected_ship.fuel = _selected_ship.fuel_capacity
-		GameState.money -= fuel_cost
+		# Only buy fuel if tank isn't full
+		var fuel_to_add := _selected_ship.fuel_capacity - _selected_ship.fuel
+		if fuel_to_add > 0:
+			var fuel_cost := int(fuel_to_add * Ship.FUEL_COST_PER_UNIT)
+			print("Auto-refuel: adding %.0f fuel, cost $%d, have $%d" % [fuel_to_add, fuel_cost, GameState.money])
+			if GameState.money < fuel_cost:
+				print("ERROR: Cannot afford fuel!")
+				return  # Can't afford fuel
+			# Refuel and charge
+			_selected_ship.fuel = _selected_ship.fuel_capacity
+			GameState.money -= fuel_cost
+		else:
+			print("Ship already has full fuel (%.0f/%.0f)" % [_selected_ship.fuel, _selected_ship.fuel_capacity])
 
 	# Remember crew for next dispatch
 	_selected_ship.crew = _selected_workers.duplicate()
