@@ -20,7 +20,7 @@ from server.rate_limit import limiter
 from server.schemas.game import (
     AsteroidOut, BuyEquipmentRequest, BuyShipRequest, ColonyOut, DispatchRequest,
     EquipmentOut, GameState, HireRequest, MissionOut, RigOut, SellEquipmentRequest,
-    ShipOut, StockpileOut, WorkerOut,
+    ShipOut, StockpileOut, TradeMissionOut, WorkerOut,
 )
 from server.schemas.player import PolicyUpdate
 from server.simulation.tick import get_market_prices, get_total_ticks
