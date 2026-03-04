@@ -49,6 +49,7 @@ const SHIP_NAMES := [
 	"Sing Forever",
 	"Long Path",
 	"Of Distant Suns",
+	"Tarbell",
 ]
 
 const CLASS_PRICES := {
