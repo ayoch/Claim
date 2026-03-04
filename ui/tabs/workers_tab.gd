@@ -248,7 +248,11 @@ func _fetch_server_candidates() -> void:
 		w.mining_skill = float(worker_data.get("mining_skill", 0.5))
 		w.wage = int(worker_data.get("wage", 100))
 		w.personality = int(worker_data.get("personality", 2))
-		w.home_colony = worker_data.get("home_colony", "Earth")
+
+		# Map location_colony_id to colony name
+		var colony_id: int = worker_data.get("location_colony_id", 1)
+		w.home_colony = ColonyData.get_colony_name(colony_id)
+
 		_candidates.append(w)
 
 	log_file = FileAccess.open("res://candidate_fetch.log", FileAccess.READ_WRITE)

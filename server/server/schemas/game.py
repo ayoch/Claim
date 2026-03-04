@@ -53,6 +53,7 @@ class WorkerOut(BaseModel):
     assigned_mission_id: int | None
     is_available: bool
     leave_status: int
+    location_colony_id: int
 
     model_config = {"from_attributes": True}
 

@@ -1,6 +1,23 @@
 class_name ColonyData
 extends RefCounted
 
+# Map colony IDs (from server database) to colony names
+static var COLONY_ID_TO_NAME: Dictionary = {
+	1: "Earth",
+	2: "Lunar Base",
+	3: "Mars Colony",
+	4: "Ceres Station",
+	5: "Europa Lab",
+	6: "Ganymede Port",
+	7: "Vesta Refinery",
+	8: "Titan Outpost",
+	9: "Callisto Base",
+	10: "Triton Station",
+}
+
+static func get_colony_name(colony_id: int) -> String:
+	return COLONY_ID_TO_NAME.get(colony_id, "Unknown")
+
 static func get_colonies() -> Array[Colony]:
 	var list: Array[Colony] = []
 	var O := ResourceTypes.OreType
