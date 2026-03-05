@@ -23,7 +23,6 @@ var session_info_label: Label = null
 var _server_msg_card: PanelContainer = null
 var _server_messages: Array = []
 var _server_msg_seen: Dictionary = {}
-var _admin_speed_controls: HBoxContainer = null
 
 const MAX_ALERTS: int = 50
 const MAX_ACTIVITY: int = 100
@@ -81,11 +80,6 @@ func _ready() -> void:
 
 	# Create session info label
 	_create_session_info_label()
-
-	# Create admin controls (server mode only)
-	# Defer to ensure backend is fully initialized
-	await get_tree().create_timer(0.5).timeout
-	_create_admin_speed_controls()
 
 	# Market events → activity
 	EventBus.market_event.connect(func(_ore: ResourceTypes.OreType, _old: float, _new: float, msg: String) -> void:
@@ -1472,10 +1466,6 @@ func _update_session_info() -> void:
 	var game_date := _get_game_date_text()
 	parts.append(game_date)
 
-	# Speed display
-	var speed_text := "Speed: %.0fx" % TimeScale.speed_multiplier
-	parts.append(speed_text)
-
 	session_info_label.text = "  |  ".join(parts)
 
 
@@ -1565,134 +1555,6 @@ func _get_game_date_text() -> String:
 	return "%s %d, %d" % [month_names[month - 1], day, year]
 
 
-func _create_admin_speed_controls() -> void:
-	"""Create admin-only server speed controls"""
-	print("=== Creating Admin Speed Controls ===")
-	print("Backend mode: ", BackendManager.current_mode)
-	print("SERVER mode enum: ", BackendManager.BackendMode.SERVER)
-
-	# Only show for server mode admins
-	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
-		print("Not in SERVER mode, skipping admin controls")
-		return
-
-	var server_backend = BackendManager.get_server_backend()
-	print("Server backend: ", server_backend)
-	if server_backend:
-		print("is_admin: ", server_backend.is_admin)
-
-	if not server_backend or not server_backend.is_admin:
-		print("No server backend or not admin, skipping controls")
-		return
-
-	print("Creating admin speed controls!")
-
-	# Create container for speed controls
-	_admin_speed_controls = HBoxContainer.new()
-	_admin_speed_controls.add_theme_constant_override("separation", 8)
-
-	# Label
-	var label := Label.new()
-	label.text = "Server Speed:"
-	label.add_theme_font_size_override("font_size", 16)
-	label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.3))  # Gold color for admin
-	_admin_speed_controls.add_child(label)
-
-	# Current speed display
-	var speed_display := Label.new()
-	speed_display.name = "SpeedDisplay"
-	speed_display.text = "..."
-	speed_display.add_theme_font_size_override("font_size", 18)
-	speed_display.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
-	speed_display.custom_minimum_size = Vector2(80, 0)
-	_admin_speed_controls.add_child(speed_display)
-
-	# Speed buttons
-	var speeds := [1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 200000.0]
-	for speed in speeds:
-		var btn := Button.new()
-		btn.text = "%.0fx" % speed if speed < 1000 else "%.0fk" % (speed / 1000.0)
-		btn.custom_minimum_size = Vector2(50, 28)
-		btn.add_theme_font_size_override("font_size", 14)
-		btn.pressed.connect(func() -> void: _set_server_speed(speed))
-		_admin_speed_controls.add_child(btn)
-
-	# Start polling for current speed
-	_poll_server_speed()
-
-	# Add to UI (after session info label)
-	if session_info_label and session_info_label.get_parent():
-		var parent := session_info_label.get_parent()
-		parent.add_child(_admin_speed_controls)
-		parent.move_child(_admin_speed_controls, 1)  # Right after session info
-
-
-func _set_server_speed(speed: float) -> void:
-	"""Set server simulation speed (admin only)"""
-	var server_backend = BackendManager.get_server_backend()
-	if not server_backend or not server_backend.is_admin:
-		return
-
-	var http := HTTPRequest.new()
-	add_child(http)
-
-	var url: String = server_backend.base_url + "/admin/set-speed"
-	var headers := ["Authorization: Bearer " + server_backend.auth_token, "Content-Type: application/json"]
-	var body: String = JSON.stringify({"multiplier": speed})
-
-	var error := http.request(url, headers, HTTPClient.METHOD_POST, body)
-	if error != OK:
-		print("[HQTab] Failed to send speed change request: ", error)
-		http.queue_free()
-		return
-
-	var result: Array = await http.request_completed
-	http.queue_free()
-
-	var response_code: int = result[1]
-	if response_code == 200:
-		print("[HQTab] Server speed set to %.0fx" % speed)
-	else:
-		var response_body: PackedByteArray = result[3]
-		var body_str: String = response_body.get_string_from_utf8()
-		print("[HQTab] Failed to set server speed - Code: %d, Body: %s" % [response_code, body_str])
-
-
-func _poll_server_speed() -> void:
-	"""Poll server for current simulation speed and update display"""
-	if not _admin_speed_controls or not is_instance_valid(_admin_speed_controls):
-		return
-
-	var server_backend = BackendManager.get_server_backend()
-	if not server_backend or not server_backend.is_admin:
-		return
-
-	while is_instance_valid(_admin_speed_controls):
-		var http := HTTPRequest.new()
-		add_child(http)
-
-		var url: String = server_backend.base_url + "/admin/speed"
-		var headers := ["Authorization: Bearer " + server_backend.auth_token]
-
-		var error := http.request(url, headers, HTTPClient.METHOD_GET)
-		if error == OK:
-			var result: Array = await http.request_completed
-			var response_code: int = result[1]
-			if response_code == 200:
-				var response_body: PackedByteArray = result[3]
-				var json := JSON.new()
-				if json.parse(response_body.get_string_from_utf8()) == OK:
-					var data: Dictionary = json.data
-					var speed: float = data.get("speed", 1.0)
-					var speed_display := _admin_speed_controls.get_node_or_null("SpeedDisplay")
-					if speed_display:
-						if speed >= 1000:
-							speed_display.text = "%.0fkx" % (speed / 1000.0)
-						else:
-							speed_display.text = "%.0fx" % speed
-
-		http.queue_free()
-		await get_tree().create_timer(2.0).timeout  # Poll every 2 seconds
 
 
 # ── Server broadcast messages ─────────────────────────────────────────────────

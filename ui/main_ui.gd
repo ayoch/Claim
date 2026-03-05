@@ -21,6 +21,10 @@ var _net_worth_update_timer: float = 0.0
 const NET_WORTH_UPDATE_INTERVAL: float = 1.0  # Update net worth once per second
 var _save_load_dialog: PopupPanel = null
 
+# Loading overlay (SERVER mode only)
+var _loading_overlay: Control = null
+var _initial_state_loaded: bool = false
+
 # Server state polling (Phase 1)
 var _server_poll_timer: float = 0.0
 const SERVER_POLL_INTERVAL: float = 2.0  # Poll server every 2 seconds
@@ -88,6 +92,8 @@ func _ready() -> void:
 		if server_backend:
 			server_backend.subscribe_events(Callable())
 			print("[MainUI] Subscribed to server event stream")
+
+		_show_loading_overlay()
 
 	_update_date_display()
 
@@ -170,7 +176,10 @@ func _setup_speed_bar() -> void:
 	# Wire decrease button
 	var dec_btn: Button = hbox.get_node("DecBtn")
 	dec_btn.pressed.connect(func() -> void:
-		TimeScale.slow_down()
+		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+			_adjust_server_speed(KEY_1)
+		else:
+			TimeScale.slow_down()
 		_update_speed_display()
 	)
 
@@ -183,21 +192,33 @@ func _setup_speed_bar() -> void:
 	# Wire increase button
 	var inc_btn: Button = hbox.get_node("IncBtn")
 	inc_btn.pressed.connect(func() -> void:
-		TimeScale.speed_up()
+		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+			_adjust_server_speed(KEY_2)
+		else:
+			TimeScale.speed_up()
 		_update_speed_display()
 	)
 
 	# Wire preset buttons
 	hbox.get_node("Preset1x").pressed.connect(func() -> void:
-		TimeScale.set_speed(TimeScale.SPEED_REALTIME)
+		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+			_set_server_speed(1.0)
+		else:
+			TimeScale.set_speed(TimeScale.SPEED_REALTIME)
 		_update_speed_display()
 	)
 	hbox.get_node("Preset20x").pressed.connect(func() -> void:
-		TimeScale.set_speed(TimeScale.SPEED_NORMAL)
+		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+			_set_server_speed(100.0)
+		else:
+			TimeScale.set_speed(TimeScale.SPEED_NORMAL)
 		_update_speed_display()
 	)
 	hbox.get_node("Preset100x").pressed.connect(func() -> void:
-		TimeScale.set_speed(TimeScale.SPEED_VERYFAST)
+		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+			_set_server_speed(100000.0)
+		else:
+			TimeScale.set_speed(TimeScale.SPEED_VERYFAST)
 		_update_speed_display()
 	)
 
@@ -507,6 +528,10 @@ func _poll_server_state() -> void:
 	# Apply server state to local GameState (own ships, workers, money)
 	GameState.apply_server_state(server_data)
 
+	if not _initial_state_loaded:
+		_initial_state_loaded = true
+		_hide_loading_overlay()
+
 	# Apply world state (all players' ships for multiplayer visibility)
 	if not world_data.is_empty():
 		GameState.apply_world_state(world_data)
@@ -605,3 +630,36 @@ func _set_server_speed(speed: float) -> void:
 	else:
 		var body_str: String = response_body.get_string_from_utf8()
 		print("[MainUI] Failed to set server speed - Code: %d, Body: %s" % [response_code, body_str])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LOADING OVERLAY
+# ══════════════════════════════════════════════════════════════════════════════
+
+func _show_loading_overlay() -> void:
+	_loading_overlay = Control.new()
+	_loading_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_loading_overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+
+	var bg := ColorRect.new()
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.color = Color(0.06, 0.06, 0.08, 1.0)
+	_loading_overlay.add_child(bg)
+
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_loading_overlay.add_child(center)
+
+	var label := Label.new()
+	label.text = "Reticulating splines..."
+	label.add_theme_font_size_override("font_size", 28)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	center.add_child(label)
+
+	add_child(_loading_overlay)
+
+
+func _hide_loading_overlay() -> void:
+	if _loading_overlay and is_instance_valid(_loading_overlay):
+		_loading_overlay.queue_free()
+		_loading_overlay = null
