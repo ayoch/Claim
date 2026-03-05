@@ -414,17 +414,23 @@ func _refresh_candidates() -> void:
 		candidates_list.add_child(label)
 
 func _hire_candidate(worker: Worker) -> void:
-	# Check if we're in SERVER mode
 	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
-		# SERVER mode: use server_id to hire via API
-		if worker.server_id > 0:
-			await GameState.hire_worker_any_mode(worker.server_id)
-			# Wait a moment for state poll to sync, then refresh
-			await get_tree().create_timer(1.0).timeout
-			_dirty_all = true
-		else:
+		if worker.server_id <= 0:
 			push_error("Cannot hire worker in SERVER mode: worker has no server_id")
+			return
+
+		# Optimistic update: show in crew immediately
+		_candidates.erase(worker)
+		GameState.workers.append(worker)
+		GameState._invalidate_worker_cache()
+		_refresh_all()
+
+		# Confirm with server — revert if rejected
+		var result = await BackendManager.hire_worker(worker.server_id)
+		if result == null:
+			GameState.workers.erase(worker)
+			GameState._invalidate_worker_cache()
+			_candidates.append(worker)
+			_refresh_all()
 	else:
-		# LOCAL mode: hire directly
 		GameState.hire_worker(worker)
-		# UI will refresh via worker_hired signal (connected in _ready)
