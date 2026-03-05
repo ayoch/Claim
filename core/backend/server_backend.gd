@@ -451,12 +451,41 @@ func update_policies(policies: Dictionary) -> void:
 	var headers := _auth_headers()
 	var body := JSON.stringify(policies)
 
-	var result := await _http_request_async(http, base_url + "/api/policies", headers, HTTPClient.METHOD_PUT, body)
+	var result := await _http_request_async(http, base_url + "/game/policies", headers, HTTPClient.METHOD_POST, body)
 	_return_http_request(http)
 
 	if not result["success"]:
 		var err = result.get("error", "Unknown error")
 		push_warning("Failed to update policies: " + str(err))
+
+
+func sell_cargo(ship_id: int):
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var result := await _http_request_async(http, base_url + "/game/sell-cargo/%d" % ship_id, headers, HTTPClient.METHOD_POST)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		push_warning("Failed to sell cargo: " + str(result.get("error", "Unknown error")))
+		return null
+
+
+func dispatch_trade(ship_id: int, colony_id: int):
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var url := base_url + "/game/dispatch-trade?ship_id=%d&colony_id=%d" % [ship_id, colony_id]
+	var result := await _http_request_async(http, url, headers, HTTPClient.METHOD_POST)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		push_warning("Failed to dispatch trade mission: " + str(result.get("error", "Unknown error")))
+		return null
 
 
 # ══════════════════════════════════════════════════════════════════════════════

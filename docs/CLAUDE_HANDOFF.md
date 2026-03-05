@@ -1,12 +1,45 @@
 # Claude Code Handoff Document
 **Last Updated:** 2026-03-04
-**Current Instance:** HK-47 (Mac) → Dweezil (Windows)
+**Current Instance:** Dweezil (Windows)
 
 ---
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Title Screen + Docs
+### Latest Work Session: Ship Bugs + SERVER Mode Audit
+**Date:** 2026-03-04 (Windows/Dweezil)
+**Status:** Complete — NOT YET COMMITTED
+
+**What was done:**
+1. ✅ Ship `is_docked` fix — added `server_docked: bool` to `Ship`, modified `is_docked` getter to return true if `server_docked`. Fixes ships showing max thrust while docked and missing dispatch button.
+2. ✅ `apply_server_state` — now sets `ship.server_docked` (was trying to set computed property `is_docked`, had no effect)
+3. ✅ Fleet tab `_confirm_dispatch` — now routes through `BackendManager.dispatch_mission` in SERVER mode (was calling LOCAL-only `GameState.start_mission`)
+4. ✅ `_add_fleet_stat_row` — fixed broken string comparison; now uses float comparison with format string. Thrust shows "0.00g" for docked ships, upgrades show correctly.
+5. ✅ SERVER mode audit + fixes — guarded all LOCAL-only operations:
+   - `workers_tab.gd`: fire_worker now routes through `BackendManager.fire_worker` in SERVER mode
+   - `main_ui.gd`: custom speed input now routes through `_set_server_speed` in SERVER mode
+   - `hq_tab.gd`: autoplay no longer calls `TimeScale.set_speed` in SERVER mode
+   - `fleet_tab.gd` + `fleet_market_tab.gd`: fuel/money mutations moved inside LOCAL-only branches; cargo sell buttons blocked in SERVER mode; trade mission dispatch (`_select_colony_trade`) blocked in SERVER mode
+   - `market_tab.gd`: `_sell_all_ores`, `_sell_ore`, `_start_trade`, `_start_remote_trade` all blocked in SERVER mode
+
+**Files modified (not yet committed):**
+- `core/models/ship.gd` — `server_docked` field + `is_docked` getter
+- `core/autoloads/game_state.gd` — `apply_server_state` uses `server_docked`
+- `ui/tabs/fleet_tab.gd` — dispatch SERVER routing, fuel guard, colony trade guard, sell guard
+- `ui/tabs/fleet_market_tab.gd` — `_add_fleet_stat_row` refactor, fuel guard, colony trade guard, sell guard
+- `ui/tabs/workers_tab.gd` — fire button SERVER routing
+- `ui/tabs/hq_tab.gd` — autoplay TimeScale guard
+- `ui/tabs/market_tab.gd` — sell/trade functions blocked in SERVER mode
+- `ui/main_ui.gd` — custom speed input SERVER routing
+
+**Known remaining gap (not yet implemented):**
+- Trade missions (colony-to-colony cargo runs) have no server API endpoint yet — they are blocked/no-op in SERVER mode. Needs a `POST /game/dispatch-trade` endpoint and BackendManager method.
+- Cargo selling at colonies has no server API — blocked in SERVER mode. Server auto-sells via autoplay.
+- Mission progress bars in fleet_tab still use local mission object state (stale between server polls). Low priority.
+
+---
+
+### Previous Work Session: Title Screen + Docs
 **Date:** 2026-03-04 ~17:00–20:29 EST (Windows/Dweezil)
 **Status:** Complete
 

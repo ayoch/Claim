@@ -58,6 +58,7 @@ class PolicyUpdate(BaseModel):
     supply_policy: int | None = Field(None, ge=0, le=2)
     collection_policy: int | None = Field(None, ge=0, le=2)
     encounter_policy: int | None = Field(None, ge=0, le=2)
+    auto_sell_on_return: bool | None = None
 
 
 class Token(BaseModel):

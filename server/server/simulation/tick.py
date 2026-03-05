@@ -200,7 +200,7 @@ async def _process_missions(db: AsyncSession, dt: float) -> list[dict]:
     result = await db.execute(
         select(Mission)
         .where(Mission.status.in_([STATUS_TRANSIT_OUT, STATUS_MINING, STATUS_COLLECTING, STATUS_TRANSIT_BACK]))
-        .options(selectinload(Mission.ship), selectinload(Mission.asteroid))
+        .options(selectinload(Mission.ship), selectinload(Mission.asteroid), selectinload(Mission.player))
     )
     missions = list(result.scalars().all())
     for mission in missions:
@@ -215,7 +215,7 @@ async def _process_missions(db: AsyncSession, dt: float) -> list[dict]:
         elif mission.status == STATUS_COLLECTING:
             events += await _advance_collecting(mission, ship, dt, db)
         elif mission.status == STATUS_TRANSIT_BACK:
-            events += _advance_transit_back(mission, ship, dt)
+            events += _advance_transit_back(mission, ship, dt, mission.player)
         db.add(mission)
         if prev_status != mission.status:
             events.append({'type': 'mission_status_changed', 'mission_id': mission.id,
@@ -394,7 +394,7 @@ async def _advance_collecting(mission: Mission, ship: Ship, dt: float, db: Async
 
     return events
 
-def _advance_transit_back(mission: Mission, ship: Ship, dt: float) -> list[dict]:
+def _advance_transit_back(mission: Mission, ship: Ship, dt: float, player=None) -> list[dict]:
     mission.elapsed_ticks += dt
     ship.fuel = max(0.0, ship.fuel - mission.fuel_per_tick * dt)
 
@@ -417,11 +417,19 @@ def _advance_transit_back(mission: Mission, ship: Ship, dt: float) -> list[dict]
         # Snap to origin position
         ship.position_x = mission.origin_x
         ship.position_y = mission.origin_y
-        total_value = _sell_cargo(ship)
-        if total_value > 0:
-            logger.info('Mission %d: completed, cargo %.1fM cr', mission.id, total_value / 1e6)
+        auto_sell = player.auto_sell_on_return if player is not None else True
+        total_value = 0
+        if auto_sell:
+            total_value = _sell_cargo(ship)
+            if total_value > 0:
+                if player:
+                    player.money += total_value
+                logger.info('Mission %d: completed, auto-sold cargo %.1fM cr', mission.id, total_value / 1e6)
+        else:
+            logger.info('Mission %d: completed, cargo held (auto_sell_on_return=False)', mission.id)
         ev = {'type': 'mission_completed', 'mission_id': mission.id,
-              'player_id': mission.player_id, 'ship_id': mission.ship_id}
+              'player_id': mission.player_id, 'ship_id': mission.ship_id,
+              'auto_sold': auto_sell}
         if total_value > 0:
             ev['cargo_value'] = total_value
         events.append(ev)

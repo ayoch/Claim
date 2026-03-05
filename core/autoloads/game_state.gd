@@ -36,6 +36,7 @@ var settings: Dictionary = {
 	"auto_sell_at_markets": false,
 	"auto_restock_torpedoes": true,
 	"auto_sell_at_earth": true,
+	"auto_sell_on_return": true,  # SERVER mode: server sells cargo automatically on mission return
 	"autoplay": true,
 	"auto_pause_on_critical": true,  # Default ON for safety
 }
@@ -4005,6 +4006,7 @@ func apply_server_state(server_data: Dictionary) -> void:
 	supply_policy = int(server_data.get("supply_policy", supply_policy))
 	collection_policy = int(server_data.get("collection_policy", collection_policy))
 	encounter_policy = int(server_data.get("encounter_policy", encounter_policy))
+	settings["auto_sell_on_return"] = bool(server_data.get("auto_sell_on_return", settings.get("auto_sell_on_return", true)))
 
 	# Update ships (server only has: id, ship_name, fuel, cargo, position, is_stationed)
 	# In SERVER mode, match by server_id and update existing ships or create new ones
@@ -4065,8 +4067,8 @@ func apply_server_state(server_data: Dictionary) -> void:
 			ship_changed = true
 
 		var new_docked := bool(ship_data.get("is_stationed", true))
-		if ship.is_docked != new_docked:
-			ship.is_docked = new_docked
+		if ship.server_docked != new_docked:
+			ship.server_docked = new_docked
 			ship_changed = true
 
 		# Parse cargo and check if changed

@@ -746,11 +746,13 @@ func _setup_policies_ui() -> void:
 		# Auto-enable max speed when autoplay turns on
 		if on:
 			GameState.settings["auto_sell_at_markets"] = true
-			TimeScale.set_speed(TimeScale.SPEED_MAX)
+			if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+				TimeScale.set_speed(TimeScale.SPEED_MAX)
 			print("AUTOPLAY: ENABLED — AI corp running at max speed")
 		else:
 			GameState.settings["auto_sell_at_markets"] = false
-			TimeScale.set_speed(1.0)
+			if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+				TimeScale.set_speed(1.0)
 			print("AUTOPLAY: DISABLED — Manual control, speed reset to 1x")
 	)
 	title_row.add_child(autoplay_btn)
@@ -776,6 +778,19 @@ func _setup_policies_ui() -> void:
 		pause_btn.text = "⚠️ Pause: ON" if on else "⚠️ Pause: OFF"
 	)
 	title_row.add_child(pause_btn)
+
+	var auto_sell_btn := Button.new()
+	auto_sell_btn.toggle_mode = true
+	auto_sell_btn.button_pressed = GameState.settings.get("auto_sell_on_return", true)
+	auto_sell_btn.text = "Auto-Sell: ON" if auto_sell_btn.button_pressed else "Auto-Sell: OFF"
+	auto_sell_btn.custom_minimum_size = Vector2(130, 0)
+	auto_sell_btn.toggled.connect(func(on: bool) -> void:
+		GameState.settings["auto_sell_on_return"] = on
+		auto_sell_btn.text = "Auto-Sell: ON" if on else "Auto-Sell: OFF"
+		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+			BackendManager.update_policies({"auto_sell_on_return": on})
+	)
+	title_row.add_child(auto_sell_btn)
 
 	policies_vbox.add_child(title_row)
 

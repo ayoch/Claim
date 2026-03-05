@@ -559,8 +559,8 @@ func _rebuild_ships() -> void:
 		# Add stat rows
 		# Docked/idle ships show 0g thrust (not thrusting), ships on missions show effective thrust
 		var current_thrust := 0.0 if (ship.is_docked or ship.is_stationed or ship.is_idle_remote) else ship.get_effective_thrust()
-		_add_fleet_stat_row(stats_grid, "Thrust:", "%.2fg" % ship.max_thrust_g, current_thrust)
-		_add_fleet_stat_row(stats_grid, "Fuel:", "%.0ft" % ship.fuel_capacity, ship.get_effective_fuel_capacity())
+		_add_fleet_stat_row(stats_grid, "Thrust:", "%.2fg", ship.max_thrust_g, current_thrust)
+		_add_fleet_stat_row(stats_grid, "Fuel:", "%.0ft", ship.fuel_capacity, ship.get_effective_fuel_capacity())
 		var dv_base := ship.get_delta_v(ship.fuel_capacity)
 		var dv_eff := ship.get_delta_v(ship.get_effective_fuel_capacity())
 		var dv_label := _lbl()
@@ -581,9 +581,9 @@ func _rebuild_ships() -> void:
 		dv_value.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		dv_value.add_theme_font_size_override("font_size", 16)
 		stats_grid.add_child(dv_value)
-		_add_fleet_stat_row(stats_grid, "Cargo:", "%.0ft" % ship.cargo_capacity, ship.get_effective_cargo_capacity())
-		_add_fleet_stat_row(stats_grid, "Volume:", "%.0fm³" % ship.cargo_volume, ship.get_effective_cargo_volume())
-		_add_fleet_stat_row(stats_grid, "Min Crew:", "%d" % ship.min_crew, ship.min_crew)
+		_add_fleet_stat_row(stats_grid, "Cargo:", "%.0ft", ship.cargo_capacity, ship.get_effective_cargo_capacity())
+		_add_fleet_stat_row(stats_grid, "Volume:", "%.0fm³", ship.cargo_volume, ship.get_effective_cargo_volume())
+		_add_fleet_stat_row(stats_grid, "Min Crew:", "%d", float(ship.min_crew), float(ship.min_crew))
 
 		stats_container.add_child(stats_grid)
 		vbox.add_child(stats_container)
@@ -786,6 +786,10 @@ func _rebuild_ships() -> void:
 				sell_btn.text = "Sell All on Spot Market ($%s)" % _format_number(revenue)
 				sell_btn.custom_minimum_size = Vector2(0, 44)
 				sell_btn.pressed.connect(func() -> void:
+					if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+						if ship.server_id > 0:
+							await BackendManager.sell_cargo(ship.server_id)
+						return
 					var total_revenue := 0
 					for ore_type in ship.current_cargo:
 						var amount: float = ship.current_cargo[ore_type]
@@ -2365,6 +2369,16 @@ func _select_asteroid(asteroid: AsteroidData) -> void:
 	_show_worker_selection()
 
 func _select_colony_trade(colony: Colony) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		var colony_idx := GameState.colonies.find(colony)
+		if _selected_ship and _selected_ship.server_id > 0 and colony_idx >= 0:
+			await BackendManager.dispatch_trade(_selected_ship.server_id, colony_idx + 1)
+			_cancel_preview()
+			_return_to_map_if_needed()
+			_hide_dispatch()
+			_mark_dirty()
+		return
+
 	# Skip worker selection, go straight to trade mission
 	var cargo := _selected_ship.current_cargo.duplicate()
 	if cargo.is_empty():
@@ -3333,21 +3347,20 @@ func _abort_and_dispatch() -> void:
 func _execute_dispatch() -> void:
 	print("=== _execute_dispatch() CALLED ===")
 	# Actually execute the dispatch after confirmation
-	# Check fuel
-	if GameState.settings.get("auto_refuel", true):
-		# Only buy fuel if tank isn't full
-		var fuel_to_add := _selected_ship.fuel_capacity - _selected_ship.fuel
-		if fuel_to_add > 0:
-			var fuel_cost := int(fuel_to_add * Ship.FUEL_COST_PER_UNIT)
-			print("Auto-refuel: adding %.0f fuel, cost $%d, have $%d" % [fuel_to_add, fuel_cost, GameState.money])
-			if GameState.money < fuel_cost:
-				print("ERROR: Cannot afford fuel!")
-				return  # Can't afford fuel
-			# Refuel and charge
-			_selected_ship.fuel = _selected_ship.fuel_capacity
-			GameState.money -= fuel_cost
-		else:
-			print("Ship already has full fuel (%.0f/%.0f)" % [_selected_ship.fuel, _selected_ship.fuel_capacity])
+	# Check fuel (LOCAL only — server manages fuel/money server-side)
+	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+		if GameState.settings.get("auto_refuel", true):
+			var fuel_to_add := _selected_ship.fuel_capacity - _selected_ship.fuel
+			if fuel_to_add > 0:
+				var fuel_cost := int(fuel_to_add * Ship.FUEL_COST_PER_UNIT)
+				print("Auto-refuel: adding %.0f fuel, cost $%d, have $%d" % [fuel_to_add, fuel_cost, GameState.money])
+				if GameState.money < fuel_cost:
+					print("ERROR: Cannot afford fuel!")
+					return  # Can't afford fuel
+				_selected_ship.fuel = _selected_ship.fuel_capacity
+				GameState.money -= fuel_cost
+			else:
+				print("Ship already has full fuel (%.0f/%.0f)" % [_selected_ship.fuel, _selected_ship.fuel_capacity])
 
 	# Remember crew for next dispatch
 	_selected_ship.crew = _selected_workers.duplicate()
@@ -3893,7 +3906,7 @@ func _format_number(n: int) -> String:
 		result = "-" + result
 	return result
 
-func _add_fleet_stat_row(grid: GridContainer, label_text: String, base_value: String, effective_value: float) -> void:
+func _add_fleet_stat_row(grid: GridContainer, label_text: String, fmt: String, base_float: float, effective_value: float) -> void:
 	var label := _lbl()
 	label.text = label_text
 	label.clip_text = true
@@ -3903,12 +3916,11 @@ func _add_fleet_stat_row(grid: GridContainer, label_text: String, base_value: St
 	grid.add_child(label)
 
 	var value := _lbl()
-	# Show effective value if different from base
-	if str(effective_value) != base_value:
-		value.text = "%s (base) → %.2f (effective)" % [base_value, effective_value]
+	if abs(effective_value - base_float) > 0.001:
+		value.text = "%s (base) → %s (effective)" % [fmt % base_float, fmt % effective_value]
 		value.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
 	else:
-		value.text = base_value
+		value.text = fmt % base_float
 		value.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	value.clip_text = true
 	value.size_flags_horizontal = Control.SIZE_EXPAND_FILL

@@ -385,6 +385,10 @@ func _rebuild_ships() -> void:
 				sell_btn.text = "Sell Cargo at %s ($%s)" % [at_colony.colony_name, _format_number(revenue)]
 				sell_btn.custom_minimum_size = Vector2(0, 44)
 				sell_btn.pressed.connect(func() -> void:
+					if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+						if ship.server_id > 0:
+							await BackendManager.sell_cargo(ship.server_id)
+						return
 					var total_revenue := 0
 					for ore_type in ship.current_cargo:
 						var amount: float = ship.current_cargo[ore_type]
@@ -1028,6 +1032,15 @@ func _select_asteroid(asteroid: AsteroidData) -> void:
 	_show_worker_selection()
 
 func _select_colony_trade(colony: Colony) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		var colony_idx := GameState.colonies.find(colony)
+		if _selected_ship and _selected_ship.server_id > 0 and colony_idx >= 0:
+			await BackendManager.dispatch_trade(_selected_ship.server_id, colony_idx + 1)
+			_cancel_preview()
+			dispatch_popup.visible = false
+			_mark_dirty()
+		return
+
 	# Skip worker selection, go straight to trade mission
 	var cargo := _selected_ship.current_cargo.duplicate()
 	if cargo.is_empty():
@@ -1396,21 +1409,28 @@ func _update_estimate_display() -> void:
 func _confirm_dispatch() -> void:
 	if _selected_workers.size() < _selected_ship.min_crew:
 		return
-	# Check fuel
-	if GameState.settings.get("auto_refuel", true):
-		var dist := _selected_ship.position_au.distance_to(_selected_asteroid.get_position_au())
-		var fuel_needed := _selected_ship.calc_fuel_for_distance(dist)
-		var fuel_cost := int(fuel_needed * Ship.FUEL_COST_PER_UNIT)
-		if GameState.money < fuel_cost:
-			return  # Can't afford fuel
-		# Refuel and charge
-		_selected_ship.fuel = _selected_ship.fuel_capacity
-		GameState.money -= fuel_cost
+	# Check fuel (LOCAL only — server manages fuel/money server-side)
+	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+		if GameState.settings.get("auto_refuel", true):
+			var dist := _selected_ship.position_au.distance_to(_selected_asteroid.get_position_au())
+			var fuel_needed := _selected_ship.calc_fuel_for_distance(dist)
+			var fuel_cost := int(fuel_needed * Ship.FUEL_COST_PER_UNIT)
+			if GameState.money < fuel_cost:
+				return  # Can't afford fuel
+			_selected_ship.fuel = _selected_ship.fuel_capacity
+			GameState.money -= fuel_cost
 	# Remember crew for next dispatch
 	_selected_ship.crew = _selected_workers.duplicate()
 	_selected_ship.last_crew = _selected_workers.duplicate()
 
-	if _selected_ship.is_idle_remote:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		if _selected_ship.server_id == 0:
+			push_error("Cannot dispatch: ship has no server_id")
+		else:
+			var asteroid_index := GameState.asteroids.find(_selected_asteroid)
+			var server_asteroid_id := asteroid_index + 1
+			BackendManager.dispatch_mission(_selected_ship.server_id, server_asteroid_id, 0, 86400.0, false)
+	elif _selected_ship.is_idle_remote:
 		GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid)
 	else:
 		GameState.start_mission(_selected_ship, _selected_asteroid)

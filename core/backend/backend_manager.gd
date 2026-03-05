@@ -153,6 +153,15 @@ func get_market_prices() -> Dictionary:
 	return await _active_backend.get_market_prices()
 
 
+# Ships & Cargo
+func sell_cargo(ship_id: int):
+	return await _active_backend.sell_cargo(ship_id)
+
+
+func dispatch_trade(ship_id: int, colony_id: int):
+	return await _active_backend.dispatch_trade(ship_id, colony_id)
+
+
 # Policies
 func update_policies(policies: Dictionary) -> void:
 	await _active_backend.update_policies(policies)

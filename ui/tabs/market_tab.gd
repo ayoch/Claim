@@ -704,6 +704,15 @@ func _refresh_colony() -> void:
 # ═══════════════════════════════════════════════════
 
 func _sell_all_ores() -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		# Find the first docked ship and sell its cargo
+		var docked := GameState.get_docked_ships()
+		if docked.is_empty():
+			return
+		var ship: Ship = docked[0]
+		if ship.server_id > 0:
+			await BackendManager.sell_cargo(ship.server_id)
+		return
 	var total_revenue := 0
 	for ore_type in ResourceTypes.OreType.values():
 		var amount: float = GameState.resources.get(ore_type, 0.0)
@@ -716,6 +725,8 @@ func _sell_all_ores() -> void:
 		GameState.record_transaction(total_revenue, "Ore sold at Earth (all)")
 
 func _sell_ore(ore_type: ResourceTypes.OreType) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		return  # Server manages resource sales
 	var amount: float = GameState.resources.get(ore_type, 0.0)
 	if amount < 0.01:
 		return
@@ -735,6 +746,8 @@ func _remove_equipment(ship: Ship, equip: Equipment) -> void:
 	_refresh_equip()
 
 func _start_trade(colony: Colony) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		return  # Trade missions not yet supported in SERVER mode
 	var docked := GameState.get_docked_ships()
 	if docked.is_empty():
 		return
@@ -778,6 +791,8 @@ func _start_trade(colony: Colony) -> void:
 	_refresh_sell()
 
 func _start_remote_trade(colony: Colony, ship: Ship) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		return  # Trade missions not yet supported in SERVER mode
 	# Remote idle ship trades its on-board cargo
 	if not ship.is_idle_remote:
 		return

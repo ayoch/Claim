@@ -31,6 +31,21 @@ router = APIRouter(prefix="/game", tags=["game"])
 AU_TO_KM = 149_597_870.7
 G_ACCEL = 9.80665
 
+# Semi-major axis (AU) by planet_id — used for transit calculations.
+# These are mean orbital radii; good enough for transit time estimates.
+PLANET_SEMI_MAJOR_AU: dict[str, float] = {
+    "earth":       1.000,
+    "moon":        1.003,  # Earth-Moon L1 approximation
+    "mars":        1.524,
+    "ceres":       2.767,
+    "vesta":       2.362,
+    "europa":      5.203,
+    "ganymede":    5.203,
+    "callisto":    5.203,
+    "titan":       9.537,
+    "triton":     30.070,
+}
+
 
 def _transit_time_seconds(dist_au: float, thrust_g: float) -> float:
     dist_m = dist_au * AU_TO_KM * 1000.0
@@ -78,6 +93,7 @@ async def get_state(
         supply_policy=player.supply_policy,
         collection_policy=player.collection_policy,
         encounter_policy=player.encounter_policy,
+        auto_sell_on_return=player.auto_sell_on_return,
         total_ticks=get_total_ticks(),
         speed_multiplier=admin_speed.get_speed_multiplier(),
         ships=[ShipOut.model_validate(s) for s in player.ships],
@@ -121,7 +137,7 @@ async def dispatch(
         colony = col_result.scalar_one_or_none()
         if not colony:
             raise HTTPException(status_code=404, detail="Colony not found")
-        target_x = 1.52
+        target_x = PLANET_SEMI_MAJOR_AU.get(colony.planet_id, 1.52)
         target_y = 0.0
         origin_name = colony.colony_name
         origin_is_earth = False
@@ -476,6 +492,55 @@ async def list_stockpiles(
     return [StockpileOut.model_validate(s) for s in result.scalars().all()]
 
 
+@router.post("/sell-cargo/{ship_id}", response_model=dict)
+@limiter.limit("20/minute")
+async def sell_cargo(
+    request: Request,
+    ship_id: int,
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Manually sell all cargo on a docked ship at current market prices.
+    Applies price_multipliers of the colony the ship is stationed at (if any).
+    Ship must be stationed (docked) and have cargo.
+    """
+    from server.simulation.tick import get_market_prices, BASE_ORE_PRICES
+    ship_result = await db.execute(
+        select(Ship).where(Ship.id == ship_id, Ship.player_id == player.id)
+    )
+    ship = ship_result.scalar_one_or_none()
+    if not ship:
+        raise HTTPException(status_code=404, detail="Ship not found")
+    if not ship.is_stationed:
+        raise HTTPException(status_code=409, detail="Ship must be docked to sell cargo")
+    if not ship.current_cargo or sum(ship.current_cargo.values()) == 0:
+        raise HTTPException(status_code=422, detail="Ship has no cargo to sell")
+
+    # Load colony price multipliers if ship is stationed at one
+    price_multipliers: dict = {}
+    if ship.station_colony_id:
+        col_result = await db.execute(select(Colony).where(Colony.id == ship.station_colony_id))
+        colony = col_result.scalar_one_or_none()
+        if colony:
+            price_multipliers = colony.price_multipliers or {}
+
+    market = get_market_prices()
+    total = 0
+    for ore_type, tonnes in ship.current_cargo.items():
+        base_price = market.get(ore_type, BASE_ORE_PRICES.get(ore_type, 1000.0))
+        multiplier = price_multipliers.get(ore_type, 1.0)
+        total += int(tonnes * base_price * multiplier)
+
+    ship.current_cargo = {}
+    player.money += total
+    db.add(ship)
+    db.add(player)
+    await db.commit()
+
+    return {"sold": True, "revenue": total, "new_balance": player.money}
+
+
 @router.post("/dispatch-trade", response_model=TradeMissionOut, status_code=status.HTTP_201_CREATED)
 @limiter.limit("20/minute")  # 20 trade dispatches per minute
 async def dispatch_trade_mission(
@@ -514,10 +579,10 @@ async def dispatch_trade_mission(
     if not colony:
         raise HTTPException(status_code=404, detail="Colony not found")
 
-    # Calculate transit (simplified - colony at Mars orbit ~1.52 AU)
+    # Calculate transit using colony's actual orbital radius
     origin_x = ship.position_x
     origin_y = ship.position_y
-    target_x = 1.52  # Mars orbit
+    target_x = PLANET_SEMI_MAJOR_AU.get(colony.planet_id, 1.52)
     target_y = 0.0
 
     dist = math.sqrt((target_x - origin_x) ** 2 + (target_y - origin_y) ** 2)
@@ -572,6 +637,8 @@ async def update_policies(
         player.collection_policy = payload.collection_policy
     if payload.encounter_policy is not None:
         player.encounter_policy = payload.encounter_policy
+    if payload.auto_sell_on_return is not None:
+        player.auto_sell_on_return = payload.auto_sell_on_return
     db.add(player)
     await db.commit()
     return {"ok": True}

@@ -225,7 +225,10 @@ func _setup_speed_bar() -> void:
 func _on_speed_submitted(new_text: String) -> void:
 	var new_speed := new_text.to_float()
 	if new_speed > 0:
-		TimeScale.set_speed(new_speed)
+		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+			_set_server_speed(new_speed)
+		else:
+			TimeScale.set_speed(new_speed)
 	_update_speed_display()
 
 func _on_speed_focus_lost() -> void:

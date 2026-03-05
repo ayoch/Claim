@@ -88,6 +88,8 @@ var queued_mining_duration: float = 86400.0
 var queued_slingshot_route = null  # GravityAssist.SlingshotRoute or null
 var queued_mission_type: int = Mission.MissionType.MINING
 
+var server_docked: bool = false  # Set by apply_server_state in SERVER mode
+
 var is_at_earth: bool:
 	get:
 		return docked_at_earth or position_au.distance_to(CelestialData.get_earth_position_au()) < EARTH_PROXIMITY_AU
@@ -106,6 +108,8 @@ var _has_active_mission: bool:
 
 var is_docked: bool:
 	get:
+		if server_docked:
+			return true
 		# Ship is docked if it has NO mission and is either at Earth or at a colony
 		if current_mission != null or current_trade_mission != null or is_derelict:
 			return false

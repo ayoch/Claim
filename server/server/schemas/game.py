@@ -160,6 +160,7 @@ class GameState(BaseModel):
     supply_policy: int
     collection_policy: int
     encounter_policy: int
+    auto_sell_on_return: bool
     total_ticks: int
     speed_multiplier: float  # Server simulation speed
     ships: list[ShipOut]
