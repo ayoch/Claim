@@ -4009,7 +4009,6 @@ func apply_server_state(server_data: Dictionary) -> void:
 	# Update ships (server only has: id, ship_name, fuel, cargo, position, is_stationed)
 	# In SERVER mode, match by server_id and update existing ships or create new ones
 	var server_ships: Array = server_data.get("ships", [])
-	print("[GameState] Server sent %d ships (local has %d)" % [server_ships.size(), ships.size()])
 
 	# Build map of existing ships by server_id for fast lookup
 	var local_ships_by_id: Dictionary = {}
@@ -4030,7 +4029,6 @@ func apply_server_state(server_data: Dictionary) -> void:
 		# Match by server_id
 		if local_ships_by_id.has(ship_id):
 			ship = local_ships_by_id[ship_id]
-			print("[GameState] Updating existing ship: %s (id %d)" % [ship.ship_name, ship_id])
 		else:
 			ship = ShipData.create_ship(
 				int(ship_data.get("ship_class", 0)),
@@ -4126,6 +4124,12 @@ func apply_server_state(server_data: Dictionary) -> void:
 			# Create new worker
 			worker = Worker.new()
 			worker.server_id = worker_id
+			var first := str(worker_data.get("first_name", ""))
+			var last := str(worker_data.get("last_name", ""))
+			worker.worker_name = (first + " " + last).strip_edges()
+			var colony_id: int = int(worker_data.get("location_colony_id", 1))
+			worker.home_colony = ColonyData.get_colony_name(colony_id)
+			worker.personality = int(worker_data.get("personality", 2))
 			is_new = true
 
 		# Update fields from server data (only if changed for existing workers)

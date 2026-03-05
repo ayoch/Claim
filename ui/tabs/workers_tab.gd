@@ -26,6 +26,7 @@ const CANDIDATE_POLL_INTERVAL: float = 5.0
 
 func _ready() -> void:
 	refresh_btn.pressed.connect(_generate_candidates)
+	EventBus.server_state_synced.connect(func() -> void: _dirty_all = true)
 	EventBus.worker_hired.connect(func(w: Worker) -> void:
 		# In SERVER mode, refetch candidates from server
 		# In LOCAL mode, generate a new random candidate to maintain pool
