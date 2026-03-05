@@ -1,7 +1,7 @@
 import random
 from fastapi import APIRouter, Depends, HTTPException, Path, Request
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import hash_password, require_admin_key
 from server.database import get_db, init_db
@@ -614,6 +614,18 @@ async def generate_asteroid_reserves(
         "total_reserves_tonnes": round(total_reserves, 2),
         "message": f"Generated reserves for {generated_count} asteroids"
     }
+
+
+@router.delete("/purge-workers")
+@limiter.limit("10/hour")
+async def purge_available_workers(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete all unowned workers (player_id = NULL) from the labor pool."""
+    result = await db.execute(delete(Worker).where(Worker.player_id == None))  # noqa: E711
+    await db.commit()
+    return {"deleted": result.rowcount}
 
 
 @router.post("/spawn-workers")

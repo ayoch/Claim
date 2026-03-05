@@ -2,8 +2,11 @@
 Worker spawning system - automatically spawns workers at colonies over time
 """
 import random, logging
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from server.models.worker import Worker
+
+MAX_AVAILABLE_PER_COLONY = 5  # Cap on unowned workers waiting at each colony
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +49,16 @@ async def process_worker_spawning(db: AsyncSession, dt: float) -> list[dict]:
         # Check if enough time has passed to spawn a worker
         if _worker_spawn_accum[colony_id] >= spawn_interval:
             _worker_spawn_accum[colony_id] -= spawn_interval
+
+            # Don't spawn if colony is already at the cap
+            existing = await db.scalar(
+                select(func.count(Worker.id)).where(
+                    Worker.player_id == None,  # noqa: E711
+                    Worker.location_colony_id == colony_id
+                )
+            )
+            if existing >= MAX_AVAILABLE_PER_COLONY:
+                continue
 
             # Generate random skills
             skills = [0, 1, 2]  # pilot, engineer, mining
