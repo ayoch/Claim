@@ -6,7 +6,20 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from server.models.worker import Worker
 
-MAX_AVAILABLE_PER_COLONY = 5  # Cap on unowned workers waiting at each colony
+# Max unowned workers waiting at each colony (keyed by colony_id)
+# Scaled to approximate population — Lunar Base is the reference at 10
+COLONY_WORKER_CAPS = {
+    1:  20,  # Earth
+    2:  10,  # Lunar Base
+    3:   8,  # Mars Colony
+    4:   5,  # Ceres Station
+    5:   4,  # Europa Lab
+    6:   4,  # Ganymede Port
+    7:   4,  # Vesta Refinery
+    8:   3,  # Titan Outpost
+    9:   3,  # Callisto Base
+    10:  2,  # Triton Station
+}
 
 logger = logging.getLogger(__name__)
 
@@ -50,14 +63,15 @@ async def process_worker_spawning(db: AsyncSession, dt: float) -> list[dict]:
         if _worker_spawn_accum[colony_id] >= spawn_interval:
             _worker_spawn_accum[colony_id] -= spawn_interval
 
-            # Don't spawn if colony is already at the cap
+            # Don't spawn if colony is already at its cap
+            cap = COLONY_WORKER_CAPS.get(colony_id, 3)
             existing = await db.scalar(
                 select(func.count(Worker.id)).where(
                     Worker.player_id == None,  # noqa: E711
                     Worker.location_colony_id == colony_id
                 )
             )
-            if existing >= MAX_AVAILABLE_PER_COLONY:
+            if existing >= cap:
                 continue
 
             # Generate random skills

@@ -20,6 +20,10 @@ var _dirty_all: bool = false
 var _last_refresh_msec: int = 0
 const REFRESH_INTERVAL_MSEC: int = 200
 
+# Server candidate auto-refresh
+var _candidate_poll_timer: float = 0.0
+const CANDIDATE_POLL_INTERVAL: float = 5.0
+
 func _ready() -> void:
 	refresh_btn.pressed.connect(_generate_candidates)
 	EventBus.worker_hired.connect(func(w: Worker) -> void:
@@ -41,6 +45,16 @@ func _ready() -> void:
 	EventBus.tick.connect(_on_tick)
 	_generate_candidates()
 	_refresh_crew()
+
+func _process(delta: float) -> void:
+	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+		return
+	if not is_visible_in_tree():
+		return
+	_candidate_poll_timer += delta
+	if _candidate_poll_timer >= CANDIDATE_POLL_INTERVAL:
+		_candidate_poll_timer = 0.0
+		_generate_candidates()
 
 func _on_tick(_dt: float) -> void:
 	# Skip all updates when tab is not visible (massive performance win)
