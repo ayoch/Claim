@@ -81,6 +81,12 @@ horizontal_alignment = 1
 custom_minimum_size = Vector2(0, 32)
 layout_mode = 2
 
+[node name="OnlineButton" type="Button" parent="VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 50)
+layout_mode = 2
+text = "Play Online"
+
 [node name="NewGameButton" type="Button" parent="VBox"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 50)
@@ -98,12 +104,6 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 50)
 layout_mode = 2
 text = "Leaderboards"
-
-[node name="OnlineButton" type="Button" parent="VBox"]
-unique_name_in_owner = true
-custom_minimum_size = Vector2(0, 50)
-layout_mode = 2
-text = "Play Online"
 
 [node name="SettingsButton" type="Button" parent="VBox"]
 unique_name_in_owner = true
