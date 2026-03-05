@@ -6,8 +6,22 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Worker Location System
-**Date:** 2026-03-04 (Mac/HK-47)
+### Latest Work Session: Title Screen + Docs
+**Date:** 2026-03-04 ~17:00–20:29 EST (Windows/Dweezil)
+**Status:** Complete
+
+**What was done:**
+1. ✅ Pulled HK-47's worker location session, updated CLAUDE_HANDOFF and WORK_LOG
+2. ✅ Moved "Play Online" above "New Game" on title screen (`ui/title_screen.tscn`)
+
+**Files modified:**
+- `ui/title_screen.tscn` — button reorder
+- `docs/CLAUDE_HANDOFF.md`, `docs/WORK_LOG.txt` — session docs
+
+---
+
+### Previous Work Session: Worker Location System
+**Date:** 2026-03-04 ~13:49–16:35 EST (Mac/HK-47)
 **Status:** Complete — deployed, Railway migration required
 
 **What was done:**

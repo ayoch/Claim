@@ -3,6 +3,13 @@
 
 ---
 
+## 2026-03-04 ~17:00–20:29 EST (Dweezil) [eb1ea5c → 781716f]
+
+- **Docs review**: Pulled HK-47's worker location session, read all updated docs, updated CLAUDE_HANDOFF.md and WORK_LOG.txt to reflect HK-47's work.
+- **Title screen**: Moved "Play Online" above "New Game" in button order.
+
+---
+
 ## 2026-03-04 ~13:49–16:35 EST (HK-47) [bacf9b1 → 0fa597b]
 
 - **Worker Location System (complete)**: Workers now physically located at specific colonies. Can only crew ships at their own location. Workers tab groups workers and ships by location, crew selection filtered to ship's location. `assign_worker_to_ship()` now returns `Dictionary {success, error}` and validates location match. Auto-assign for stationed ships filters to local workers. Save/load backward compat auto-relocates workers from old saves to match their assigned ship's location.
