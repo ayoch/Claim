@@ -1032,43 +1032,20 @@ func get_player_units_at(asteroid_name: String) -> int:
 			count += 1
 	return count
 
+## DEPRECATED: Forwarding stub - use MarketManager.get_ore_stockpile() instead
+## TODO: Remove after all references are migrated to MarketManager
 func get_ore_stockpile(asteroid_name: String) -> Dictionary:
-	return ore_stockpiles.get(asteroid_name, {})
+	return MarketManager.get_ore_stockpile(asteroid_name)
 
+## DEPRECATED: Forwarding stub - use MarketManager.add_to_stockpile() instead
+## TODO: Remove after all references are migrated to MarketManager
 func add_to_stockpile(asteroid_name: String, ore_type: ResourceTypes.OreType, amount: float) -> void:
-	if not ore_stockpiles.has(asteroid_name):
-		ore_stockpiles[asteroid_name] = {}
-	var pile: Dictionary = ore_stockpiles[asteroid_name]
-	pile[ore_type] = pile.get(ore_type, 0.0) + amount
+	MarketManager.add_to_stockpile(asteroid_name, ore_type, amount)
 
+## DEPRECATED: Forwarding stub - use MarketManager.collect_from_stockpile() instead
+## TODO: Remove after all references are migrated to MarketManager
 func collect_from_stockpile(asteroid_name: String, ship: Ship) -> float:
-	if not ore_stockpiles.has(asteroid_name):
-		return 0.0
-	var pile: Dictionary = ore_stockpiles[asteroid_name]
-	var space_remaining := ship.cargo_capacity - ship.get_cargo_total()
-	var total_collected := 0.0
-	# Load proportionally if not enough space
-	var total_available := 0.0
-	for ore_type in pile:
-		total_available += pile[ore_type]
-	if total_available <= 0.0:
-		return 0.0
-	var scale := 1.0
-	if total_available > space_remaining:
-		scale = space_remaining / total_available
-	for ore_type in pile.keys():
-		var amount: float = pile[ore_type] * scale
-		if amount > 0.0:
-			ship.current_cargo[ore_type] = ship.current_cargo.get(ore_type, 0.0) + amount
-			pile[ore_type] -= amount
-			total_collected += amount
-	# Clean up empty entries
-	for ore_type in pile.keys():
-		if pile[ore_type] <= 0.001:
-			pile.erase(ore_type)
-	if pile.is_empty():
-		ore_stockpiles.erase(asteroid_name)
-	return total_collected
+	return MarketManager.collect_from_stockpile(asteroid_name, ship)
 
 func get_asteroid_supplies(asteroid_name: String) -> Dictionary:
 	return asteroid_supplies.get(asteroid_name, {"food": 0.0, "water": 0.0, "oxygen": 0.0, "repair_parts": 0.0})

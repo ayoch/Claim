@@ -803,7 +803,7 @@ func _handle_idle_remote(ship: Ship) -> void:
 	if ship.current_mission != null and ship.current_mission.asteroid != null:
 		idle_asteroid = ship.current_mission.asteroid
 	if idle_asteroid != null:
-		var pile := GameState.get_ore_stockpile(idle_asteroid.asteroid_name)
+		var pile := MarketManager.get_ore_stockpile(idle_asteroid.asteroid_name)
 		var pile_tons := 0.0
 		for _ot in pile:
 			pile_tons += pile[_ot]

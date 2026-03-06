@@ -1612,7 +1612,7 @@ func _policy_dispatch_idle_ship(ship: Ship) -> void:
 		var best_collect: AsteroidData = null
 		var best_tons: float = 0.0
 		for asteroid in GameState.asteroids:
-			var pile: Dictionary = GameState.get_ore_stockpile(asteroid.asteroid_name)
+			var pile: Dictionary = MarketManager.get_ore_stockpile(asteroid.asteroid_name)
 			var pile_tons: float = 0.0
 			for _ot in pile:
 				pile_tons += float(pile[_ot])
@@ -2587,7 +2587,7 @@ func _complete_deploy(mission: Mission) -> void:
 func _complete_collection(mission: Mission) -> void:
 	# Load stockpiled ore into ship
 	if mission.asteroid:
-		var tons := GameState.collect_from_stockpile(mission.asteroid.asteroid_name, mission.ship)
+		var tons := MarketManager.collect_from_stockpile(mission.asteroid.asteroid_name, mission.ship)
 		if tons > 0.0:
 			EventBus.stockpile_collected.emit(mission.asteroid, tons)
 	# Transition to idle or return
@@ -2641,7 +2641,7 @@ func _process_mining_units(dt: float) -> void:
 			var base_yield: float = asteroid.ore_yields[ore_type]
 			var ore_per_tick := base_yield * skill_total * unit_mult * luck * loyalty_avg * pers_mining_mult * leader_mining_mult * BASE_MINING_RATE * dt
 			if ore_per_tick > 0.0:
-				GameState.add_to_stockpile(asteroid.asteroid_name, ore_type, ore_per_tick)
+				MarketManager.add_to_stockpile(asteroid.asteroid_name, ore_type, ore_per_tick)
 		# Degrade durability — better engineers slow wear; repair parts reduce wear by 20%
 		# 0.0 eng = full wear, 1.5 eng = 70% wear
 		var eng_wear_factor := 1.0 - (best_eng * 0.2)
