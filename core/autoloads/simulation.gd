@@ -524,7 +524,7 @@ func _process_missions(dt: float) -> void:
 							_auto_repair_at_location(_mission_ship)
 						# Launch queued mission only after all prep work (refuel/provision/repair)
 						if not _mission_ship.is_stationed and _mission_ship.has_queued_mission():
-							GameState._start_queued_mission(_mission_ship)
+							MissionManager._start_queued_mission(_mission_ship)
 
 		# Partnership system: sync follower missions with leader
 		if mission.ship.is_partnered() and mission.ship.is_partnership_leader:
@@ -952,7 +952,7 @@ func _process_trade_missions(dt: float) -> void:
 						var _trade_ship := tm.ship
 						MissionManager.complete_trade_mission(tm)
 						if not _trade_ship.is_stationed and _trade_ship.has_queued_mission():
-							GameState._start_queued_mission(_trade_ship)
+							MissionManager._start_queued_mission(_trade_ship)
 
 func _update_ship_positions(dt: float) -> void:
 	# Real-time throttle - only update 10 times per second for mobile performance
@@ -1534,7 +1534,7 @@ func _process_stationed_ships(dt: float) -> void:
 			continue
 		if ship.is_at_earth and ship.current_mission == null and ship.current_trade_mission == null:
 			if ship.has_queued_mission():
-				GameState._start_queued_mission(ship)
+				MissionManager._start_queued_mission(ship)
 			elif GameState.settings.get("autoplay", false):
 				_policy_dispatch_idle_ship(ship)
 

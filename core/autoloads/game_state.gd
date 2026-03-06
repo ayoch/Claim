@@ -2077,42 +2077,10 @@ func complete_trade_mission(tm: TradeMission) -> void:
 	push_warning("[GameState] complete_trade_mission() is deprecated, use MissionManager.complete_trade_mission()")
 	MissionManager.complete_trade_mission(tm)
 
+## DEPRECATED: Forwarding stub - use MissionManager._start_queued_mission() instead
+## TODO: Remove after all references are migrated to MissionManager
 func _start_queued_mission(ship: Ship) -> void:
-	# Automatically start a player-planned mission after the current one completes.
-	# Falls back to policy dispatch if the queued mission is no longer feasible.
-	if not ship.has_queued_mission():
-		return
-
-	var dest = ship.queued_destination
-	var mission_type = ship.queued_mission_type
-	var transit_mode = ship.queued_transit_mode
-	var slingshot_route = ship.queued_slingshot_route
-
-	# Clear the queue before starting (avoids recursion if start_mission re-emits signals)
-	ship.clear_queued_mission()
-
-	if ship.crew.size() < ship.min_crew:
-		# Not enough crew — fall through to policy on next tick
-		return
-
-	if dest is AsteroidData:
-		var asteroid := dest as AsteroidData
-		# Feasibility: enough fuel for round trip?
-		var dist := ship.position_au.distance_to(asteroid.get_position_au())
-		var fuel_out := ship.calc_fuel_for_distance(dist, ship.get_cargo_total())
-		var fuel_back := ship.calc_fuel_for_distance(dist, ship.get_effective_cargo_capacity())
-		if fuel_out + fuel_back > ship.fuel:
-			# Not enough fuel — fall through to policy on next tick
-			return
-		match mission_type:
-			Mission.MissionType.COLLECT_ORE:
-				start_collect_mission(ship, asteroid, transit_mode, slingshot_route)
-			Mission.MissionType.REPOSITION:
-				var mission := start_mission(ship, asteroid, transit_mode, slingshot_route)
-				if mission:
-					mission.mission_type = Mission.MissionType.REPOSITION
-			_:  # Default: MINING
-				start_mission(ship, asteroid, transit_mode, slingshot_route)
+	MissionManager._start_queued_mission(ship)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
