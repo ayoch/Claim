@@ -191,3 +191,15 @@ func subscribe_events(callback: Callable) -> void:
 
 func unsubscribe_events() -> void:
 	_active_backend.unsubscribe_events()
+
+
+# Utility
+func is_admin() -> bool:
+	"""Check if current user has admin privileges (SERVER mode only)"""
+	if current_mode != BackendMode.SERVER:
+		return false
+
+	if _server_backend == null:
+		return false
+
+	return _server_backend.is_admin

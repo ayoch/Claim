@@ -138,6 +138,15 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
+		# Block speed controls for non-admins in SERVER mode
+		var in_server_mode := BackendManager.current_mode == BackendManager.BackendMode.SERVER
+		var is_speed_control := event.keycode in [KEY_SPACE, KEY_1, KEY_2]
+
+		if in_server_mode and is_speed_control and not BackendManager.is_admin():
+			# Non-admin in SERVER mode - block speed controls
+			get_viewport().set_input_as_handled()
+			return
+
 		if event.keycode == KEY_SPACE:
 			_toggle_pause_speed()
 			get_viewport().set_input_as_handled()
@@ -145,7 +154,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		# Speed control (1/2 keys)
 		elif event.keycode == KEY_1 or event.keycode == KEY_2:
 			if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
-				# In SERVER mode, send speed changes to server
+				# In SERVER mode (admin only - checked above), send speed changes to server
 				_adjust_server_speed(event.keycode)
 				get_viewport().set_input_as_handled()
 			else:
@@ -261,6 +270,14 @@ func _on_backend_mode_changed(mode: int) -> void:
 	# Show/hide Save button based on mode
 	if save_btn:
 		save_btn.visible = (mode == BackendManager.BackendMode.LOCAL)
+
+	# Show/hide speed controls based on mode and admin status
+	# Speed controls only available to admins in SERVER mode
+	if speed_bar:
+		if mode == BackendManager.BackendMode.SERVER:
+			speed_bar.visible = BackendManager.is_admin()
+		else:
+			speed_bar.visible = true
 
 func _on_save_pressed() -> void:
 	if _save_load_dialog:
