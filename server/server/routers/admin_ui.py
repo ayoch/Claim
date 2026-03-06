@@ -16,7 +16,9 @@ from server.models.player import Player
 from server.models.ship import Ship
 from server.models.mission import Mission
 from server.models.asteroid import Asteroid
+from server.models.bug_report import BugReport
 from server.config import settings
+import json
 
 
 router = APIRouter(prefix="/admin-ui", tags=["admin-ui"])
@@ -400,3 +402,159 @@ async def admin_grant_money(
     await db.commit()
 
     return RedirectResponse(url="/admin-ui/players", status_code=303)
+
+
+@router.get("/bug-reports", response_class=HTMLResponse)
+async def bug_reports_page(
+    request: Request,
+    status: str = None,
+    category: str = None,
+    search: str = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """Display bug reports management page."""
+    admin_key = check_admin_session(request)
+    if not admin_key:
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    if not await validate_admin_key(admin_key, db):
+        request.session.clear()
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    # Build query
+    query = select(BugReport).order_by(BugReport.created_at.desc())
+
+    # Apply filters
+    if status:
+        query = query.where(BugReport.status == status)
+
+    if category:
+        query = query.where(BugReport.category == category)
+
+    if search:
+        search_term = f"%{search}%"
+        from sqlalchemy import or_
+        query = query.where(
+            or_(
+                BugReport.title.ilike(search_term),
+                BugReport.description.ilike(search_term)
+            )
+        )
+
+    # Get reports (limit to 100 for UI)
+    query = query.limit(100)
+    result = await db.execute(query)
+    reports = result.scalars().all()
+
+    # Get stats
+    total_result = await db.execute(select(func.count()).select_from(BugReport))
+    total_count = total_result.scalar() or 0
+
+    open_result = await db.execute(
+        select(func.count()).select_from(BugReport).where(BugReport.status == "open")
+    )
+    open_count = open_result.scalar() or 0
+
+    in_progress_result = await db.execute(
+        select(func.count()).select_from(BugReport).where(BugReport.status == "in_progress")
+    )
+    in_progress_count = in_progress_result.scalar() or 0
+
+    done_result = await db.execute(
+        select(func.count()).select_from(BugReport).where(BugReport.status == "done")
+    )
+    done_count = done_result.scalar() or 0
+
+    # Convert reports to JSON for modal
+    reports_json = json.dumps([{
+        "id": r.id,
+        "title": r.title,
+        "description": r.description,
+        "category": r.category,
+        "reporter_username": r.reporter_username,
+        "status": r.status,
+        "game_version": r.game_version,
+        "backend_mode": r.backend_mode,
+        "created_at": r.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+        "updated_at": r.updated_at.strftime('%Y-%m-%d %H:%M:%S'),
+        "admin_notes": r.admin_notes
+    } for r in reports])
+
+    return templates.TemplateResponse(
+        "admin_bug_reports.html",
+        {
+            "request": request,
+            "reports": reports,
+            "reports_json": reports_json,
+            "total_count": total_count,
+            "open_count": open_count,
+            "in_progress_count": in_progress_count,
+            "done_count": done_count,
+            "status_filter": status,
+            "category_filter": category,
+            "search_query": search,
+        }
+    )
+
+
+@router.post("/update-bug-report")
+async def update_bug_report(
+    request: Request,
+    report_id: int = Form(...),
+    status: str = Form(...),
+    admin_notes: str = Form(""),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update a bug report's status and notes."""
+    admin_key = check_admin_session(request)
+    if not admin_key:
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    if not await validate_admin_key(admin_key, db):
+        request.session.clear()
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    # Find report
+    result = await db.execute(select(BugReport).where(BugReport.id == report_id))
+    report = result.scalar_one_or_none()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Bug report not found")
+
+    # Update fields
+    report.status = status
+    if admin_notes:
+        report.admin_notes = admin_notes
+
+    await db.commit()
+
+    return RedirectResponse(url="/admin-ui/bug-reports", status_code=303)
+
+
+@router.post("/delete-bug-report")
+async def delete_bug_report(
+    request: Request,
+    report_id: int = Form(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a bug report."""
+    admin_key = check_admin_session(request)
+    if not admin_key:
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    if not await validate_admin_key(admin_key, db):
+        request.session.clear()
+        return RedirectResponse(url="/admin-ui/login", status_code=303)
+
+    # Find report
+    result = await db.execute(select(BugReport).where(BugReport.id == report_id))
+    report = result.scalar_one_or_none()
+
+    if not report:
+        raise HTTPException(status_code=404, detail="Bug report not found")
+
+    # Delete report
+    await db.delete(report)
+    await db.commit()
+
+    return RedirectResponse(url="/admin-ui/bug-reports", status_code=303)

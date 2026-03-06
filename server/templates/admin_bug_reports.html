@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+
+{% block title %}Bug Reports - Claim Server Admin{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">Bug Reports</h2>
+
+<!-- Filters -->
+<div class="card mb-3">
+    <div class="card-body">
+        <form method="get" action="/admin-ui/bug-reports" class="row g-3">
+            <div class="col-md-3">
+                <label for="status_filter" class="form-label">Status</label>
+                <select class="form-select" id="status_filter" name="status">
+                    <option value="">All Statuses</option>
+                    <option value="open" {% if status_filter == 'open' %}selected{% endif %}>Open</option>
+                    <option value="in_progress" {% if status_filter == 'in_progress' %}selected{% endif %}>In Progress</option>
+                    <option value="done" {% if status_filter == 'done' %}selected{% endif %}>Done</option>
+                    <option value="wont_fix" {% if status_filter == 'wont_fix' %}selected{% endif %}>Won't Fix</option>
+                    <option value="duplicate" {% if status_filter == 'duplicate' %}selected{% endif %}>Duplicate</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="category_filter" class="form-label">Category</label>
+                <select class="form-select" id="category_filter" name="category">
+                    <option value="">All Categories</option>
+                    <option value="General" {% if category_filter == 'General' %}selected{% endif %}>General</option>
+                    <option value="UI/Interface" {% if category_filter == 'UI/Interface' %}selected{% endif %}>UI/Interface</option>
+                    <option value="Combat" {% if category_filter == 'Combat' %}selected{% endif %}>Combat</option>
+                    <option value="Mining" {% if category_filter == 'Mining' %}selected{% endif %}>Mining</option>
+                    <option value="Trading" {% if category_filter == 'Trading' %}selected{% endif %}>Trading</option>
+                    <option value="Physics/Navigation" {% if category_filter == 'Physics/Navigation' %}selected{% endif %}>Physics/Navigation</option>
+                    <option value="Performance" {% if category_filter == 'Performance' %}selected{% endif %}>Performance</option>
+                    <option value="Multiplayer" {% if category_filter == 'Multiplayer' %}selected{% endif %}>Multiplayer</option>
+                    <option value="Other" {% if category_filter == 'Other' %}selected{% endif %}>Other</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="search" class="form-label">Search</label>
+                <input type="text" class="form-control" id="search" name="search"
+                       placeholder="Search title or description..." value="{{ search_query or '' }}">
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Stats -->
+<div class="row mb-3">
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="stat-label">Total Reports</div>
+            <div class="stat-value">{{ total_count }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="stat-label">Open</div>
+            <div class="stat-value text-danger">{{ open_count }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="stat-label">In Progress</div>
+            <div class="stat-value text-warning">{{ in_progress_count }}</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="stat-label">Resolved</div>
+            <div class="stat-value text-success">{{ done_count }}</div>
+        </div>
+    </div>
+</div>
+
+<!-- Reports Table -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-dark table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th style="width: 5%">ID</th>
+                        <th style="width: 25%">Title</th>
+                        <th style="width: 15%">Category</th>
+                        <th style="width: 10%">Reporter</th>
+                        <th style="width: 10%">Status</th>
+                        <th style="width: 10%">Version</th>
+                        <th style="width: 15%">Created</th>
+                        <th style="width: 10%">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for report in reports %}
+                    <tr style="cursor: pointer;" onclick="showReportModal({{ report.id }})">
+                        <td>{{ report.id }}</td>
+                        <td>
+                            <div style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                {{ report.title }}
+                            </div>
+                        </td>
+                        <td><span class="badge bg-secondary">{{ report.category }}</span></td>
+                        <td>{{ report.reporter_username }}</td>
+                        <td>
+                            {% if report.status == 'open' %}
+                                <span class="badge bg-danger">Open</span>
+                            {% elif report.status == 'in_progress' %}
+                                <span class="badge bg-warning">In Progress</span>
+                            {% elif report.status == 'done' %}
+                                <span class="badge bg-success">Done</span>
+                            {% elif report.status == 'wont_fix' %}
+                                <span class="badge bg-secondary">Won't Fix</span>
+                            {% elif report.status == 'duplicate' %}
+                                <span class="badge bg-info">Duplicate</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ report.game_version }}</td>
+                        <td>{{ report.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); showReportModal({{ report.id }})">
+                                View
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted">No bug reports found</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if total_count > 50 %}
+        <div class="mt-3">
+            <p class="text-muted">Showing {{ reports|length }} of {{ total_count }} reports</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Report Detail Modal -->
+<div class="modal fade" id="reportModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title">Bug Report #<span id="modal_report_id"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <strong>Title:</strong>
+                    <p id="modal_title"></p>
+                </div>
+                <div class="mb-3">
+                    <strong>Description:</strong>
+                    <p id="modal_description" style="white-space: pre-wrap;"></p>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Category:</strong> <span id="modal_category"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Reporter:</strong> <span id="modal_reporter"></span>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Game Version:</strong> <span id="modal_version"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Mode:</strong> <span id="modal_mode"></span>
+                    </div>
+                </div>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>Created:</strong> <span id="modal_created"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Updated:</strong> <span id="modal_updated"></span>
+                    </div>
+                </div>
+
+                <hr>
+
+                <!-- Update Form -->
+                <form method="post" action="/admin-ui/update-bug-report" id="updateForm">
+                    <input type="hidden" name="report_id" id="update_report_id">
+                    <div class="mb-3">
+                        <label for="update_status" class="form-label"><strong>Update Status:</strong></label>
+                        <select class="form-select" name="status" id="update_status">
+                            <option value="open">Open</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="done">Done</option>
+                            <option value="wont_fix">Won't Fix</option>
+                            <option value="duplicate">Duplicate</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="admin_notes" class="form-label"><strong>Admin Notes:</strong></label>
+                        <textarea class="form-control" name="admin_notes" id="admin_notes" rows="3"
+                                  placeholder="Add notes about this report..."></textarea>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <button type="submit" class="btn btn-primary">Update Report</button>
+                        <button type="button" class="btn btn-danger" onclick="deleteReport()">Delete Report</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content bg-dark">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete bug report #<span id="delete_report_id"></span>?</p>
+                <p class="text-danger">This action cannot be undone.</p>
+            </div>
+            <form method="post" action="/admin-ui/delete-bug-report">
+                <div class="modal-footer">
+                    <input type="hidden" name="report_id" id="confirm_delete_id">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">Delete</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Store all reports data
+const reportsData = {{ reports_json | safe }};
+
+function showReportModal(reportId) {
+    const report = reportsData.find(r => r.id === reportId);
+    if (!report) return;
+
+    // Populate modal
+    document.getElementById('modal_report_id').textContent = report.id;
+    document.getElementById('modal_title').textContent = report.title;
+    document.getElementById('modal_description').textContent = report.description;
+    document.getElementById('modal_category').textContent = report.category;
+    document.getElementById('modal_reporter').textContent = report.reporter_username;
+    document.getElementById('modal_version').textContent = report.game_version;
+    document.getElementById('modal_mode').textContent = report.backend_mode;
+    document.getElementById('modal_created').textContent = report.created_at;
+    document.getElementById('modal_updated').textContent = report.updated_at;
+
+    // Set form values
+    document.getElementById('update_report_id').value = report.id;
+    document.getElementById('update_status').value = report.status;
+    document.getElementById('admin_notes').value = report.admin_notes || '';
+
+    // Show modal
+    new bootstrap.Modal(document.getElementById('reportModal')).show();
+}
+
+function deleteReport() {
+    const reportId = document.getElementById('update_report_id').value;
+    document.getElementById('delete_report_id').textContent = reportId;
+    document.getElementById('confirm_delete_id').value = reportId;
+
+    // Hide detail modal, show delete confirmation
+    bootstrap.Modal.getInstance(document.getElementById('reportModal')).hide();
+    new bootstrap.Modal(document.getElementById('deleteModal')).show();
+}
+
+// Auto-refresh data every 10 seconds
+setInterval(function() {
+    location.reload();
+}, 10000);
+</script>
+{% endblock %}
