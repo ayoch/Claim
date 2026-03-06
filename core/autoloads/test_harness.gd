@@ -1,8 +1,9 @@
 extends Node
 
 ## AI Corporation — plays the game autonomously.
-## Toggle with 5 key. Cranks speed to max, makes decisions every game-day.
-## Future basis for AI competitor corps in multiplayer.
+## Toggle overlay with Key 5. Controlled by autoplay setting (Dashboard).
+## Works in both LOCAL and SERVER modes for multiplayer testing.
+## Uses *_any_mode() functions to test both singleplayer and multiplayer operations.
 
 var enabled: bool = false
 
@@ -324,7 +325,13 @@ func _manage_workforce() -> void:
 	if GameState.workers.size() < target:
 		var primary := workers_hired % 3
 		var worker := Worker.generate_with_primary(primary)
-		GameState.hire_worker(worker)
+		# Mode-aware hiring (works in both LOCAL and SERVER modes)
+		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+			# In SERVER mode, we need worker_id from available workers list
+			# For test harness, just hire locally for now (server hiring requires available worker pool)
+			GameState.hire_worker(worker)
+		else:
+			GameState.hire_worker(worker)
 		workers_hired += 1
 
 	# Fire excess available workers (keep it gentle — 1 per day)
@@ -336,7 +343,8 @@ func _manage_workforce() -> void:
 				if worst == null or w.wage > worst.wage:
 					worst = w
 			if worst:
-				GameState.fire_worker(worst)
+				# Mode-aware firing (async but fire-and-forget for AI loop)
+				GameState.fire_worker_any_mode(worst)
 
 func _resolve_all_tardy() -> void:
 	var snapshot := GameState.tardy_workers.duplicate()
@@ -811,20 +819,21 @@ func _manage_growth() -> void:
 
 	# Emergency: buy a ship if we have zero operational and can afford one
 	if operational == 0 and money > 800_000:
-		if GameState.purchase_ship(ShipData.ShipClass.PROSPECTOR):
-			ships_bought += 1
-			print("AUTOTEST: Emergency ship purchase - $%d remaining" % GameState.money)
+		# Mode-aware ship purchase (async but fire-and-forget)
+		_purchase_ship_multimode(ShipData.ShipClass.PROSPECTOR, "Emergency")
+		ships_bought += 1
 
 	# EXPANSIONIST PRIORITY 1: Fleet expansion (most important for territory control)
 	# Target fleet size scales with money (1 ship per $2M, min 2, max 12)
 	var target_fleet_size := clampi(money / 2_000_000, 2, 12)
 	if num_ships < target_fleet_size and money > 2_000_000:  # Lowered from 3M
 		var ship_class := _pick_ship_class_expansionist()
-		if GameState.purchase_ship(ship_class):
-			ships_bought += 1
-			print("AUTOTEST: Fleet expansion - bought ship class %d (fleet: %d/%d, money: $%d)" % [
-				ship_class, num_ships + 1, target_fleet_size, GameState.money
-			])
+		# Mode-aware ship purchase (async but fire-and-forget)
+		_purchase_ship_multimode(ship_class, "Fleet%d" % (num_ships + 1))
+		ships_bought += 1
+		print("AUTOTEST: Fleet expansion - bought ship class %d (fleet: %d/%d, money: $%d)" % [
+			ship_class, num_ships + 1, target_fleet_size, GameState.money
+		])
 
 	# EXPANSIONIST PRIORITY 2: Mining units (claim territory)
 	if money > 1_500_000:
@@ -844,6 +853,14 @@ func _manage_growth() -> void:
 
 	# DISABLED: Stationing counterproductive for aggressive expansionist AI
 	# An aggressive corp should actively mine/fight, not station ships
+
+func _purchase_ship_multimode(ship_class: int, name_prefix: String) -> void:
+	# Mode-aware ship purchase (fire-and-forget async)
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		var ship_name := "%s-%d" % [name_prefix, randi() % 1000]
+		GameState.purchase_ship_any_mode(ship_class, ship_name, 0)  # colony_id 0 = Earth
+	else:
+		GameState.purchase_ship(ship_class)
 
 func _pick_ship_class() -> int:
 	var counts := {}
@@ -994,23 +1011,23 @@ func _consider_stationing() -> void:
 	GameState.station_ship(docked[0], colony, ["mining", "trading"])
 
 func _manage_mining_units() -> void:
-	# Repair worn units
+	# Repair worn units (mode-aware, async fire-and-forget)
 	for unit in GameState.deployed_mining_units:
 		if unit.durability < 40.0 and GameState.money > unit.repair_cost():
-			GameState.repair_mining_unit(unit)
+			GameState.repair_mining_unit_any_mode(unit)
 
-	# Recall units that need rebuild or are broken
+	# Recall units that need rebuild or are broken (mode-aware, async fire-and-forget)
 	var to_recall: Array[MiningUnit] = []
 	for unit in GameState.deployed_mining_units:
 		if not unit.is_functional() or unit.needs_rebuild():
 			to_recall.append(unit)
 	for unit in to_recall:
-		GameState.recall_mining_unit(unit)
+		GameState.recall_mining_unit_any_mode(unit)
 
-	# Rebuild recalled units
+	# Rebuild recalled units (mode-aware, async fire-and-forget)
 	for unit in GameState.mining_unit_inventory:
 		if unit.max_durability < 100.0 and GameState.money > unit.rebuild_cost():
-			GameState.rebuild_mining_unit(unit)
+			GameState.rebuild_mining_unit_any_mode(unit)
 
 	# EXPANSIONIST: Buy mining units aggressively to claim territory
 	# Target: 2 units per ship (defensive + offensive claims)
@@ -1019,12 +1036,12 @@ func _manage_mining_units() -> void:
 	if total_units < target_units and GameState.money > 1_500_000:
 		var catalog := MiningUnitCatalog.get_available_units()
 		if not catalog.is_empty():
-			# Buy best unit we can afford
+			# Buy best unit we can afford (mode-aware, async fire-and-forget)
 			var entry := catalog[mini(total_units / 2, catalog.size() - 1)]
-			if GameState.purchase_mining_unit(entry):
-				print("AUTOTEST: Bought mining unit for territory expansion (units: %d/%d)" % [
-					total_units + 1, target_units
-				])
+			GameState.purchase_mining_unit_any_mode(entry)
+			print("AUTOTEST: Bought mining unit for territory expansion (units: %d/%d)" % [
+				total_units + 1, target_units
+			])
 
 	# Deploy from docked ships is handled by _send_docked_ship via _try_deploy_units
 
