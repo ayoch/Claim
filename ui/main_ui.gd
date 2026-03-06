@@ -549,7 +549,8 @@ func _poll_server_speed() -> void:
 		return
 
 	var http := HTTPRequest.new()
-	http.set_tls_options(TLSOptions.client_unsafe())
+	http.set_tls_options(TLSOptions.client())
+	http.timeout = 10.0
 	add_child(http)
 
 	var url: String = server_backend.base_url + "/admin/speed"
@@ -609,7 +610,8 @@ func _set_server_speed(speed: float) -> void:
 		return
 
 	var http := HTTPRequest.new()
-	http.set_tls_options(TLSOptions.client_unsafe())
+	http.set_tls_options(TLSOptions.client())
+	http.timeout = 10.0
 	add_child(http)
 
 	var url: String = server_backend.base_url + "/admin/set-speed"
@@ -631,8 +633,22 @@ func _set_server_speed(speed: float) -> void:
 	if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
 		print("[MainUI] Server speed set to %.0fx" % speed)
 	else:
-		var body_str: String = response_body.get_string_from_utf8()
-		print("[MainUI] Failed to set server speed - Code: %d, Body: %s" % [response_code, body_str])
+		var error_msg := "Failed to set server speed: "
+		match result:
+			HTTPRequest.RESULT_CANT_CONNECT:
+				error_msg += "Can't connect to server"
+			HTTPRequest.RESULT_CANT_RESOLVE:
+				error_msg += "Can't resolve domain"
+			HTTPRequest.RESULT_CONNECTION_ERROR:
+				error_msg += "Connection error"
+			HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR:
+				error_msg += "TLS/SSL error"
+			HTTPRequest.RESULT_TIMEOUT:
+				error_msg += "Request timeout"
+			_:
+				var body_str: String = response_body.get_string_from_utf8()
+				error_msg += "HTTP %d - %s" % [response_code, body_str if body_str != "" else "Unknown error"]
+		print("[MainUI] " + error_msg)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
