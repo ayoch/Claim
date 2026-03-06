@@ -724,6 +724,9 @@ func fire_worker(worker: Worker) -> void:
 		if worker in unit.assigned_workers:
 			unit.assigned_workers.erase(worker)
 	worker.assigned_mining_unit = null
+
+	# Final cleanup to break all circular references
+	worker.cleanup()
 	EventBus.worker_fired.emit(worker)
 
 ## Mode-aware worker hiring - works in both LOCAL and SERVER modes
@@ -1371,6 +1374,11 @@ func get_asteroid_supply_days(asteroid_name: String, supply_key: String) -> floa
 	return INF
 
 func start_deploy_mission(ship: Ship, asteroid: AsteroidData, units: Array[MiningUnit], deploy_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+	# Validate transit mode before casting
+	if transit_mode < 0 or transit_mode >= Mission.TransitMode.size():
+		push_error("[GameState] Invalid transit mode %d, defaulting to BRACHISTOCHRONE" % transit_mode)
+		transit_mode = Mission.TransitMode.BRACHISTOCHRONE
+
 	var mission := Mission.new()
 	mission.ship = ship
 	mission.asteroid = asteroid
@@ -1459,6 +1467,11 @@ func start_deploy_mission(ship: Ship, asteroid: AsteroidData, units: Array[Minin
 	return mission
 
 func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
+	# Validate transit mode before casting
+	if transit_mode < 0 or transit_mode >= Mission.TransitMode.size():
+		push_error("[GameState] Invalid transit mode %d, defaulting to BRACHISTOCHRONE" % transit_mode)
+		transit_mode = Mission.TransitMode.BRACHISTOCHRONE
+
 	# Capture origin location BEFORE clearing idle mission
 	var origin_location_name: String = ""
 	if ship.current_mission and ship.current_mission.asteroid:
@@ -1468,9 +1481,10 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int
 
 	# Clean up any lingering idle mission so its stale worker list doesn't cause mismatches
 	if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
-		ship.current_mission.ship = null
-		missions.erase(ship.current_mission)
+		var old_mission := ship.current_mission
 		ship.current_mission = null
+		old_mission.cleanup()  # Break circular references
+		missions.erase(old_mission)
 
 	var mission := Mission.new()
 	mission.ship = ship
@@ -1780,9 +1794,10 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 
 	# Clean up any lingering idle mission so its stale worker list doesn't cause mismatches
 	if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
-		ship.current_mission.ship = null
-		missions.erase(ship.current_mission)
+		var old_mission := ship.current_mission
 		ship.current_mission = null
+		old_mission.cleanup()  # Break circular references
+		missions.erase(old_mission)
 
 	var mission := Mission.new()
 	mission.ship = ship
@@ -1790,6 +1805,11 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 	mission.status = Mission.Status.TRANSIT_OUT
 	mission.origin_position_au = ship.position_au
 	mission.return_position_au = ship.position_au  # default return to origin
+
+	# Validate transit mode before casting
+	if transit_mode < 0 or transit_mode >= Mission.TransitMode.size():
+		push_error("[GameState] Invalid transit mode %d in start_mission, defaulting to BRACHISTOCHRONE" % transit_mode)
+		transit_mode = Mission.TransitMode.BRACHISTOCHRONE
 	mission.transit_mode = transit_mode as Mission.TransitMode
 
 	# Set origin flag and name based on ship's current position
@@ -2044,6 +2064,7 @@ func complete_mission(mission: Mission) -> void:
 	mission.ship.current_mission = null
 	mission.status = Mission.Status.COMPLETED
 	EventBus.mission_completed.emit(mission)
+	mission.cleanup()  # Break circular references
 	missions.erase(mission)
 
 	# Stationed ships don't use queued missions — station logic handles next job
@@ -2233,13 +2254,15 @@ func _apply_dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, transit_mode:
 
 	# End idle state and start new mission from current position
 	if ship.current_mission:
-		ship.current_mission.ship = null
-		missions.erase(ship.current_mission)
+		var old_mission := ship.current_mission
 		ship.current_mission = null
+		old_mission.cleanup()  # Break circular references
+		missions.erase(old_mission)
 	if ship.current_trade_mission:
-		ship.current_trade_mission.ship = null
-		trade_missions.erase(ship.current_trade_mission)
+		var old_trade_mission := ship.current_trade_mission
 		ship.current_trade_mission = null
+		old_trade_mission.cleanup()  # Break circular references
+		trade_missions.erase(old_trade_mission)
 
 	var mission := start_mission(ship, asteroid, transit_mode, slingshot_route)
 	if mission == null:
@@ -2264,13 +2287,15 @@ func _apply_dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, cargo_to
 
 	# End idle state and start new trade mission from current position
 	if ship.current_mission:
-		ship.current_mission.ship = null
-		missions.erase(ship.current_mission)
+		var old_mission := ship.current_mission
 		ship.current_mission = null
+		old_mission.cleanup()  # Break circular references
+		missions.erase(old_mission)
 	if ship.current_trade_mission:
-		ship.current_trade_mission.ship = null
-		trade_missions.erase(ship.current_trade_mission)
+		var old_trade_mission := ship.current_trade_mission
 		ship.current_trade_mission = null
+		old_trade_mission.cleanup()  # Break circular references
+		trade_missions.erase(old_trade_mission)
 
 	var tm := start_trade_mission(ship, colony_target, cargo_to_load, transit_mode)
 	if tm == null:
@@ -2982,6 +3007,7 @@ func complete_trade_mission(tm: TradeMission) -> void:
 	tm.ship.current_trade_mission = null
 	tm.status = TradeMission.Status.COMPLETED
 	EventBus.trade_mission_completed.emit(tm)
+	tm.cleanup()  # Break circular references
 	trade_missions.erase(tm)
 
 	# Stationed ships don't use queued missions — station logic handles next job
@@ -4029,7 +4055,13 @@ func load_game(file_name: String = "save_game.json") -> bool:
 	mining_unit_inventory.clear()
 	for mud in data.get("mining_unit_inventory", []):
 		var unit := MiningUnit.new()
-		unit.unit_type = int(mud.get("unit_type", 0)) as MiningUnit.UnitType
+
+		# Validate unit type before casting
+		var unit_type_int: int = int(mud.get("unit_type", 0))
+		if unit_type_int < 0 or unit_type_int >= MiningUnit.UnitType.size():
+			push_error("[GameState] Invalid mining unit type %d in save data, defaulting to RIG" % unit_type_int)
+			unit_type_int = MiningUnit.UnitType.RIG
+		unit.unit_type = unit_type_int as MiningUnit.UnitType
 		unit.unit_name = mud.get("unit_name", "")
 		unit.mass = float(mud.get("mass", 7.6))
 		unit.volume = float(mud.get("volume", MU_VOL_DEFAULTS.get(unit.unit_type, 11.4)))
@@ -4045,7 +4077,13 @@ func load_game(file_name: String = "save_game.json") -> bool:
 	deployed_mining_units.clear()
 	for mud in data.get("deployed_mining_units", []):
 		var unit := MiningUnit.new()
-		unit.unit_type = int(mud.get("unit_type", 0)) as MiningUnit.UnitType
+
+		# Validate unit type before casting
+		var unit_type_int: int = int(mud.get("unit_type", 0))
+		if unit_type_int < 0 or unit_type_int >= MiningUnit.UnitType.size():
+			push_error("[GameState] Invalid deployed mining unit type %d in save data, defaulting to RIG" % unit_type_int)
+			unit_type_int = MiningUnit.UnitType.RIG
+		unit.unit_type = unit_type_int as MiningUnit.UnitType
 		unit.unit_name = mud.get("unit_name", "")
 		unit.mass = float(mud.get("mass", 7.6))
 		unit.volume = float(mud.get("volume", MU_VOL_DEFAULTS.get(unit.unit_type, 11.4)))
@@ -4381,6 +4419,12 @@ func apply_server_state(server_data: Dictionary) -> void:
 
 		# Update fields from server
 		var server_unit_type: int = int(rig_data.get("unit_type", 0))
+
+		# Validate unit type before casting
+		if server_unit_type < 0 or server_unit_type >= MiningUnit.UnitType.size():
+			push_error("[GameState] Invalid server mining unit type %d, defaulting to RIG" % server_unit_type)
+			server_unit_type = MiningUnit.UnitType.RIG
+
 		if unit.unit_type != server_unit_type:
 			unit.unit_type = server_unit_type as MiningUnit.UnitType
 			state_changed = true

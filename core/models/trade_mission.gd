@@ -150,3 +150,20 @@ func get_current_leg_end_pos() -> Vector2:
 				return CelestialData.get_earth_position_au()
 		_:
 			return origin_position_au if origin_position_au != Vector2.ZERO else Vector2.ZERO
+
+
+## Cleanup method to break circular references
+## Call this when removing a trade mission to prevent memory leaks
+func cleanup() -> void:
+	# Break ship reference (ship also references this trade mission)
+	ship = null
+
+	# Break colony reference
+	colony = null
+
+	# Clear cargo dictionary
+	cargo.clear()
+
+	# Clear waypoint legs (contain WaypointLeg resources)
+	outbound_legs.clear()
+	return_legs.clear()

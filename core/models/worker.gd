@@ -348,3 +348,17 @@ func get_injury_loyalty_delta() -> float:
 		Personality.GREEDY:     return 0.0
 		Personality.LEADER:     return 0.0
 	return 0.0
+
+
+## Cleanup method to break circular references
+## Call this when removing a worker to prevent memory leaks
+func cleanup() -> void:
+	# Break ship reference (ship also has crew array with workers)
+	assigned_ship = null
+
+	# Break mission references (missions have worker arrays)
+	assigned_mission = null
+	assigned_trade_mission = null
+
+	# Break mining unit reference (units have worker arrays)
+	assigned_mining_unit = null

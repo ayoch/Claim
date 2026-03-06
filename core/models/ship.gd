@@ -444,3 +444,49 @@ func can_partner_with(other_ship: Ship) -> Dictionary:
 		return {"valid": false, "reason": "Ships too far apart"}
 
 	return {"valid": true}
+
+
+## Cleanup method to break circular references
+## Call this when removing a ship to prevent memory leaks
+func cleanup() -> void:
+	# Break partnership (bidirectional reference)
+	if partner_ship != null:
+		partner_ship.partner_ship = null
+		partner_ship.partner_ship_name = ""
+		partner_ship.is_partnership_leader = false
+		partner_ship = null
+
+	partner_ship_name = ""
+	is_partnership_leader = false
+
+	# Break mission references (missions also reference ship)
+	if current_mission != null:
+		current_mission.ship = null
+		current_mission = null
+
+	if current_trade_mission != null:
+		current_trade_mission.ship = null
+		current_trade_mission = null
+
+	# Break crew references (workers reference ship)
+	for worker in crew:
+		if worker:
+			worker.assigned_ship = null
+	crew.clear()
+	last_crew.clear()
+
+	# Clear equipment and upgrades (may contain references)
+	equipment.clear()
+	upgrades.clear()
+
+	# Clear cargo and supplies
+	current_cargo.clear()
+	supplies.clear()
+
+	# Break colony references
+	docked_at_colony = null
+	station_colony = null
+
+	# Clear station jobs and log
+	station_jobs.clear()
+	station_log.clear()

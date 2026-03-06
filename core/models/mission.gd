@@ -408,3 +408,28 @@ func _calculate_hohmann_arc(start_pos: Vector2, end_pos: Vector2, num_samples: i
 		var pos: Vector2 = center_offset + Vector2(rotated_x, rotated_y)
 
 		output.append(pos)
+
+
+## Cleanup method to break circular references
+## Call this when removing a mission to prevent memory leaks
+func cleanup() -> void:
+	# Break ship reference (ship also references this mission)
+	ship = null
+
+	# Break partnership leader reference
+	partnership_leader_mission = null
+
+	# Clear worker arrays (workers reference missions)
+	rescue_crew.clear()
+	workers_to_deploy.clear()
+
+	# Clear mining units array (units may reference workers)
+	mining_units_to_deploy.clear()
+
+	# Clear waypoint legs (contain WaypointLeg resources)
+	outbound_legs.clear()
+	return_legs.clear()
+
+	# Clear trajectory cache
+	outbound_trajectory_points.clear()
+	return_trajectory_points.clear()
