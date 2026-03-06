@@ -319,6 +319,24 @@ func _show_settings() -> void:
 	_settings_popup.anchors_preset = Control.PRESET_CENTER
 	_settings_popup.custom_minimum_size = Vector2(400, 200)
 
+	# Add opaque dark background
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.1, 0.12, 0.16, 1.0)  # Dark blue-gray, fully opaque
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(0.3, 0.4, 0.5, 1.0)  # Lighter border
+	style.corner_radius_top_left = 8
+	style.corner_radius_top_right = 8
+	style.corner_radius_bottom_left = 8
+	style.corner_radius_bottom_right = 8
+	style.content_margin_left = 20
+	style.content_margin_top = 20
+	style.content_margin_right = 20
+	style.content_margin_bottom = 20
+	_settings_popup.add_theme_stylebox_override("panel", style)
+
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 12)
 
