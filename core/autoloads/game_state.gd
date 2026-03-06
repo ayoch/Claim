@@ -1821,33 +1821,20 @@ func buy_supplies(ship: Ship, supply_key: String, amount: float) -> bool:
 
 # --- Deployed crew methods ---
 
+## DEPRECATED: Forwarding stub - use WorkerManager.deploy_crew() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func deploy_crew(asteroid: AsteroidData, crew_workers: Array[Worker], initial_supplies: Dictionary) -> void:
-	# Remove workers from available pool
-	for w in crew_workers:
-		pass  # Workers assigned to mining units are tracked via assigned_mining_unit
-	var entry: Dictionary = {
-		"asteroid": asteroid,
-		"workers": crew_workers.duplicate(),
-		"supplies": initial_supplies.duplicate(),
-		"deployed_at": total_ticks,
-	}
-	deployed_crews.append(entry)
-	EventBus.crew_deployed.emit(asteroid, crew_workers)
+	WorkerManager.deploy_crew(asteroid, crew_workers, initial_supplies)
 
+## DEPRECATED: Forwarding stub - use WorkerManager.recall_crew() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func recall_crew(asteroid: AsteroidData) -> void:
-	for i in range(deployed_crews.size() - 1, -1, -1):
-		var entry: Dictionary = deployed_crews[i]
-		if entry["asteroid"] == asteroid:
-			var crew_workers: Array = entry["workers"]
-			EventBus.crew_recalled.emit(asteroid, crew_workers)
-			deployed_crews.remove_at(i)
-			break
+	WorkerManager.recall_crew(asteroid)
 
+## DEPRECATED: Forwarding stub - use WorkerManager.get_deployed_crew_at() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func get_deployed_crew_at(asteroid: AsteroidData) -> Dictionary:
-	for entry in deployed_crews:
-		if entry["asteroid"] == asteroid:
-			return entry
-	return {}
+	return WorkerManager.get_deployed_crew_at(asteroid)
 
 # --- Hitchhike & discipline methods ---
 
