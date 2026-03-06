@@ -741,7 +741,7 @@ func _send_mining_mission(ship: Ship, crew: Array[Worker]) -> void:
 	if asteroid == null:
 		return
 	ship.crew = crew
-	GameState.start_mission(ship, asteroid)
+	MissionManager.start_mission(ship, asteroid)
 
 func _send_trade_mission(ship: Ship, crew: Array[Worker]) -> void:
 	if GameState.colonies.is_empty():

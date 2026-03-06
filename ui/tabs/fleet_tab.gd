@@ -1433,7 +1433,7 @@ func _confirm_dispatch() -> void:
 	elif _selected_ship.is_idle_remote:
 		MissionManager.dispatch_idle_ship(_selected_ship, _selected_asteroid)
 	else:
-		GameState.start_mission(_selected_ship, _selected_asteroid)
+		MissionManager.start_mission(_selected_ship, _selected_asteroid)
 	_cancel_preview()
 	dispatch_popup.visible = false
 	_mark_dirty()

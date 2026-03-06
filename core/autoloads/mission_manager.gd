@@ -35,9 +35,264 @@ func import_missions_from_game_state(gs_missions: Array[Mission], gs_trade_missi
 
 ## Start a basic mining mission to an asteroid
 func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
-	# TODO: Move implementation from game_state.gd
-	push_error("[MissionManager] start_mission not yet implemented")
-	return null
+	if ship.crew.size() < ship.min_crew:
+		push_warning("[MissionManager] start_mission: not enough crew for %s (need %d, got %d)" % [ship.ship_name, ship.min_crew, ship.crew.size()])
+		return null
+
+	# Capture origin location BEFORE clearing idle mission
+	var origin_location_name: String = ""
+	if ship.current_mission and ship.current_mission.asteroid:
+		origin_location_name = ship.current_mission.asteroid.asteroid_name
+	elif ship.current_trade_mission and ship.current_trade_mission.colony:
+		origin_location_name = ship.current_trade_mission.colony.colony_name
+
+	# Clean up any lingering idle mission so its stale worker list doesn't cause mismatches
+	if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
+		var old_mission := ship.current_mission
+		ship.current_mission = null
+		old_mission.cleanup()  # Break circular references
+		missions.erase(old_mission)
+
+	var mission := Mission.new()
+	mission.ship = ship
+	mission.asteroid = asteroid  # Keep reference for mining/game logic
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.origin_position_au = ship.position_au
+	mission.return_position_au = ship.position_au  # default return to origin
+
+	# Validate transit mode before casting
+	if transit_mode < 0 or transit_mode >= Mission.TransitMode.size():
+		push_error("[MissionManager] Invalid transit mode %d in start_mission, defaulting to BRACHISTOCHRONE" % transit_mode)
+		transit_mode = Mission.TransitMode.BRACHISTOCHRONE
+	mission.transit_mode = transit_mode as Mission.TransitMode
+
+	# Set origin flag and name based on ship's current position
+	var _earth_pos := CelestialData.get_earth_position_au()
+	mission.origin_is_earth = ship.position_au.distance_to(_earth_pos) < 0.05
+	if mission.origin_is_earth:
+		mission.origin_name = "Earth"
+	elif ship.docked_at_colony:
+		mission.origin_name = ship.docked_at_colony.colony_name
+	elif origin_location_name != "":
+		# Use captured location from before clearing idle mission
+		mission.origin_name = origin_location_name
+	else:
+		# Ship is in deep space or unknown location
+		mission.origin_name = "deep space"
+
+	# Calculate intercept trajectory to predict where asteroid will be at arrival
+	var intercept := calculate_asteroid_intercept(ship.position_au, asteroid, ship.get_effective_thrust(), transit_mode)
+	var dist: float = intercept["distance"]
+	var predicted_position: Vector2 = intercept["intercept_position"]
+
+	# Store predicted position as static destination (used instead of dynamic asteroid position during transit)
+	mission.destination_position_au = predicted_position
+
+	# Setup slingshot waypoints if using gravity assist
+	if slingshot_route:
+		mission.outbound_legs = [WaypointLeg.make(slingshot_route.waypoint_pos, slingshot_route.leg1_time, WaypointLeg.WaypointType.GRAVITY_ASSIST, slingshot_route.planet_index)]
+		mission.outbound_waypoint_index = 0
+		mission.transit_time = slingshot_route.leg2_time
+		dist = slingshot_route.leg1_distance
+	else:
+		# Direct route
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			mission.transit_time = Brachistochrone.hohmann_time(dist)
+		else:
+			mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+
+	# Check if fuel stops are needed for outbound journey (use predicted intercept position)
+	var expected_cargo_out := ship.get_cargo_total()
+	var outbound_fuel_route := FuelRoutePlanner.plan_route_to_position(
+		ship,
+		predicted_position,
+		expected_cargo_out,
+		3  # max stops
+	)
+
+	if outbound_fuel_route["feasible"] and outbound_fuel_route["waypoints"].size() > 0:
+		var waypoints: Array = outbound_fuel_route["waypoints"]
+		var colonies: Array = outbound_fuel_route["colonies"]
+		var fuel_amounts: Array = outbound_fuel_route["fuel_amounts"]
+		var fuel_costs: Array = outbound_fuel_route["fuel_costs"]
+		var leg_times: Array = outbound_fuel_route["leg_times"]
+		if slingshot_route:
+			# Append fuel stops after slingshot waypoint
+			for i in range(waypoints.size()):
+				mission.outbound_legs.append(WaypointLeg.make(waypoints[i], leg_times[i], WaypointLeg.WaypointType.REFUEL_STOP, -1, colonies[i], fuel_amounts[i], fuel_costs[i]))
+		else:
+			# Fuel stops only — build legs from scratch
+			mission.outbound_legs.clear()
+			for i in range(waypoints.size()):
+				mission.outbound_legs.append(WaypointLeg.make(waypoints[i], leg_times[i], WaypointLeg.WaypointType.REFUEL_STOP, -1, colonies[i], fuel_amounts[i], fuel_costs[i]))
+			# Final leg time (from last stop to destination) stays in mission.transit_time
+			if leg_times.size() > waypoints.size():
+				mission.transit_time = leg_times[waypoints.size()]
+			elif outbound_fuel_route.has("final_leg_time"):
+				mission.transit_time = outbound_fuel_route["final_leg_time"]
+
+		# Deduct total fuel cost upfront
+		_game_state.money -= outbound_fuel_route["total_cost"]
+
+	# Calculate mining duration first (needed to predict return timing)
+	var skill_total := 0.0
+	for w in ship.crew:
+		skill_total += w.mining_skill
+	if skill_total < 0.1:
+		skill_total = 0.1
+	var equip_mult := ship.get_mining_multiplier()
+	var total_yield_per_tick := 0.0
+	for ore_type in asteroid.ore_yields:
+		var base_yield: float = asteroid.ore_yields[ore_type]
+		total_yield_per_tick += base_yield * skill_total * equip_mult * Simulation.BASE_MINING_RATE
+	if total_yield_per_tick > 0:
+		mission.mining_duration = ship.cargo_capacity / total_yield_per_tick
+	else:
+		mission.mining_duration = 86400.0  # Fallback: 1 day
+
+	# Predict where Earth will be when ship returns (if returning to Earth)
+	if mission.origin_is_earth:
+		var estimated_mission_time := mission.transit_time * 2.0 + mission.mining_duration
+		mission.return_position_au = CelestialData.get_earth_position_at_time(estimated_mission_time)
+	# else: return_position_au already set to ship.position_au for colony returns
+
+	# Calculate return fuel stops (assume full cargo, use predicted Earth position)
+	var expected_cargo_return := ship.cargo_capacity
+	var return_fuel_route := FuelRoutePlanner.plan_route_to_position(
+		ship,
+		mission.return_position_au,
+		expected_cargo_return,
+		3
+	)
+
+	if return_fuel_route["feasible"] and return_fuel_route["waypoints"].size() > 0:
+		var ret_waypoints: Array = return_fuel_route["waypoints"]
+		var ret_colonies: Array = return_fuel_route["colonies"]
+		var ret_fuel_amounts: Array = return_fuel_route["fuel_amounts"]
+		var ret_fuel_costs: Array = return_fuel_route["fuel_costs"]
+		var ret_leg_times: Array = return_fuel_route["leg_times"]
+		mission.return_legs.clear()
+		for i in range(ret_waypoints.size()):
+			mission.return_legs.append(WaypointLeg.make(ret_waypoints[i], ret_leg_times[i], WaypointLeg.WaypointType.REFUEL_STOP, -1, ret_colonies[i], ret_fuel_amounts[i], ret_fuel_costs[i]))
+
+		# Deduct return fuel cost upfront
+		_game_state.money -= return_fuel_route["total_cost"]
+
+	# Apply pilot skill modifier to transit time
+	var best_pilot := 0.0
+	for w in ship.crew:
+		if w.pilot_skill > best_pilot:
+			best_pilot = w.pilot_skill
+	var pilot_factor := 1.15 - (best_pilot * 0.2)  # 0.0 = 1.15x slower, 1.0 = 0.95x, 1.5 = 0.85x
+	mission.transit_time *= pilot_factor
+
+	mission.elapsed_ticks = 0.0
+
+	# Calculate fuel burn rate
+	if slingshot_route:
+		# Use pre-calculated fuel cost from slingshot route
+		var total_fuel: float = slingshot_route.fuel_cost
+		var total_transit_ticks: float = slingshot_route.transit_time * 2.0  # Outbound + return
+		mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
+	else:
+		# Standard fuel calculation
+		var current_cargo_mass := ship.get_cargo_total()
+		var fuel_outbound := ship.calc_fuel_for_distance(dist, current_cargo_mass)
+		var fuel_return := ship.calc_fuel_for_distance(dist, ship.cargo_capacity)
+		var total_fuel := fuel_outbound + fuel_return
+
+		# Apply Hohmann fuel savings
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			total_fuel *= Brachistochrone.hohmann_fuel_multiplier()
+
+		var total_transit_ticks := mission.transit_time * 2.0
+		mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
+
+	# Clear any existing trade mission before assigning new regular mission
+	ship.current_trade_mission = null
+	ship.current_mission = mission
+	# Stationed ships keep existing cargo (they accumulate over multiple mining runs)
+	if not ship.is_stationed:
+		ship.current_cargo.clear()
+
+	# Partnership support: create shadow mission for follower
+	if ship.is_partnered() and ship.is_partnership_leader:
+		var follower := ship.partner_ship
+		if follower != null and follower.current_mission == null:
+			# Create shadow mission for follower
+			var shadow := Mission.new()
+			shadow.ship = follower
+			shadow.asteroid = asteroid
+			shadow.status = Mission.Status.TRANSIT_OUT
+			shadow.is_partnership_shadow = true
+			shadow.partnership_leader_ship_name = ship.ship_name
+			shadow.partnership_leader_mission = mission
+
+			# Copy route and timing from leader
+			shadow.origin_position_au = follower.position_au
+			shadow.return_position_au = follower.position_au
+			shadow.origin_is_earth = mission.origin_is_earth
+			shadow.origin_name = mission.origin_name
+			shadow.destination_position_au = mission.destination_position_au
+			shadow.transit_mode = mission.transit_mode
+			shadow.outbound_legs = mission.outbound_legs.duplicate(true)
+			shadow.return_legs = mission.return_legs.duplicate(true)
+			shadow.transit_time = mission.transit_time
+			shadow.mining_duration = mission.mining_duration
+			shadow.mission_type = mission.mission_type
+			shadow.elapsed_ticks = 0.0
+
+			# Calculate follower's own fuel consumption (based on follower's mass/thrust)
+			var follower_cargo := follower.get_cargo_total()
+			var follower_fuel_out := follower.calc_fuel_for_distance(dist, follower_cargo)
+			var follower_fuel_ret := follower.calc_fuel_for_distance(dist, follower.cargo_capacity)
+			var follower_total_fuel := follower_fuel_out + follower_fuel_ret
+			if transit_mode == Mission.TransitMode.HOHMANN:
+				follower_total_fuel *= Brachistochrone.hohmann_fuel_multiplier()
+			var follower_total_transit := shadow.transit_time * 2.0
+			shadow.fuel_per_tick = follower_total_fuel / follower_total_transit if follower_total_transit > 0 else 0.0
+
+			# Provision follower's supplies
+			var follower_crew_size := follower.crew.size() if follower.crew.size() > 0 else follower.min_crew
+			follower.supplies["food"] = follower_crew_size * 30.0 * 2.8
+			follower.supplies["water"] = follower_crew_size * 30.0 * 0.25 / 20.0
+			follower.supplies["oxygen"] = follower_crew_size * 30.0 * 0.05 / 2.0
+			follower.reset_life_support(follower.crew.size())
+
+			follower.current_mission = shadow
+			follower.docked_at_colony = null
+			follower.docked_at_earth = false
+			if not follower.is_stationed:
+				follower.current_cargo.clear()
+
+			missions.append(shadow)
+			EventBus.mission_started.emit(shadow)
+
+	# Provision supplies before departure (if at Earth or colony)
+	var _earth_pos_check := CelestialData.get_earth_position_au()
+	var at_earth := ship.position_au.distance_to(_earth_pos_check) < 0.05
+	if at_earth or ship.docked_at_colony:
+		var crew_size := ship.crew.size() if ship.crew.size() > 0 else ship.min_crew
+		ship.supplies["food"] = crew_size * 30.0 * 2.8
+		ship.supplies["water"] = crew_size * 30.0 * 0.25 / 20.0
+		ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
+
+	ship.docked_at_colony = null  # Ship is departing
+	ship.docked_at_earth = false
+	ship.reset_life_support(ship.crew.size())
+
+	missions.append(mission)
+
+	# Calculate trajectory visualization (once, cached for drawing)
+	mission.calculate_trajectory_curves()
+
+	EventBus.mission_started.emit(mission)
+
+	# Check if any hitchhiking workers can catch this ride
+	var route_points: Array[Vector2] = [asteroid.get_position_au()]
+	_game_state.check_hitchhike_opportunities(ship, route_points)
+
+	return mission
 
 
 ## Start a deployment mission (deploy mining units and workers)

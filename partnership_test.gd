@@ -73,7 +73,7 @@ func _ready() -> void:
 			GameState.workers.append(w)
 			GameState.assign_worker_to_ship(w, ship1)
 
-	var mission := GameState.start_mission(ship1, target)
+	var mission := MissionManager.start_mission(ship1, target)
 	if mission == null:
 		print("ERROR: Failed to start mission")
 		return

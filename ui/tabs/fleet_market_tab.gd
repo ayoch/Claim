@@ -3401,14 +3401,14 @@ func _execute_dispatch() -> void:
 			Mission.MissionType.COLLECT_ORE:
 				GameState.start_collect_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
 			Mission.MissionType.REPOSITION:
-				var mission := GameState.start_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
+				var mission := MissionManager.start_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
 				if mission:
 					mission.mission_type = Mission.MissionType.REPOSITION
 			_:
 				if _selected_ship.is_idle_remote:
 					MissionManager.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
 				else:
-					GameState.start_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
+					MissionManager.start_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
 
 	_cancel_preview()
 	_return_to_map_if_needed()

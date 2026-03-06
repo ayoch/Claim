@@ -130,8 +130,8 @@ func dispatch_mission(ship_id: int, asteroid_id: int, mission_type: int, mining_
 
 	var asteroid := GameState.asteroids[asteroid_id]
 
-	# Dispatch mission using GameState
-	var mission := GameState.start_mission(ship, asteroid)
+	# Dispatch mission using MissionManager
+	var mission := MissionManager.start_mission(ship, asteroid)
 	return mission
 
 

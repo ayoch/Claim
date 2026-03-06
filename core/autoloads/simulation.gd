@@ -1736,7 +1736,7 @@ func _autoplay_dispatch_from_earth(ship: Ship) -> void:
 		return  # Not enough workers
 
 	ship.crew = crew
-	var mission := GameState.start_mission(ship, best_asteroid)
+	var mission := MissionManager.start_mission(ship, best_asteroid)
 	if mission:
 		mission.return_to_station = true  # Auto-return when done; no idle-at-destination
 		EventBus.station_job_started.emit(ship, "mining", best_asteroid.asteroid_name)
@@ -1764,7 +1764,7 @@ func _station_try_mining(ship: Ship) -> bool:
 		return false
 
 	# Dispatch mining mission that returns to station
-	var mission := GameState.start_mission(ship, best_asteroid)
+	var mission := MissionManager.start_mission(ship, best_asteroid)
 	if mission:
 		mission.return_to_station = true
 		mission.return_position_au = station_pos
