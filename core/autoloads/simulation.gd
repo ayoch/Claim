@@ -1,4 +1,4 @@
-﻿extends Node
+extends Node
 
 # Note: game_speed is now controlled by TimeScale autoload (1/2 keys)
 # Default is 1.0, but speeds up to 5x for development
@@ -329,12 +329,7 @@ func _process_missions(dt: float) -> void:
 		match mission.status:
 			Mission.Status.TRANSIT_OUT:
 				# Grant pilot XP to best pilot (they're flying)
-				var best_pilot: Worker = null
-				var best_pilot_skill := -1.0
-				for w in mission.ship.crew:
-					if w.pilot_skill > best_pilot_skill:
-						best_pilot = w
-						best_pilot_skill = w.pilot_skill
+				var best_pilot := mission.ship.get_best_pilot()
 				if best_pilot:
 					best_pilot.add_xp(0, dt)  # 0 = pilot skill
 				_burn_fuel(mission, dt)
@@ -466,12 +461,7 @@ func _process_missions(dt: float) -> void:
 
 			Mission.Status.TRANSIT_BACK:
 				# Grant pilot XP to best pilot (they're flying)
-				var best_pilot: Worker = null
-				var best_pilot_skill := -1.0
-				for w in mission.ship.crew:
-					if w.pilot_skill > best_pilot_skill:
-						best_pilot = w
-						best_pilot_skill = w.pilot_skill
+				var best_pilot := mission.ship.get_best_pilot()
 				if best_pilot:
 					best_pilot.add_xp(0, dt)  # 0 = pilot skill
 				_burn_fuel(mission, dt)
@@ -784,13 +774,11 @@ func _mine_tick(mission: Mission, dt: float) -> void:
 		return
 
 	var mining_skill_total := 0.0
-	var best_engineer := 0.0
 	for w in mission.ship.crew:
 		mining_skill_total += w.mining_skill
-		if w.engineer_skill > best_engineer:
-			best_engineer = w.engineer_skill
 	if mining_skill_total < 0.1:
 		mining_skill_total = 0.1  # Minimum so crew can still mine (slowly)
+	var best_engineer := mission.ship.get_best_engineer_skill()
 
 	var equip_mult := ship.get_mining_multiplier()
 	var engineer_wear_factor := 1.0 - (best_engineer * 0.3)  # 1.0 = 0.7x wear, 1.5 = 0.55x
@@ -853,12 +841,7 @@ func _process_trade_missions(dt: float) -> void:
 		match tm.status:
 			TradeMission.Status.TRANSIT_TO_COLONY:
 				# Grant pilot XP to best pilot (they're flying)
-				var best_pilot: Worker = null
-				var best_pilot_skill := -1.0
-				for w in tm.ship.crew:
-					if w.pilot_skill > best_pilot_skill:
-						best_pilot = w
-						best_pilot_skill = w.pilot_skill
+				var best_pilot := tm.ship.get_best_pilot()
 				if best_pilot:
 					best_pilot.add_xp(0, dt)  # 0 = pilot skill
 				tm.ship.fuel = maxf(tm.ship.fuel - tm.fuel_per_tick * dt, 0.0)
@@ -938,12 +921,7 @@ func _process_trade_missions(dt: float) -> void:
 
 			TradeMission.Status.TRANSIT_BACK:
 				# Grant pilot XP to best pilot (they're flying)
-				var best_pilot: Worker = null
-				var best_pilot_skill := -1.0
-				for w in tm.ship.crew:
-					if w.pilot_skill > best_pilot_skill:
-						best_pilot = w
-						best_pilot_skill = w.pilot_skill
+				var best_pilot := tm.ship.get_best_pilot()
 				if best_pilot:
 					best_pilot.add_xp(0, dt)  # 0 = pilot skill
 				tm.ship.fuel = maxf(tm.ship.fuel - tm.fuel_per_tick * dt, 0.0)
@@ -1063,8 +1041,8 @@ func _check_ship_collisions(prev_positions: Dictionary) -> void:
 			)
 
 	for ship in _destroyed_ships_buf:
-		# Remove all crew
-		for w in ship.crew:
+		# Remove all crew (iterate copy - fire_worker mutates ship.crew)
+		for w in ship.crew.duplicate():
 			if w is Worker:
 				GameState.fire_worker(w)
 		# Clean up missions
@@ -1175,10 +1153,7 @@ func _check_breakdowns(dt: float) -> void:
 			continue
 		if mission.status == Mission.Status.TRANSIT_OUT or mission.status == Mission.Status.TRANSIT_BACK:
 			# Find best engineer skill in crew for wear reduction
-			var best_engineer := 0.0
-			for w in mission.ship.crew:
-				if w.engineer_skill > best_engineer:
-					best_engineer = w.engineer_skill
+			var best_engineer := mission.ship.get_best_engineer_skill()
 			var eng_factor := 1.0 - (best_engineer * 0.3)
 
 			# Degrade engine during transit (reduced by engineer skill)
@@ -1199,10 +1174,7 @@ func _check_breakdowns(dt: float) -> void:
 			continue
 		if tm.status == TradeMission.Status.TRANSIT_TO_COLONY or tm.status == TradeMission.Status.TRANSIT_BACK:
 			# Find best engineer skill (trade missions store workers but don't lock them)
-			var best_engineer := 0.0
-			for w in ship.crew:
-				if w.engineer_skill > best_engineer:
-					best_engineer = w.engineer_skill
+			var best_engineer := ship.get_best_engineer_skill()
 			var eng_factor := 1.0 - (best_engineer * 0.3)
 
 			ship.engine_condition = maxf(ship.engine_condition - ship.engine_wear_per_tick * eng_factor * dt, 0.0)
@@ -1217,25 +1189,18 @@ func _check_breakdowns(dt: float) -> void:
 
 func _trigger_breakdown(ship: Ship, reason: String) -> void:
 	# Check for engineer self-repair before declaring breakdown
-	var crew: Array[Worker] = ship.crew
-
-	# Find best engineer
-	var best_engineer := 0.0
-	for w in crew:
-		if w.engineer_skill > best_engineer:
-			best_engineer = w.engineer_skill
+	var best_engineer_skill := ship.get_best_engineer_skill()
 
 	# Self-repair chance: 0% at 0.0 skill, 30% at 1.0 skill, 50% at 1.5 skill
-	var repair_chance := best_engineer * 0.3 + (maxf(best_engineer - 1.0, 0.0) * 0.2)
+	var repair_chance := best_engineer_skill * 0.3 + (maxf(best_engineer_skill - 1.0, 0.0) * 0.2)
 	if repair_chance > 0 and randf() < repair_chance:
 		# Engineer patched it! Reduce engine condition but continue mission
 		ship.engine_condition = maxf(ship.engine_condition * 0.5, 20.0)
-		print("Ship %s: Engineer patched breakdown in-situ (skill %.1f)" % [ship.ship_name, best_engineer])
-		# Grant bonus engineer XP to the engineer who performed the repair
-		for w in crew:
-			if w.engineer_skill == best_engineer:
-				w.add_xp(1, 43200.0)  # 1 = engineer skill, half a day's worth as bonus
-				break
+		print("Ship %s: Engineer patched breakdown in-situ (skill %.1f)" % [ship.ship_name, best_engineer_skill])
+		# Grant bonus XP to the best engineer who performed the repair
+		var best_eng_worker := ship.get_best_engineer()
+		if best_eng_worker:
+			best_eng_worker.add_xp(1, 43200.0)  # 1 = engineer skill, half a day's worth as bonus
 		EventBus.ship_breakdown.emit(ship, "Minor failure (repaired)")
 		return
 
@@ -1390,6 +1355,11 @@ func _process_refuels(dt: float) -> void:
 		EventBus.refuel_mission_completed.emit(ship, fuel_delivered)
 
 func _process_life_support(dt: float) -> void:
+	_life_support_accumulator += dt
+	if _life_support_accumulator < LIFE_SUPPORT_INTERVAL:
+		return
+	var effective_dt := _life_support_accumulator
+	_life_support_accumulator = 0.0
 	# Derelict ships consume life support (food, water, O2)
 	# When life support runs out, crew dies and ship is total loss
 	_ships_to_destroy_buf.clear()
@@ -1405,7 +1375,7 @@ func _process_life_support(dt: float) -> void:
 			_life_support_warnings_fired[ship] = []
 
 		# Consume life support
-		ship.life_support_remaining -= dt
+		ship.life_support_remaining -= effective_dt
 
 		# Check warning thresholds — skip if player has already responded
 		var player_responded := ship in GameState.rescue_missions \
@@ -2242,9 +2212,12 @@ func _process_deployed_crews(dt: float) -> void:
 				EventBus.worker_fatigued.emit(w)
 
 func _process_worker_fatigue(dt: float) -> void:
-	var days := dt / 86400.0
-	if days < 0.001:
-		return  # Skip tiny increments
+	_worker_fatigue_accumulator += dt
+	if _worker_fatigue_accumulator < WORKER_FATIGUE_INTERVAL:
+		return
+	var effective_dt := _worker_fatigue_accumulator
+	_worker_fatigue_accumulator = 0.0
+	var days := effective_dt / 86400.0
 
 	for w in GameState.workers:
 		if w.assigned_mission != null:
@@ -2842,7 +2815,12 @@ func _process_payroll(dt: float) -> void:
 			GameState.record_transaction(-total_wages, "Payroll (%d workers)" % GameState.workers.size())
 
 func _process_food_consumption(dt: float) -> void:
-	var days := dt / 86400.0
+	_food_consumption_accumulator += dt
+	if _food_consumption_accumulator < FOOD_CONSUMPTION_INTERVAL:
+		return
+	var effective_dt := _food_consumption_accumulator
+	_food_consumption_accumulator = 0.0
+	var days := effective_dt / 86400.0
 	var food_per_worker_per_day_kg := 2.8  # kg, from SupplyData
 
 	# Grace periods after supplies run out (in game-seconds)

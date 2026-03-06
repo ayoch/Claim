@@ -393,6 +393,33 @@ func is_armed() -> bool:
 				return true
 	return false
 
+## Crew skill helpers — avoid repeating find-max loops throughout simulation
+
+func get_best_pilot() -> Worker:
+	var best: Worker = null
+	var best_skill := -1.0
+	for w in crew:
+		if w.pilot_skill > best_skill:
+			best_skill = w.pilot_skill
+			best = w
+	return best
+
+func get_best_engineer_skill() -> float:
+	var best := 0.0
+	for w in crew:
+		if w.engineer_skill > best:
+			best = w.engineer_skill
+	return best
+
+func get_best_engineer() -> Worker:
+	var best: Worker = null
+	var best_skill := 0.0
+	for w in crew:
+		if w.engineer_skill > best_skill:
+			best_skill = w.engineer_skill
+			best = w
+	return best
+
 ## Partnership system helper functions
 func is_partnered() -> bool:
 	return partner_ship != null

@@ -1,12 +1,40 @@
 # Claude Code Handoff Document
-**Last Updated:** 2026-03-04
+**Last Updated:** 2026-03-06
 **Current Instance:** Dweezil (Windows)
 
 ---
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Ship Bugs + SERVER Mode Audit
+### Latest Work Session: Code Review Fixes (Bugs #1, #2, #11)
+**Date:** 2026-03-06 (Windows/Dweezil)
+**Status:** Complete — committed
+
+**What was done:**
+Full code review of the project followed by targeted fixes for the highest-priority issues.
+
+**Bug #1 — Crew iterator mutation during ship destruction** (`simulation.gd`)
+- `_check_ship_collisions` iterated `ship.crew` while calling `GameState.fire_worker(w)`, which calls `ship.crew.erase(worker)` internally, mutating the array mid-iteration. GDScript skips elements when this happens, leaving some crew unfired and their names unreleased.
+- Fix: changed `for w in ship.crew:` to `for w in ship.crew.duplicate():` at the destruction site.
+
+**Bug #2 — Dead throttle accumulators** (`simulation.gd`)
+- `_life_support_accumulator`, `_food_consumption_accumulator`, and `_worker_fatigue_accumulator` were declared with matching `INTERVAL` constants but never used. The three functions ran raw every tick, processing tiny fractions of a day/hour on each call.
+- Fix: added accumulator-based throttling to all three functions using the same pattern as `_process_payroll`/`_process_worker_leave`. Each function now accumulates `dt`, fires when it reaches its interval, and passes the full accumulated `effective_dt` to the logic. Food and life support now process hourly; worker fatigue processes daily.
+
+**Bug #11 — Best-pilot/best-engineer scan loops duplicated** (`ship.gd` + `simulation.gd`)
+- The same "find max skill worker in crew" loop was copy-pasted 8+ times across simulation.gd.
+- Fix: added `get_best_pilot() -> Worker`, `get_best_engineer_skill() -> float`, and `get_best_engineer() -> Worker` as methods on `Ship`. Replaced all inline scan loops throughout simulation.gd.
+
+**Cleanup:**
+- Deleted `simulation.gd.bak`, `.bak2`, `.bak3` — those belong in git, not the source tree.
+
+**Files modified:**
+- `core/models/ship.gd` — 3 new crew-skill helper methods
+- `core/autoloads/simulation.gd` — Bug #1, #2, #11 fixes; removed .bak files
+
+---
+
+### Previous Work Session: Ship Bugs + SERVER Mode Audit
 **Date:** 2026-03-04 (Windows/Dweezil)
 **Status:** Complete — NOT YET COMMITTED
 
@@ -32,10 +60,9 @@
 - `ui/tabs/market_tab.gd` — sell/trade functions blocked in SERVER mode
 - `ui/main_ui.gd` — custom speed input SERVER routing
 
-**Known remaining gap (not yet implemented):**
-- Trade missions (colony-to-colony cargo runs) have no server API endpoint yet — they are blocked/no-op in SERVER mode. Needs a `POST /game/dispatch-trade` endpoint and BackendManager method.
-- Cargo selling at colonies has no server API — blocked in SERVER mode. Server auto-sells via autoplay.
+**Known remaining gap:**
 - Mission progress bars in fleet_tab still use local mission object state (stale between server polls). Low priority.
+- **Railway action required:** Run `alembic upgrade head` to apply `k7l8m9n0o1p2_add_auto_sell_policy` migration before server will boot cleanly.
 
 ---
 
