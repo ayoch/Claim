@@ -6,6 +6,9 @@ signal estimate_updated(data: Dictionary)
 signal transit_mode_changed(mode: Mission.TransitMode)
 signal route_changed(route)
 signal thrust_changed(thrust_percent: float)
+signal confirm_requested()
+signal back_requested()
+signal cancelled()
 
 var _game_state: Node = null  # GameState reference
 var _selected_ship: Ship = null
@@ -210,6 +213,36 @@ func _build_estimate_panel() -> void:
 	_est_details_label.name = "EstimateDetails"
 	_est_details_label.text = "Select crew to see estimate"
 	_est_vbox.add_child(_est_details_label)
+
+	# Action buttons (Confirm, Back, Cancel)
+	var button_hbox := HBoxContainer.new()
+	button_hbox.add_theme_constant_override("separation", 8)
+	_est_vbox.add_child(button_hbox)
+
+	var confirm_btn := Button.new()
+	confirm_btn.text = "Confirm Dispatch"
+	confirm_btn.custom_minimum_size = Vector2(0, 44)
+	confirm_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	confirm_btn.pressed.connect(func() -> void:
+		confirm_requested.emit()
+	)
+	button_hbox.add_child(confirm_btn)
+
+	var back_btn := Button.new()
+	back_btn.text = "Back"
+	back_btn.custom_minimum_size = Vector2(0, 44)
+	back_btn.pressed.connect(func() -> void:
+		back_requested.emit()
+	)
+	button_hbox.add_child(back_btn)
+
+	var cancel_btn := Button.new()
+	cancel_btn.text = "Cancel"
+	cancel_btn.custom_minimum_size = Vector2(0, 44)
+	cancel_btn.pressed.connect(func() -> void:
+		cancelled.emit()
+	)
+	button_hbox.add_child(cancel_btn)
 
 func _build_transit_mode_buttons() -> void:
 	var mode_hbox := HFlowContainer.new()
