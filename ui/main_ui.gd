@@ -140,7 +140,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
 		# Block speed controls for non-admins in SERVER mode
 		var in_server_mode := BackendManager.current_mode == BackendManager.BackendMode.SERVER
-		var is_speed_control := event.keycode in [KEY_SPACE, KEY_1, KEY_2]
+		var is_speed_control: bool = event.keycode in [KEY_SPACE, KEY_1, KEY_2]
 
 		if in_server_mode and is_speed_control and not BackendManager.is_admin():
 			# Non-admin in SERVER mode - block speed controls
