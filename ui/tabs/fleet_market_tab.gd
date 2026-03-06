@@ -3397,9 +3397,9 @@ func _execute_dispatch() -> void:
 		# LOCAL mode: use local GameState functions
 		match _selected_mission_type:
 			Mission.MissionType.DEPLOY_UNIT:
-				GameState.start_deploy_mission(_selected_ship, _selected_asteroid, _selected_deploy_units, _selected_deploy_workers, _selected_transit_mode, _selected_slingshot_route)
+				MissionManager.start_deploy_mission(_selected_ship, _selected_asteroid, _selected_deploy_units, _selected_deploy_workers, _selected_transit_mode, _selected_slingshot_route)
 			Mission.MissionType.COLLECT_ORE:
-				GameState.start_collect_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
+				MissionManager.start_collect_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
 			Mission.MissionType.REPOSITION:
 				var mission := MissionManager.start_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
 				if mission:

@@ -654,7 +654,7 @@ func _send_docked_ship(ship: Ship) -> void:
 	if best_collect_asteroid != null:
 		ship.crew = crew
 		ship.last_crew = crew.duplicate()
-		GameState.start_collect_mission(ship, best_collect_asteroid)
+		MissionManager.start_collect_mission(ship, best_collect_asteroid)
 		missions_started += 1
 		return
 
@@ -733,7 +733,7 @@ func _try_deploy_units(ship: Ship, crew: Array[Worker], available: Array[Worker]
 	_refuel_ship(ship)
 	ship.crew = crew
 	ship.last_crew = crew.duplicate()
-	GameState.start_deploy_mission(ship, asteroid, units_to_deploy, deploy_workers)
+	MissionManager.start_deploy_mission(ship, asteroid, units_to_deploy, deploy_workers)
 	return true
 
 func _send_mining_mission(ship: Ship, crew: Array[Worker]) -> void:
@@ -814,7 +814,7 @@ func _handle_idle_remote(ship: Ship) -> void:
 				for i in range(ship.min_crew):
 					collect_crew.append(collect_available[i])
 				ship.crew = collect_crew
-				GameState.start_collect_mission(ship, idle_asteroid)
+				MissionManager.start_collect_mission(ship, idle_asteroid)
 				return
 
 	# If we have available crew, send to a new asteroid from here

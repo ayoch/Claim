@@ -1629,7 +1629,7 @@ func _policy_dispatch_idle_ship(ship: Ship) -> void:
 			ship.crew = crew
 			# SERVER mode: collection missions not yet implemented on server, skip for now
 			if BackendManager.current_mode == BackendManager.BackendMode.LOCAL:
-				var m := GameState.start_collect_mission(ship, best_collect)
+				var m := MissionManager.start_collect_mission(ship, best_collect)
 				if m:
 					m.return_to_station = true
 					return
@@ -2034,7 +2034,7 @@ func _station_try_collect_ore(ship: Ship) -> bool:
 	if best_asteroid == null:
 		return false
 
-	var mission := GameState.start_collect_mission(ship, best_asteroid)
+	var mission := MissionManager.start_collect_mission(ship, best_asteroid)
 	if mission:
 		mission.return_to_station = true
 		mission.return_position_au = station_pos

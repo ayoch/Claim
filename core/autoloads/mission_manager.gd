@@ -297,16 +297,191 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 
 ## Start a deployment mission (deploy mining units and workers)
 func start_deploy_mission(ship: Ship, asteroid: AsteroidData, units: Array[MiningUnit], deploy_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
-	# TODO: Move implementation from game_state.gd
-	push_error("[MissionManager] start_deploy_mission not yet implemented")
-	return null
+	# Validate transit mode before casting
+	if transit_mode < 0 or transit_mode >= Mission.TransitMode.size():
+		push_error("[MissionManager] Invalid transit mode %d, defaulting to BRACHISTOCHRONE" % transit_mode)
+		transit_mode = Mission.TransitMode.BRACHISTOCHRONE
+
+	var mission := Mission.new()
+	mission.ship = ship
+	mission.asteroid = asteroid
+	mission.mission_type = Mission.MissionType.DEPLOY_UNIT
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.origin_position_au = ship.position_au
+	mission.return_position_au = ship.position_au
+	mission.transit_mode = transit_mode as Mission.TransitMode
+	mission.mining_units_to_deploy = units
+	mission.workers_to_deploy = deploy_workers
+	mission.deploy_duration = 3600.0 * units.size()
+
+	# Determine if departing from Earth
+	var earth_pos := CelestialData.get_earth_position_au()
+	mission.origin_is_earth = ship.position_au.distance_to(earth_pos) < 0.05
+	if mission.origin_is_earth:
+		mission.origin_name = "Earth"
+	elif ship.docked_at_colony:
+		mission.origin_name = ship.docked_at_colony.colony_name
+	elif ship.current_mission and ship.current_mission.asteroid:
+		mission.origin_name = ship.current_mission.asteroid.asteroid_name
+	elif ship.current_trade_mission and ship.current_trade_mission.colony:
+		mission.origin_name = ship.current_trade_mission.colony.colony_name
+	else:
+		mission.origin_name = "deep space"
+
+	var dist := ship.position_au.distance_to(asteroid.get_position_au())
+
+	if slingshot_route:
+		mission.outbound_legs = [WaypointLeg.make(slingshot_route.waypoint_pos, slingshot_route.leg1_time, WaypointLeg.WaypointType.GRAVITY_ASSIST, slingshot_route.planet_index)]
+		mission.outbound_waypoint_index = 0
+		mission.transit_time = slingshot_route.leg2_time
+		dist = slingshot_route.leg1_distance
+	else:
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			mission.transit_time = Brachistochrone.hohmann_time(dist)
+		else:
+			mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+
+	# Apply pilot skill modifier
+	var best_pilot := 0.0
+	for w in ship.crew:
+		if w.pilot_skill > best_pilot:
+			best_pilot = w.pilot_skill
+	var pilot_factor := 1.15 - (best_pilot * 0.2)
+	mission.transit_time *= pilot_factor
+
+	mission.elapsed_ticks = 0.0
+
+	# Calculate fuel burn rate
+	var cargo_mass := ship.get_cargo_total()
+	# Add unit mass to cargo for fuel calculation
+	var unit_mass := 0.0
+	for u in units:
+		unit_mass += u.mass
+	var fuel_outbound := ship.calc_fuel_for_distance(dist, cargo_mass + unit_mass)
+	var fuel_return := ship.calc_fuel_for_distance(dist, cargo_mass)  # Return lighter (units deployed)
+	var total_fuel := fuel_outbound + fuel_return
+	if transit_mode == Mission.TransitMode.HOHMANN:
+		total_fuel *= Brachistochrone.hohmann_fuel_multiplier()
+	var total_transit_ticks := mission.transit_time * 2.0
+	mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
+
+	# Remove units from inventory immediately — they're now loaded on the ship
+	for u in units:
+		_game_state.mining_unit_inventory.erase(u)
+
+	# Clear any existing trade mission before assigning new regular mission
+	ship.current_trade_mission = null
+	ship.current_mission = mission
+
+	# Provision supplies before departure (if at Earth or colony)
+	var at_earth_deploy := ship.position_au.distance_to(earth_pos) < 0.05
+	if at_earth_deploy or ship.docked_at_colony:
+		var crew_size := ship.crew.size() if ship.crew.size() > 0 else ship.min_crew
+		ship.supplies["food"] = crew_size * 30.0 * 2.8
+		ship.supplies["water"] = crew_size * 30.0 * 0.25 / 20.0
+		ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
+
+	ship.docked_at_colony = null
+	ship.docked_at_earth = false
+	ship.reset_life_support(ship.crew.size())
+
+	missions.append(mission)
+	EventBus.mission_started.emit(mission)
+	return mission
 
 
 ## Start a collection mission (collect stockpiled ore from deployed units)
 func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
-	# TODO: Move implementation from game_state.gd
-	push_error("[MissionManager] start_collect_mission not yet implemented")
-	return null
+	# Validate transit mode before casting
+	if transit_mode < 0 or transit_mode >= Mission.TransitMode.size():
+		push_error("[MissionManager] Invalid transit mode %d, defaulting to BRACHISTOCHRONE" % transit_mode)
+		transit_mode = Mission.TransitMode.BRACHISTOCHRONE
+
+	# Capture origin location BEFORE clearing idle mission
+	var origin_location_name: String = ""
+	if ship.current_mission and ship.current_mission.asteroid:
+		origin_location_name = ship.current_mission.asteroid.asteroid_name
+	elif ship.current_trade_mission and ship.current_trade_mission.colony:
+		origin_location_name = ship.current_trade_mission.colony.colony_name
+
+	# Clean up any lingering idle mission so its stale worker list doesn't cause mismatches
+	if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
+		var old_mission := ship.current_mission
+		ship.current_mission = null
+		old_mission.cleanup()  # Break circular references
+		missions.erase(old_mission)
+
+	var mission := Mission.new()
+	mission.ship = ship
+	mission.asteroid = asteroid
+	mission.mission_type = Mission.MissionType.COLLECT_ORE
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.origin_position_au = ship.position_au
+	mission.return_position_au = ship.position_au
+	mission.transit_mode = transit_mode as Mission.TransitMode
+
+	var earth_pos := CelestialData.get_earth_position_au()
+	mission.origin_is_earth = ship.position_au.distance_to(earth_pos) < 0.05
+	if mission.origin_is_earth:
+		mission.origin_name = "Earth"
+	elif ship.docked_at_colony:
+		mission.origin_name = ship.docked_at_colony.colony_name
+	elif origin_location_name != "":
+		# Use captured location from before clearing idle mission
+		mission.origin_name = origin_location_name
+	else:
+		mission.origin_name = "deep space"
+
+	var dist := ship.position_au.distance_to(asteroid.get_position_au())
+
+	if slingshot_route:
+		mission.outbound_legs = [WaypointLeg.make(slingshot_route.waypoint_pos, slingshot_route.leg1_time, WaypointLeg.WaypointType.GRAVITY_ASSIST, slingshot_route.planet_index)]
+		mission.outbound_waypoint_index = 0
+		mission.transit_time = slingshot_route.leg2_time
+		dist = slingshot_route.leg1_distance
+	else:
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			mission.transit_time = Brachistochrone.hohmann_time(dist)
+		else:
+			mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+
+	var best_pilot := 0.0
+	for w in ship.crew:
+		if w.pilot_skill > best_pilot:
+			best_pilot = w.pilot_skill
+	var pilot_factor := 1.15 - (best_pilot * 0.2)
+	mission.transit_time *= pilot_factor
+
+	mission.elapsed_ticks = 0.0
+
+	var cargo_mass := ship.get_cargo_total()
+	var fuel_outbound := ship.calc_fuel_for_distance(dist, cargo_mass)
+	var fuel_return := ship.calc_fuel_for_distance(dist, ship.cargo_capacity)  # Assume full return
+	var total_fuel := fuel_outbound + fuel_return
+	if transit_mode == Mission.TransitMode.HOHMANN:
+		total_fuel *= Brachistochrone.hohmann_fuel_multiplier()
+	var total_transit_ticks := mission.transit_time * 2.0
+	mission.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
+
+	# Clear any existing trade mission before assigning new regular mission
+	ship.current_trade_mission = null
+	ship.current_mission = mission
+
+	# Provision supplies before departure (if at Earth or colony)
+	var at_earth_collect := ship.position_au.distance_to(earth_pos) < 0.05
+	if at_earth_collect or ship.docked_at_colony:
+		var crew_size := ship.crew.size() if ship.crew.size() > 0 else ship.min_crew
+		ship.supplies["food"] = crew_size * 30.0 * 2.8
+		ship.supplies["water"] = crew_size * 30.0 * 0.25 / 20.0
+		ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
+
+	ship.docked_at_colony = null
+	ship.docked_at_earth = false
+	ship.reset_life_support(ship.crew.size())
+
+	missions.append(mission)
+	EventBus.mission_started.emit(mission)
+	return mission
 
 
 ## Start a trade mission to sell ore at a colony
