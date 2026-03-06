@@ -33,6 +33,7 @@ func _ready() -> void:
 	load_game_btn.pressed.connect(_on_load_game)
 	leaderboards_btn.pressed.connect(_on_leaderboards)
 	online_btn.pressed.connect(_on_online)
+	settings_btn.pressed.connect(_on_settings)
 	quit_btn.pressed.connect(_on_quit)
 
 	# Check server status
@@ -89,6 +90,9 @@ func _on_leaderboards() -> void:
 
 func _on_online() -> void:
 	get_tree().change_scene_to_file("res://ui/login_screen.tscn")
+
+func _on_settings() -> void:
+	get_tree().change_scene_to_file("res://ui/settings_screen.tscn")
 
 func _on_quit() -> void:
 	get_tree().quit()
