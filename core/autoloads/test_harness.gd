@@ -866,7 +866,7 @@ func _try_redirect_missions() -> void:
 		if other_colonies.is_empty():
 			continue
 		var new_colony: Colony = other_colonies[randi() % other_colonies.size()]
-		GameState.redirect_trade_mission(tm, new_colony)
+		MissionManager.redirect_trade_mission(tm, new_colony)
 
 func _queue_next_missions() -> void:
 	# Pre-queue next missions for ships to keep them continuously working

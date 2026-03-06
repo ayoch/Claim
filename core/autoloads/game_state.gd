@@ -445,106 +445,14 @@ func redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> bool:
 func _apply_redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> void:
 	MissionManager._apply_redirect_mission(mission, new_asteroid)
 
-## Redirect a ship in trade mission to a new colony.
-## Queues the order with lightspeed delay; returns true if order accepted/queued.
+## DEPRECATED: Forwarding stub - use MissionManager.redirect_trade_mission() instead
+## TODO: Remove after all references are migrated to MissionManager
 func redirect_trade_mission(trade_mission: TradeMission, new_colony: Colony) -> bool:
-	if trade_mission.status != TradeMission.Status.TRANSIT_TO_COLONY and trade_mission.status != TradeMission.Status.TRANSIT_BACK:
-		return false
-	var ship := trade_mission.ship
-	var label := "Redirect to " + new_colony.colony_name
-	queue_ship_order(ship, label, func(): _apply_redirect_trade_mission(trade_mission, new_colony))
-	return true
+	return MissionManager.redirect_trade_mission(trade_mission, new_colony)
 
+## DEPRECATED: Internal helper - forwards to MissionManager._apply_redirect_trade_mission()
 func _apply_redirect_trade_mission(trade_mission: TradeMission, new_colony: Colony) -> void:
-	# Re-validate: mission may have completed or ship state changed during signal transit
-	if trade_mission == null or trade_mission.ship == null:
-		return
-	if trade_mission.status != TradeMission.Status.TRANSIT_TO_COLONY and trade_mission.status != TradeMission.Status.TRANSIT_BACK:
-		return
-
-	var ship := trade_mission.ship
-	var new_dest := new_colony.get_position_au()
-
-	# Fuel check: outbound (redirect path) + return trip
-	var dist := ship.position_au.distance_to(new_dest)
-	var fuel_out_tm := ship.calc_fuel_for_distance(dist, ship.get_cargo_total())
-	var tm_return_origin: Vector2
-	if ship.is_stationed and ship.station_colony:
-		tm_return_origin = ship.station_colony.get_position_au()
-	else:
-		tm_return_origin = CelestialData.get_earth_position_au()
-	var tm_return_dist := new_dest.distance_to(tm_return_origin)
-	var fuel_ret_tm := ship.calc_fuel_for_distance(tm_return_dist, 0.0)  # empty after selling
-	var fuel_needed := fuel_out_tm + fuel_ret_tm
-
-	if fuel_needed > ship.fuel:
-		EventBus.trade_mission_redirect_failed.emit(ship, "Insufficient fuel (need %.0f for redirect + return, have %.0f)" % [fuel_needed, ship.fuel])
-		return
-
-	# Redirect cost (2x outbound fuel cost)
-	var redirect_cost := int(fuel_out_tm * Ship.FUEL_COST_PER_UNIT * 2.0)
-	if money < redirect_cost:
-		EventBus.trade_mission_redirect_failed.emit(ship, "Cannot afford redirect cost ($%d)" % redirect_cost)
-		return
-
-	money -= redirect_cost
-	trade_mission.colony = new_colony
-
-	var thrust := ship.get_effective_thrust()
-	var new_transit_time := Brachistochrone.transit_time(dist, thrust)
-	var avg_velocity := dist / new_transit_time if new_transit_time > 0.0 else 0.0
-
-	# Determine if a momentum arc is needed
-	var velocity_dir := ship.velocity_au_per_tick.normalized() if ship.speed_au_per_tick > 1e-8 else Vector2.ZERO
-	var dest_dir := (new_dest - ship.position_au).normalized() if dist > 1e-6 else Vector2.ZERO
-	var dot := velocity_dir.dot(dest_dir) if ship.speed_au_per_tick > 1e-8 else 1.0
-	var speed_fraction: float = clampf(ship.speed_au_per_tick / (2.0 * avg_velocity), 0.0, 1.0) if avg_velocity > 0.0 else 0.0
-	var arc_fraction: float = clampf(sqrt((1.0 - dot) * 0.5) * speed_fraction * 0.4, 0.0, 0.30)
-
-	var waypoint := ship.position_au + velocity_dir * (arc_fraction * dist)
-	var dist1 := arc_fraction * dist
-	var dist2 := waypoint.distance_to(new_dest)
-	var use_arc := arc_fraction >= 0.05 and ship.speed_au_per_tick > 1e-8 and dist1 > 1e-6
-
-	var tm_return_transit_time := Brachistochrone.transit_time(tm_return_dist, thrust)
-
-	trade_mission.origin_is_earth = false
-	trade_mission.status = TradeMission.Status.TRANSIT_TO_COLONY
-	trade_mission.outbound_legs.clear()
-	trade_mission.outbound_waypoint_index = 0
-
-	if use_arc:
-		var time1 := Brachistochrone.transit_time(dist1, thrust)
-		var time2 := Brachistochrone.transit_time(dist2, thrust)
-		var avg_velocity1 := dist1 / time1 if time1 > 0.0 else 0.0
-		var initial_t := 0.0
-		var adjusted_origin := ship.position_au
-		if avg_velocity1 > 0.0 and ship.speed_au_per_tick > 0.0:
-			initial_t = clampf(ship.speed_au_per_tick / (4.0 * avg_velocity1), 0.0, 0.5)
-			var dfrac := 2.0 * initial_t * initial_t
-			if dfrac < 0.98:
-				adjusted_origin = (ship.position_au - waypoint * dfrac) / (1.0 - dfrac)
-		trade_mission.origin_position_au = adjusted_origin
-		trade_mission.outbound_legs.append(WaypointLeg.make(waypoint, time1))
-		trade_mission.elapsed_ticks = initial_t * time1
-		trade_mission.transit_time = time2
-		var total_time_arc := time1 + time2 + tm_return_transit_time
-		trade_mission.fuel_per_tick = fuel_needed / total_time_arc if total_time_arc > 0.0 else 0.0
-	else:
-		var initial_t := 0.0
-		var adjusted_origin := ship.position_au
-		if avg_velocity > 0.0 and ship.speed_au_per_tick > 0.0:
-			initial_t = clampf(ship.speed_au_per_tick / (4.0 * avg_velocity), 0.0, 0.5)
-			var dfrac := 2.0 * initial_t * initial_t
-			if dfrac < 0.98:
-				adjusted_origin = (ship.position_au - new_dest * dfrac) / (1.0 - dfrac)
-		trade_mission.origin_position_au = adjusted_origin
-		trade_mission.elapsed_ticks = initial_t * new_transit_time
-		trade_mission.transit_time = new_transit_time
-		var total_time_single := new_transit_time + tm_return_transit_time
-		trade_mission.fuel_per_tick = fuel_needed / total_time_single if total_time_single > 0.0 else 0.0
-
-	EventBus.trade_mission_redirected.emit(ship, new_colony, redirect_cost)
+	MissionManager._apply_redirect_trade_mission(trade_mission, new_colony)
 
 func _init_starter_crew() -> void:
 	# Hire starter crew with guaranteed specialty coverage: pilot, engineer, miner

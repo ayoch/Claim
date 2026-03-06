@@ -1274,7 +1274,7 @@ func _on_map_dispatch_colony(ship: Ship, colony: Colony) -> void:
 					ship.ship_name, colony.colony_name,
 					transit_str, _format_number(cost), tm_delay_suffix
 				],
-				func() -> void: GameState.redirect_trade_mission(ship.current_trade_mission, colony)
+				func() -> void: MissionManager.redirect_trade_mission(ship.current_trade_mission, colony)
 			)
 		else:
 			_show_redirect_confirmation(
