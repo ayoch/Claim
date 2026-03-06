@@ -630,7 +630,8 @@ func _auth_headers() -> Array:
 func _get_http_request() -> HTTPRequest:
 	if _http_pool.is_empty():
 		var http := HTTPRequest.new()
-		http.set_tls_options(TLSOptions.client_unsafe())
+		http.set_tls_options(TLSOptions.client())
+		http.timeout = 10.0
 		return http
 	else:
 		return _http_pool.pop_back()
@@ -679,10 +680,29 @@ func _http_request_async(http: HTTPRequest, url: String, headers: Array, method:
 	var response_body: PackedByteArray = response[3]
 
 	if result != HTTPRequest.RESULT_SUCCESS:
+		var error_msg := "HTTP request failed: "
+		match result:
+			HTTPRequest.RESULT_CANT_CONNECT:
+				error_msg += "Can't connect to server"
+			HTTPRequest.RESULT_CANT_RESOLVE:
+				error_msg += "Can't resolve domain name"
+			HTTPRequest.RESULT_CONNECTION_ERROR:
+				error_msg += "Connection error"
+			HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR:
+				error_msg += "TLS/SSL certificate error"
+			HTTPRequest.RESULT_NO_RESPONSE:
+				error_msg += "No response from server"
+			HTTPRequest.RESULT_TIMEOUT:
+				error_msg += "Request timeout"
+			_:
+				error_msg += "Unknown error (code %d)" % result
+
 		return {
 			"success": false,
 			"data": null,
-			"error": "HTTP request failed with result: %d" % result
+			"error": error_msg,
+			"result": result,
+			"response_code": response_code
 		}
 
 	if response_code < 200 or response_code >= 300:
@@ -741,7 +761,8 @@ func subscribe_events(callback: Callable) -> void:
 
 	# Create HTTPRequest for SSE stream
 	_sse_http = HTTPRequest.new()
-	_sse_http.set_tls_options(TLSOptions.client_unsafe())
+	_sse_http.set_tls_options(TLSOptions.client())
+	_sse_http.timeout = 30.0  # Longer timeout for SSE stream
 	_backend_manager.add_child(_sse_http)
 
 	# Connect to chunk_received signal for streaming response
