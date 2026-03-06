@@ -28,6 +28,9 @@ func _ready() -> void:
 	# Check if any save files exist to enable/disable Load button
 	load_game_btn.disabled = not _has_any_saves()
 
+	# Check for expired token and clear it
+	_check_and_clear_expired_token()
+
 	# Connect buttons
 	new_game_btn.pressed.connect(_on_new_game)
 	load_game_btn.pressed.connect(_on_load_game)
@@ -176,7 +179,67 @@ func _on_server_status_received(result: int, response_code: int, headers: Packed
 func _set_server_status(online: bool, label_text: String) -> void:
 	if online:
 		status_icon.texture = icon_connected
+		online_btn.disabled = false
 	else:
 		status_icon.texture = icon_not_connected
+		online_btn.disabled = true
 
 	status_label.text = label_text
+
+
+func _check_and_clear_expired_token() -> void:
+	"""Check if stored token is expired and clear it if so"""
+	var server_backend = BackendManager.get_server_backend()
+	if not is_instance_valid(server_backend):
+		return
+
+	var token: String = server_backend.auth_token
+	if token == "":
+		return
+
+	# Parse JWT token to check expiration
+	var parts := token.split(".")
+	if parts.size() != 3:
+		print("Invalid token format, clearing")
+		server_backend.auth_token = ""
+		server_backend.player_id = 0
+		return
+
+	# Decode payload (base64url)
+	var payload_b64: String = parts[1]
+	# Add padding if needed
+	while payload_b64.length() % 4 != 0:
+		payload_b64 += "="
+	# Replace base64url chars with base64
+	payload_b64 = payload_b64.replace("-", "+").replace("_", "/")
+
+	var payload_bytes := Marshalls.base64_to_raw(payload_b64)
+	var payload_str := payload_bytes.get_string_from_utf8()
+
+	# Parse JSON
+	var json := JSON.new()
+	var parse_result := json.parse(payload_str)
+	if parse_result != OK:
+		print("Failed to parse token, clearing")
+		server_backend.auth_token = ""
+		server_backend.player_id = 0
+		return
+
+	var payload: Dictionary = json.data
+	var exp: int = payload.get("exp", 0)
+
+	if exp == 0:
+		print("Token has no expiration, keeping it")
+		return
+
+	# Check if expired
+	var current_time := Time.get_unix_time_from_system()
+	if current_time >= exp:
+		print("Token expired, clearing (expired at %d, now is %d)" % [exp, int(current_time)])
+		server_backend.auth_token = ""
+		server_backend.player_id = 0
+		# Switch back to LOCAL mode
+		BackendManager.switch_mode(BackendManager.BackendMode.LOCAL)
+	else:
+		var seconds_left := exp - int(current_time)
+		print("Token still valid (%d seconds remaining)" % seconds_left)
