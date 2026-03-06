@@ -908,7 +908,7 @@ func _process_trade_missions(dt: float) -> void:
 						_auto_provision_at_location(tm.ship)
 						tm.ship.add_station_log("Sold ore at %s — $%s" % [tm.colony.colony_name, tm.revenue], "trading")
 						EventBus.station_job_completed.emit(tm.ship, "trading", "Sold ore for $%d" % tm.revenue)
-						GameState.complete_trade_mission(tm)
+						MissionManager.complete_trade_mission(tm)
 					else:
 						tm.status = TradeMission.Status.IDLE_AT_COLONY
 						tm.elapsed_ticks = 0.0
@@ -950,7 +950,7 @@ func _process_trade_missions(dt: float) -> void:
 							_auto_refuel_at_earth(tm.ship)
 							_auto_provision_at_location(tm.ship)
 						var _trade_ship := tm.ship
-						GameState.complete_trade_mission(tm)
+						MissionManager.complete_trade_mission(tm)
 						if not _trade_ship.is_stationed and _trade_ship.has_queued_mission():
 							GameState._start_queued_mission(_trade_ship)
 

@@ -144,8 +144,27 @@ func complete_mission(mission: Mission) -> void:
 
 ## Complete a trade mission
 func complete_trade_mission(tm: TradeMission) -> void:
-	# TODO: Move implementation from game_state.gd
-	push_error("[MissionManager] complete_trade_mission not yet implemented")
+	if not _game_state:
+		push_error("[MissionManager] GameState not initialized")
+		return
+
+	# If the ship still has unsold cargo (e.g. returned to Earth without selling),
+	# return it to the stockpile rather than losing it.
+	if not tm.cargo.is_empty():
+		for ore_type in tm.cargo:
+			_game_state.add_resource(ore_type, tm.cargo[ore_type])
+		tm.cargo.clear()
+	tm.ship.current_cargo.clear()
+	tm.ship.current_trade_mission = null
+	tm.status = TradeMission.Status.COMPLETED
+	EventBus.trade_mission_completed.emit(tm)
+	tm.cleanup()  # Break circular references
+	trade_missions.erase(tm)
+
+	# Stationed ships don't use queued missions — station logic handles next job
+	if tm.ship.is_stationed:
+		return
+	# Queued missions are launched in simulation.gd after provision/repair completes
 
 
 ## ═══════════════════════════════════════════════════════════════════

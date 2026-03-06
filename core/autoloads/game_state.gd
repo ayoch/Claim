@@ -2970,24 +2970,11 @@ func start_trade_mission(ship: Ship, colony_target: Colony, cargo_to_load: Dicti
 
 	return tm
 
+## DEPRECATED: Forwarding stub - use MissionManager.complete_trade_mission() instead
+## TODO: Remove after all references are migrated to MissionManager
 func complete_trade_mission(tm: TradeMission) -> void:
-	# If the ship still has unsold cargo (e.g. returned to Earth without selling),
-	# return it to the stockpile rather than losing it.
-	if not tm.cargo.is_empty():
-		for ore_type in tm.cargo:
-			add_resource(ore_type, tm.cargo[ore_type])
-		tm.cargo.clear()
-	tm.ship.current_cargo.clear()
-	tm.ship.current_trade_mission = null
-	tm.status = TradeMission.Status.COMPLETED
-	EventBus.trade_mission_completed.emit(tm)
-	tm.cleanup()  # Break circular references
-	trade_missions.erase(tm)
-
-	# Stationed ships don't use queued missions — station logic handles next job
-	if tm.ship.is_stationed:
-		return
-	# Queued missions are launched in simulation.gd after provision/repair completes
+	push_warning("[GameState] complete_trade_mission() is deprecated, use MissionManager.complete_trade_mission()")
+	MissionManager.complete_trade_mission(tm)
 
 func _start_queued_mission(ship: Ship) -> void:
 	# Automatically start a player-planned mission after the current one completes.
