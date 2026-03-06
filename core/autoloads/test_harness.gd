@@ -240,7 +240,12 @@ const VALIDATE_INTERVAL: float = 43200.0  # Every half game-day
 
 ## Called when user changes autoplay settings — apply changes immediately
 func on_settings_changed() -> void:
-	# Only update if autoplay is running
+	# In SERVER mode, send policy changes to server
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		_sync_policies_to_server()
+		return
+
+	# In LOCAL mode, only update if autoplay is running
 	if not GameState.settings.get("autoplay", false):
 		return
 
@@ -249,6 +254,38 @@ func on_settings_changed() -> void:
 	_update_combat_stances()
 	_update_worker_assignments()
 	_recalculate_pending_dispatches()
+
+
+func _sync_policies_to_server() -> void:
+	"""Send current policies to server (multiplayer mode)"""
+	var policies := {
+		"thrust_policy": GameState.thrust_policy,
+		"repair_policy": GameState.repair_policy,
+		"cargo_policy": GameState.cargo_policy,
+		"collection_policy": GameState.collection_policy,
+		"supply_policy": GameState.supply_policy,
+		"encounter_policy": GameState.encounter_policy,
+		"maintenance_policy": GameState.maintenance_policy,
+		# Autoplay settings
+		"autoplay_risk_tolerance": GameState.autoplay_risk_tolerance,
+		"autoplay_growth_rate": GameState.autoplay_growth_rate,
+		"autoplay_resource_focus": GameState.autoplay_resource_focus,
+		"autoplay_diversification": GameState.autoplay_diversification,
+		"autoplay_workforce": GameState.autoplay_workforce,
+		"autoplay_technology": GameState.autoplay_technology,
+		"autoplay_market_timing": GameState.autoplay_market_timing,
+		"autoplay_territorial": GameState.autoplay_territorial,
+		"autoplay_contract_priority": GameState.autoplay_contract_priority,
+		"autoplay_upgrade_preference": GameState.autoplay_upgrade_preference,
+		"autoplay_debt_tolerance": GameState.autoplay_debt_tolerance,
+		"autoplay_partnership_strategy": GameState.autoplay_partnership_strategy,
+		"autoplay_rescue_priority": GameState.autoplay_rescue_priority,
+		"autoplay_colony_preference": GameState.autoplay_colony_preference,
+		"autoplay_retrofit_schedule": GameState.autoplay_retrofit_schedule,
+		"autoplay_exploration_focus": GameState.autoplay_exploration_focus,
+	}
+
+	BackendManager.update_policies(policies)
 
 
 func _on_tick(delta_ticks: float) -> void:
