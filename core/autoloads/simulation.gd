@@ -183,14 +183,20 @@ func _ready() -> void:
 	)
 
 func _process(delta: float) -> void:
-	# PHASE 1: Skip local simulation in SERVER mode (server runs simulation)
-	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
-		return
-
 	var game_speed := TimeScale.speed_multiplier
 	if game_speed <= 0.0:
 		return
 
+	# In SERVER mode: skip game simulation but STILL update orbital positions for visual display
+	# The server controls game state, but client still needs to render orbital motion
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		# Update orbits based on server's total_ticks (synced via polling)
+		# Use a fake dt based on delta to drive the orbital accumulator
+		var visual_dt := delta * game_speed
+		_process_orbits(visual_dt)
+		return
+
+	# LOCAL mode: Full simulation below
 	# Increment real-time throttle timers
 	_contracts_realtime_timer += delta
 	_survey_realtime_timer += delta
