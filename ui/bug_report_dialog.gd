@@ -54,9 +54,9 @@ func _on_submit() -> void:
 	if is_processing:
 		return
 
-	var title := title_input.text.strip_edges()
-	var description := description_input.text.strip_edges()
-	var category := CATEGORIES[category_option.selected]
+	var title: String = title_input.text.strip_edges()
+	var description: String = description_input.text.strip_edges()
+	var category: String = CATEGORIES[category_option.selected]
 
 	# Validation
 	if not _validate_input(title, description):
