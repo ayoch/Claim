@@ -127,19 +127,34 @@ Mission ↔ Worker (mission.rescue_crew[] ↔ worker.assigned_mission)
 ## 🔄 In Progress
 
 ### 5. Extract MissionManager from game_state.gd
-**Status:** Proof-of-Concept Complete (27% complete)
-**Remaining:** Move 1400 lines of code, update remaining call sites
+**Status:** In Progress (20% complete - 3/15 functions migrated)
+**Remaining:** Move 12 complex functions (~1320 lines), update call sites
 
-**Progress:**
-- ✅ Created `core/autoloads/mission_manager.gd` skeleton
-- ✅ Registered MissionManager autoload in project.godot
-- ✅ Defined 14 function signatures with TODO placeholders
-- ✅ **Resolved GameState dependencies** - Using dependency injection pattern
-- ✅ **Migrated complete_mission()** - Full implementation moved (1/15 functions)
-- ✅ **Updated call site** - simulation.gd now calls MissionManager.complete_mission()
-- ✅ **Added backward compatibility** - GameState.complete_mission() forwards to MissionManager
-- ⏳ Need to move remaining 14 functions (1413 lines)
-- ⏳ Need to update call sites for remaining functions
+**Completed Migrations:**
+1. ✅ complete_mission() - Mission completion with cargo handling (30 lines)
+2. ✅ complete_trade_mission() - Trade mission completion (18 lines)
+3. ✅ calculate_asteroid_intercept() - Intercept position calculator (27 lines)
+
+**Pattern Established:**
+- ✅ Dependency injection (_game_state reference initialized in _ready())
+- ✅ Backward compatibility (forwarding stubs in GameState)
+- ✅ Consistent call site updates (GameState.X → MissionManager.X)
+- ✅ Proper cleanup() integration
+- ✅ EventBus signal emissions preserved
+
+**Remaining Functions (12) - Complexity Order:**
+- **redirect_mission()** + _apply_redirect_mission() (~107 lines, complex physics)
+- **redirect_trade_mission()** + _apply_redirect_trade_mission() (~85 lines)
+- **dispatch_idle_ship()** + _apply_dispatch_idle_ship() (~50 lines)
+- **dispatch_idle_ship_trade()** + _apply_dispatch_idle_ship_trade() (~45 lines)
+- **dispatch_mission_any_mode()** (~15 lines, routing function)
+- **start_mission()** (~200 lines, core mission creation)
+- **start_deploy_mission()** (~180 lines)
+- **start_collect_mission()** (~180 lines)
+- **start_trade_mission()** (~150 lines)
+- **start_fleet_rescue()** (~140 lines)
+- **check_hitchhike_opportunities()** (~70 lines)
+- **_start_queued_mission()** (~100 lines)
 
 **Functions to Move (15 total):**
 1. start_mission()
