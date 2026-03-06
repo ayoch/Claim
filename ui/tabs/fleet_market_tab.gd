@@ -3765,7 +3765,7 @@ func _show_fleet_rescue_dispatch(target_ship: Ship) -> void:
 
 	var close_cb := func() -> void: _hide_dispatch()
 	var confirm_cb := func() -> void:
-		var result := GameState.start_fleet_rescue(
+		var result := MissionManager.start_fleet_rescue(
 			ferry, target_ship, [],
 			food_spin.value, parts_spin.value
 		)

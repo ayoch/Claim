@@ -1691,65 +1691,11 @@ func start_rescue(ship: Ship) -> bool:
 	EventBus.rescue_mission_started.emit(ship, cost)
 	return true
 
+## DEPRECATED: Forwarding stub - use MissionManager.start_fleet_rescue() instead
+## TODO: Remove after all references are migrated to MissionManager
 func start_fleet_rescue(ferry_ship: Ship, target_ship: Ship, rescue_crew: Array[Worker], food_units: float, parts_units: float) -> Mission:
-	# ferry_ship: the docked ship being dispatched to help
-	# target_ship: the derelict fleet ship
-	# rescue_crew: workers who will stay on target_ship on arrival
-	# food_units, parts_units: supplies to commit from ferry_ship now and transfer on arrival
-
-	# Build worker list from ferry's last crew + available workers.
-	# Rescue missions require only 1 crew — the ship will fly understaffed
-	# and head straight to the nearest crew pickup on return.
-	# Use ferry's crew for the rescue mission; rescue_crew will be left on the target ship
-	var all_workers: Array[Worker] = ferry_ship.crew.duplicate()
-	# Add rescue crew if not already on ship (they may be from a different source)
-	for w in rescue_crew:
-		if w not in all_workers:
-			all_workers.append(w)
-	# Top up to 2 from available workers if needed (minimum for rescue: 1 stays on derelict, 1 flies back)
-	if all_workers.size() < 2:
-		for w in get_available_workers():
-			if w not in all_workers:
-				all_workers.append(w)
-			if all_workers.size() >= 2:
-				break
-	if all_workers.size() < 2:
-		push_warning("start_fleet_rescue: need at least 2 crew for %s" % ferry_ship.ship_name)
-		return null
-
-	var dist := ferry_ship.position_au.distance_to(target_ship.position_au)
-	var transit_t := Brachistochrone.transit_time(dist, ferry_ship.get_effective_thrust())
-
-	var mission := Mission.new()
-	mission.mission_type = Mission.MissionType.CREW_FERRY
-	mission.is_derelict_rescue = true
-	mission.rescue_crew = rescue_crew.duplicate()
-	mission.supplies_to_transfer = {"food": food_units, "repair_parts": parts_units}
-	mission.ship = ferry_ship
-	ferry_ship.crew = all_workers
-	mission.status = Mission.Status.TRANSIT_OUT
-	mission.origin_position_au = ferry_ship.position_au
-	mission.return_position_au = ferry_ship.position_au
-	mission.origin_is_earth = ferry_ship.is_at_earth
-	if mission.origin_is_earth:
-		mission.origin_name = "Earth"
-	elif ferry_ship.docked_at_colony:
-		mission.origin_name = ferry_ship.docked_at_colony.colony_name
-	mission.destination_position_au = target_ship.position_au
-	mission.destination_name = target_ship.ship_name
-	mission.station_job_duration = 3600.0  # 1 hour for crew + supply transfer
-	mission.transit_time = transit_t
-	mission.fuel_per_tick = ferry_ship.calc_fuel_for_distance(dist) / transit_t if transit_t > 0 else 0.0
-
-	ferry_ship.current_mission = mission
-
-	# Commit supplies from ferry ship (deducted now; transferred on arrival)
-	ferry_ship.supplies["food"] = maxf(0.0, ferry_ship.supplies.get("food", 0.0) - food_units)
-	ferry_ship.supplies["repair_parts"] = maxf(0.0, ferry_ship.supplies.get("repair_parts", 0.0) - parts_units)
-
-	missions.append(mission)
-	EventBus.mission_started.emit(mission)
-	return mission
+	push_warning("[GameState] start_fleet_rescue() is deprecated, use MissionManager.start_fleet_rescue()")
+	return MissionManager.start_fleet_rescue(ferry_ship, target_ship, rescue_crew, food_units, parts_units)
 
 ## Find the fleet rescue ferry currently heading to a derelict ship (if any).
 func find_fleet_rescue_ferry(derelict_ship: Ship) -> Ship:
