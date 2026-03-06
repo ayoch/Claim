@@ -1108,8 +1108,15 @@ func commission_dry_dock(ship: Ship, entry: Dictionary) -> bool:
 ## --- Mining Unit Methods ---
 
 func purchase_mining_unit(entry: Dictionary) -> bool:
-	if money < entry.get("cost", 0):
+	var cost: int = entry.get("cost", 0)
+	var item_name: String = entry.get("name", "Mining Unit")
+
+	if money < cost:
+		EventBus.insufficient_funds.emit("Purchase " + item_name, cost, money)
+		EventBus.purchase_failed.emit(item_name, "Insufficient funds ($%s needed, $%s available)" % [cost, money])
+		push_error("[GameState] Cannot purchase %s: Insufficient funds (need $%s, have $%s)" % [item_name, cost, money])
 		return false
+
 	var unit := MiningUnit.from_catalog(entry)
 	money -= unit.cost
 	record_transaction(-unit.cost, "Mining unit: %s" % unit.unit_name)
@@ -1119,11 +1126,19 @@ func purchase_mining_unit(entry: Dictionary) -> bool:
 
 func deploy_mining_unit(unit: MiningUnit, asteroid: AsteroidData, unit_workers: Array[Worker]) -> bool:
 	if unit.is_deployed():
+		EventBus.deployment_failed.emit(unit.unit_name, "Already deployed at %s" % unit.deployed_at_asteroid)
+		push_error("[GameState] Cannot deploy %s: Already deployed at %s" % [unit.unit_name, unit.deployed_at_asteroid])
 		return false
+
 	if unit_workers.size() < unit.workers_required:
+		EventBus.deployment_failed.emit(unit.unit_name, "Requires %d workers, only %d assigned" % [unit.workers_required, unit_workers.size()])
+		push_error("[GameState] Cannot deploy %s: Insufficient workers (need %d, have %d)" % [unit.unit_name, unit.workers_required, unit_workers.size()])
 		return false
+
 	var occupied := get_occupied_slots(asteroid.asteroid_name)
 	if occupied >= asteroid.get_max_mining_slots():
+		EventBus.deployment_failed.emit(unit.unit_name, "%s has no available mining slots (%d/%d occupied)" % [asteroid.asteroid_name, occupied, asteroid.get_max_mining_slots()])
+		push_error("[GameState] Cannot deploy to %s: All mining slots occupied (%d/%d)" % [asteroid.asteroid_name, occupied, asteroid.get_max_mining_slots()])
 		return false
 	# Move from inventory to deployed
 	mining_unit_inventory.erase(unit)
@@ -1142,7 +1157,9 @@ func deploy_mining_unit(unit: MiningUnit, asteroid: AsteroidData, unit_workers: 
 func repair_mining_unit(unit: MiningUnit) -> bool:
 	var base_cost := unit.repair_cost()
 	if base_cost <= 0:
+		EventBus.repair_failed.emit(unit.unit_name, "Unit does not need repairs")
 		return false
+
 	# Better engineers reduce repair cost (best engineer skill among assigned workers)
 	var best_eng := 0.0
 	for w in unit.assigned_workers:
@@ -1153,7 +1170,11 @@ func repair_mining_unit(unit: MiningUnit) -> bool:
 	var cost := int(base_cost * eng_discount)
 	if cost <= 0:
 		cost = 1
+
 	if money < cost:
+		EventBus.insufficient_funds.emit("Repair " + unit.unit_name, cost, money)
+		EventBus.repair_failed.emit(unit.unit_name, "Insufficient funds ($%s needed, $%s available)" % [cost, money])
+		push_error("[GameState] Cannot repair %s: Insufficient funds (need $%s, have $%s)" % [unit.unit_name, cost, money])
 		return false
 	money -= cost
 	unit.durability = unit.max_durability
@@ -1573,9 +1594,15 @@ func jettison_cargo_for_trip(ship: Ship, distance_au: float, return_cargo_mass: 
 func repair_equipment(ship: Ship, equip: Equipment) -> bool:
 	var cost := equip.repair_cost()
 	if cost <= 0:
+		EventBus.repair_failed.emit(equip.equipment_name, "Equipment does not need repairs")
 		return false
+
 	if money < cost:
+		EventBus.insufficient_funds.emit("Repair " + equip.equipment_name, cost, money)
+		EventBus.repair_failed.emit(equip.equipment_name, "Insufficient funds ($%s needed, $%s available)" % [cost, money])
+		push_error("[GameState] Cannot repair %s on %s: Insufficient funds (need $%s, have $%s)" % [equip.equipment_name, ship.ship_name, cost, money])
 		return false
+
 	money -= cost
 	record_transaction(-cost, "Equip repair: %s" % equip.equipment_name, ship.ship_name)
 	equip.durability = equip.max_durability
@@ -1585,9 +1612,15 @@ func repair_equipment(ship: Ship, equip: Equipment) -> bool:
 func repair_engine(ship: Ship) -> bool:
 	var cost := ship.get_engine_repair_cost()
 	if cost <= 0:
+		EventBus.repair_failed.emit(ship.ship_name + " Engine", "Engine does not need repairs")
 		return false
+
 	if money < cost:
+		EventBus.insufficient_funds.emit("Repair " + ship.ship_name + " engine", cost, money)
+		EventBus.repair_failed.emit(ship.ship_name + " Engine", "Insufficient funds ($%s needed, $%s available)" % [cost, money])
+		push_error("[GameState] Cannot repair %s engine: Insufficient funds (need $%s, have $%s)" % [ship.ship_name, cost, money])
 		return false
+
 	money -= cost
 	record_transaction(-cost, "Engine repair", ship.ship_name)
 	ship.engine_condition = 100.0
@@ -1596,6 +1629,8 @@ func repair_engine(ship: Ship) -> bool:
 ## Restock torpedoes for all torpedo launchers on a ship
 func restock_torpedoes(ship: Ship) -> bool:
 	if not ship.is_docked:
+		EventBus.operation_failed.emit("Restock Torpedoes", "%s must be docked to restock munitions" % ship.ship_name)
+		push_error("[GameState] Cannot restock torpedoes: %s is not docked" % ship.ship_name)
 		return false
 
 	# Determine location and munitions quality
@@ -2328,8 +2363,11 @@ func get_refuel_cost(ship: Ship, fuel_amount: float) -> int:
 
 func start_rescue(ship: Ship) -> bool:
 	if not ship.is_derelict:
+		EventBus.operation_failed.emit("Rescue", "%s is not derelict and does not need rescue" % ship.ship_name)
 		return false
+
 	if ship in rescue_missions:
+		EventBus.operation_failed.emit("Rescue", "%s rescue already in progress" % ship.ship_name)
 		return false
 
 	# Calculate rescue feasibility and cost
@@ -2339,11 +2377,15 @@ func start_rescue(ship: Ship) -> bool:
 	if not rescue_info["feasible"]:
 		# Emit event with failure reason
 		EventBus.rescue_impossible.emit(ship, rescue_info["reason"])
+		push_error("[GameState] Rescue of %s not feasible: %s" % [ship.ship_name, rescue_info["reason"]])
 		return false
 
 	var cost: int = rescue_info["cost"]
 
 	if money < cost:
+		EventBus.insufficient_funds.emit("Rescue " + ship.ship_name, cost, money)
+		EventBus.operation_failed.emit("Rescue", "Insufficient funds for %s rescue ($%s needed, $%s available)" % [ship.ship_name, cost, money])
+		push_error("[GameState] Cannot rescue %s: Insufficient funds (need $%s, have $%s)" % [ship.ship_name, cost, money])
 		return false
 
 	money -= cost
