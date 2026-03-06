@@ -7,9 +7,8 @@ extends Node
 
 var enabled: bool = false
 
-# AI personality traits (set at init, could be randomized for variety)
-var ai_aggression: float = 0.95  # 0.0=peaceful, 1.0=ruthless (TEST: highly aggressive, seeks combat)
-var ai_skill: float = 0.85       # 0.0=incompetent, 1.0=expert (TEST: highly skilled, optimal decisions)
+# AI personality is now derived from autoplay settings (not hardcoded)
+# See _get_aggression() and _get_growth_aggression() for dynamic behavior
 
 # Accumulators
 var day_accumulator: float = 0.0
@@ -178,6 +177,34 @@ func _create_overlay() -> void:
 func _add_overlay() -> void:
 	get_tree().root.add_child.call_deferred(overlay_panel)
 
+# ========== AI Personality (derived from autoplay settings) ==========
+
+func _get_aggression() -> float:
+	"""Convert Risk Tolerance setting (0-100) to aggression (0.0-1.0)"""
+	return GameState.autoplay_risk_tolerance / 100.0
+
+func _get_growth_aggression() -> float:
+	"""Convert Growth Rate setting (0-100) to spending aggression (0.0-1.0)"""
+	return GameState.autoplay_growth_rate / 100.0
+
+func _should_expand() -> bool:
+	"""Check Resource Focus to decide if we should expand vs consolidate"""
+	# Expand (>= 67) means aggressive spending, Consolidate (< 34) means conservative
+	return GameState.autoplay_resource_focus >= 50
+
+func _get_spending_threshold(base_threshold: int) -> int:
+	"""Scale spending thresholds based on Growth Rate setting"""
+	var growth := GameState.autoplay_growth_rate / 100.0
+	# Rapid growth (> 0.67) → 70% of base (spend more aggressively)
+	# Moderate growth (0.34-0.67) → 100% of base (current thresholds)
+	# Slow growth (< 0.34) → 150% of base (save more, spend conservatively)
+	if growth >= 0.67:
+		return int(base_threshold * 0.7)
+	elif growth >= 0.34:
+		return base_threshold
+	else:
+		return int(base_threshold * 1.5)
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_5:
 		_toggle()
@@ -270,11 +297,12 @@ func _daily_decision_loop() -> void:
 # ---------- 5. Combat Readiness ----------
 
 func _manage_combat_readiness() -> void:
-	# Set aggression stances based on AI personality and threat level
+	# Set aggression stances based on Risk Tolerance setting and threat level
+	var aggression := _get_aggression()
 	var base_stance := Ship.AggressionStance.DEFENSIVE
-	if ai_aggression >= 0.7:
+	if aggression >= 0.7:
 		base_stance = Ship.AggressionStance.AGGRESSIVE
-	elif ai_aggression < 0.3:
+	elif aggression < 0.3:
 		base_stance = Ship.AggressionStance.PEACEFUL
 
 	# Assess threats: rival corps near our assets or hostile activity
@@ -284,9 +312,9 @@ func _manage_combat_readiness() -> void:
 		if ship.is_derelict:
 			continue
 
-		# Armed ships get aggressive stance if AI is aggressive
+		# Armed ships get aggressive stance if Risk Tolerance is high
 		if ship.is_armed():
-			if ai_aggression >= 0.7:
+			if aggression >= 0.7:
 				ship.aggression_stance = Ship.AggressionStance.AGGRESSIVE
 			elif threat_level > 0.5:  # Elevated threat: defend aggressively
 				ship.aggression_stance = Ship.AggressionStance.DEFENSIVE
@@ -844,10 +872,12 @@ func _manage_growth() -> void:
 		_purchase_ship_multimode(ShipData.ShipClass.PROSPECTOR, "Emergency")
 		ships_bought += 1
 
-	# EXPANSIONIST PRIORITY 1: Fleet expansion (most important for territory control)
-	# Target fleet size scales with money (1 ship per $2M, min 2, max 12)
-	var target_fleet_size := clampi(money / 2_000_000, 2, 12)
-	if num_ships < target_fleet_size and money > 2_000_000:  # Lowered from 3M
+	# PRIORITY 1: Fleet expansion (most important for territory control)
+	# Target fleet size scales with money and Growth Rate setting
+	# Thresholds adjusted by _get_spending_threshold() based on Growth Rate
+	var fleet_threshold := _get_spending_threshold(2_000_000)
+	var target_fleet_size := clampi(money / fleet_threshold, 2, 12)
+	if num_ships < target_fleet_size and money > fleet_threshold:
 		var ship_class := _pick_ship_class_expansionist()
 		# Mode-aware ship purchase (async but fire-and-forget)
 		_purchase_ship_multimode(ship_class, "Fleet%d" % (num_ships + 1))
@@ -856,20 +886,24 @@ func _manage_growth() -> void:
 			ship_class, num_ships + 1, target_fleet_size, GameState.money
 		])
 
-	# EXPANSIONIST PRIORITY 2: Mining units (claim territory)
-	if money > 1_500_000:
+	# PRIORITY 2: Mining units (claim territory)
+	var mining_threshold := _get_spending_threshold(1_500_000)
+	if money > mining_threshold:
 		_manage_mining_units()
 
 	# PRIORITY 3: Equipment for combat/mining
-	if money > 3_000_000:
+	var equipment_threshold := _get_spending_threshold(3_000_000)
+	if money > equipment_threshold:
 		_buy_needed_equipment()
 
 	# PRIORITY 4: Supplies (cheap maintenance)
-	if money > 500_000:
+	var supplies_threshold := _get_spending_threshold(500_000)
+	if money > supplies_threshold:
 		_buy_supplies_for_docked()
 
 	# PRIORITY 5: Upgrades (luxury)
-	if money > 8_000_000:
+	var upgrades_threshold := _get_spending_threshold(8_000_000)
+	if money > upgrades_threshold:
 		_buy_and_install_upgrades()
 
 	# DISABLED: Stationing counterproductive for aggressive expansionist AI
@@ -952,7 +986,8 @@ func _buy_needed_equipment() -> void:
 		return
 
 	var threat := _assess_threat_level()
-	var want_weapons := (ai_aggression >= 0.5) or (threat > 0.3)
+	var aggression := _get_aggression()
+	var want_weapons := (aggression >= 0.5) or (threat > 0.3)
 
 	for ship in GameState.ships:
 		if ship.equipment.size() >= ship.max_equipment_slots:
