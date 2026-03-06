@@ -143,8 +143,6 @@ func _check_server_status() -> void:
 				error_msg = "Can't Resolve DNS"
 			ERR_CONNECTION_ERROR:
 				error_msg = "Connection Error"
-			ERR_SSL_HANDSHAKE_ERROR:
-				error_msg = "SSL Error"
 			_:
 				error_msg = "Error %d" % error
 		_set_server_status(false, "Server: " + error_msg)
