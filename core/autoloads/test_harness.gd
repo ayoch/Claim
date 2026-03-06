@@ -238,6 +238,19 @@ func _on_mission_completed(m: Mission) -> void:
 var _validate_accumulator: float = 0.0
 const VALIDATE_INTERVAL: float = 43200.0  # Every half game-day
 
+## Called when user changes autoplay settings — apply changes immediately
+func on_settings_changed() -> void:
+	# Only update if autoplay is running
+	if not GameState.settings.get("autoplay", false):
+		return
+
+	# Lightweight immediate updates (don't make new purchases/hires)
+	# These apply policy changes to existing operations without triggering full decision loop
+	_update_combat_stances()
+	_update_worker_assignments()
+	_recalculate_pending_dispatches()
+
+
 func _on_tick(delta_ticks: float) -> void:
 	# AI runs when autoplay is enabled (not just when Key 5 is pressed)
 	var autoplay_enabled: bool = GameState.settings.get("autoplay", false)
@@ -260,6 +273,46 @@ func _process(delta: float) -> void:
 	if overlay_timer >= 0.5:
 		overlay_timer = 0.0
 		_update_overlay()
+
+
+# ========== IMMEDIATE POLICY UPDATES (when settings change) ==========
+
+func _update_combat_stances() -> void:
+	"""Update aggression stance for all ships based on current encounter policy"""
+	var encounter_policy: int = GameState.encounter_policy
+	var stance: int
+
+	match encounter_policy:
+		CompanyPolicy.EncounterPolicy.AVOID:
+			stance = Ship.AggressionStance.DEFENSIVE
+		CompanyPolicy.EncounterPolicy.COEXIST:
+			stance = Ship.AggressionStance.DEFENSIVE
+		CompanyPolicy.EncounterPolicy.CONFRONT:
+			stance = Ship.AggressionStance.AGGRESSIVE
+		CompanyPolicy.EncounterPolicy.DEFEND:
+			stance = Ship.AggressionStance.AGGRESSIVE
+		_:
+			stance = Ship.AggressionStance.DEFENSIVE
+
+	# Apply to all ships
+	for ship in GameState.ships:
+		ship.aggression_stance = stance
+
+
+func _update_worker_assignments() -> void:
+	"""Re-evaluate worker assignments based on current workforce philosophy"""
+	# Workforce philosophy affects hiring/firing, which we do in daily loop
+	# No immediate action needed here (workers stay assigned until daily loop)
+	pass
+
+
+func _recalculate_pending_dispatches() -> void:
+	"""Recalculate thrust/routes for ships not yet departed (still docked)"""
+	# Risk tolerance and thrust policy affect future dispatches
+	# Ships already in transit continue with their current settings
+	# This is mainly for UX feedback - no immediate action needed
+	pass
+
 
 # ========== THE AI BRAIN — runs every game-day ==========
 

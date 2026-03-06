@@ -825,49 +825,63 @@ func _setup_policies_ui() -> void:
 		CompanyPolicy.THRUST_POLICY_NAMES,
 		CompanyPolicy.THRUST_POLICY_DESCRIPTIONS,
 		func() -> int: return GameState.thrust_policy,
-		func(idx: int) -> void: GameState.thrust_policy = idx
+		func(idx: int) -> void:
+			GameState.thrust_policy = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_policy_row.call(
 		"Resupply:",
 		CompanyPolicy.SUPPLY_POLICY_NAMES,
 		CompanyPolicy.SUPPLY_POLICY_DESCRIPTIONS,
 		func() -> int: return GameState.supply_policy,
-		func(idx: int) -> void: GameState.supply_policy = idx
+		func(idx: int) -> void:
+			GameState.supply_policy = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_policy_row.call(
 		"Pickup Threshold:",
 		CompanyPolicy.COLLECTION_POLICY_NAMES,
 		CompanyPolicy.COLLECTION_POLICY_DESCRIPTIONS,
 		func() -> int: return GameState.collection_policy,
-		func(idx: int) -> void: GameState.collection_policy = idx
+		func(idx: int) -> void:
+			GameState.collection_policy = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_policy_row.call(
 		"Encounter:",
 		CompanyPolicy.ENCOUNTER_POLICY_NAMES,
 		CompanyPolicy.ENCOUNTER_POLICY_DESCRIPTIONS,
 		func() -> int: return GameState.encounter_policy,
-		func(idx: int) -> void: GameState.encounter_policy = idx
+		func(idx: int) -> void:
+			GameState.encounter_policy = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_policy_row.call(
 		"Repair:",
 		CompanyPolicy.REPAIR_POLICY_NAMES,
 		CompanyPolicy.REPAIR_POLICY_DESCRIPTIONS,
 		func() -> int: return GameState.repair_policy,
-		func(idx: int) -> void: GameState.repair_policy = idx
+		func(idx: int) -> void:
+			GameState.repair_policy = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_policy_row.call(
 		"Mining Threshold:",
 		CompanyPolicy.CARGO_POLICY_NAMES,
 		CompanyPolicy.CARGO_POLICY_DESCRIPTIONS,
 		func() -> int: return GameState.cargo_policy,
-		func(idx: int) -> void: GameState.cargo_policy = idx
+		func(idx: int) -> void:
+			GameState.cargo_policy = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_policy_row.call(
 		"Equipment Maintenance:",
 		CompanyPolicy.MAINTENANCE_POLICY_NAMES,
 		CompanyPolicy.MAINTENANCE_POLICY_DESCRIPTIONS,
 		func() -> int: return GameState.maintenance_policy,
-		func(idx: int) -> void: GameState.maintenance_policy = idx
+		func(idx: int) -> void:
+			GameState.maintenance_policy = idx
+			TestHarness.on_settings_changed()
 	)
 
 	policies_vbox.add_child(policies_content)
@@ -968,19 +982,25 @@ func _setup_policies_ui() -> void:
 	_add_slider_row.call(
 		"Risk Tolerance:",
 		func() -> int: return GameState.autoplay_risk_tolerance,
-		func(val: int) -> void: GameState.autoplay_risk_tolerance = val,
+		func(val: int) -> void:
+			GameState.autoplay_risk_tolerance = val
+			TestHarness.on_settings_changed(),
 		AutoplaySettings.get_risk_category
 	)
 	_add_slider_row.call(
 		"Growth Rate:",
 		func() -> int: return GameState.autoplay_growth_rate,
-		func(val: int) -> void: GameState.autoplay_growth_rate = val,
+		func(val: int) -> void:
+			GameState.autoplay_growth_rate = val
+			TestHarness.on_settings_changed(),
 		AutoplaySettings.get_growth_category
 	)
 	_add_slider_row.call(
 		"Resource Focus:",
 		func() -> int: return GameState.autoplay_resource_focus,
-		func(val: int) -> void: GameState.autoplay_resource_focus = val,
+		func(val: int) -> void:
+			GameState.autoplay_resource_focus = val
+			TestHarness.on_settings_changed(),
 		AutoplaySettings.get_resource_focus_category
 	)
 
@@ -1030,35 +1050,45 @@ func _setup_policies_ui() -> void:
 		AutoplaySettings.DIVERSIFICATION_NAMES,
 		AutoplaySettings.DIVERSIFICATION_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_diversification,
-		func(idx: int) -> void: GameState.autoplay_diversification = idx
+		func(idx: int) -> void:
+			GameState.autoplay_diversification = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_autoplay_dropdown.call(
 		"Workforce:",
 		AutoplaySettings.WORKFORCE_NAMES,
 		AutoplaySettings.WORKFORCE_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_workforce,
-		func(idx: int) -> void: GameState.autoplay_workforce = idx
+		func(idx: int) -> void:
+			GameState.autoplay_workforce = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_autoplay_dropdown.call(
 		"Technology:",
 		AutoplaySettings.TECHNOLOGY_NAMES,
 		AutoplaySettings.TECHNOLOGY_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_technology,
-		func(idx: int) -> void: GameState.autoplay_technology = idx
+		func(idx: int) -> void:
+			GameState.autoplay_technology = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_autoplay_dropdown.call(
 		"Market Timing:",
 		AutoplaySettings.MARKET_TIMING_NAMES,
 		AutoplaySettings.MARKET_TIMING_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_market_timing,
-		func(idx: int) -> void: GameState.autoplay_market_timing = idx
+		func(idx: int) -> void:
+			GameState.autoplay_market_timing = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_autoplay_dropdown.call(
 		"Territory:",
 		AutoplaySettings.TERRITORIAL_NAMES,
 		AutoplaySettings.TERRITORIAL_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_territorial,
-		func(idx: int) -> void: GameState.autoplay_territorial = idx
+		func(idx: int) -> void:
+			GameState.autoplay_territorial = idx
+			TestHarness.on_settings_changed()
 	)
 
 	# Advanced Settings Dropdowns
@@ -1073,56 +1103,72 @@ func _setup_policies_ui() -> void:
 		AutoplaySettings.CONTRACT_PRIORITY_NAMES,
 		AutoplaySettings.CONTRACT_PRIORITY_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_contract_priority,
-		func(idx: int) -> void: GameState.autoplay_contract_priority = idx
+		func(idx: int) -> void:
+			GameState.autoplay_contract_priority = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_autoplay_dropdown.call(
 		"Upgrade Preference:",
 		AutoplaySettings.UPGRADE_PREFERENCE_NAMES,
 		AutoplaySettings.UPGRADE_PREFERENCE_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_upgrade_preference,
-		func(idx: int) -> void: GameState.autoplay_upgrade_preference = idx
+		func(idx: int) -> void:
+			GameState.autoplay_upgrade_preference = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_autoplay_dropdown.call(
 		"Debt Tolerance:",
 		AutoplaySettings.DEBT_TOLERANCE_NAMES,
 		AutoplaySettings.DEBT_TOLERANCE_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_debt_tolerance,
-		func(idx: int) -> void: GameState.autoplay_debt_tolerance = idx
+		func(idx: int) -> void:
+			GameState.autoplay_debt_tolerance = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_autoplay_dropdown.call(
 		"Partnership Strategy:",
 		AutoplaySettings.PARTNERSHIP_STRATEGY_NAMES,
 		AutoplaySettings.PARTNERSHIP_STRATEGY_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_partnership_strategy,
-		func(idx: int) -> void: GameState.autoplay_partnership_strategy = idx
+		func(idx: int) -> void:
+			GameState.autoplay_partnership_strategy = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_autoplay_dropdown.call(
 		"Rescue Priority:",
 		AutoplaySettings.RESCUE_PRIORITY_NAMES,
 		AutoplaySettings.RESCUE_PRIORITY_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_rescue_priority,
-		func(idx: int) -> void: GameState.autoplay_rescue_priority = idx
+		func(idx: int) -> void:
+			GameState.autoplay_rescue_priority = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_autoplay_dropdown.call(
 		"Colony Preference:",
 		AutoplaySettings.COLONY_PREFERENCE_NAMES,
 		AutoplaySettings.COLONY_PREFERENCE_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_colony_preference,
-		func(idx: int) -> void: GameState.autoplay_colony_preference = idx
+		func(idx: int) -> void:
+			GameState.autoplay_colony_preference = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_autoplay_dropdown.call(
 		"Retrofit Schedule:",
 		AutoplaySettings.RETROFIT_SCHEDULE_NAMES,
 		AutoplaySettings.RETROFIT_SCHEDULE_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_retrofit_schedule,
-		func(idx: int) -> void: GameState.autoplay_retrofit_schedule = idx
+		func(idx: int) -> void:
+			GameState.autoplay_retrofit_schedule = idx
+			TestHarness.on_settings_changed()
 	)
 	_add_autoplay_dropdown.call(
 		"Exploration Focus:",
 		AutoplaySettings.EXPLORATION_FOCUS_NAMES,
 		AutoplaySettings.EXPLORATION_FOCUS_DESCRIPTIONS,
 		func() -> int: return GameState.autoplay_exploration_focus,
-		func(idx: int) -> void: GameState.autoplay_exploration_focus = idx
+		func(idx: int) -> void:
+			GameState.autoplay_exploration_focus = idx
+			TestHarness.on_settings_changed()
 	)
 
 	autoplay_vbox.add_child(autoplay_content)
