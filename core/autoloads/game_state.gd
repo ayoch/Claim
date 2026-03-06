@@ -50,12 +50,16 @@ const MAX_LEADERBOARD_ENTRIES: int = 100
 # POLICIES - Always-On Automation Rules (Active Regardless of Autoplay)
 # ═══════════════════════════════════════════════════════════════════════════════
 
+var thrust_policy: int = CompanyPolicy.ThrustPolicy.BALANCED
 var repair_policy: int = CompanyPolicy.RepairPolicy.ALWAYS
 var cargo_policy: int = CompanyPolicy.CargoPolicy.STANDARD
 var collection_policy: int = CompanyPolicy.CollectionPolicy.ROUTINE
 var supply_policy: int = CompanyPolicy.SupplyPolicy.ROUTINE
 var encounter_policy: int = CompanyPolicy.EncounterPolicy.COEXIST
 var maintenance_policy: int = CompanyPolicy.MaintenancePolicy.AS_NEEDED
+
+func get_thrust_policy(ship: Ship) -> int:
+	return ship.thrust_policy_override if ship.thrust_policy_override >= 0 else thrust_policy
 
 func get_repair_policy(ship: Ship) -> int:
 	return ship.repair_policy_override if ship.repair_policy_override >= 0 else repair_policy
@@ -3038,6 +3042,7 @@ func save_game(save_name: String = "") -> void:
 		"game_start_year": game_start_year,
 		"total_crew_deaths": total_crew_deaths,
 		# Policies (always-on automation)
+		"thrust_policy": thrust_policy,
 		"repair_policy": repair_policy,
 		"cargo_policy": cargo_policy,
 		"collection_policy": collection_policy,
@@ -3466,6 +3471,7 @@ func load_game(file_name: String = "save_game.json") -> bool:
 	money = int(data.get("money", 10000))
 
 	# Policies (always-on automation)
+	thrust_policy = int(data.get("thrust_policy", CompanyPolicy.ThrustPolicy.BALANCED))
 	repair_policy = int(data.get("repair_policy", CompanyPolicy.RepairPolicy.ALWAYS))
 	cargo_policy = int(data.get("cargo_policy", CompanyPolicy.CargoPolicy.STANDARD))
 	collection_policy = int(data.get("collection_policy", CompanyPolicy.CollectionPolicy.ROUTINE))

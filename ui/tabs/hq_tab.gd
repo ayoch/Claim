@@ -819,7 +819,14 @@ func _setup_policies_ui() -> void:
 		policies_content.add_child(row)
 		policies_content.add_child(desc)
 
-	# Only the 6 valid policies
+	# Company policies (7 total)
+	_add_policy_row.call(
+		"Thrust:",
+		CompanyPolicy.THRUST_POLICY_NAMES,
+		CompanyPolicy.THRUST_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.thrust_policy,
+		func(idx: int) -> void: GameState.thrust_policy = idx
+	)
 	_add_policy_row.call(
 		"Resupply:",
 		CompanyPolicy.SUPPLY_POLICY_NAMES,
