@@ -501,11 +501,11 @@ func _resolve_all_tardy() -> void:
 			continue
 		# Smart discipline: keep loyal workers, fine middling, fire disloyal
 		if worker.loyalty > 60.0:
-			GameState.forgive_tardy_worker(worker)
+			WorkerManager.forgive_tardy_worker(worker)
 		elif worker.loyalty > 30.0:
-			GameState.dock_pay_tardy_worker(worker)
+			WorkerManager.dock_pay_tardy_worker(worker)
 		else:
-			GameState.fire_tardy_worker(worker)
+			WorkerManager.fire_tardy_worker(worker)
 
 # ---------- 3. Contracts ----------
 

@@ -290,7 +290,7 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 
 	# Check if any hitchhiking workers can catch this ride
 	var route_points: Array[Vector2] = [asteroid.get_position_au()]
-	_game_state.check_hitchhike_opportunities(ship, route_points)
+	WorkerManager.check_hitchhike_opportunities(ship, route_points)
 
 	return mission
 
@@ -621,7 +621,7 @@ func start_trade_mission(ship: Ship, colony_target: Colony, cargo_to_load: Dicti
 
 	# Check if any hitchhiking workers can catch this ride
 	var trade_route_points: Array[Vector2] = [colony_target.get_position_au()]
-	_game_state.check_hitchhike_opportunities(ship, trade_route_points)
+	WorkerManager.check_hitchhike_opportunities(ship, trade_route_points)
 
 	return tm
 

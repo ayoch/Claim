@@ -195,6 +195,116 @@ func get_deployed_crew_at(asteroid: AsteroidData) -> Dictionary:
 
 
 ## ═══════════════════════════════════════════════════════════════════
+## HITCHHIKE SYSTEM
+## ═══════════════════════════════════════════════════════════════════
+
+## Helper: Get colony position by name
+func _get_colony_position(colony_name: String) -> Vector2:
+	if colony_name == "Earth":
+		return CelestialData.get_earth_position_au()
+	for colony in _game_state.colonies:
+		if colony.colony_name == colony_name:
+			return colony.get_position_au()
+	return CelestialData.get_earth_position_au()  # Fallback
+
+## Add worker to hitchhike pool when on leave
+func add_to_hitchhike_pool(worker: Worker, location_name: String, location_pos: Vector2) -> void:
+	if not _game_state:
+		push_error("[WorkerManager] GameState not initialized")
+		return
+
+	# 35% chance worker stays put (doesn't want to go home)
+	if randf() < 0.35:
+		worker.leave_status = 1  # Just on leave, no ride wanted
+		return
+	# Skip if worker's home IS this location
+	if worker.home_colony == location_name:
+		worker.leave_status = 1
+		return
+	# Skip duplicates
+	for entry in hitchhike_pool:
+		if entry["worker"] == worker:
+			return
+	worker.leave_status = 2
+	var max_wait := randf_range(7.0, 14.0) * 86400.0  # 7-14 game-days in ticks
+	hitchhike_pool.append({
+		"worker": worker,
+		"location_name": location_name,
+		"location_pos": location_pos,
+		"entered_at": _game_state.total_ticks,
+		"max_wait": max_wait,
+	})
+	EventBus.worker_waiting_for_ride.emit(worker, location_name)
+
+## Check for hitchhike opportunities when ships arrive at colonies
+func check_hitchhike_opportunities(ship: Ship, route_positions: Array[Vector2]) -> void:
+	var matched: Array[Dictionary] = []
+	for entry in hitchhike_pool:
+		var worker: Worker = entry["worker"]
+		var worker_pos: Vector2 = entry["location_pos"]
+		# Must be at ship's current location (within 0.05 AU)
+		if ship.position_au.distance_to(worker_pos) > 0.05:
+			continue
+		# Check if any route waypoint passes within 0.1 AU of worker's home colony
+		var home_pos := _get_colony_position(worker.home_colony)
+		for route_pos in route_positions:
+			if route_pos.distance_to(home_pos) < 0.1:
+				matched.append(entry)
+				break
+	for entry in matched:
+		var worker: Worker = entry["worker"]
+		hitchhike_pool.erase(entry)
+		worker.leave_status = 1  # On leave (riding home)
+		worker.loyalty = minf(worker.loyalty + 3.0, 100.0)
+		EventBus.worker_hitched_ride.emit(worker, ship)
+
+## Forgive a tardy worker (boost loyalty)
+func forgive_tardy_worker(worker: Worker) -> void:
+	for i in range(tardy_workers.size() - 1, -1, -1):
+		if tardy_workers[i]["worker"] == worker:
+			tardy_workers.remove_at(i)
+			break
+	worker.leave_status = 0
+	worker.fatigue = 0.0
+	worker.loyalty = minf(worker.loyalty + 5.0, 100.0)
+	EventBus.worker_tardiness_resolved.emit(worker, "forgiven")
+
+## Dock wages from a tardy worker
+func dock_pay_tardy_worker(worker: Worker) -> void:
+	if not _game_state:
+		push_error("[WorkerManager] GameState not initialized")
+		return
+
+	for i in range(tardy_workers.size() - 1, -1, -1):
+		if tardy_workers[i]["worker"] == worker:
+			tardy_workers.remove_at(i)
+			break
+	worker.leave_status = 0
+	worker.fatigue = 0.0
+	worker.loyalty = maxf(worker.loyalty - 8.0, 0.0)
+	# Dock 3 days wages
+	_game_state.money += worker.wage * 3
+	EventBus.worker_tardiness_resolved.emit(worker, "docked")
+
+## Fire a tardy worker (with violation record)
+func fire_tardy_worker(worker: Worker) -> void:
+	if not _game_state:
+		push_error("[WorkerManager] GameState not initialized")
+		return
+
+	# Record abandonment violation before firing
+	_game_state.record_abandonment_violation(worker, "Worker %s abandoned (fired while tardy)" % worker.worker_name)
+
+	for i in range(tardy_workers.size() - 1, -1, -1):
+		if tardy_workers[i]["worker"] == worker:
+			tardy_workers.remove_at(i)
+			break
+	worker.leave_status = 0
+	EventBus.worker_tardiness_resolved.emit(worker, "fired")
+	fire_worker(worker)
+
+
+## ═══════════════════════════════════════════════════════════════════
 ## CACHE MANAGEMENT
 ## ═══════════════════════════════════════════════════════════════════
 
