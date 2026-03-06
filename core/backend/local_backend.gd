@@ -288,3 +288,43 @@ func is_backend_ready() -> bool:
 
 func get_backend_type() -> String:
 	return "local"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BUG REPORTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+func submit_bug_report(title: String, description: String, category: String, game_version: String) -> Dictionary:
+	"""Save bug report to local JSON file for offline review"""
+	var reports_file := "user://bug_reports.json"
+	var reports := []
+
+	# Load existing reports
+	if FileAccess.file_exists(reports_file):
+		var file := FileAccess.open(reports_file, FileAccess.READ)
+		if file:
+			var json := JSON.new()
+			if json.parse(file.get_as_text()) == OK:
+				reports = json.data if json.data is Array else []
+			file.close()
+
+	# Add new report
+	reports.append({
+		"title": title,
+		"description": description,
+		"category": category,
+		"game_version": game_version,
+		"backend_mode": "local",
+		"reporter_username": "LocalPlayer",
+		"timestamp": Time.get_datetime_string_from_system()
+	})
+
+	# Save to file
+	var file := FileAccess.open(reports_file, FileAccess.WRITE)
+	if not file:
+		return {"success": false, "error": "Failed to open bug reports file"}
+
+	file.store_string(JSON.stringify(reports, "\t"))
+	file.close()
+
+	return {"success": true, "error": ""}

@@ -170,12 +170,6 @@ func get_game_state() -> Dictionary:
 		return result["data"]
 	else:
 		var err = result.get("error", "Unknown error")
-		var response_code = result.get("response_code", 0)
-		var http_result = result.get("result", 0)
-		print("[ServerBackend] get_game_state FAILED:")
-		print("  HTTP Result: %d" % http_result)
-		print("  Response Code: %d" % response_code)
-		print("  Error: %s" % str(err))
 		push_warning("Failed to get game state: " + str(err))
 		return {}
 
@@ -192,10 +186,6 @@ func get_world_state() -> Dictionary:
 		return result["data"]
 	else:
 		var err = result.get("error", "Unknown error")
-		var response_code = result.get("response_code", 0)
-		print("[ServerBackend] get_world_state FAILED:")
-		print("  Response Code: %d" % response_code)
-		print("  Error: %s" % str(err))
 		push_warning("Failed to get world state: " + str(err))
 		return {}
 
@@ -233,23 +223,13 @@ func dispatch_mission(ship_id: int, asteroid_id: int, mission_type: int, mining_
 		"return_to_station": return_to_station
 	})
 
-	print("[ServerBackend] Dispatching mission to server:")
-	print("  ship_id=%d, asteroid_id=%d, mission_type=%d" % [ship_id, asteroid_id, mission_type])
-	print("  URL: %s" % (base_url + "/game/dispatch"))
-
 	var result := await _http_request_async(http, base_url + "/game/dispatch", headers, HTTPClient.METHOD_POST, body)
 	_return_http_request(http)
 
-	print("[ServerBackend] Dispatch response: success=%s" % result["success"])
-	if result.has("data"):
-		print("  Response data: %s" % str(result["data"]).substr(0, 200))
-
 	if result["success"]:
-		print("[ServerBackend] Dispatch succeeded!")
 		return result["data"]
 	else:
 		var err = result.get("error", "Unknown error")
-		print("[ServerBackend] Dispatch FAILED: %s" % str(err))
 		push_warning("Failed to dispatch mission: " + str(err))
 		return null
 
@@ -756,7 +736,6 @@ func subscribe_events(callback: Callable) -> void:
 		return
 
 	if _sse_connected:
-		print("[ServerBackend] Already subscribed to events")
 		return
 
 	# Create HTTPRequest for SSE stream
@@ -771,7 +750,6 @@ func subscribe_events(callback: Callable) -> void:
 	var url := base_url + "/events/stream"
 	var headers := ["Authorization: Bearer " + auth_token]
 
-	print("[ServerBackend] Subscribing to event stream: ", url)
 	var error := _sse_http.request(url, headers)
 
 	if error != OK:
@@ -797,12 +775,9 @@ func unsubscribe_events() -> void:
 
 	_sse_connected = false
 	_sse_buffer = ""
-	print("[ServerBackend] Unsubscribed from event stream")
 
 
 func _on_sse_closed(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
-	print("[ServerBackend] SSE connection closed - Result: %d, Code: %d" % [result, response_code])
-
 	if result == HTTPRequest.RESULT_SUCCESS and response_code == 200:
 		# Parse any final events in body
 		var body_text := body.get_string_from_utf8()
@@ -815,7 +790,6 @@ func _on_sse_closed(result: int, response_code: int, headers: PackedStringArray,
 	if _backend_manager:
 		await _backend_manager.get_tree().create_timer(1.0).timeout
 		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
-			print("[ServerBackend] Reconnecting to event stream...")
 			subscribe_events(Callable())  # Reconnect
 
 
@@ -846,33 +820,48 @@ func _handle_server_event(event: Dictionary) -> void:
 
 	match event_type:
 		"connected":
-			print("[ServerBackend] SSE connected for player %d" % event.get("player_id", 0))
+			pass  # Connection established
 
 		"mission_completed":
-			print("[ServerBackend] Mission completed - ID: %d" % event.get("mission_id", 0))
-			# GameState will handle via polling for now
+			pass  # GameState will handle via polling for now
 
 		"payroll_deducted":
-			print("[ServerBackend] Payroll deducted: $%d (new balance: $%d)" % [
-				event.get("amount", 0),
-				event.get("new_balance", 0)
-			])
 			# Update money directly
 			if event.has("new_balance"):
 				GameState.money = int(event["new_balance"])
 
 		"worker_skill_leveled":
-			print("[ServerBackend] Worker skill leveled: %s - %s to %.2f" % [
-				event.get("worker_name", "Unknown"),
-				event.get("skill_type", "unknown"),
-				event.get("new_value", 0.0)
-			])
 			GameState.apply_worker_skill_event(event)
 
 		"market_update":
-			print("[ServerBackend] Market prices updated")
 			GameState.apply_market_update_event(event)
 
 		_:
-			if event_type != "":
-				print("[ServerBackend] Unhandled event type: %s" % event_type)
+			pass  # Unhandled event type
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BUG REPORTS
+# ══════════════════════════════════════════════════════════════════════════════
+
+func submit_bug_report(title: String, description: String, category: String, game_version: String) -> Dictionary:
+	"""Submit a bug report to the server (no auth required)"""
+	var http := _get_http_request()
+	var headers := ["Content-Type: application/json"]  # No auth required
+
+	var body := JSON.stringify({
+		"title": title,
+		"description": description,
+		"category": category,
+		"game_version": game_version,
+		"backend_mode": "server",
+		"reporter_username": saved_username if saved_username != "" else "Anonymous"
+	})
+
+	var result := await _http_request_async(http, base_url + "/api/bug-reports", headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if result["success"]:
+		return {"success": true, "error": ""}
+	else:
+		return {"success": false, "error": result.get("error", "Failed to submit bug report")}

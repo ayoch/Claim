@@ -20,6 +20,7 @@ const DATE_UPDATE_INTERVAL: float = 0.2  # Update date 5 times per second
 var _net_worth_update_timer: float = 0.0
 const NET_WORTH_UPDATE_INTERVAL: float = 1.0  # Update net worth once per second
 var _save_load_dialog: PopupPanel = null
+var _bug_report_dialog: AcceptDialog = null
 
 # Loading overlay (SERVER mode only)
 var _loading_overlay: Control = null
@@ -78,6 +79,12 @@ func _ready() -> void:
 		_save_load_dialog.save_confirmed.connect(_on_save_confirmed)
 		_save_load_dialog.load_confirmed.connect(_on_load_confirmed)
 
+	# Set up bug report dialog
+	var bug_dialog_scene := load("res://ui/bug_report_dialog.tscn")
+	if bug_dialog_scene:
+		_bug_report_dialog = bug_dialog_scene.instantiate()
+		add_child(_bug_report_dialog)
+
 	# Speed bar visible in both LOCAL and SERVER modes
 	_setup_speed_bar()
 
@@ -85,13 +92,11 @@ func _ready() -> void:
 		# Start server state polling (Phase 1)
 		_server_poll_timer = 0.0  # Poll immediately on load
 		_server_speed_poll_timer = 0.0  # Poll server speed immediately
-		print("[MainUI] Server mode detected - starting state polling")
 
 		# Subscribe to server events (Phase 2)
 		var server_backend = BackendManager.get_server_backend()
 		if server_backend:
 			server_backend.subscribe_events(Callable())
-			print("[MainUI] Subscribed to server event stream")
 
 		_show_loading_overlay()
 
@@ -395,6 +400,18 @@ func _show_settings() -> void:
 		)
 		vbox.add_child(account_btn)
 
+	# Report Bug button
+	var bug_report_btn := Button.new()
+	bug_report_btn.text = "🐛 Report a Bug"
+	bug_report_btn.custom_minimum_size = Vector2(0, 44)
+	bug_report_btn.pressed.connect(func() -> void:
+		if _bug_report_dialog:
+			_bug_report_dialog.open_dialog()
+			_settings_popup.queue_free()
+			_settings_popup = null
+	)
+	vbox.add_child(bug_report_btn)
+
 	var close_btn := Button.new()
 	close_btn.text = "Close"
 	close_btn.custom_minimum_size = Vector2(0, 44)
@@ -542,7 +559,6 @@ func _poll_server_state() -> void:
 	_polling_server = false
 
 	if server_data.is_empty():
-		print("[MainUI] Server poll failed - empty response")
 		return
 
 	# Apply server state to local GameState (own ships, workers, money)

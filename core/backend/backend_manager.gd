@@ -17,7 +17,6 @@ var _server_backend = null
 
 
 func _ready() -> void:
-	print("BackendManager initialized")
 	_initialize_backends()
 
 
@@ -203,3 +202,9 @@ func is_admin() -> bool:
 		return false
 
 	return _server_backend.is_admin
+
+
+# Bug Reports
+func submit_bug_report(title: String, description: String, category: String, game_version: String) -> Dictionary:
+	"""Submit a bug report (works in both LOCAL and SERVER modes)"""
+	return await _active_backend.submit_bug_report(title, description, category, game_version)
