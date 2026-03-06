@@ -1047,46 +1047,25 @@ func add_to_stockpile(asteroid_name: String, ore_type: ResourceTypes.OreType, am
 func collect_from_stockpile(asteroid_name: String, ship: Ship) -> float:
 	return MarketManager.collect_from_stockpile(asteroid_name, ship)
 
+## DEPRECATED: Forwarding stub - use MarketManager.get_asteroid_supplies() instead
+## TODO: Remove after all references are migrated to MarketManager
 func get_asteroid_supplies(asteroid_name: String) -> Dictionary:
-	return asteroid_supplies.get(asteroid_name, {"food": 0.0, "water": 0.0, "oxygen": 0.0, "repair_parts": 0.0})
+	return MarketManager.get_asteroid_supplies(asteroid_name)
 
+## DEPRECATED: Forwarding stub - use MarketManager.add_to_asteroid_supplies() instead
+## TODO: Remove after all references are migrated to MarketManager
 func add_to_asteroid_supplies(asteroid_name: String, supply_key: String, amount: float) -> void:
-	if not asteroid_supplies.has(asteroid_name):
-		asteroid_supplies[asteroid_name] = {"food": 0.0, "water": 0.0, "oxygen": 0.0, "repair_parts": 0.0}
-	asteroid_supplies[asteroid_name][supply_key] = asteroid_supplies[asteroid_name].get(supply_key, 0.0) + amount
+	MarketManager.add_to_asteroid_supplies(asteroid_name, supply_key, amount)
 
+## DEPRECATED: Forwarding stub - use MarketManager.consume_asteroid_supply() instead
+## TODO: Remove after all references are migrated to MarketManager
 func consume_asteroid_supply(asteroid_name: String, supply_key: String, amount: float) -> float:
-	## Consume up to `amount` from the supply. Returns actual amount consumed.
-	if not asteroid_supplies.has(asteroid_name):
-		return 0.0
-	var current: float = asteroid_supplies[asteroid_name].get(supply_key, 0.0)
-	var consumed: float = minf(amount, current)
-	asteroid_supplies[asteroid_name][supply_key] = current - consumed
-	return consumed
+	return MarketManager.consume_asteroid_supply(asteroid_name, supply_key, amount)
 
+## DEPRECATED: Forwarding stub - use MarketManager.get_asteroid_supply_days() instead
+## TODO: Remove after all references are migrated to MarketManager
 func get_asteroid_supply_days(asteroid_name: String, supply_key: String) -> float:
-	## Returns days remaining for the given supply based on current deployed units/workers
-	var supply: float = asteroid_supplies.get(asteroid_name, {}).get(supply_key, 0.0)
-	if supply <= 0.0:
-		return 0.0
-	match supply_key:
-		"food":
-			var worker_count := 0
-			for unit in deployed_mining_units:
-				if unit.deployed_at_asteroid == asteroid_name:
-					worker_count += unit.assigned_workers.size()
-			if worker_count <= 0:
-				return INF
-			return supply / (worker_count * 0.028)
-		"repair_parts":
-			var unit_count := 0
-			for unit in deployed_mining_units:
-				if unit.deployed_at_asteroid == asteroid_name:
-					unit_count += 1
-			if unit_count <= 0:
-				return INF
-			return supply / (unit_count * 0.05)
-	return INF
+	return MarketManager.get_asteroid_supply_days(asteroid_name, supply_key)
 
 ## DEPRECATED: Forwarding stub - use MissionManager.start_deploy_mission() instead
 ## TODO: Remove after all references are migrated to MissionManager
@@ -1738,41 +1717,10 @@ func update_station_jobs(ship: Ship, jobs: Array[String]) -> void:
 	ship.station_jobs = jobs.duplicate()
 	ship.add_station_log("Jobs updated: %s" % ", ".join(jobs), "system")
 
+## DEPRECATED: Forwarding stub - use MarketManager.buy_supplies() instead
+## TODO: Remove after all references are migrated to MarketManager
 func buy_supplies(ship: Ship, supply_key: String, amount: float) -> bool:
-	# Find supply type from key
-	var cost_per_unit := 0
-	var mass_per_unit := 0.0
-	var volume_per_unit := 0.0
-	for supply_type in SupplyData.SUPPLY_INFO:
-		var info: Dictionary = SupplyData.SUPPLY_INFO[supply_type]
-		if info["key"] == supply_key:
-			cost_per_unit = info["cost_per_unit"]
-			mass_per_unit = info["mass_per_unit"]
-			volume_per_unit = info.get("volume_per_unit", 0.0)
-			break
-
-	if cost_per_unit <= 0:
-		return false
-
-	var total_mass := amount * mass_per_unit
-	# Check cargo capacity (supplies share space with ore)
-	var available_space := ship.get_cargo_remaining() - ship.get_supplies_mass()
-	if total_mass > available_space + 0.01:
-		return false
-
-	# Check cargo volume
-	var total_volume := amount * volume_per_unit
-	if total_volume > ship.get_cargo_volume_remaining() + 0.01:
-		return false
-
-	var total_cost := int(amount * cost_per_unit)
-	if money < total_cost:
-		return false
-
-	money -= total_cost
-	record_transaction(-total_cost, "Supplies: %s ×%.1f" % [supply_key, amount], ship.ship_name)
-	ship.supplies[supply_key] = ship.supplies.get(supply_key, 0.0) + amount
-	return true
+	return MarketManager.buy_supplies(ship, supply_key, amount)
 
 # --- Deployed crew methods ---
 

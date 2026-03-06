@@ -1918,7 +1918,7 @@ func _station_try_provisioning(ship: Ship) -> bool:
 	var best_days: float = INF
 
 	for asteroid_name in GameState.asteroid_supplies.keys():
-		var food_days := GameState.get_asteroid_supply_days(asteroid_name, "food")
+		var food_days := MarketManager.get_asteroid_supply_days(asteroid_name, "food")
 		if food_days >= threshold_days:
 			continue  # Supply is adequate per policy
 
@@ -2350,12 +2350,12 @@ func _complete_delivery_job(mission: Mission) -> void:
 	if nearest_asteroid_name != "":
 		var food: float = ship.supplies.get("food", 0.0)
 		if food > 0.0:
-			GameState.add_to_asteroid_supplies(nearest_asteroid_name, "food", food)
+			MarketManager.add_to_asteroid_supplies(nearest_asteroid_name, "food", food)
 			ship.supplies["food"] = 0.0
 			food_delivered = true
 		var parts: float = ship.supplies.get("repair_parts", 0.0)
 		if parts > 0.0:
-			GameState.add_to_asteroid_supplies(nearest_asteroid_name, "repair_parts", parts)
+			MarketManager.add_to_asteroid_supplies(nearest_asteroid_name, "repair_parts", parts)
 			ship.supplies["repair_parts"] = 0.0
 			parts_delivered = true
 
@@ -2569,12 +2569,12 @@ func _complete_deploy(mission: Mission) -> void:
 		var food_to_transfer: float = maxf(0.0, food_on_ship - return_buffer)
 		if food_to_transfer > 0.0:
 			mission.ship.supplies["food"] = food_on_ship - food_to_transfer
-			GameState.add_to_asteroid_supplies(asteroid_name, "food", food_to_transfer)
+			MarketManager.add_to_asteroid_supplies(asteroid_name, "food", food_to_transfer)
 		# Repair parts: transfer all (ship can resupply at colony, miners cannot)
 		var parts_on_ship: float = mission.ship.supplies.get("repair_parts", 0.0)
 		if parts_on_ship > 0.0:
 			mission.ship.supplies["repair_parts"] = 0.0
-			GameState.add_to_asteroid_supplies(asteroid_name, "repair_parts", parts_on_ship)
+			MarketManager.add_to_asteroid_supplies(asteroid_name, "repair_parts", parts_on_ship)
 	# Transition to idle at destination
 	if mission.ship.is_stationed:
 		_start_station_return(mission)
@@ -2687,9 +2687,9 @@ func _process_asteroid_supplies(dt: float) -> void:
 		# Consume food
 		if workers > 0:
 			var food_needed: float = workers * 2.8 * days
-			GameState.consume_asteroid_supply(asteroid_name, "food", food_needed)
+			MarketManager.consume_asteroid_supply(asteroid_name, "food", food_needed)
 			# Alert if low — throttled to once per game-day
-			var food_days := GameState.get_asteroid_supply_days(asteroid_name, "food")
+			var food_days := MarketManager.get_asteroid_supply_days(asteroid_name, "food")
 			if food_days < SUPPLY_ALERT_DAYS and food_days > 0.0:
 				var food_key: String = asteroid_name + ":food"
 				var last: float = _supply_alert_last_fired.get(food_key, -86400.0)
@@ -2700,9 +2700,9 @@ func _process_asteroid_supplies(dt: float) -> void:
 		# Consume repair parts
 		if units > 0:
 			var parts_needed: float = units * 0.05 * days
-			GameState.consume_asteroid_supply(asteroid_name, "repair_parts", parts_needed)
+			MarketManager.consume_asteroid_supply(asteroid_name, "repair_parts", parts_needed)
 			# Alert if low — throttled to once per game-day
-			var parts_days := GameState.get_asteroid_supply_days(asteroid_name, "repair_parts")
+			var parts_days := MarketManager.get_asteroid_supply_days(asteroid_name, "repair_parts")
 			if parts_days < SUPPLY_ALERT_DAYS and parts_days > 0.0:
 				var parts_key: String = asteroid_name + ":repair_parts"
 				var last: float = _supply_alert_last_fired.get(parts_key, -86400.0)
@@ -3135,7 +3135,7 @@ func _auto_provision_at_location(ship: Ship) -> void:
 	var current_food: float = ship.supplies.get("food", 0.0)
 	if current_food < target_food_kg:
 		var needed := target_food_kg - current_food
-		var success := GameState.buy_supplies(ship, "food", needed)
+		var success := MarketManager.buy_supplies(ship, "food", needed)
 		if not success:
 			_log_provision_failure(ship, "food", needed, crew_size)
 
@@ -3145,7 +3145,7 @@ func _auto_provision_at_location(ship: Ship) -> void:
 	var current_water: float = ship.supplies.get("water", 0.0)
 	if current_water < target_water_units:
 		var needed := target_water_units - current_water
-		var success := GameState.buy_supplies(ship, "water", needed)
+		var success := MarketManager.buy_supplies(ship, "water", needed)
 		if not success:
 			_log_provision_failure(ship, "water", needed, crew_size)
 
@@ -3155,7 +3155,7 @@ func _auto_provision_at_location(ship: Ship) -> void:
 	var current_o2: float = ship.supplies.get("oxygen", 0.0)
 	if current_o2 < target_o2_units:
 		var needed := target_o2_units - current_o2
-		var success := GameState.buy_supplies(ship, "oxygen", needed)
+		var success := MarketManager.buy_supplies(ship, "oxygen", needed)
 		if not success:
 			_log_provision_failure(ship, "oxygen", needed, crew_size)
 

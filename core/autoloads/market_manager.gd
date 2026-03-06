@@ -80,7 +80,104 @@ func collect_from_stockpile(asteroid_name: String, ship: Ship) -> float:
 ## SUPPLY MANAGEMENT
 ## ═══════════════════════════════════════════════════════════════════
 
-## TODO: Extract supply functions from GameState
+## Get supplies dict for an asteroid (food, water, oxygen, repair_parts)
+func get_asteroid_supplies(asteroid_name: String) -> Dictionary:
+	if not _game_state:
+		push_error("[MarketManager] GameState not initialized")
+		return {}
+	return _game_state.asteroid_supplies.get(asteroid_name, {"food": 0.0, "water": 0.0, "oxygen": 0.0, "repair_parts": 0.0})
+
+## Add supplies to an asteroid
+func add_to_asteroid_supplies(asteroid_name: String, supply_key: String, amount: float) -> void:
+	if not _game_state:
+		push_error("[MarketManager] GameState not initialized")
+		return
+
+	if not _game_state.asteroid_supplies.has(asteroid_name):
+		_game_state.asteroid_supplies[asteroid_name] = {"food": 0.0, "water": 0.0, "oxygen": 0.0, "repair_parts": 0.0}
+	_game_state.asteroid_supplies[asteroid_name][supply_key] = _game_state.asteroid_supplies[asteroid_name].get(supply_key, 0.0) + amount
+
+## Consume supplies from an asteroid (returns actual amount consumed)
+func consume_asteroid_supply(asteroid_name: String, supply_key: String, amount: float) -> float:
+	if not _game_state:
+		push_error("[MarketManager] GameState not initialized")
+		return 0.0
+
+	if not _game_state.asteroid_supplies.has(asteroid_name):
+		return 0.0
+	var current: float = _game_state.asteroid_supplies[asteroid_name].get(supply_key, 0.0)
+	var consumed: float = minf(amount, current)
+	_game_state.asteroid_supplies[asteroid_name][supply_key] = current - consumed
+	return consumed
+
+## Calculate days remaining for a supply based on deployed units/workers
+func get_asteroid_supply_days(asteroid_name: String, supply_key: String) -> float:
+	if not _game_state:
+		push_error("[MarketManager] GameState not initialized")
+		return 0.0
+
+	var supply: float = _game_state.asteroid_supplies.get(asteroid_name, {}).get(supply_key, 0.0)
+	if supply <= 0.0:
+		return 0.0
+	match supply_key:
+		"food":
+			var worker_count := 0
+			for unit in _game_state.deployed_mining_units:
+				if unit.deployed_at_asteroid == asteroid_name:
+					worker_count += unit.assigned_workers.size()
+			if worker_count <= 0:
+				return INF
+			return supply / (worker_count * 0.028)
+		"repair_parts":
+			var unit_count := 0
+			for unit in _game_state.deployed_mining_units:
+				if unit.deployed_at_asteroid == asteroid_name:
+					unit_count += 1
+			if unit_count <= 0:
+				return INF
+			return supply / (unit_count * 0.05)
+	return INF
+
+## Purchase supplies for a ship
+func buy_supplies(ship: Ship, supply_key: String, amount: float) -> bool:
+	if not _game_state:
+		push_error("[MarketManager] GameState not initialized")
+		return false
+
+	# Find supply type from key
+	var cost_per_unit := 0
+	var mass_per_unit := 0.0
+	var volume_per_unit := 0.0
+	for supply_type in SupplyData.SUPPLY_INFO:
+		var info: Dictionary = SupplyData.SUPPLY_INFO[supply_type]
+		if info["key"] == supply_key:
+			cost_per_unit = info["cost_per_unit"]
+			mass_per_unit = info["mass_per_unit"]
+			volume_per_unit = info.get("volume_per_unit", 0.0)
+			break
+
+	if cost_per_unit <= 0:
+		return false
+
+	var total_mass := amount * mass_per_unit
+	# Check cargo capacity (supplies share space with ore)
+	var available_space := ship.get_cargo_remaining() - ship.get_supplies_mass()
+	if total_mass > available_space + 0.01:
+		return false
+
+	# Check cargo volume
+	var total_volume := amount * volume_per_unit
+	if total_volume > ship.get_cargo_volume_remaining() + 0.01:
+		return false
+
+	var total_cost := int(amount * cost_per_unit)
+	if _game_state.money < total_cost:
+		return false
+
+	_game_state.money -= total_cost
+	_game_state.record_transaction(-total_cost, "Supplies: %s ×%.1f" % [supply_key, amount], ship.ship_name)
+	ship.supplies[supply_key] = ship.supplies.get(supply_key, 0.0) + amount
+	return true
 
 
 ## ═══════════════════════════════════════════════════════════════════

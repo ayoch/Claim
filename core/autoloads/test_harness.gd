@@ -597,7 +597,7 @@ func _provision_ship(ship: Ship) -> void:
 		return
 
 	var amount_needed := target_food_units - current_food
-	if GameState.buy_supplies(ship, "food", amount_needed):
+	if MarketManager.buy_supplies(ship, "food", amount_needed):
 		supplies_bought += 1
 
 func _repair_broken_equipment(ship: Ship) -> void:
@@ -1140,7 +1140,7 @@ func _buy_supplies_for_docked() -> void:
 	for ship in docked:
 		var parts: float = float(ship.supplies.get("repair_parts", 0.0))
 		if parts < 10.0:
-			if GameState.buy_supplies(ship, "repair_parts", 15.0):
+			if MarketManager.buy_supplies(ship, "repair_parts", 15.0):
 				supplies_bought += 1
 
 func _consider_stationing() -> void:
