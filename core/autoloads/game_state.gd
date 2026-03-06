@@ -4372,7 +4372,7 @@ func apply_server_state(server_data: Dictionary) -> void:
 				target_asteroid = asteroids[asteroid_index]
 
 			if target_asteroid:
-				var new_ast_name := target_asteroid.name
+				var new_ast_name: String = target_asteroid.asteroid_name
 				if unit.deployed_at_asteroid != new_ast_name:
 					unit.deployed_at_asteroid = new_ast_name
 					state_changed = true
