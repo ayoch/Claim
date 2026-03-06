@@ -126,7 +126,6 @@ func _check_server_status() -> void:
 	status_label.text = "Server: Checking..."
 
 	var url: String = server_backend.base_url + "/health"
-	print("Checking server status at: ", url)
 
 	# Set timeout to 10 seconds
 	http_request.timeout = 10.0
@@ -239,5 +238,4 @@ func _check_and_clear_expired_token() -> void:
 		# Switch back to LOCAL mode
 		BackendManager.switch_mode(BackendManager.BackendMode.LOCAL)
 	else:
-		var seconds_left := exp - int(current_time)
-		print("Token still valid (%d seconds remaining)" % seconds_left)
+		pass  # Token still valid

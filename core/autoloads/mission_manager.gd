@@ -106,8 +106,40 @@ func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, cargo_to_load: 
 
 ## Complete a mining/deploy/collect mission
 func complete_mission(mission: Mission) -> void:
-	# TODO: Move implementation from game_state.gd
-	push_error("[MissionManager] complete_mission not yet implemented")
+	if not _game_state:
+		push_error("[MissionManager] GameState not initialized")
+		return
+
+	# Stationed ships keep cargo (they sell via trade mission autonomously)
+	if mission.ship.is_stationed:
+		# Don't transfer cargo, ship keeps it for trading
+		pass
+	elif mission.ship.is_at_earth:
+		# Transfer cargo from ship to Earth — either sell immediately or stockpile
+		if _game_state.settings.get("auto_sell_at_earth", true):
+			var revenue := 0
+			for ore_type in mission.ship.current_cargo:
+				var amount: float = mission.ship.current_cargo[ore_type]
+				var price: float = MarketData.get_ore_price(ore_type)
+				revenue += int(amount * price)
+			if revenue > 0:
+				_game_state.money += revenue
+				_game_state.record_transaction(revenue, "Ore sold at Earth", mission.ship.ship_name)
+		else:
+			for ore_type in mission.ship.current_cargo:
+				_game_state.add_resource(ore_type, mission.ship.current_cargo[ore_type])
+		mission.ship.current_cargo.clear()
+
+	mission.ship.current_mission = null
+	mission.status = Mission.Status.COMPLETED
+	EventBus.mission_completed.emit(mission)
+	mission.cleanup()  # Break circular references
+	missions.erase(mission)
+
+	# Stationed ships don't use queued missions — station logic handles next job
+	if mission.ship.is_stationed:
+		return
+	# Queued missions are launched in simulation.gd after provision/repair completes
 
 
 ## Complete a trade mission

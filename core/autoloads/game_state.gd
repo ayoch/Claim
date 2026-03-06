@@ -2040,37 +2040,11 @@ func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Missi
 
 	return mission
 
+## DEPRECATED: Forwarding stub - use MissionManager.complete_mission() instead
+## TODO: Remove after all references are migrated to MissionManager
 func complete_mission(mission: Mission) -> void:
-	# Stationed ships keep cargo (they sell via trade mission autonomously)
-	if mission.ship.is_stationed:
-		# Don't transfer cargo, ship keeps it for trading
-		pass
-	elif mission.ship.is_at_earth:
-		# Transfer cargo from ship to Earth — either sell immediately or stockpile
-		if settings.get("auto_sell_at_earth", true):
-			var revenue := 0
-			for ore_type in mission.ship.current_cargo:
-				var amount: float = mission.ship.current_cargo[ore_type]
-				var price: float = MarketData.get_ore_price(ore_type)
-				revenue += int(amount * price)
-			if revenue > 0:
-				money += revenue
-				record_transaction(revenue, "Ore sold at Earth", mission.ship.ship_name)
-		else:
-			for ore_type in mission.ship.current_cargo:
-				add_resource(ore_type, mission.ship.current_cargo[ore_type])
-		mission.ship.current_cargo.clear()
-
-	mission.ship.current_mission = null
-	mission.status = Mission.Status.COMPLETED
-	EventBus.mission_completed.emit(mission)
-	mission.cleanup()  # Break circular references
-	missions.erase(mission)
-
-	# Stationed ships don't use queued missions — station logic handles next job
-	if mission.ship.is_stationed:
-		return
-	# Queued missions are launched in simulation.gd after provision/repair completes
+	push_warning("[GameState] complete_mission() is deprecated, use MissionManager.complete_mission()")
+	MissionManager.complete_mission(mission)
 
 func _name_for_position(pos: Vector2) -> String:
 	# Find nearest colony

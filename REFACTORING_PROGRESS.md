@@ -127,16 +127,19 @@ Mission ↔ Worker (mission.rescue_crew[] ↔ worker.assigned_mission)
 ## 🔄 In Progress
 
 ### 5. Extract MissionManager from game_state.gd
-**Status:** Skeleton Created (20% complete)
-**Remaining:** Move 1500 lines of code, resolve dependencies, update call sites
+**Status:** Proof-of-Concept Complete (27% complete)
+**Remaining:** Move 1400 lines of code, update remaining call sites
 
 **Progress:**
 - ✅ Created `core/autoloads/mission_manager.gd` skeleton
 - ✅ Registered MissionManager autoload in project.godot
 - ✅ Defined 14 function signatures with TODO placeholders
-- ⏳ Need to resolve GameState dependencies (money, settings, resources)
-- ⏳ Need to move implementation code
-- ⏳ Need to update all call sites throughout codebase
+- ✅ **Resolved GameState dependencies** - Using dependency injection pattern
+- ✅ **Migrated complete_mission()** - Full implementation moved (1/15 functions)
+- ✅ **Updated call site** - simulation.gd now calls MissionManager.complete_mission()
+- ✅ **Added backward compatibility** - GameState.complete_mission() forwards to MissionManager
+- ⏳ Need to move remaining 14 functions (1413 lines)
+- ⏳ Need to update call sites for remaining functions
 
 **Functions to Move (15 total):**
 1. start_mission()

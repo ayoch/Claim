@@ -105,7 +105,7 @@ func _ready() -> void:
 	EventBus.order_queued.connect(func(_s: Ship, _l: String, _d: float) -> void: _mark_dirty())
 	EventBus.order_executed.connect(func(_s: Ship, _l: String) -> void: _mark_dirty())
 	EventBus.server_state_synced.connect(func() -> void:
-		print("[FleetTab] Received server_state_synced (ships: %d, visible: %s)" % [GameState.ships.size(), is_visible_in_tree()])
+		# Server state synced
 		if is_visible_in_tree():
 			_rebuild_ships()
 		else:
@@ -275,7 +275,7 @@ func _get_wrench_texture(ship: Ship) -> Texture2D:
 	return null
 
 func _rebuild_ships() -> void:
-	print("[FleetTab] _rebuild_ships called (ships: %d)" % GameState.ships.size())
+	# Rebuilding ship list
 	_progress_bars.clear()
 	_status_labels.clear()
 	_detail_labels.clear()

@@ -517,7 +517,7 @@ func _process_missions(dt: float) -> void:
 								for w in mission.ship.crew:
 									if w not in mission.ship.crew and w.needs_rotation:
 										GameState.add_to_hitchhike_pool(w, station_name, station_pos)
-						GameState.complete_mission(mission)
+						MissionManager.complete_mission(mission)
 						# Provision and repair after cargo is cleared for Earth returns
 						if _provision_after_complete:
 							_auto_provision_at_location(_mission_ship)

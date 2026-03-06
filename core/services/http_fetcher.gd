@@ -10,7 +10,7 @@ signal fetch_failed(url: String, error: String)
 var _active_requests: Dictionary = {}  # url -> HTTPRequest node
 
 func _ready() -> void:
-	print("HTTPFetcher service initialized")
+	pass
 
 ## Fetch URL asynchronously
 ## Returns request_id for tracking, or -1 on error
@@ -32,7 +32,6 @@ func fetch(url: String) -> int:
 		return -1
 
 	_active_requests[url] = http
-	print("HTTP request started: %s" % url)
 
 	return http.get_instance_id()
 
@@ -54,8 +53,6 @@ func fetch_with_timeout(url: String, timeout_sec: float = 10.0) -> int:
 	return request_id
 
 func _on_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray, url: String) -> void:
-	print("HTTP request completed: %s (code %d)" % [url, response_code])
-
 	var body_str := body.get_string_from_utf8()
 
 	if result != HTTPRequest.RESULT_SUCCESS:

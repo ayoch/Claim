@@ -77,7 +77,6 @@ var fcm_token: String = ""
 var fcm_device_id: String = ""
 
 func _ready() -> void:
-	print("NotificationManager initialized")
 	_load_settings()
 	_setup_event_listeners()
 
