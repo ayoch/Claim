@@ -1,0 +1,21 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://ui/components/fleet_list_panel.gd" id="1"]
+
+[node name="FleetListPanel" type="VBoxContainer"]
+script = ExtResource("1")
+
+[node name="Header" type="Label" parent="."]
+layout_mode = 2
+text = "Fleet"
+horizontal_alignment = 1
+
+[node name="ShipsScroll" type="ScrollContainer" parent="."]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ShipsList" type="VBoxContainer" parent="ShipsScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
