@@ -172,7 +172,31 @@ func complete_trade_mission(tm: TradeMission) -> void:
 ## ═══════════════════════════════════════════════════════════════════
 
 ## Calculate intercept position for a moving asteroid
+## Uses iterative convergence (3 iterations) to predict where asteroid will be when ship arrives
 func calculate_asteroid_intercept(start_pos: Vector2, asteroid: AsteroidData, thrust: float, transit_mode: int) -> Dictionary:
-	# TODO: Move implementation from game_state.gd
-	push_error("[MissionManager] calculate_asteroid_intercept not yet implemented")
-	return {}
+	var iterations := 3  # Usually converges in 2-3 iterations
+	var target_pos := asteroid.get_position_au()  # Start with current position
+	var transit_time := 0.0
+
+	for i in iterations:
+		var dist := start_pos.distance_to(target_pos)
+		if transit_mode == Mission.TransitMode.HOHMANN:
+			transit_time = Brachistochrone.hohmann_time(dist)
+		else:
+			transit_time = Brachistochrone.transit_time(dist, thrust)
+
+		# Predict where asteroid will be when ship arrives
+		target_pos = asteroid.get_position_at_time(transit_time)
+
+	# Final calculation with converged position
+	var final_dist := start_pos.distance_to(target_pos)
+	if transit_mode == Mission.TransitMode.HOHMANN:
+		transit_time = Brachistochrone.hohmann_time(final_dist)
+	else:
+		transit_time = Brachistochrone.transit_time(final_dist, thrust)
+
+	return {
+		"intercept_position": target_pos,
+		"distance": final_dist,
+		"transit_time": transit_time
+	}

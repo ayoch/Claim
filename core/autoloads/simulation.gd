@@ -1948,7 +1948,7 @@ func _station_try_provisioning(ship: Ship) -> bool:
 		return false
 
 	# Calculate intercept trajectory to predict where asteroid will be at arrival
-	var intercept := GameState.calculate_asteroid_intercept(
+	var intercept := MissionManager.calculate_asteroid_intercept(
 		station_pos, best_asteroid, ship.get_effective_thrust(), Mission.TransitMode.BRACHISTOCHRONE
 	)
 	var predicted_pos: Vector2 = intercept["intercept_position"]
