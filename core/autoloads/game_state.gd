@@ -422,17 +422,10 @@ func purchase_equipment_any_mode(ship: Ship, equipment_name: String) -> void:
 		push_warning("purchase_equipment_any_mode() LOCAL mode not fully implemented")
 
 ## Mode-aware equipment selling - works in both LOCAL and SERVER modes
+## DEPRECATED: Forwarding stub - use MarketManager.sell_equipment_any_mode() instead
+## TODO: Remove after all references are migrated to MarketManager
 func sell_equipment_any_mode(equipment: Equipment, ship: Ship) -> void:
-	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
-		# SERVER mode: equipment needs server_id
-		# For now, use equipment name to find it (requires server sync)
-		# TODO: Add equipment.server_id field
-		push_warning("sell_equipment_any_mode() SERVER mode requires equipment.server_id field")
-	else:
-		# LOCAL mode: remove from ship and refund 50% of cost
-		ship.equipment.erase(equipment)
-		money += equipment.cost / 2
-		EventBus.equipment_sold.emit(equipment, ship)
+	MarketManager.sell_equipment_any_mode(equipment, ship)
 
 ## Redirect a ship in transit to a new asteroid.
 ## Queues the order with lightspeed delay; returns true if order accepted/queued.
@@ -3393,21 +3386,10 @@ func apply_worker_skill_event(event: Dictionary) -> void:
 
 ## Apply market price update event from server
 ## Event format: {type: "market_update", prices: {ore_name: new_price, ...}}
+## DEPRECATED: Forwarding stub - use MarketManager.apply_market_update_event() instead
+## TODO: Remove after all references are migrated to MarketManager
 func apply_market_update_event(event: Dictionary) -> void:
-	var prices: Dictionary = event.get("prices", {})
-
-	if prices.is_empty():
-		return
-
-	# Log market updates for now
-	# TODO: Integrate with local economy system (MarketState is per-instance, needs refactor)
-	var updated_count := prices.size()
-	if updated_count > 0:
-		print("[GameState] Market prices updated via SSE: %d ore types" % updated_count)
-		for ore_name in prices:
-			var new_price: float = float(prices[ore_name])
-			print("  - %s: $%.0f" % [ore_name, new_price])
-		EventBus.market_state_changed.emit()
+	MarketManager.apply_market_update_event(event)
 
 
 

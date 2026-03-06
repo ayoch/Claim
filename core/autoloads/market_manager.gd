@@ -184,4 +184,40 @@ func buy_supplies(ship: Ship, supply_key: String, amount: float) -> bool:
 ## TRADING & MARKET EVENTS
 ## ═══════════════════════════════════════════════════════════════════
 
-## TODO: Extract trading functions from GameState
+## Sell equipment from a ship (routes to LOCAL/SERVER backend)
+func sell_equipment_any_mode(equipment: Equipment, ship: Ship) -> void:
+	if not _game_state:
+		push_error("[MarketManager] GameState not initialized")
+		return
+
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		# SERVER mode: equipment needs server_id
+		# For now, use equipment name to find it (requires server sync)
+		# TODO: Add equipment.server_id field
+		push_warning("sell_equipment_any_mode() SERVER mode requires equipment.server_id field")
+	else:
+		# LOCAL mode: remove from ship and refund 50% of cost
+		ship.equipment.erase(equipment)
+		_game_state.money += equipment.cost / 2
+		EventBus.equipment_sold.emit(equipment, ship)
+
+## Apply market price update event from server (SSE)
+func apply_market_update_event(event: Dictionary) -> void:
+	if not _game_state:
+		push_error("[MarketManager] GameState not initialized")
+		return
+
+	var prices: Dictionary = event.get("prices", {})
+
+	if prices.is_empty():
+		return
+
+	# Log market updates for now
+	# TODO: Integrate with local economy system (MarketState is per-instance, needs refactor)
+	var updated_count := prices.size()
+	if updated_count > 0:
+		print("[MarketManager] Market prices updated via SSE: %d ore types" % updated_count)
+		for ore_name in prices:
+			var new_price: float = float(prices[ore_name])
+			print("  - %s: $%.0f" % [ore_name, new_price])
+		EventBus.market_state_changed.emit()
