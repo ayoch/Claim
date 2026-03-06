@@ -1,7 +1,8 @@
 extends Node
 
-## NotificationManager — manages in-game and mobile push notifications
-## Notifications ONLY fire when autoplay is OFF (AI handles everything when autoplay ON)
+## NotificationManager — manages mobile push notifications
+## Activity log/alerts ALWAYS show events (handled by hq_tab.gd)
+## Push notifications controlled by user settings (Settings menu)
 ## Priority levels: CRITICAL (red, always shown), IMPORTANT (yellow, configurable), OPTIONAL (blue, configurable)
 
 enum Priority {
@@ -117,10 +118,11 @@ func send_notification(
 	category: Category,
 	metadata: Dictionary = {}
 ) -> void:
-	"""Send a notification (in-game and optionally mobile push)"""
+	"""Send a notification (mobile push notifications based on user settings)
+	Note: Activity log/alerts always show events regardless of these settings"""
 
-	# Skip if autoplay is ON (AI handles everything)
-	if GameState.settings.get("autoplay", false):
+	# Check if notifications are globally enabled
+	if not GameState.settings.get("notifications_enabled", true):
 		return
 
 	# Check if this priority/category is enabled
