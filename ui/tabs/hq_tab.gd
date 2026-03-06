@@ -924,6 +924,9 @@ func _setup_policies_ui() -> void:
 			if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
 				TimeScale.set_speed(1.0)
 			print("AUTOPLAY: DISABLED — Manual control, speed reset to 1x")
+
+		# Sync autoplay toggle to server (critical for MP)
+		TestHarness.on_settings_changed()
 	)
 	autoplay_title_row.add_child(autoplay_btn)
 

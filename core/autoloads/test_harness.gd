@@ -266,6 +266,9 @@ func _sync_policies_to_server() -> void:
 		"supply_policy": GameState.supply_policy,
 		"encounter_policy": GameState.encounter_policy,
 		"maintenance_policy": GameState.maintenance_policy,
+		# Autoplay toggle (critical - server AI won't run without this!)
+		"autoplay": GameState.settings.get("autoplay", false),
+		"auto_sell_at_markets": GameState.settings.get("auto_sell_at_markets", false),
 		# Autoplay settings
 		"autoplay_risk_tolerance": GameState.autoplay_risk_tolerance,
 		"autoplay_growth_rate": GameState.autoplay_growth_rate,
