@@ -11,6 +11,9 @@ var is_processing: bool = false
 
 
 func _ready() -> void:
+	# Switch to SERVER mode once at the start
+	BackendManager.switch_mode(BackendManager.BackendMode.SERVER)
+
 	# Connect buttons
 	register_btn.pressed.connect(_on_register)
 	back_btn.pressed.connect(_on_back)
@@ -62,10 +65,7 @@ func _on_register() -> void:
 	_set_processing(true)
 	_show_status("Creating account...", Color(0.8, 0.8, 0.8))
 
-	# Switch to server backend
-	BackendManager.switch_mode(BackendManager.BackendMode.SERVER)
-
-	# Attempt registration
+	# Attempt registration (already in SERVER mode from _ready)
 	var result: Dictionary = await BackendManager.register(username, password, email)
 
 	if result.get("success", false):

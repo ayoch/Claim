@@ -13,6 +13,9 @@ var continue_session_btn: Button = null
 
 
 func _ready() -> void:
+	# Switch to SERVER mode once at the start (prevents multiple resets)
+	BackendManager.switch_mode(BackendManager.BackendMode.SERVER)
+
 	# Hide email field - only needed for registration
 	email_input.visible = false
 	if email_input.get_parent() and email_input.get_parent().get_class() == "VBoxContainer":
@@ -45,7 +48,6 @@ func _ready() -> void:
 
 func _load_saved_username() -> void:
 	"""Load and populate saved username"""
-	BackendManager.switch_mode(BackendManager.BackendMode.SERVER)
 	var server_backend = BackendManager.get_server_backend()
 	if server_backend:
 		var saved_user: String = server_backend.get_saved_username()
@@ -55,7 +57,6 @@ func _load_saved_username() -> void:
 
 func _check_saved_session() -> void:
 	"""Check if there's a saved session and show continue button if so"""
-	BackendManager.switch_mode(BackendManager.BackendMode.SERVER)
 	var server_backend = BackendManager.get_server_backend()
 	if not server_backend or not server_backend.has_saved_session():
 		return
@@ -86,7 +87,6 @@ func _on_continue_session() -> void:
 func _try_auto_login() -> void:
 	"""Attempt auto-login with saved session token"""
 	print("=== Auto-Login Attempt ===")
-	BackendManager.switch_mode(BackendManager.BackendMode.SERVER)
 	var server_backend = BackendManager.get_server_backend()
 
 	if not server_backend:
@@ -148,10 +148,7 @@ func _on_login() -> void:
 	_set_processing(true)
 	_show_status("Logging in...", Color(0.8, 0.8, 0.8))
 
-	# Switch to server backend
-	BackendManager.switch_mode(BackendManager.BackendMode.SERVER)
-
-	# Attempt login
+	# Attempt login (already in SERVER mode from _ready)
 	var result: Dictionary = await BackendManager.login(username, password)
 
 	if result.get("success", false):
