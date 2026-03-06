@@ -174,7 +174,7 @@ func hire_worker(colony_id: int):
 func fire_worker(worker_id: int) -> void:
 	for worker in GameState.workers:
 		if worker.get_instance_id() == worker_id:
-			GameState.fire_worker(worker)
+			WorkerManager.fire_worker(worker)
 			break
 
 

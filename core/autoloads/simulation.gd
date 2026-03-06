@@ -1050,7 +1050,7 @@ func _check_ship_collisions(prev_positions: Dictionary) -> void:
 		# Remove all crew (iterate copy - fire_worker mutates ship.crew)
 		for w in ship.crew.duplicate():
 			if w is Worker:
-				GameState.fire_worker(w)
+				WorkerManager.fire_worker(w)
 		# Clean up missions
 		if ship.current_mission:
 			GameState.missions.erase(ship.current_mission)
@@ -1311,7 +1311,7 @@ func _process_rescues(dt: float) -> void:
 		# 10% worker loss chance per worker
 		for w in workers_to_check:
 			if w is Worker and randf() < 0.1:
-				GameState.fire_worker(w)
+				WorkerManager.fire_worker(w)
 
 		EventBus.rescue_mission_completed.emit(ship)
 
@@ -2767,7 +2767,7 @@ func _process_worker_leave(dt: float) -> void:
 				workers_to_quit.append(w)
 
 	for w in workers_to_quit:
-		GameState.fire_worker(w)
+		WorkerManager.fire_worker(w)
 
 func _process_greedy_wages(dt: float) -> void:
 	_greedy_wage_accumulator += dt

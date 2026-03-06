@@ -262,7 +262,7 @@ func _create_location_section(location: String, workers: Array, ships: Array) ->
 						WorkerManager._invalidate_worker_cache()
 						_dirty_all = true
 				else:
-					GameState.fire_worker(worker)
+					WorkerManager.fire_worker(worker)
 			)
 			hbox.add_child(fire_btn)
 

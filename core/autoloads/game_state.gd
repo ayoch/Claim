@@ -518,48 +518,20 @@ func remove_worker_from_ship(worker: Worker, ship: Ship) -> void:
 	if worker.assigned_ship == ship:
 		worker.assigned_ship = null
 
+## DEPRECATED: Forwarding stub - use WorkerManager.fire_worker() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func fire_worker(worker: Worker) -> void:
-	Worker.release_name(worker.worker_name)
-	workers.erase(worker)
-	_invalidate_worker_cache()
-	# Remove from ship crew
-	if worker.assigned_ship:
-		worker.assigned_ship.crew.erase(worker)
-	worker.assigned_ship = null
-	# Remove from any mining unit — check all deployed units in case pointer is out of sync
-	if worker.assigned_mining_unit and is_instance_valid(worker.assigned_mining_unit):
-		worker.assigned_mining_unit.assigned_workers.erase(worker)
-	for unit in deployed_mining_units:
-		if worker in unit.assigned_workers:
-			unit.assigned_workers.erase(worker)
-	worker.assigned_mining_unit = null
+	WorkerManager.fire_worker(worker)
 
-	# Final cleanup to break all circular references
-	worker.cleanup()
-	EventBus.worker_fired.emit(worker)
-
-## Mode-aware worker hiring - works in both LOCAL and SERVER modes
+## DEPRECATED: Forwarding stub - use WorkerManager.hire_worker_any_mode() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func hire_worker_any_mode(worker_id: int) -> void:
-	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
-		# SERVER mode: route through BackendManager
-		await BackendManager.hire_worker(worker_id)
-		# Note: Worker will appear in GameState on next automatic state poll
-		# UI should set dirty flag after await completes
-	else:
-		push_warning("hire_worker_any_mode() called in LOCAL mode - use hire_worker(worker) instead")
+	await WorkerManager.hire_worker_any_mode(worker_id)
 
-## Mode-aware worker firing - works in both LOCAL and SERVER modes
+## DEPRECATED: Forwarding stub - use WorkerManager.fire_worker_any_mode() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func fire_worker_any_mode(worker: Worker) -> void:
-	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
-		# SERVER mode: route through BackendManager using server ID
-		if worker.server_id > 0:
-			BackendManager.fire_worker(worker.server_id)
-			# State refresh will remove worker via polling
-		else:
-			push_warning("Worker %s has no server_id, cannot fire in SERVER mode" % worker.worker_name)
-	else:
-		# LOCAL mode: use local GameState directly
-		fire_worker(worker)
+	WorkerManager.fire_worker_any_mode(worker)
 
 ## Criminal Ban System: Record violations at colonies
 func record_worker_death_violation(worker: Worker, reason: String) -> void:

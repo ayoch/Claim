@@ -486,7 +486,7 @@ func _manage_workforce() -> void:
 					worst = w
 			if worst:
 				# Mode-aware firing (async but fire-and-forget for AI loop)
-				GameState.fire_worker_any_mode(worst)
+				WorkerManager.fire_worker_any_mode(worst)
 
 func _resolve_all_tardy() -> void:
 	var snapshot := GameState.tardy_workers.duplicate()
