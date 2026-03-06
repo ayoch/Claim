@@ -11,6 +11,8 @@ signal resource_changed(ore_type: ResourceTypes.OreType, new_amount: float)
 # Workers
 signal worker_hired(worker: Worker)
 signal worker_fired(worker: Worker)
+signal worker_assigned(worker: Worker, target)  # target can be Ship or MiningUnit
+signal worker_unassigned(worker: Worker)
 signal worker_skill_leveled(worker: Worker, skill_type: int, new_value: float)
 signal worker_wage_increased(worker: Worker, amount: int)
 
