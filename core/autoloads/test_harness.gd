@@ -77,6 +77,7 @@ var stockpile_collects: int = 0
 var stockpile_tons_collected: float = 0.0
 
 # UI
+var overlay_panel: PanelContainer = null
 var overlay_label: Label = null
 
 func _ready() -> void:
@@ -142,20 +143,40 @@ func _ready() -> void:
 	EventBus.tick.connect(_on_tick)
 
 func _create_overlay() -> void:
+	# Create panel with opaque background
+	overlay_panel = PanelContainer.new()
+	overlay_panel.name = "TestHarnessOverlay"
+	overlay_panel.anchor_left = 0.0
+	overlay_panel.anchor_top = 0.0
+	overlay_panel.offset_left = 8.0
+	overlay_panel.offset_top = 8.0
+	overlay_panel.z_index = 4096
+	overlay_panel.visible = false
+
+	# Create dark semi-transparent background
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.0, 0.0, 0.0, 0.85)  # Dark background, 85% opaque
+	style.border_color = Color(0.9, 0.7, 0.3, 1.0)  # Gold border
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.content_margin_left = 8
+	style.content_margin_top = 8
+	style.content_margin_right = 8
+	style.content_margin_bottom = 8
+	overlay_panel.add_theme_stylebox_override("panel", style)
+
+	# Create label inside panel
 	overlay_label = Label.new()
-	overlay_label.name = "TestHarnessOverlay"
-	overlay_label.anchor_left = 0.0
-	overlay_label.anchor_top = 0.0
-	overlay_label.offset_left = 8.0
-	overlay_label.offset_top = 8.0
 	overlay_label.add_theme_font_size_override("font_size", 14)
 	overlay_label.add_theme_color_override("font_color", Color.YELLOW)
-	overlay_label.z_index = 4096
-	overlay_label.visible = false
+
+	overlay_panel.add_child(overlay_label)
 	call_deferred("_add_overlay")
 
 func _add_overlay() -> void:
-	get_tree().root.add_child.call_deferred(overlay_label)
+	get_tree().root.add_child.call_deferred(overlay_panel)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and event.keycode == KEY_5:
@@ -165,7 +186,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _toggle() -> void:
 	# Key 5 now only toggles stats overlay (AI controlled by autoplay setting)
 	enabled = !enabled
-	overlay_label.visible = enabled
+	overlay_panel.visible = enabled
 	if enabled:
 		print("TEST HARNESS: Stats overlay VISIBLE")
 	else:
