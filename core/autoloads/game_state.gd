@@ -46,29 +46,16 @@ var player_name: String = "Player"  # Default player name
 var local_leaderboard: Array[Dictionary] = []  # Single-player leaderboard entries
 const MAX_LEADERBOARD_ENTRIES: int = 100
 
-# Company policies
-var thrust_policy: int = CompanyPolicy.ThrustPolicy.BALANCED
-var supply_policy: int = CompanyPolicy.SupplyPolicy.ROUTINE
-var collection_policy: int = CompanyPolicy.CollectionPolicy.ROUTINE
-var encounter_policy: int = CompanyPolicy.EncounterPolicy.COEXIST
+# ═══════════════════════════════════════════════════════════════════════════════
+# POLICIES - Always-On Automation Rules (Active Regardless of Autoplay)
+# ═══════════════════════════════════════════════════════════════════════════════
+
 var repair_policy: int = CompanyPolicy.RepairPolicy.ALWAYS
 var cargo_policy: int = CompanyPolicy.CargoPolicy.STANDARD
+var collection_policy: int = CompanyPolicy.CollectionPolicy.ROUTINE
+var supply_policy: int = CompanyPolicy.SupplyPolicy.ROUTINE
+var encounter_policy: int = CompanyPolicy.EncounterPolicy.COEXIST
 var maintenance_policy: int = CompanyPolicy.MaintenancePolicy.AS_NEEDED
-var trading_policy: int = CompanyPolicy.TradingPolicy.IMMEDIATE
-var morale_policy: int = CompanyPolicy.MoralePolicy.BALANCED
-var automation_policy: int = CompanyPolicy.AutomationPolicy.SEMI_AUTO
-
-func get_thrust_policy(ship: Ship) -> int:
-	return ship.thrust_policy_override if ship.thrust_policy_override >= 0 else thrust_policy
-
-func get_supply_policy(ship: Ship) -> int:
-	return ship.supply_policy_override if ship.supply_policy_override >= 0 else supply_policy
-
-func get_collection_policy(ship: Ship) -> int:
-	return ship.collection_policy_override if ship.collection_policy_override >= 0 else collection_policy
-
-func get_encounter_policy(ship: Ship) -> int:
-	return ship.encounter_policy_override if ship.encounter_policy_override >= 0 else encounter_policy
 
 func get_repair_policy(ship: Ship) -> int:
 	return ship.repair_policy_override if ship.repair_policy_override >= 0 else repair_policy
@@ -76,17 +63,43 @@ func get_repair_policy(ship: Ship) -> int:
 func get_cargo_policy(ship: Ship) -> int:
 	return ship.cargo_policy_override if ship.cargo_policy_override >= 0 else cargo_policy
 
+func get_collection_policy(ship: Ship) -> int:
+	return ship.collection_policy_override if ship.collection_policy_override >= 0 else collection_policy
+
+func get_supply_policy(ship: Ship) -> int:
+	return ship.supply_policy_override if ship.supply_policy_override >= 0 else supply_policy
+
+func get_encounter_policy(ship: Ship) -> int:
+	return ship.encounter_policy_override if ship.encounter_policy_override >= 0 else encounter_policy
+
 func get_maintenance_policy(ship: Ship) -> int:
 	return ship.maintenance_policy_override if ship.maintenance_policy_override >= 0 else maintenance_policy
 
-func get_trading_policy(ship: Ship) -> int:
-	return ship.trading_policy_override if ship.trading_policy_override >= 0 else trading_policy
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUTOPLAY SETTINGS - AI Strategy (Only Active When Autoplay Enabled)
+# ═══════════════════════════════════════════════════════════════════════════════
 
-func get_morale_policy(ship: Ship) -> int:
-	return ship.morale_policy_override if ship.morale_policy_override >= 0 else morale_policy
+# Core Strategy (Sliders 0-100)
+var autoplay_risk_tolerance: int = 50
+var autoplay_growth_rate: int = 50
+var autoplay_resource_focus: int = 50
 
-func get_automation_policy(ship: Ship) -> int:
-	return ship.automation_policy_override if ship.automation_policy_override >= 0 else automation_policy
+# Operational Strategy
+var autoplay_diversification: int = AutoplaySettings.DiversificationStrategy.MIXED
+var autoplay_workforce: int = AutoplaySettings.WorkforcePhilosophy.ADEQUATE
+var autoplay_technology: int = AutoplaySettings.TechnologyInvestment.BALANCED
+var autoplay_market_timing: int = AutoplaySettings.MarketTiming.IMMEDIATE
+var autoplay_territorial: int = AutoplaySettings.TerritorialStrategy.REGIONAL
+
+# Advanced Settings
+var autoplay_contract_priority: int = AutoplaySettings.ContractPriority.OPPORTUNISTIC
+var autoplay_upgrade_preference: int = AutoplaySettings.UpgradePreference.BALANCED
+var autoplay_debt_tolerance: int = AutoplaySettings.DebtTolerance.CONSERVATIVE
+var autoplay_partnership_strategy: int = AutoplaySettings.PartnershipStrategy.CONTESTED_ONLY
+var autoplay_rescue_priority: int = AutoplaySettings.RescuePriority.COST_CONSCIOUS
+var autoplay_colony_preference: int = AutoplaySettings.ColonyPreference.PRICE_OPTIMIZE
+var autoplay_retrofit_schedule: int = AutoplaySettings.RetrofitSchedule.BALANCED
+var autoplay_exploration_focus: int = AutoplaySettings.ExplorationFocus.BALANCED
 
 # Game clock: total elapsed game-seconds (ticks) since game start
 var total_ticks: float = 0.0
@@ -3024,16 +3037,30 @@ func save_game(save_name: String = "") -> void:
 		"game_start_day": game_start_day,
 		"game_start_year": game_start_year,
 		"total_crew_deaths": total_crew_deaths,
-		"thrust_policy": thrust_policy,
-		"supply_policy": supply_policy,
-		"collection_policy": collection_policy,
-		"encounter_policy": encounter_policy,
+		# Policies (always-on automation)
 		"repair_policy": repair_policy,
 		"cargo_policy": cargo_policy,
+		"collection_policy": collection_policy,
+		"supply_policy": supply_policy,
+		"encounter_policy": encounter_policy,
 		"maintenance_policy": maintenance_policy,
-		"trading_policy": trading_policy,
-		"morale_policy": morale_policy,
-		"automation_policy": automation_policy,
+		# Autoplay Settings (AI strategy)
+		"autoplay_risk_tolerance": autoplay_risk_tolerance,
+		"autoplay_growth_rate": autoplay_growth_rate,
+		"autoplay_resource_focus": autoplay_resource_focus,
+		"autoplay_diversification": autoplay_diversification,
+		"autoplay_workforce": autoplay_workforce,
+		"autoplay_technology": autoplay_technology,
+		"autoplay_market_timing": autoplay_market_timing,
+		"autoplay_territorial": autoplay_territorial,
+		"autoplay_contract_priority": autoplay_contract_priority,
+		"autoplay_upgrade_preference": autoplay_upgrade_preference,
+		"autoplay_debt_tolerance": autoplay_debt_tolerance,
+		"autoplay_partnership_strategy": autoplay_partnership_strategy,
+		"autoplay_rescue_priority": autoplay_rescue_priority,
+		"autoplay_colony_preference": autoplay_colony_preference,
+		"autoplay_retrofit_schedule": autoplay_retrofit_schedule,
+		"autoplay_exploration_focus": autoplay_exploration_focus,
 		"resources": {},
 		"workers": [],
 		"ships": [],
@@ -3437,16 +3464,32 @@ func load_game(file_name: String = "save_game.json") -> bool:
 	var data: Dictionary = json.data
 
 	money = int(data.get("money", 10000))
-	thrust_policy = int(data.get("thrust_policy", CompanyPolicy.ThrustPolicy.BALANCED))
-	supply_policy = int(data.get("supply_policy", CompanyPolicy.SupplyPolicy.ROUTINE))
-	collection_policy = int(data.get("collection_policy", CompanyPolicy.CollectionPolicy.ROUTINE))
-	encounter_policy = int(data.get("encounter_policy", CompanyPolicy.EncounterPolicy.COEXIST))
+
+	# Policies (always-on automation)
 	repair_policy = int(data.get("repair_policy", CompanyPolicy.RepairPolicy.ALWAYS))
 	cargo_policy = int(data.get("cargo_policy", CompanyPolicy.CargoPolicy.STANDARD))
+	collection_policy = int(data.get("collection_policy", CompanyPolicy.CollectionPolicy.ROUTINE))
+	supply_policy = int(data.get("supply_policy", CompanyPolicy.SupplyPolicy.ROUTINE))
+	encounter_policy = int(data.get("encounter_policy", CompanyPolicy.EncounterPolicy.COEXIST))
 	maintenance_policy = int(data.get("maintenance_policy", CompanyPolicy.MaintenancePolicy.AS_NEEDED))
-	trading_policy = int(data.get("trading_policy", CompanyPolicy.TradingPolicy.IMMEDIATE))
-	morale_policy = int(data.get("morale_policy", CompanyPolicy.MoralePolicy.BALANCED))
-	automation_policy = int(data.get("automation_policy", CompanyPolicy.AutomationPolicy.SEMI_AUTO))
+
+	# Autoplay Settings (AI strategy) - backward compatible with old saves
+	autoplay_risk_tolerance = int(data.get("autoplay_risk_tolerance", 50))
+	autoplay_growth_rate = int(data.get("autoplay_growth_rate", 50))
+	autoplay_resource_focus = int(data.get("autoplay_resource_focus", 50))
+	autoplay_diversification = int(data.get("autoplay_diversification", AutoplaySettings.DiversificationStrategy.MIXED))
+	autoplay_workforce = int(data.get("autoplay_workforce", AutoplaySettings.WorkforcePhilosophy.ADEQUATE))
+	autoplay_technology = int(data.get("autoplay_technology", AutoplaySettings.TechnologyInvestment.BALANCED))
+	autoplay_market_timing = int(data.get("autoplay_market_timing", AutoplaySettings.MarketTiming.IMMEDIATE))
+	autoplay_territorial = int(data.get("autoplay_territorial", AutoplaySettings.TerritorialStrategy.REGIONAL))
+	autoplay_contract_priority = int(data.get("autoplay_contract_priority", AutoplaySettings.ContractPriority.OPPORTUNISTIC))
+	autoplay_upgrade_preference = int(data.get("autoplay_upgrade_preference", AutoplaySettings.UpgradePreference.BALANCED))
+	autoplay_debt_tolerance = int(data.get("autoplay_debt_tolerance", AutoplaySettings.DebtTolerance.CONSERVATIVE))
+	autoplay_partnership_strategy = int(data.get("autoplay_partnership_strategy", AutoplaySettings.PartnershipStrategy.CONTESTED_ONLY))
+	autoplay_rescue_priority = int(data.get("autoplay_rescue_priority", AutoplaySettings.RescuePriority.COST_CONSCIOUS))
+	autoplay_colony_preference = int(data.get("autoplay_colony_preference", AutoplaySettings.ColonyPreference.PRICE_OPTIMIZE))
+	autoplay_retrofit_schedule = int(data.get("autoplay_retrofit_schedule", AutoplaySettings.RetrofitSchedule.BALANCED))
+	autoplay_exploration_focus = int(data.get("autoplay_exploration_focus", AutoplaySettings.ExplorationFocus.BALANCED))
 	settings["autoplay"] = data.get("autoplay", false)
 	settings["auto_sell_at_earth"] = data.get("auto_sell_at_earth", true)
 	settings["auto_sell_at_markets"] = data.get("auto_sell_at_markets", false)
@@ -4055,11 +4098,18 @@ func apply_server_state(server_data: Dictionary) -> void:
 		TimeScale.speed_multiplier = server_speed
 		print("Synced speed with server: %.1fx" % server_speed)
 
-	# Update player policies
-	thrust_policy = int(server_data.get("thrust_policy", thrust_policy))
-	supply_policy = int(server_data.get("supply_policy", supply_policy))
+	# Update player policies (always-on automation)
+	repair_policy = int(server_data.get("repair_policy", repair_policy))
+	cargo_policy = int(server_data.get("cargo_policy", cargo_policy))
 	collection_policy = int(server_data.get("collection_policy", collection_policy))
+	supply_policy = int(server_data.get("supply_policy", supply_policy))
 	encounter_policy = int(server_data.get("encounter_policy", encounter_policy))
+	maintenance_policy = int(server_data.get("maintenance_policy", maintenance_policy))
+
+	# Update autoplay settings (AI strategy)
+	autoplay_risk_tolerance = int(server_data.get("autoplay_risk_tolerance", autoplay_risk_tolerance))
+	autoplay_growth_rate = int(server_data.get("autoplay_growth_rate", autoplay_growth_rate))
+	autoplay_resource_focus = int(server_data.get("autoplay_resource_focus", autoplay_resource_focus))
 	settings["auto_sell_on_return"] = bool(server_data.get("auto_sell_on_return", settings.get("auto_sell_on_return", true)))
 
 	# Update ships (server only has: id, ship_name, fuel, cargo, position, is_stationed)
