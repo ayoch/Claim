@@ -1816,7 +1816,7 @@ func _show_asteroid_selection() -> void:
 	mining_vbox.add_theme_constant_override("separation", 6)
 
 	# Build a dummy worker list for estimation (use available workers)
-	var est_workers := GameState.get_available_workers()
+	var est_workers := WorkerManager.get_available_workers()
 	if est_workers.is_empty():
 		var placeholder := Worker.new()
 		placeholder.mining_skill = 1.0
@@ -2171,7 +2171,7 @@ func _update_destination_labels() -> void:
 			col_warning_label.text = ""
 
 	# Update mining destination labels in place
-	var est_workers := GameState.get_available_workers()
+	var est_workers := WorkerManager.get_available_workers()
 	if est_workers.is_empty():
 		var placeholder := Worker.new()
 		placeholder.mining_skill = 1.0
@@ -2402,7 +2402,7 @@ func _select_colony_trade(colony: Colony) -> void:
 			assigned.append(w)
 	if assigned.size() < _selected_ship.min_crew:
 		assigned.clear()
-		for w in GameState.get_available_workers():
+		for w in WorkerManager.get_available_workers():
 			assigned.append(w)
 			if assigned.size() >= _selected_ship.min_crew:
 				break
@@ -2599,7 +2599,7 @@ func _show_worker_selection() -> void:
 			dw_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 			dispatch_content.add_child(dw_label)
 
-			var available_for_deploy := GameState.get_available_workers()
+			var available_for_deploy := WorkerManager.get_available_workers()
 			# Remove already-selected transit crew
 			for w in _selected_workers:
 				available_for_deploy.erase(w)
@@ -2635,7 +2635,7 @@ func _show_worker_selection() -> void:
 	dispatch_content.add_child(crew_label)
 
 	# Determine available crew based on ship location
-	var available := GameState.get_available_workers()
+	var available := WorkerManager.get_available_workers()
 	var crew_locked := false  # True when crew can't be changed (ship is remote)
 
 	# Filter workers to only those at the same location as the ship
@@ -3216,7 +3216,7 @@ func _update_estimate_display() -> void:
 func _confirm_dispatch() -> void:
 	# Auto-assign crew if not enough selected
 	if _selected_workers.size() < _selected_ship.min_crew:
-		var available := GameState.get_available_workers()
+		var available := WorkerManager.get_available_workers()
 		# Sort by skill descending
 		available.sort_custom(func(a: Worker, b: Worker) -> bool:
 			return a.skill > b.skill

@@ -101,6 +101,58 @@ func fire_worker_any_mode(worker: Worker) -> void:
 
 
 ## ═══════════════════════════════════════════════════════════════════
+## WORKER ASSIGNMENT
+## ═══════════════════════════════════════════════════════════════════
+
+## Assign a worker to a ship's crew (with location validation)
+func assign_worker_to_ship(worker: Worker, ship: Ship) -> Dictionary:
+	# Location validation: worker must be at same colony as ship
+	if ship:
+		var ship_location := ""
+		if ship.docked_at_earth:
+			ship_location = "Earth"
+		elif ship.docked_at_colony != null:
+			ship_location = ship.docked_at_colony.colony_name
+		else:
+			return {"success": false, "error": "Ship must be docked to assign crew"}
+
+		if worker.home_colony != ship_location:
+			return {"success": false, "error": "Worker at %s cannot crew ship at %s" % [worker.home_colony, ship_location]}
+
+	# Proceed with assignment
+	if worker.assigned_ship == ship:
+		return {"success": true}
+	if worker.assigned_ship:
+		worker.assigned_ship.crew.erase(worker)
+	worker.assigned_ship = ship
+	if ship and worker not in ship.crew:
+		ship.crew.append(worker)
+	return {"success": true}
+
+
+## Remove a worker from a ship's crew
+func remove_worker_from_ship(worker: Worker, ship: Ship) -> void:
+	ship.crew.erase(worker)
+	if worker.assigned_ship == ship:
+		worker.assigned_ship = null
+
+
+## Get list of workers available for assignment (cached)
+func get_available_workers() -> Array[Worker]:
+	if not _game_state:
+		push_error("[WorkerManager] GameState not initialized")
+		return []
+
+	if _available_workers_dirty:
+		_available_workers_cache.clear()
+		for w in _game_state.workers:
+			if w.is_available:
+				_available_workers_cache.append(w)
+		_available_workers_dirty = false
+	return _available_workers_cache
+
+
+## ═══════════════════════════════════════════════════════════════════
 ## CACHE MANAGEMENT
 ## ═══════════════════════════════════════════════════════════════════
 

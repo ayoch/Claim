@@ -887,7 +887,7 @@ func _show_asteroid_selection() -> void:
 	if _selected_ship.last_crew.size() >= _selected_ship.min_crew:
 		est_workers.assign(_selected_ship.last_crew)
 	else:
-		var available := GameState.get_available_workers()
+		var available := WorkerManager.get_available_workers()
 		var crew_size: int = maxi(_selected_ship.min_crew, 1)
 		est_workers.assign(available.slice(0, crew_size))
 	if est_workers.is_empty():
@@ -1117,7 +1117,7 @@ func _show_worker_selection() -> void:
 	crew_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
 	dispatch_content.add_child(crew_label)
 
-	var available := GameState.get_available_workers()
+	var available := WorkerManager.get_available_workers()
 	if available.size() < _selected_ship.min_crew:
 		var label := _lbl()
 		label.text = "Not enough crew! Need %d, have %d available. Hire more first." % [

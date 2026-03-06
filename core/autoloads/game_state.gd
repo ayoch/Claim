@@ -489,34 +489,15 @@ func remove_resource(ore_type: ResourceTypes.OreType, amount: float) -> bool:
 func hire_worker(worker: Worker) -> void:
 	WorkerManager.hire_worker(worker)
 
+## DEPRECATED: Forwarding stub - use WorkerManager.assign_worker_to_ship() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func assign_worker_to_ship(worker: Worker, ship: Ship) -> Dictionary:
-	# Location validation: worker must be at same colony as ship
-	if ship:
-		var ship_location := ""
-		if ship.docked_at_earth:
-			ship_location = "Earth"
-		elif ship.docked_at_colony != null:
-			ship_location = ship.docked_at_colony.colony_name
-		else:
-			return {"success": false, "error": "Ship must be docked to assign crew"}
+	return WorkerManager.assign_worker_to_ship(worker, ship)
 
-		if worker.home_colony != ship_location:
-			return {"success": false, "error": "Worker at %s cannot crew ship at %s" % [worker.home_colony, ship_location]}
-
-	# Proceed with assignment
-	if worker.assigned_ship == ship:
-		return {"success": true}
-	if worker.assigned_ship:
-		worker.assigned_ship.crew.erase(worker)
-	worker.assigned_ship = ship
-	if ship and worker not in ship.crew:
-		ship.crew.append(worker)
-	return {"success": true}
-
+## DEPRECATED: Forwarding stub - use WorkerManager.remove_worker_from_ship() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func remove_worker_from_ship(worker: Worker, ship: Ship) -> void:
-	ship.crew.erase(worker)
-	if worker.assigned_ship == ship:
-		worker.assigned_ship = null
+	WorkerManager.remove_worker_from_ship(worker, ship)
 
 ## DEPRECATED: Forwarding stub - use WorkerManager.fire_worker() instead
 ## TODO: Remove after all references are migrated to WorkerManager
@@ -799,14 +780,10 @@ func _invalidate_worker_cache() -> void:
 func _invalidate_ship_cache() -> void:
 	_docked_ships_dirty = true
 
+## DEPRECATED: Forwarding stub - use WorkerManager.get_available_workers() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func get_available_workers() -> Array[Worker]:
-	if _available_workers_dirty:
-		_available_workers_cache.clear()
-		for w in workers:
-			if w.is_available:
-				_available_workers_cache.append(w)
-		_available_workers_dirty = false
-	return _available_workers_cache
+	return WorkerManager.get_available_workers()
 
 func get_docked_ships() -> Array[Ship]:
 	if _docked_ships_dirty:

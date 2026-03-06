@@ -193,7 +193,7 @@ func assign_worker(worker_id: int, ship_id: int) -> void:
 			break
 
 	if worker and ship:
-		GameState.assign_worker_to_ship(worker, ship)
+		WorkerManager.assign_worker_to_ship(worker, ship)
 
 
 func unassign_worker(worker_id: int) -> void:
@@ -204,7 +204,7 @@ func unassign_worker(worker_id: int) -> void:
 			break
 
 	if worker and worker.assigned_ship:
-		GameState.remove_worker_from_ship(worker, worker.assigned_ship)
+		WorkerManager.remove_worker_from_ship(worker, worker.assigned_ship)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -71,7 +71,7 @@ func _ready() -> void:
 			w.pilot_skill = 0.5
 			w.engineer_skill = 0.5
 			GameState.workers.append(w)
-			GameState.assign_worker_to_ship(w, ship1)
+			WorkerManager.assign_worker_to_ship(w, ship1)
 
 	var mission := MissionManager.start_mission(ship1, target)
 	if mission == null:

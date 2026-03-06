@@ -478,7 +478,7 @@ func _manage_workforce() -> void:
 
 	# Fire excess available workers (keep it gentle — 1 per day)
 	if GameState.workers.size() > target + 1:
-		var available := GameState.get_available_workers()
+		var available := WorkerManager.get_available_workers()
 		if available.size() > 2:
 			var worst: Worker = null
 			for w in available:
@@ -634,7 +634,7 @@ func _send_docked_ship(ship: Ship) -> void:
 			print("AUTOTEST: Ship %s waiting for fuel (%.1f/%.1f)" % [ship.ship_name, ship.fuel, ship.get_effective_fuel_capacity()])
 			return
 
-	var available := GameState.get_available_workers()
+	var available := WorkerManager.get_available_workers()
 	if available.size() < ship.min_crew:
 		print("AUTOTEST: Ship %s waiting for crew (%d/%d available)" % [ship.ship_name, available.size(), ship.min_crew])
 		return
@@ -787,7 +787,7 @@ func _handle_idle_remote(ship: Ship) -> void:
 				if amount > 0.0:
 					cargo_to_load[ore_type] = amount
 			if not cargo_to_load.is_empty():
-				var avail := GameState.get_available_workers()
+				var avail := WorkerManager.get_available_workers()
 				var crew: Array[Worker] = []
 				for i in range(mini(ship.min_crew, avail.size())):
 					crew.append(avail[i])
@@ -808,7 +808,7 @@ func _handle_idle_remote(ship: Ship) -> void:
 		for _ot in pile:
 			pile_tons += pile[_ot]
 		if pile_tons > 10.0 and ship.get_cargo_remaining() > 10.0:
-			var collect_available := GameState.get_available_workers()
+			var collect_available := WorkerManager.get_available_workers()
 			if collect_available.size() >= ship.min_crew:
 				var collect_crew: Array[Worker] = []
 				for i in range(ship.min_crew):
@@ -818,7 +818,7 @@ func _handle_idle_remote(ship: Ship) -> void:
 				return
 
 	# If we have available crew, send to a new asteroid from here
-	var available := GameState.get_available_workers()
+	var available := WorkerManager.get_available_workers()
 	if available.size() >= ship.min_crew:
 		var crew: Array[Worker] = []
 		for i in range(ship.min_crew):
@@ -904,7 +904,7 @@ func _get_crew_for_ship(ship: Ship) -> Array[Worker]:
 	if not ship.last_crew.is_empty():
 		crew = ship.last_crew.duplicate()
 	else:
-		var avail := GameState.get_available_workers()
+		var avail := WorkerManager.get_available_workers()
 		for i in range(mini(ship.min_crew, avail.size())):
 			crew.append(avail[i])
 	return crew
@@ -1450,7 +1450,7 @@ func _update_overlay() -> void:
 		"AI CORP | %dd | $%s | Err: %d\n" % [int(elapsed_days), money_m, error_count]
 		+ "Ships: %d (act %d idle %d derl %d) | Workers: %d (avail %d)\n" % [
 			GameState.ships.size(), ships_active, ships_idle, derelict_count,
-			GameState.workers.size(), GameState.get_available_workers().size()]
+			GameState.workers.size(), WorkerManager.get_available_workers().size()]
 		+ "Mine: %d/%d | Trade: %d/%d | Deploy: %d/%d | Collect: %d/%d\n" % [
 			missions_completed, missions_started,
 			trade_missions_completed, trade_missions_started,

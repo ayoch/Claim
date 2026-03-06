@@ -1443,7 +1443,7 @@ func _refresh_missions() -> void:
 
 func _refresh_workers() -> void:
 	var total := GameState.workers.size()
-	var available := GameState.get_available_workers().size()
+	var available := WorkerManager.get_available_workers().size()
 	workers_summary.text = "%d crew (%d available)" % [total, available]
 
 

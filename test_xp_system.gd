@@ -97,7 +97,7 @@ func _setup_test_scenario() -> void:
 	var assigned := 0
 	for worker in GameState.workers:
 		if assigned < 2:
-			GameState.assign_worker_to_ship(worker, ship)
+			WorkerManager.assign_worker_to_ship(worker, ship)
 			assigned += 1
 	
 	_log("  Assigned %d workers to %s" % [assigned, ship.ship_name])

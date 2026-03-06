@@ -84,7 +84,7 @@ func _refresh_crew() -> void:
 	_free_children(workers_list)
 
 	var total := GameState.workers.size()
-	var available := GameState.get_available_workers().size()
+	var available := WorkerManager.get_available_workers().size()
 	crew_count.text = "%d crew (%d available)" % [total, available]
 
 	if GameState.workers.is_empty():

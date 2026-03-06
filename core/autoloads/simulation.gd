@@ -1695,7 +1695,7 @@ func _get_policy_crew(ship: Ship) -> Array[Worker]:
 			crew.append(w)
 	if crew.size() < ship.min_crew:
 		crew.clear()
-		var available := GameState.get_available_workers()
+		var available := WorkerManager.get_available_workers()
 		for i in mini(ship.min_crew, available.size()):
 			crew.append(available[i])
 	return crew
@@ -1729,7 +1729,7 @@ func _autoplay_dispatch_from_earth(ship: Ship) -> void:
 			crew.append(w)
 	if crew.size() < ship.min_crew:
 		crew.clear()
-		var available := GameState.get_available_workers()
+		var available := WorkerManager.get_available_workers()
 		for i in mini(ship.min_crew, available.size()):
 			crew.append(available[i])
 	if crew.size() < ship.min_crew:
@@ -3742,7 +3742,7 @@ func _check_violation_warnings() -> void:
 			GameState.dismiss_warning(warning_id_base + "_3")
 
 func _check_crew_warnings() -> void:
-	var available_count := GameState.get_available_workers().size()
+	var available_count := WorkerManager.get_available_workers().size()
 	var total_count := GameState.workers.size()
 
 	# Warning: Only 1 worker remains

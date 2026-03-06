@@ -780,7 +780,7 @@ func _start_trade(colony: Colony) -> void:
 		ship.fuel = ship.fuel_capacity
 		GameState.money -= fuel_cost
 
-	var workers := GameState.get_available_workers()
+	var workers := WorkerManager.get_available_workers()
 	var assigned: Array[Worker] = []
 	for i in range(mini(ship.min_crew, workers.size())):
 		assigned.append(workers[i])
