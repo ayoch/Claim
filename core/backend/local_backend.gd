@@ -167,7 +167,7 @@ func hire_worker(colony_id: int):
 	worker.loyalty = randf_range(45.0, 65.0)
 	worker.is_available = true
 
-	GameState.hire_worker(worker)
+	WorkerManager.hire_worker(worker)
 	return worker
 
 

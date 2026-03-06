@@ -471,9 +471,9 @@ func _manage_workforce() -> void:
 		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
 			# In SERVER mode, we need worker_id from available workers list
 			# For test harness, just hire locally for now (server hiring requires available worker pool)
-			GameState.hire_worker(worker)
+			WorkerManager.hire_worker(worker)
 		else:
-			GameState.hire_worker(worker)
+			WorkerManager.hire_worker(worker)
 		workers_hired += 1
 
 	# Fire excess available workers (keep it gentle — 1 per day)

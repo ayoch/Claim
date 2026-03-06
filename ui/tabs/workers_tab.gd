@@ -259,7 +259,7 @@ func _create_location_section(location: String, workers: Array, ships: Array) ->
 					if worker.server_id > 0:
 						BackendManager.fire_worker(worker.server_id)
 						GameState.workers.erase(worker)
-						GameState._invalidate_worker_cache()
+						WorkerManager._invalidate_worker_cache()
 						_dirty_all = true
 				else:
 					GameState.fire_worker(worker)
@@ -431,15 +431,15 @@ func _hire_candidate(worker: Worker) -> void:
 		# Optimistic update: show in crew immediately
 		_candidates.erase(worker)
 		GameState.workers.append(worker)
-		GameState._invalidate_worker_cache()
+		WorkerManager._invalidate_worker_cache()
 		_refresh_all()
 
 		# Confirm with server — revert if rejected
 		var result = await BackendManager.hire_worker(worker.server_id)
 		if result == null:
 			GameState.workers.erase(worker)
-			GameState._invalidate_worker_cache()
+			WorkerManager._invalidate_worker_cache()
 			_candidates.append(worker)
 			_refresh_all()
 	else:
-		GameState.hire_worker(worker)
+		WorkerManager.hire_worker(worker)

@@ -484,10 +484,10 @@ func remove_resource(ore_type: ResourceTypes.OreType, amount: float) -> bool:
 	EventBus.resource_changed.emit(ore_type, resources[ore_type])
 	return true
 
+## DEPRECATED: Forwarding stub - use WorkerManager.hire_worker() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func hire_worker(worker: Worker) -> void:
-	workers.append(worker)
-	_invalidate_worker_cache()
-	EventBus.worker_hired.emit(worker)
+	WorkerManager.hire_worker(worker)
 
 func assign_worker_to_ship(worker: Worker, ship: Ship) -> Dictionary:
 	# Location validation: worker must be at same colony as ship
@@ -819,8 +819,10 @@ func _send_ios_notification(title: String, body: String) -> void:
 		# Fallback: log for debugging
 		print("iOS notification (plugin required): %s - %s" % [title, body])
 
+## DEPRECATED: Forwarding stub - use WorkerManager._invalidate_worker_cache() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func _invalidate_worker_cache() -> void:
-	_available_workers_dirty = true
+	WorkerManager._invalidate_worker_cache()
 
 func _invalidate_ship_cache() -> void:
 	_docked_ships_dirty = true
