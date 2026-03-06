@@ -723,39 +723,20 @@ func _setup_policies_ui() -> void:
 	var scroll := get_node("ScrollContainer")
 	var vbox := scroll.get_node("VBox")
 
-	# Add policies card
+	# ══════════════════════════════════════════════════════════════════════════════
+	# SECTION 1: COMPANY POLICIES (Always-on automation rules)
+	# ══════════════════════════════════════════════════════════════════════════════
 	var policies_card := PanelContainer.new()
 	var policies_vbox := VBoxContainer.new()
 	policies_vbox.add_theme_constant_override("separation", 8)
 
-	var title_row := HBoxContainer.new()
-	var title := _lbl()
-	title.text = "COMPANY POLICIES"
-	title.add_theme_font_size_override("font_size", 18)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title_row.add_child(title)
-
-	var autoplay_btn := Button.new()
-	autoplay_btn.toggle_mode = true
-	autoplay_btn.button_pressed = GameState.settings.get("autoplay", false)
-	autoplay_btn.text = "AUTOPLAY: ON" if autoplay_btn.button_pressed else "AUTOPLAY: OFF"
-	autoplay_btn.custom_minimum_size = Vector2(130, 0)
-	autoplay_btn.toggled.connect(func(on: bool) -> void:
-		GameState.settings["autoplay"] = on
-		autoplay_btn.text = "AUTOPLAY: ON" if on else "AUTOPLAY: OFF"
-		# Auto-enable max speed when autoplay turns on
-		if on:
-			GameState.settings["auto_sell_at_markets"] = true
-			if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
-				TimeScale.set_speed(TimeScale.SPEED_MAX)
-			print("AUTOPLAY: ENABLED — AI corp running at max speed")
-		else:
-			GameState.settings["auto_sell_at_markets"] = false
-			if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
-				TimeScale.set_speed(1.0)
-			print("AUTOPLAY: DISABLED — Manual control, speed reset to 1x")
-	)
-	title_row.add_child(autoplay_btn)
+	var policies_title_row := HBoxContainer.new()
+	var policies_title := _lbl()
+	policies_title.text = "COMPANY POLICIES"
+	policies_title.add_theme_font_size_override("font_size", 18)
+	policies_title.add_theme_color_override("font_color", Color(0.3, 0.9, 0.9))
+	policies_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	policies_title_row.add_child(policies_title)
 
 	var restock_btn := Button.new()
 	restock_btn.toggle_mode = true
@@ -766,7 +747,7 @@ func _setup_policies_ui() -> void:
 		GameState.settings["auto_restock_torpedoes"] = on
 		restock_btn.text = "Auto Restock: ON" if on else "Auto Restock: OFF"
 	)
-	title_row.add_child(restock_btn)
+	policies_title_row.add_child(restock_btn)
 
 	var pause_btn := Button.new()
 	pause_btn.toggle_mode = true
@@ -777,7 +758,7 @@ func _setup_policies_ui() -> void:
 		GameState.settings["auto_pause_on_critical"] = on
 		pause_btn.text = "⚠️ Pause: ON" if on else "⚠️ Pause: OFF"
 	)
-	title_row.add_child(pause_btn)
+	policies_title_row.add_child(pause_btn)
 
 	var auto_sell_btn := Button.new()
 	auto_sell_btn.toggle_mode = true
@@ -790,12 +771,19 @@ func _setup_policies_ui() -> void:
 		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
 			BackendManager.update_policies({"auto_sell_on_return": on})
 	)
-	title_row.add_child(auto_sell_btn)
+	policies_title_row.add_child(auto_sell_btn)
 
-	policies_vbox.add_child(title_row)
+	policies_vbox.add_child(policies_title_row)
 
 	var policies_content := VBoxContainer.new()
 	policies_content.add_theme_constant_override("separation", 10)
+
+	var subtitle := _lbl()
+	subtitle.text = "These automation rules are ALWAYS ACTIVE (whether autoplay is on or off)"
+	subtitle.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	subtitle.add_theme_font_size_override("font_size", 12)
+	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	policies_content.add_child(subtitle)
 
 	# Helper: build one policy row with label, dropdown, and description
 	var _add_policy_row := func(
@@ -809,7 +797,7 @@ func _setup_policies_ui() -> void:
 		row.add_theme_constant_override("separation", 8)
 		var lbl := _lbl()
 		lbl.text = label_text
-		lbl.custom_minimum_size = Vector2(130, 0)
+		lbl.custom_minimum_size = Vector2(150, 0)
 		lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
 		row.add_child(lbl)
 		var opt := OptionButton.new()
@@ -831,13 +819,7 @@ func _setup_policies_ui() -> void:
 		policies_content.add_child(row)
 		policies_content.add_child(desc)
 
-	_add_policy_row.call(
-		"Thrust:",
-		CompanyPolicy.THRUST_POLICY_NAMES,
-		CompanyPolicy.THRUST_POLICY_DESCRIPTIONS,
-		func() -> int: return GameState.thrust_policy,
-		func(idx: int) -> void: GameState.thrust_policy = idx
-	)
+	# Only the 6 valid policies
 	_add_policy_row.call(
 		"Resupply:",
 		CompanyPolicy.SUPPLY_POLICY_NAMES,
@@ -880,33 +862,266 @@ func _setup_policies_ui() -> void:
 		func() -> int: return GameState.maintenance_policy,
 		func(idx: int) -> void: GameState.maintenance_policy = idx
 	)
-	_add_policy_row.call(
-		"Trading:",
-		CompanyPolicy.TRADING_POLICY_NAMES,
-		CompanyPolicy.TRADING_POLICY_DESCRIPTIONS,
-		func() -> int: return GameState.trading_policy,
-		func(idx: int) -> void: GameState.trading_policy = idx
-	)
-	_add_policy_row.call(
-		"Crew Morale:",
-		CompanyPolicy.MORALE_POLICY_NAMES,
-		CompanyPolicy.MORALE_POLICY_DESCRIPTIONS,
-		func() -> int: return GameState.morale_policy,
-		func(idx: int) -> void: GameState.morale_policy = idx
-	)
-	_add_policy_row.call(
-		"Automation:",
-		CompanyPolicy.AUTOMATION_POLICY_NAMES,
-		CompanyPolicy.AUTOMATION_POLICY_DESCRIPTIONS,
-		func() -> int: return GameState.automation_policy,
-		func(idx: int) -> void: GameState.automation_policy = idx
-	)
 
 	policies_vbox.add_child(policies_content)
 	policies_card.add_child(policies_vbox)
 	vbox.add_child(policies_card)
+	_make_collapsible("policies", policies_title, policies_content, true)
 
-	_make_collapsible("policies", title, policies_content, true)
+	# ══════════════════════════════════════════════════════════════════════════════
+	# SECTION 2: AUTOPLAY SETTINGS (AI strategy controls - only active when autoplay is ON)
+	# ══════════════════════════════════════════════════════════════════════════════
+	var autoplay_card := PanelContainer.new()
+	var autoplay_vbox := VBoxContainer.new()
+	autoplay_vbox.add_theme_constant_override("separation", 8)
+
+	var autoplay_title_row := HBoxContainer.new()
+	var autoplay_title := _lbl()
+	autoplay_title.text = "AUTOPLAY SETTINGS"
+	autoplay_title.add_theme_font_size_override("font_size", 18)
+	autoplay_title.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
+	autoplay_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	autoplay_title_row.add_child(autoplay_title)
+
+	var autoplay_btn := Button.new()
+	autoplay_btn.toggle_mode = true
+	autoplay_btn.button_pressed = GameState.settings.get("autoplay", false)
+	autoplay_btn.text = "AUTOPLAY: ON" if autoplay_btn.button_pressed else "AUTOPLAY: OFF"
+	autoplay_btn.custom_minimum_size = Vector2(150, 0)
+	autoplay_btn.add_theme_font_size_override("font_size", 16)
+	autoplay_btn.toggled.connect(func(on: bool) -> void:
+		GameState.settings["autoplay"] = on
+		autoplay_btn.text = "AUTOPLAY: ON" if on else "AUTOPLAY: OFF"
+		# Auto-enable max speed when autoplay turns on
+		if on:
+			GameState.settings["auto_sell_at_markets"] = true
+			if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+				TimeScale.set_speed(TimeScale.SPEED_MAX)
+			print("AUTOPLAY: ENABLED — AI corp running at max speed")
+		else:
+			GameState.settings["auto_sell_at_markets"] = false
+			if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+				TimeScale.set_speed(1.0)
+			print("AUTOPLAY: DISABLED — Manual control, speed reset to 1x")
+	)
+	autoplay_title_row.add_child(autoplay_btn)
+
+	autoplay_vbox.add_child(autoplay_title_row)
+
+	var autoplay_content := VBoxContainer.new()
+	autoplay_content.add_theme_constant_override("separation", 12)
+
+	var autoplay_subtitle := _lbl()
+	autoplay_subtitle.text = "These settings ONLY affect behavior when AUTOPLAY is ENABLED"
+	autoplay_subtitle.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	autoplay_subtitle.add_theme_font_size_override("font_size", 12)
+	autoplay_subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	autoplay_content.add_child(autoplay_subtitle)
+
+	# Helper: build slider row
+	var _add_slider_row := func(
+		label_text: String,
+		get_fn: Callable,
+		set_fn: Callable,
+		category_fn: Callable
+	) -> void:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		var lbl := _lbl()
+		lbl.text = label_text
+		lbl.custom_minimum_size = Vector2(150, 0)
+		lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+		row.add_child(lbl)
+		var slider := HSlider.new()
+		slider.min_value = 0
+		slider.max_value = 100
+		slider.step = 1
+		slider.value = get_fn.call()
+		slider.custom_minimum_size = Vector2(200, 0)
+		slider.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var value_lbl := _lbl()
+		value_lbl.text = "%d (%s)" % [int(slider.value), category_fn.call(int(slider.value))]
+		value_lbl.custom_minimum_size = Vector2(180, 0)
+		value_lbl.add_theme_color_override("font_color", Color(0.7, 0.9, 0.7))
+		slider.value_changed.connect(func(val: float) -> void:
+			set_fn.call(int(val))
+			value_lbl.text = "%d (%s)" % [int(val), category_fn.call(int(val))]
+		)
+		row.add_child(slider)
+		row.add_child(value_lbl)
+		autoplay_content.add_child(row)
+
+	# Core Strategy Sliders
+	var core_header := _lbl()
+	core_header.text = "═══ CORE STRATEGY ═══"
+	core_header.add_theme_font_size_override("font_size", 16)
+	core_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
+	autoplay_content.add_child(core_header)
+
+	_add_slider_row.call(
+		"Risk Tolerance:",
+		func() -> int: return GameState.autoplay_risk_tolerance,
+		func(val: int) -> void: GameState.autoplay_risk_tolerance = val,
+		AutoplaySettings.get_risk_category
+	)
+	_add_slider_row.call(
+		"Growth Rate:",
+		func() -> int: return GameState.autoplay_growth_rate,
+		func(val: int) -> void: GameState.autoplay_growth_rate = val,
+		AutoplaySettings.get_growth_category
+	)
+	_add_slider_row.call(
+		"Resource Focus:",
+		func() -> int: return GameState.autoplay_resource_focus,
+		func(val: int) -> void: GameState.autoplay_resource_focus = val,
+		AutoplaySettings.get_resource_focus_category
+	)
+
+	# Operational Strategy Dropdowns
+	var ops_header := _lbl()
+	ops_header.text = "═══ OPERATIONAL STRATEGY ═══"
+	ops_header.add_theme_font_size_override("font_size", 16)
+	ops_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
+	autoplay_content.add_child(ops_header)
+
+	# Helper: build dropdown row for autoplay settings
+	var _add_autoplay_dropdown := func(
+		label_text: String,
+		names: Dictionary,
+		descriptions: Dictionary,
+		get_fn: Callable,
+		set_fn: Callable
+	) -> void:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		var lbl := _lbl()
+		lbl.text = label_text
+		lbl.custom_minimum_size = Vector2(150, 0)
+		lbl.add_theme_color_override("font_color", Color(0.85, 0.85, 0.85))
+		row.add_child(lbl)
+		var opt := OptionButton.new()
+		opt.custom_minimum_size = Vector2(0, 36)
+		opt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		for key in names.keys():
+			opt.add_item(names[key])
+		opt.selected = get_fn.call()
+		var desc := _lbl()
+		desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		desc.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		desc.add_theme_font_size_override("font_size", 14)
+		desc.text = descriptions.get(get_fn.call(), "")
+		opt.item_selected.connect(func(idx: int) -> void:
+			set_fn.call(idx)
+			desc.text = descriptions.get(idx, "")
+		)
+		row.add_child(opt)
+		autoplay_content.add_child(row)
+		autoplay_content.add_child(desc)
+
+	_add_autoplay_dropdown.call(
+		"Diversification:",
+		AutoplaySettings.DIVERSIFICATION_NAMES,
+		AutoplaySettings.DIVERSIFICATION_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_diversification,
+		func(idx: int) -> void: GameState.autoplay_diversification = idx
+	)
+	_add_autoplay_dropdown.call(
+		"Workforce:",
+		AutoplaySettings.WORKFORCE_NAMES,
+		AutoplaySettings.WORKFORCE_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_workforce,
+		func(idx: int) -> void: GameState.autoplay_workforce = idx
+	)
+	_add_autoplay_dropdown.call(
+		"Technology:",
+		AutoplaySettings.TECHNOLOGY_NAMES,
+		AutoplaySettings.TECHNOLOGY_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_technology,
+		func(idx: int) -> void: GameState.autoplay_technology = idx
+	)
+	_add_autoplay_dropdown.call(
+		"Market Timing:",
+		AutoplaySettings.MARKET_TIMING_NAMES,
+		AutoplaySettings.MARKET_TIMING_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_market_timing,
+		func(idx: int) -> void: GameState.autoplay_market_timing = idx
+	)
+	_add_autoplay_dropdown.call(
+		"Territory:",
+		AutoplaySettings.TERRITORIAL_NAMES,
+		AutoplaySettings.TERRITORIAL_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_territorial,
+		func(idx: int) -> void: GameState.autoplay_territorial = idx
+	)
+
+	# Advanced Settings Dropdowns
+	var advanced_header := _lbl()
+	advanced_header.text = "═══ ADVANCED SETTINGS ═══"
+	advanced_header.add_theme_font_size_override("font_size", 16)
+	advanced_header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
+	autoplay_content.add_child(advanced_header)
+
+	_add_autoplay_dropdown.call(
+		"Contract Priority:",
+		AutoplaySettings.CONTRACT_PRIORITY_NAMES,
+		AutoplaySettings.CONTRACT_PRIORITY_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_contract_priority,
+		func(idx: int) -> void: GameState.autoplay_contract_priority = idx
+	)
+	_add_autoplay_dropdown.call(
+		"Upgrade Preference:",
+		AutoplaySettings.UPGRADE_PREFERENCE_NAMES,
+		AutoplaySettings.UPGRADE_PREFERENCE_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_upgrade_preference,
+		func(idx: int) -> void: GameState.autoplay_upgrade_preference = idx
+	)
+	_add_autoplay_dropdown.call(
+		"Debt Tolerance:",
+		AutoplaySettings.DEBT_TOLERANCE_NAMES,
+		AutoplaySettings.DEBT_TOLERANCE_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_debt_tolerance,
+		func(idx: int) -> void: GameState.autoplay_debt_tolerance = idx
+	)
+	_add_autoplay_dropdown.call(
+		"Partnership Strategy:",
+		AutoplaySettings.PARTNERSHIP_STRATEGY_NAMES,
+		AutoplaySettings.PARTNERSHIP_STRATEGY_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_partnership_strategy,
+		func(idx: int) -> void: GameState.autoplay_partnership_strategy = idx
+	)
+	_add_autoplay_dropdown.call(
+		"Rescue Priority:",
+		AutoplaySettings.RESCUE_PRIORITY_NAMES,
+		AutoplaySettings.RESCUE_PRIORITY_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_rescue_priority,
+		func(idx: int) -> void: GameState.autoplay_rescue_priority = idx
+	)
+	_add_autoplay_dropdown.call(
+		"Colony Preference:",
+		AutoplaySettings.COLONY_PREFERENCE_NAMES,
+		AutoplaySettings.COLONY_PREFERENCE_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_colony_preference,
+		func(idx: int) -> void: GameState.autoplay_colony_preference = idx
+	)
+	_add_autoplay_dropdown.call(
+		"Retrofit Schedule:",
+		AutoplaySettings.RETROFIT_SCHEDULE_NAMES,
+		AutoplaySettings.RETROFIT_SCHEDULE_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_retrofit_schedule,
+		func(idx: int) -> void: GameState.autoplay_retrofit_schedule = idx
+	)
+	_add_autoplay_dropdown.call(
+		"Exploration Focus:",
+		AutoplaySettings.EXPLORATION_FOCUS_NAMES,
+		AutoplaySettings.EXPLORATION_FOCUS_DESCRIPTIONS,
+		func() -> int: return GameState.autoplay_exploration_focus,
+		func(idx: int) -> void: GameState.autoplay_exploration_focus = idx
+	)
+
+	autoplay_vbox.add_child(autoplay_content)
+	autoplay_card.add_child(autoplay_vbox)
+	vbox.add_child(autoplay_card)
+	_make_collapsible("autoplay_settings", autoplay_title, autoplay_content, true)
 
 func _process(delta: float) -> void:
 	# Skip animation updates when tab is not visible
