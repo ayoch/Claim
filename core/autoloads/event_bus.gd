@@ -170,4 +170,11 @@ signal notification_received(notification: Dictionary)
 signal notification_read(notification: Dictionary)
 signal notifications_cleared()
 
+# Error notifications - Operation failures
+signal operation_failed(operation: String, reason: String)  # Generic operation failure
+signal purchase_failed(item_name: String, reason: String)  # Purchase operations
+signal repair_failed(item_name: String, reason: String)  # Repair operations
+signal deployment_failed(item_name: String, reason: String)  # Deployment operations
+signal insufficient_funds(operation: String, cost: int, available: int)  # Not enough money
+
 @warning_ignore_restore("unused_signal")

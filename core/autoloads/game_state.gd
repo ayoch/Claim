@@ -1039,7 +1039,12 @@ func get_idle_remote_ships() -> Array[Ship]:
 	return idle
 
 func purchase_equipment(entry: Dictionary) -> bool:
-	if money < entry.get("cost", 0):
+	var cost: int = entry.get("cost", 0)
+	if money < cost:
+		var item_name: String = entry.get("name", "Equipment")
+		EventBus.insufficient_funds.emit("Purchase " + item_name, cost, money)
+		EventBus.purchase_failed.emit(item_name, "Insufficient funds ($%s needed, $%s available)" % [cost, money])
+		push_error("[GameState] Cannot purchase %s: Insufficient funds (need $%s, have $%s)" % [item_name, cost, money])
 		return false
 	var equip := Equipment.from_catalog(entry)
 	money -= equip.cost
@@ -1055,7 +1060,12 @@ func install_equipment(ship: Ship, equip: Equipment) -> void:
 	EventBus.equipment_installed.emit(ship, equip)
 
 func purchase_upgrade(entry: Dictionary) -> bool:
-	if money < entry.get("cost", 0):
+	var cost: int = entry.get("cost", 0)
+	if money < cost:
+		var item_name: String = entry.get("name", "Upgrade")
+		EventBus.insufficient_funds.emit("Purchase " + item_name, cost, money)
+		EventBus.purchase_failed.emit(item_name, "Insufficient funds ($%s needed, $%s available)" % [cost, money])
+		push_error("[GameState] Cannot purchase %s: Insufficient funds (need $%s, have $%s)" % [item_name, cost, money])
 		return false
 	var upgrade := ShipUpgrade.from_catalog(entry)
 	money -= upgrade.cost
@@ -1074,10 +1084,20 @@ func install_upgrade(ship: Ship, upgrade: ShipUpgrade) -> void:
 
 ## Commission dry dock work directly on a docked ship (no inventory step).
 func commission_dry_dock(ship: Ship, entry: Dictionary) -> bool:
-	if money < entry.get("cost", 0):
-		return false
+	var item_name: String = entry.get("name", "Dry Dock Upgrade")
+	var cost: int = entry.get("cost", 0)
+
 	if not ship.is_docked:
+		EventBus.operation_failed.emit("Dry Dock", "%s must be docked at Earth to receive upgrades" % ship.ship_name)
+		push_error("[GameState] Cannot apply dry dock upgrade: %s is not docked" % ship.ship_name)
 		return false
+
+	if money < cost:
+		EventBus.insufficient_funds.emit("Dry Dock " + item_name, cost, money)
+		EventBus.purchase_failed.emit(item_name, "Insufficient funds ($%s needed, $%s available)" % [cost, money])
+		push_error("[GameState] Cannot commission dry dock: Insufficient funds (need $%s, have $%s)" % [cost, money])
+		return false
+
 	var upgrade := ShipUpgrade.from_catalog(entry)
 	money -= upgrade.cost
 	record_transaction(-upgrade.cost, "Dry dock: %s on %s" % [upgrade.upgrade_name, ship.ship_name])
@@ -4102,7 +4122,6 @@ func apply_server_state(server_data: Dictionary) -> void:
 	var server_speed: float = float(server_data.get("speed_multiplier", 1.0))
 	if TimeScale.speed_multiplier != server_speed:
 		TimeScale.speed_multiplier = server_speed
-		print("Synced speed with server: %.1fx" % server_speed)
 
 	# Update player policies (always-on automation)
 	repair_policy = int(server_data.get("repair_policy", repair_policy))
@@ -4148,7 +4167,7 @@ func apply_server_state(server_data: Dictionary) -> void:
 			)
 			ship.server_id = ship_id
 			is_new = true
-			print("[GameState] Creating new ship (id %d)" % ship_id)
+			# Ship created from server data
 
 		# Update fields from server data (only if changed for existing ships)
 		var ship_changed := is_new
@@ -4441,9 +4460,7 @@ func apply_server_state(server_data: Dictionary) -> void:
 
 	# Only log and emit when state changes (less noisy)
 	if state_changed:
-		if money != old_money:
-			print("[GameState] Server sync: Money $%d → $%d" % [old_money, money])
-		print("[GameState] Emitting server_state_synced (ships: %d, workers: %d, rigs: %d)" % [ships.size(), workers.size(), new_rig_count])
+		# State synced from server
 		EventBus.server_state_synced.emit()
 
 
