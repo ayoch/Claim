@@ -185,7 +185,7 @@ func _create_deployed_section() -> void:
 		content.add_child(ast_header)
 
 		# Stockpile info
-		var stockpile := GameState.ore_stockpiles.get(ast_name, {})
+		var stockpile: Dictionary = GameState.ore_stockpiles.get(ast_name, {})
 		if not stockpile.is_empty():
 			var stockpile_text := "Stockpile: "
 			var ore_parts: Array[String] = []
