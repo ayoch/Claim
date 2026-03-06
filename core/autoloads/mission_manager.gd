@@ -303,6 +303,40 @@ func _apply_redirect_trade_mission(trade_mission: TradeMission, new_colony: Colo
 	EventBus.trade_mission_redirected.emit(ship, new_colony, redirect_cost)
 
 
+## Mode-aware mission dispatch - works in both LOCAL and SERVER modes
+## Routes to BackendManager in SERVER mode, or direct start_mission() in LOCAL mode
+func dispatch_mission_any_mode(ship: Ship, asteroid: AsteroidData) -> void:
+	if not _game_state:
+		push_error("[MissionManager] GameState not initialized")
+		return
+
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		# SERVER mode: route through BackendManager using server IDs
+		if ship.server_id == 0:
+			push_warning("Ship %s has no server_id, cannot dispatch in SERVER mode" % ship.ship_name)
+			return
+
+		# Find asteroid ID (index in asteroids array)
+		var asteroid_index: int = -1
+		for i in range(_game_state.asteroids.size()):
+			if _game_state.asteroids[i] == asteroid:
+				asteroid_index = i
+				break
+
+		if asteroid_index < 0:
+			push_warning("Asteroid not found: %s" % asteroid.asteroid_name)
+			return
+
+		# Server database IDs start at 1, client array indices start at 0
+		var server_asteroid_id: int = asteroid_index + 1
+
+		# Dispatch via server backend (async, but we don't await - fire and forget for autoplay)
+		BackendManager.dispatch_mission(ship.server_id, server_asteroid_id, 0, 86400.0, false)
+	else:
+		# LOCAL mode: use local start_mission directly
+		start_mission(ship, asteroid)
+
+
 ## Dispatch an idle ship to an asteroid
 func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
 	# TODO: Move implementation from game_state.gd

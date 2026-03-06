@@ -1539,32 +1539,10 @@ func calculate_asteroid_intercept(start_pos: Vector2, asteroid: AsteroidData, th
 	return MissionManager.calculate_asteroid_intercept(start_pos, asteroid, thrust, transit_mode)
 
 ## Mode-aware mission dispatch - works in both LOCAL and SERVER modes
+## DEPRECATED: Forwarding stub - use MissionManager.dispatch_mission_any_mode() instead
+## TODO: Remove after all references are migrated to MissionManager
 func dispatch_mission_any_mode(ship: Ship, asteroid: AsteroidData) -> void:
-	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
-		# SERVER mode: route through BackendManager using server IDs
-		if ship.server_id == 0:
-			push_warning("Ship %s has no server_id, cannot dispatch in SERVER mode" % ship.ship_name)
-			return
-
-		# Find asteroid ID (index in asteroids array)
-		var asteroid_index: int = -1
-		for i in range(asteroids.size()):
-			if asteroids[i] == asteroid:
-				asteroid_index = i
-				break
-
-		if asteroid_index < 0:
-			push_warning("Asteroid not found: %s" % asteroid.asteroid_name)
-			return
-
-		# Server database IDs start at 1, client array indices start at 0
-		var server_asteroid_id: int = asteroid_index + 1
-
-		# Dispatch via server backend (async, but we don't await - fire and forget for autoplay)
-		BackendManager.dispatch_mission(ship.server_id, server_asteroid_id, 0, 86400.0, false)
-	else:
-		# LOCAL mode: use local GameState directly
-		start_mission(ship, asteroid)
+	MissionManager.dispatch_mission_any_mode(ship, asteroid)
 
 func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
 	if ship.crew.size() < ship.min_crew:

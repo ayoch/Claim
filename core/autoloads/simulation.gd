@@ -1648,7 +1648,7 @@ func _policy_dispatch_idle_ship(ship: Ship) -> void:
 	if best_asteroid == null:
 		return
 	ship.crew = crew
-	GameState.dispatch_mission_any_mode(ship, best_asteroid)
+	MissionManager.dispatch_mission_any_mode(ship, best_asteroid)
 	EventBus.station_job_started.emit(ship, "mining", best_asteroid.asteroid_name)
 
 ## Score an asteroid for a mining trip from origin_pos with the given ship.
