@@ -4328,9 +4328,9 @@ func apply_server_state(server_data: Dictionary) -> void:
 			unit.mass = server_mass
 			state_changed = true
 
-		var server_workers: int = int(rig_data.get("workers_required", 1))
-		if unit.workers_required != server_workers:
-			unit.workers_required = server_workers
+		var server_workers_req: int = int(rig_data.get("workers_required", 1))
+		if unit.workers_required != server_workers_req:
+			unit.workers_required = server_workers_req
 			state_changed = true
 
 		var server_mining_mult: float = float(rig_data.get("mining_multiplier", 1.0))
