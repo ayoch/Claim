@@ -1975,71 +1975,23 @@ func _apply_order_return_to_earth(ship: Ship) -> void:
 		missions.append(mission)
 		EventBus.mission_started.emit(mission)
 
+## DEPRECATED: Forwarding stub - use MissionManager.dispatch_idle_ship() instead
+## TODO: Remove after all references are migrated to MissionManager
 func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
-	var label := "Dispatch to " + asteroid.asteroid_name
-	queue_ship_order(ship, label, func(): _apply_dispatch_idle_ship(ship, asteroid, transit_mode, slingshot_route))
-	return null  # Callers should not rely on the return value when ship is remote
+	return MissionManager.dispatch_idle_ship(ship, asteroid, transit_mode, slingshot_route)
 
+## DEPRECATED: Internal helper - forwards to MissionManager._apply_dispatch_idle_ship()
 func _apply_dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, transit_mode: int, slingshot_route) -> void:
-	if not ship.is_idle_remote:
-		return  # Ship state changed while signal was in transit
-	# Capture origin name before clearing missions
-	var origin_asteroid_name := ""
-	if ship.current_mission and ship.current_mission.asteroid:
-		origin_asteroid_name = ship.current_mission.asteroid.asteroid_name
-	elif ship.current_trade_mission and ship.current_trade_mission.colony:
-		origin_asteroid_name = ship.current_trade_mission.colony.colony_name
+	MissionManager._apply_dispatch_idle_ship(ship, asteroid, transit_mode, slingshot_route)
 
-	# End idle state and start new mission from current position
-	if ship.current_mission:
-		var old_mission := ship.current_mission
-		ship.current_mission = null
-		old_mission.cleanup()  # Break circular references
-		missions.erase(old_mission)
-	if ship.current_trade_mission:
-		var old_trade_mission := ship.current_trade_mission
-		ship.current_trade_mission = null
-		old_trade_mission.cleanup()  # Break circular references
-		trade_missions.erase(old_trade_mission)
-
-	var mission := start_mission(ship, asteroid, transit_mode, slingshot_route)
-	if mission == null:
-		return
-	mission.origin_is_earth = false
-	mission.origin_name = origin_asteroid_name if origin_asteroid_name != "" else "deep space"
-
+## DEPRECATED: Forwarding stub - use MissionManager.dispatch_idle_ship_trade() instead
+## TODO: Remove after all references are migrated to MissionManager
 func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
-	var label := "Trade mission to " + colony_target.colony_name
-	queue_ship_order(ship, label, func(): _apply_dispatch_idle_ship_trade(ship, colony_target, cargo_to_load, transit_mode))
-	return null  # Callers should not rely on the return value when ship is remote
+	return MissionManager.dispatch_idle_ship_trade(ship, colony_target, cargo_to_load, transit_mode)
 
+## DEPRECATED: Internal helper - forwards to MissionManager._apply_dispatch_idle_ship_trade()
 func _apply_dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, cargo_to_load: Dictionary, transit_mode: int) -> void:
-	if not ship.is_idle_remote:
-		return  # Ship state changed while signal was in transit
-	# Capture origin name before clearing missions
-	var origin_loc_name := ""
-	if ship.current_mission and ship.current_mission.asteroid:
-		origin_loc_name = ship.current_mission.asteroid.asteroid_name
-	elif ship.current_trade_mission and ship.current_trade_mission.colony:
-		origin_loc_name = ship.current_trade_mission.colony.colony_name
-
-	# End idle state and start new trade mission from current position
-	if ship.current_mission:
-		var old_mission := ship.current_mission
-		ship.current_mission = null
-		old_mission.cleanup()  # Break circular references
-		missions.erase(old_mission)
-	if ship.current_trade_mission:
-		var old_trade_mission := ship.current_trade_mission
-		ship.current_trade_mission = null
-		old_trade_mission.cleanup()  # Break circular references
-		trade_missions.erase(old_trade_mission)
-
-	var tm := start_trade_mission(ship, colony_target, cargo_to_load, transit_mode)
-	if tm == null:
-		return
-	tm.origin_is_earth = false
-	tm.origin_name = origin_loc_name if origin_loc_name != "" else "deep space"
+	MissionManager._apply_dispatch_idle_ship_trade(ship, colony_target, cargo_to_load, transit_mode)
 
 const RESCUE_COST_BASE: int = 20000  # Crew wages, equipment, opportunity cost — even nearby rescues are expensive
 const RESCUE_COST_PER_AU: int = 8000  # Fuel + extended crew time for distance

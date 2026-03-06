@@ -2410,7 +2410,7 @@ func _select_colony_trade(colony: Colony) -> void:
 		return  # Not enough crew available
 	_selected_ship.crew = assigned
 	if _selected_ship.is_idle_remote:
-		GameState.dispatch_idle_ship_trade(_selected_ship, colony, cargo)
+		MissionManager.dispatch_idle_ship_trade(_selected_ship, colony, cargo)
 	else:
 		GameState.start_trade_mission(_selected_ship, colony, cargo)
 	_cancel_preview()
@@ -3406,7 +3406,7 @@ func _execute_dispatch() -> void:
 					mission.mission_type = Mission.MissionType.REPOSITION
 			_:
 				if _selected_ship.is_idle_remote:
-					GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
+					MissionManager.dispatch_idle_ship(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
 				else:
 					GameState.start_mission(_selected_ship, _selected_asteroid, _selected_transit_mode, _selected_slingshot_route)
 

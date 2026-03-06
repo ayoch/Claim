@@ -812,7 +812,7 @@ func _start_remote_trade(colony: Colony, ship: Ship) -> void:
 		ship.fuel = ship.fuel_capacity
 		GameState.money -= fuel_cost
 
-	GameState.dispatch_idle_ship_trade(ship, colony, cargo)
+	MissionManager.dispatch_idle_ship_trade(ship, colony, cargo)
 	_refresh_colony()
 	_refresh_sell()
 

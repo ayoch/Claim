@@ -793,7 +793,7 @@ func _handle_idle_remote(ship: Ship) -> void:
 					crew.append(avail[i])
 				if crew.size() >= ship.min_crew or ship.min_crew == 0:
 					ship.crew = crew
-					GameState.dispatch_idle_ship_trade(ship, nearby_colony, cargo_to_load)
+					MissionManager.dispatch_idle_ship_trade(ship, nearby_colony, cargo_to_load)
 					return
 		GameState.order_return_to_earth(ship)
 		return
@@ -826,7 +826,7 @@ func _handle_idle_remote(ship: Ship) -> void:
 		var asteroid: AsteroidData = _pick_good_asteroid(ship)
 		if asteroid:
 			ship.crew = crew
-			GameState.dispatch_idle_ship(ship, asteroid)
+			MissionManager.dispatch_idle_ship(ship, asteroid)
 			return
 
 	# No crew and no cargo — head home

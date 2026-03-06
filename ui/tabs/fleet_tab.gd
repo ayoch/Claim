@@ -1060,7 +1060,7 @@ func _select_colony_trade(colony: Colony) -> void:
 	var assigned: Array[Worker] = []
 	_selected_ship.crew = assigned
 	if _selected_ship.is_idle_remote:
-		GameState.dispatch_idle_ship_trade(_selected_ship, colony, cargo)
+		MissionManager.dispatch_idle_ship_trade(_selected_ship, colony, cargo)
 	else:
 		GameState.start_trade_mission(_selected_ship, colony, cargo)
 	_cancel_preview()
@@ -1431,7 +1431,7 @@ func _confirm_dispatch() -> void:
 			var server_asteroid_id := asteroid_index + 1
 			BackendManager.dispatch_mission(_selected_ship.server_id, server_asteroid_id, 0, 86400.0, false)
 	elif _selected_ship.is_idle_remote:
-		GameState.dispatch_idle_ship(_selected_ship, _selected_asteroid)
+		MissionManager.dispatch_idle_ship(_selected_ship, _selected_asteroid)
 	else:
 		GameState.start_mission(_selected_ship, _selected_asteroid)
 	_cancel_preview()
