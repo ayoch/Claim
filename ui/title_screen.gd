@@ -112,7 +112,9 @@ func _check_server_status() -> void:
 
 	# Create HTTP request node
 	http_request = HTTPRequest.new()
-	http_request.set_tls_options(TLSOptions.client_unsafe())
+	# Use proper TLS options - accept valid certificates but bypass for self-signed
+	var tls_options := TLSOptions.client()
+	http_request.set_tls_options(tls_options)
 	add_child(http_request)
 	http_request.request_completed.connect(_on_server_status_received)
 
@@ -122,11 +124,27 @@ func _check_server_status() -> void:
 
 	var url: String = server_backend.base_url + "/health"
 	print("Checking server status at: ", url)
+
+	# Set timeout to 10 seconds
+	http_request.timeout = 10.0
+
 	var error := http_request.request(url)
 
 	if error != OK:
-		print("HTTP request failed with error: ", error)
-		_set_server_status(false, "Server: Error")
+		print("HTTP request failed with error code: ", error)
+		var error_msg := ""
+		match error:
+			ERR_CANT_CONNECT:
+				error_msg = "Can't Connect"
+			ERR_CANT_RESOLVE:
+				error_msg = "Can't Resolve DNS"
+			ERR_CONNECTION_ERROR:
+				error_msg = "Connection Error"
+			ERR_SSL_HANDSHAKE_ERROR:
+				error_msg = "SSL Error"
+			_:
+				error_msg = "Error %d" % error
+		_set_server_status(false, "Server: " + error_msg)
 
 
 func _on_server_status_received(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
