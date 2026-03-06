@@ -763,7 +763,7 @@ func _send_trade_mission(ship: Ship, crew: Array[Worker]) -> void:
 		_send_mining_mission(ship, crew)
 		return
 	ship.crew = crew
-	GameState.start_trade_mission(ship, colony, cargo_to_load)
+	MissionManager.start_trade_mission(ship, colony, cargo_to_load)
 
 func _handle_idle_remote(ship: Ship) -> void:
 	# Damaged or low fuel — head home for repair/refuel

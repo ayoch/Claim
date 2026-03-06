@@ -2412,7 +2412,7 @@ func _select_colony_trade(colony: Colony) -> void:
 	if _selected_ship.is_idle_remote:
 		MissionManager.dispatch_idle_ship_trade(_selected_ship, colony, cargo)
 	else:
-		GameState.start_trade_mission(_selected_ship, colony, cargo)
+		MissionManager.start_trade_mission(_selected_ship, colony, cargo)
 	_cancel_preview()
 	_return_to_map_if_needed()
 	_hide_dispatch()

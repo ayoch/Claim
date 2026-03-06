@@ -1782,7 +1782,7 @@ func _station_try_trading(ship: Ship) -> bool:
 	var cargo_to_sell: Dictionary = ship.current_cargo.duplicate()
 
 	# Create trade mission to the station colony itself (local sale)
-	var tm := GameState.start_trade_mission(ship, colony, cargo_to_sell)
+	var tm := MissionManager.start_trade_mission(ship, colony, cargo_to_sell)
 	if tm:
 		var cargo_total := ship.get_cargo_total()
 		ship.add_station_log("Trading %.0ft ore at %s" % [cargo_total, colony.colony_name], "trading")

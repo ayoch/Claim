@@ -786,7 +786,7 @@ func _start_trade(colony: Colony) -> void:
 		assigned.append(workers[i])
 
 	ship.crew = assigned
-	GameState.start_trade_mission(ship, colony, cargo)
+	MissionManager.start_trade_mission(ship, colony, cargo)
 	_refresh_colony()
 	_refresh_sell()
 

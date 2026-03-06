@@ -486,9 +486,144 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int
 
 ## Start a trade mission to sell ore at a colony
 func start_trade_mission(ship: Ship, colony_target: Colony, cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
-	# TODO: Move implementation from game_state.gd
-	push_error("[MissionManager] start_trade_mission not yet implemented")
-	return null
+	if ship.crew.size() < ship.min_crew:
+		push_warning("[MissionManager] start_trade_mission: not enough crew for %s (need %d, got %d)" % [ship.ship_name, ship.min_crew, ship.crew.size()])
+		return null
+	var tm := TradeMission.new()
+	tm.ship = ship
+	tm.colony = colony_target
+	tm.status = TradeMission.Status.TRANSIT_TO_COLONY
+	tm.origin_position_au = ship.position_au
+	tm.return_position_au = ship.position_au  # default return to origin
+	tm.transit_mode = transit_mode as TradeMission.TransitMode
+
+	# Set origin flag and name based on ship's current position
+	var _tm_earth_pos := CelestialData.get_earth_position_au()
+	tm.origin_is_earth = ship.position_au.distance_to(_tm_earth_pos) < 0.05
+	if tm.origin_is_earth:
+		tm.origin_name = "Earth"
+	elif ship.docked_at_colony:
+		tm.origin_name = ship.docked_at_colony.colony_name
+	# else: left blank; dispatch_idle_ship_trade will fill it in
+
+	# Load cargo from stockpile onto ship (only if at Earth with stockpile access)
+	tm.cargo = {}
+	for ore_type in cargo_to_load:
+		var amount: float = cargo_to_load[ore_type]
+		if amount > 0:
+			if ship.is_at_earth:
+				if _game_state.remove_resource(ore_type, amount):
+					tm.cargo[ore_type] = amount
+			else:
+				# Remote ship: use cargo already on board
+				var on_board: float = ship.current_cargo.get(ore_type, 0.0)
+				var to_load: float = minf(amount, on_board)
+				if to_load > 0:
+					tm.cargo[ore_type] = to_load
+
+	# Calculate distance and transit from ship's current position
+	var colony_pos := colony_target.get_position_au()
+	var dist := ship.position_au.distance_to(colony_pos)
+
+	# Calculate transit time based on mode
+	if transit_mode == TradeMission.TransitMode.HOHMANN:
+		tm.transit_time = Brachistochrone.hohmann_time(dist)
+	else:
+		tm.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+
+	# Check if fuel stops are needed for outbound journey
+	var cargo_mass := ship.get_cargo_total()
+	var outbound_fuel_route := FuelRoutePlanner.plan_route_to_position(
+		ship,
+		colony_pos,
+		cargo_mass,
+		3  # max stops
+	)
+
+	if outbound_fuel_route["feasible"] and outbound_fuel_route["waypoints"].size() > 0:
+		var tm_out_waypoints: Array = outbound_fuel_route["waypoints"]
+		var tm_out_colonies: Array = outbound_fuel_route["colonies"]
+		var tm_out_fuel_amounts: Array = outbound_fuel_route["fuel_amounts"]
+		var tm_out_fuel_costs: Array = outbound_fuel_route["fuel_costs"]
+		var tm_out_leg_times: Array = outbound_fuel_route["leg_times"]
+		tm.outbound_legs.clear()
+		for i in range(tm_out_waypoints.size()):
+			tm.outbound_legs.append(WaypointLeg.make(tm_out_waypoints[i], tm_out_leg_times[i], WaypointLeg.WaypointType.REFUEL_STOP, -1, tm_out_colonies[i], tm_out_fuel_amounts[i], tm_out_fuel_costs[i]))
+		if tm_out_leg_times.size() > tm_out_waypoints.size():
+			tm.transit_time = tm_out_leg_times[tm_out_waypoints.size()]
+		elif outbound_fuel_route.has("final_leg_time"):
+			tm.transit_time = outbound_fuel_route["final_leg_time"]
+
+		# Deduct total fuel cost upfront
+		_game_state.money -= outbound_fuel_route["total_cost"]
+
+	# Calculate return fuel stops (empty cargo after selling)
+	var return_fuel_route := FuelRoutePlanner.plan_route_to_position(
+		ship,
+		tm.return_position_au,
+		0.0,  # Empty after selling
+		3
+	)
+
+	if return_fuel_route["feasible"] and return_fuel_route["waypoints"].size() > 0:
+		var tm_ret_waypoints: Array = return_fuel_route["waypoints"]
+		var tm_ret_colonies: Array = return_fuel_route["colonies"]
+		var tm_ret_fuel_amounts: Array = return_fuel_route["fuel_amounts"]
+		var tm_ret_fuel_costs: Array = return_fuel_route["fuel_costs"]
+		var tm_ret_leg_times: Array = return_fuel_route["leg_times"]
+		tm.return_legs.clear()
+		for i in range(tm_ret_waypoints.size()):
+			tm.return_legs.append(WaypointLeg.make(tm_ret_waypoints[i], tm_ret_leg_times[i], WaypointLeg.WaypointType.REFUEL_STOP, -1, tm_ret_colonies[i], tm_ret_fuel_amounts[i], tm_ret_fuel_costs[i]))
+
+		# Deduct return fuel cost upfront
+		_game_state.money -= return_fuel_route["total_cost"]
+
+	# Apply pilot skill modifier to transit time
+	var best_pilot := 0.0
+	for w in ship.crew:
+		if w.pilot_skill > best_pilot:
+			best_pilot = w.pilot_skill
+	var pilot_factor := 1.15 - (best_pilot * 0.2)
+	tm.transit_time *= pilot_factor
+
+	tm.elapsed_ticks = 0.0
+
+	# Fuel calculation: loaded outbound (with cargo), empty return
+	var fuel_outbound := ship.calc_fuel_for_distance(dist, cargo_mass)
+	# Empty on return from trade
+	var fuel_return := ship.calc_fuel_for_distance(dist, 0.0)
+	var total_fuel := fuel_outbound + fuel_return
+
+	# Apply Hohmann fuel savings
+	if transit_mode == TradeMission.TransitMode.HOHMANN:
+		total_fuel *= Brachistochrone.hohmann_fuel_multiplier()
+
+	var total_transit_ticks := tm.transit_time * 2.0
+	tm.fuel_per_tick = total_fuel / total_transit_ticks if total_transit_ticks > 0 else 0.0
+
+	ship.current_trade_mission = tm
+	ship.current_cargo = tm.cargo.duplicate()
+
+	# Provision supplies before departure (if at Earth or colony)
+	var at_earth_trade := ship.position_au.distance_to(_tm_earth_pos) < 0.05
+	if at_earth_trade or ship.docked_at_colony:
+		var crew_size := ship.crew.size() if ship.crew.size() > 0 else ship.min_crew
+		ship.supplies["food"] = crew_size * 30.0 * 2.8
+		ship.supplies["water"] = crew_size * 30.0 * 0.25 / 20.0
+		ship.supplies["oxygen"] = crew_size * 30.0 * 0.05 / 2.0
+
+	ship.docked_at_colony = null  # Ship is departing
+	ship.docked_at_earth = false
+	ship.reset_life_support(ship.crew.size())
+
+	trade_missions.append(tm)
+	EventBus.trade_mission_started.emit(tm)
+
+	# Check if any hitchhiking workers can catch this ride
+	var trade_route_points: Array[Vector2] = [colony_target.get_position_au()]
+	_game_state.check_hitchhike_opportunities(ship, trade_route_points)
+
+	return tm
 
 
 ## Start a rescue mission to recover a derelict ship
