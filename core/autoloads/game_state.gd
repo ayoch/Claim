@@ -1149,6 +1149,59 @@ func recall_mining_unit(unit: MiningUnit) -> void:
 	mining_unit_inventory.append(unit)
 	EventBus.mining_unit_recalled.emit(unit)
 
+## Mode-aware mining unit operations - works in both LOCAL and SERVER modes
+
+func purchase_mining_unit_any_mode(entry: Dictionary) -> bool:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		var result = await BackendManager.purchase_rig(entry["name"])
+		if result:
+			# Server will return the rig; state poll will sync it
+			await get_tree().create_timer(1.0).timeout  # Wait for state sync
+			return true
+		return false
+	else:
+		return purchase_mining_unit(entry)
+
+func repair_mining_unit_any_mode(unit: MiningUnit) -> bool:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		if unit.server_id > 0:
+			var success := await BackendManager.repair_rig(unit.server_id)
+			if success:
+				await get_tree().create_timer(1.0).timeout  # Wait for state sync
+			return success
+		else:
+			push_error("Cannot repair unit in SERVER mode: unit has no server_id")
+			return false
+	else:
+		return repair_mining_unit(unit)
+
+func rebuild_mining_unit_any_mode(unit: MiningUnit) -> bool:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		if unit.server_id > 0:
+			var success := await BackendManager.rebuild_rig(unit.server_id)
+			if success:
+				await get_tree().create_timer(1.0).timeout  # Wait for state sync
+			return success
+		else:
+			push_error("Cannot rebuild unit in SERVER mode: unit has no server_id")
+			return false
+	else:
+		return rebuild_mining_unit(unit)
+
+func recall_mining_unit_any_mode(unit: MiningUnit) -> bool:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		if unit.server_id > 0:
+			var success := await BackendManager.recall_rig(unit.server_id)
+			if success:
+				await get_tree().create_timer(1.0).timeout  # Wait for state sync
+			return success
+		else:
+			push_error("Cannot recall unit in SERVER mode: unit has no server_id")
+			return false
+	else:
+		recall_mining_unit(unit)
+		return true
+
 func get_mining_units_at(asteroid_name: String) -> Array[MiningUnit]:
 	var result: Array[MiningUnit] = []
 	for unit in deployed_mining_units:
@@ -3984,6 +4037,7 @@ func apply_server_state(server_data: Dictionary) -> void:
 	var old_money := money
 	var old_ship_count := ships.size()
 	var old_worker_count := workers.size()
+	var old_rig_count := mining_unit_inventory.size() + deployed_mining_units.size()
 	var state_changed := false
 
 	# Update money (triggers money_changed signal)
@@ -4178,20 +4232,162 @@ func apply_server_state(server_data: Dictionary) -> void:
 		if worker.server_id > 0 and not seen_worker_ids.has(worker.server_id):
 			workers.remove_at(i)
 
+	# Update rigs (server has: id, unit_type, unit_name, durability, max_durability, deployed_at_asteroid_id, etc.)
+	var server_rigs: Array = server_data.get("rigs", [])
+
+	# Build map of existing rigs by server_id
+	var local_rigs_by_id: Dictionary = {}
+	for unit in mining_unit_inventory:
+		if unit.server_id > 0:
+			local_rigs_by_id[unit.server_id] = unit
+	for unit in deployed_mining_units:
+		if unit.server_id > 0:
+			local_rigs_by_id[unit.server_id] = unit
+
+	var seen_rig_ids: Array[int] = []
+
+	for rig_data in server_rigs:
+		var rig_id: int = int(rig_data.get("id", 0))
+		seen_rig_ids.append(rig_id)
+
+		var unit: MiningUnit = null
+		var is_new := false
+
+		# Try to find existing rig by server_id
+		if local_rigs_by_id.has(rig_id):
+			unit = local_rigs_by_id[rig_id]
+		else:
+			# Create new rig
+			unit = MiningUnit.new()
+			unit.server_id = rig_id
+			is_new = true
+
+		# Update fields from server
+		var server_unit_type: int = int(rig_data.get("unit_type", 0))
+		if unit.unit_type != server_unit_type:
+			unit.unit_type = server_unit_type as MiningUnit.UnitType
+			state_changed = true
+
+		var server_name: String = str(rig_data.get("unit_name", ""))
+		if unit.unit_name != server_name:
+			unit.unit_name = server_name
+			state_changed = true
+
+		var server_mass: float = float(rig_data.get("mass", 0.0))
+		if abs(unit.mass - server_mass) > 0.01:
+			unit.mass = server_mass
+			state_changed = true
+
+		var server_workers: int = int(rig_data.get("workers_required", 1))
+		if unit.workers_required != server_workers:
+			unit.workers_required = server_workers
+			state_changed = true
+
+		var server_mining_mult: float = float(rig_data.get("mining_multiplier", 1.0))
+		if abs(unit.mining_multiplier - server_mining_mult) > 0.01:
+			unit.mining_multiplier = server_mining_mult
+			state_changed = true
+
+		var server_cost: int = int(rig_data.get("cost", 0))
+		if unit.cost != server_cost:
+			unit.cost = server_cost
+			state_changed = true
+
+		var server_durability: float = float(rig_data.get("durability", 100.0))
+		if abs(unit.durability - server_durability) > 0.01:
+			unit.durability = server_durability
+			state_changed = true
+
+		var server_max_durability: float = float(rig_data.get("max_durability", 100.0))
+		if abs(unit.max_durability - server_max_durability) > 0.01:
+			unit.max_durability = server_max_durability
+			state_changed = true
+
+		var server_wear: float = float(rig_data.get("wear_per_day", 0.3))
+		if abs(unit.wear_per_day - server_wear) > 0.01:
+			unit.wear_per_day = server_wear
+			state_changed = true
+
+		# Handle deployment status
+		var server_deployed_ast_id = rig_data.get("deployed_at_asteroid_id", null)
+		var is_deployed := server_deployed_ast_id != null
+
+		if is_deployed:
+			# Find asteroid by server ID (1-based) - convert to 0-based array index
+			var server_ast_id: int = int(server_deployed_ast_id)
+			var asteroid_index := server_ast_id - 1
+			var target_asteroid: AsteroidData = null
+
+			if asteroid_index >= 0 and asteroid_index < asteroids.size():
+				target_asteroid = asteroids[asteroid_index]
+
+			if target_asteroid:
+				var new_ast_name := target_asteroid.name
+				if unit.deployed_at_asteroid != new_ast_name:
+					unit.deployed_at_asteroid = new_ast_name
+					state_changed = true
+
+				var server_deployed_tick: float = float(rig_data.get("deployed_at_tick", 0.0))
+				if abs(unit.deployed_at_tick - server_deployed_tick) > 0.01:
+					unit.deployed_at_tick = server_deployed_tick
+					state_changed = true
+
+				# Ensure rig is in deployed list
+				if is_new:
+					deployed_mining_units.append(unit)
+				elif mining_unit_inventory.has(unit):
+					mining_unit_inventory.erase(unit)
+					deployed_mining_units.append(unit)
+			else:
+				push_warning("Rig %d deployed to invalid asteroid ID %d (index %d out of bounds, have %d asteroids)" % [rig_id, server_ast_id, asteroid_index, asteroids.size()])
+		else:
+			# Rig is in inventory
+			if unit.deployed_at_asteroid != "":
+				unit.deployed_at_asteroid = ""
+				unit.deployed_at_tick = 0.0
+				state_changed = true
+
+				# Clear worker assignments when rig is recalled
+				for worker in unit.assigned_workers:
+					worker.assigned_to_ship = null
+					worker.assigned_to_mining_unit = null
+				unit.assigned_workers.clear()
+
+			# Ensure rig is in inventory list
+			if is_new:
+				mining_unit_inventory.append(unit)
+			elif deployed_mining_units.has(unit):
+				deployed_mining_units.erase(unit)
+				mining_unit_inventory.append(unit)
+
+	# Remove rigs that no longer exist on server
+	for i in range(mining_unit_inventory.size() - 1, -1, -1):
+		var unit := mining_unit_inventory[i]
+		if unit.server_id > 0 and not seen_rig_ids.has(unit.server_id):
+			mining_unit_inventory.remove_at(i)
+			state_changed = true
+
+	for i in range(deployed_mining_units.size() - 1, -1, -1):
+		var unit := deployed_mining_units[i]
+		if unit.server_id > 0 and not seen_rig_ids.has(unit.server_id):
+			deployed_mining_units.remove_at(i)
+			state_changed = true
+
 	# Update missions (server has: id, ship_id, status, elapsed_ticks, transit_time)
 	var server_missions: Array = server_data.get("active_missions", [])
 	# TODO: Sync mission state when server has full mission data
 	# For now, client-side missions are the source of truth
 
-	# Check if ships or workers changed
-	if ships.size() != old_ship_count or workers.size() != old_worker_count:
+	# Check if ships, workers, or rigs changed
+	var new_rig_count := mining_unit_inventory.size() + deployed_mining_units.size()
+	if ships.size() != old_ship_count or workers.size() != old_worker_count or new_rig_count != old_rig_count:
 		state_changed = true
 
 	# Only log and emit when state changes (less noisy)
 	if state_changed:
 		if money != old_money:
 			print("[GameState] Server sync: Money $%d → $%d" % [old_money, money])
-		print("[GameState] Emitting server_state_synced (ships: %d, workers: %d)" % [ships.size(), workers.size()])
+		print("[GameState] Emitting server_state_synced (ships: %d, workers: %d, rigs: %d)" % [ships.size(), workers.size(), new_rig_count])
 		EventBus.server_state_synced.emit()
 
 

@@ -287,6 +287,70 @@ func sell_ship(ship_id: int) -> void:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# MINING UNITS (RIGS / MUDs)
+# ══════════════════════════════════════════════════════════════════════════════
+
+func purchase_rig(unit_name: String):
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var body := JSON.stringify({"rig_name": unit_name})
+
+	var result := await _http_request_async(http, base_url + "/game/buy-rig", headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		push_warning("Failed to purchase rig: " + str(result.get("error", "Unknown error")))
+		return null
+
+
+func repair_rig(rig_id: int) -> bool:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var body := JSON.stringify({"rig_id": rig_id})
+
+	var result := await _http_request_async(http, base_url + "/game/repair-rig", headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if result["success"]:
+		return true
+	else:
+		push_warning("Failed to repair rig: " + str(result.get("error", "Unknown error")))
+		return false
+
+
+func rebuild_rig(rig_id: int) -> bool:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var body := JSON.stringify({"rig_id": rig_id})
+
+	var result := await _http_request_async(http, base_url + "/game/rebuild-rig", headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if result["success"]:
+		return true
+	else:
+		push_warning("Failed to rebuild rig: " + str(result.get("error", "Unknown error")))
+		return false
+
+
+func recall_rig(rig_id: int) -> bool:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var body := JSON.stringify({"rig_id": rig_id})
+
+	var result := await _http_request_async(http, base_url + "/game/recall-rig", headers, HTTPClient.METHOD_POST, body)
+	_return_http_request(http)
+
+	if result["success"]:
+		return true
+	else:
+		push_warning("Failed to recall rig: " + str(result.get("error", "Unknown error")))
+		return false
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # WORKERS
 # ══════════════════════════════════════════════════════════════════════════════
 

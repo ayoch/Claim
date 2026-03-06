@@ -123,6 +123,23 @@ func sell_ship(ship_id: int) -> void:
 	await _active_backend.sell_ship(ship_id)
 
 
+# Mining Units (Rigs / MUDs)
+func purchase_rig(unit_name: String):
+	return await _active_backend.purchase_rig(unit_name)
+
+
+func repair_rig(rig_id: int) -> bool:
+	return await _active_backend.repair_rig(rig_id)
+
+
+func rebuild_rig(rig_id: int) -> bool:
+	return await _active_backend.rebuild_rig(rig_id)
+
+
+func recall_rig(rig_id: int) -> bool:
+	return await _active_backend.recall_rig(rig_id)
+
+
 # Workers
 func hire_worker(worker_id: int):
 	return await _active_backend.hire_worker(worker_id)

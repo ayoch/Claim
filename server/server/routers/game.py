@@ -480,6 +480,107 @@ async def deploy_rig(
     await db.commit()
 
 
+@router.post("/repair-rig", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def repair_rig(
+    request: Request,
+    rig_id: int,
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    """Repair a rig (restores durability up to max_durability)"""
+    # Get rig and verify ownership
+    rig_result = await db.execute(
+        select(Rig).where(Rig.id == rig_id, Rig.player_id == player.id)
+    )
+    rig = rig_result.scalar_one_or_none()
+    if not rig:
+        raise HTTPException(status_code=404, detail="Rig not found")
+
+    # Calculate repair cost (30% of original cost, scaled by damage)
+    missing = rig.max_durability - rig.durability
+    if missing <= 0:
+        raise HTTPException(status_code=400, detail="Rig doesn't need repair")
+
+    cost_ratio = missing / rig.max_durability
+    repair_cost = int(rig.cost * 0.3 * cost_ratio)
+
+    if player.money < repair_cost:
+        raise HTTPException(status_code=402, detail=f"Insufficient funds (need {repair_cost:,} cr)")
+
+    # Repair rig
+    rig.durability = rig.max_durability
+    player.money -= repair_cost
+
+    db.add(rig)
+    db.add(player)
+    await db.commit()
+
+
+@router.post("/rebuild-rig", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/minute")
+async def rebuild_rig(
+    request: Request,
+    rig_id: int,
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rebuild a rig (restores max_durability to 100)"""
+    # Get rig and verify ownership
+    rig_result = await db.execute(
+        select(Rig).where(Rig.id == rig_id, Rig.player_id == player.id)
+    )
+    rig = rig_result.scalar_one_or_none()
+    if not rig:
+        raise HTTPException(status_code=404, detail="Rig not found")
+
+    if rig.max_durability >= 100.0:
+        raise HTTPException(status_code=400, detail="Rig doesn't need rebuild")
+
+    # Rebuild costs 50% of original cost
+    rebuild_cost = int(rig.cost * 0.5)
+
+    if player.money < rebuild_cost:
+        raise HTTPException(status_code=402, detail=f"Insufficient funds (need {rebuild_cost:,} cr)")
+
+    # Rebuild rig
+    rig.max_durability = 100.0
+    rig.durability = 100.0  # Also repair to full
+    player.money -= rebuild_cost
+
+    db.add(rig)
+    db.add(player)
+    await db.commit()
+
+
+@router.post("/recall-rig", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("10/minute")
+async def recall_rig(
+    request: Request,
+    rig_id: int,
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    """Recall a rig from asteroid back to inventory"""
+    # Get rig and verify ownership
+    rig_result = await db.execute(
+        select(Rig).where(Rig.id == rig_id, Rig.player_id == player.id)
+    )
+    rig = rig_result.scalar_one_or_none()
+    if not rig:
+        raise HTTPException(status_code=404, detail="Rig not found")
+
+    if rig.deployed_at_asteroid_id is None:
+        raise HTTPException(status_code=400, detail="Rig is not deployed")
+
+    # Recall rig (unassign workers handled client-side via game state sync)
+    rig.deployed_at_asteroid_id = None
+    rig.deployed_at_tick = 0.0
+
+    db.add(rig)
+    await db.commit()
+
+
 @router.get("/stockpiles", response_model=list[StockpileOut])
 async def list_stockpiles(
     player: Player = Depends(get_current_player),

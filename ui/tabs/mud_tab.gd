@@ -120,7 +120,8 @@ func _create_inventory_section() -> void:
 			repair_btn.custom_minimum_size = Vector2(0, 32)
 			repair_btn.disabled = GameState.money < repair_cost
 			repair_btn.pressed.connect(func() -> void:
-				if GameState.repair_mining_unit(unit):
+				var success := await GameState.repair_mining_unit_any_mode(unit)
+				if success:
 					_dirty = true
 			)
 			btn_row.add_child(repair_btn)
@@ -134,7 +135,8 @@ func _create_inventory_section() -> void:
 			rebuild_btn.disabled = GameState.money < rebuild_cost
 			rebuild_btn.add_theme_color_override("font_color", Color(0.9, 0.6, 0.3))
 			rebuild_btn.pressed.connect(func() -> void:
-				if GameState.rebuild_mining_unit(unit):
+				var success := await GameState.rebuild_mining_unit_any_mode(unit)
+				if success:
 					_dirty = true
 			)
 			btn_row.add_child(rebuild_btn)
@@ -274,8 +276,9 @@ func _create_deployed_section() -> void:
 			recall_btn.text = "Recall Unit"
 			recall_btn.custom_minimum_size = Vector2(0, 28)
 			recall_btn.pressed.connect(func() -> void:
-				GameState.recall_mining_unit(unit)
-				_dirty = true
+				var success := await GameState.recall_mining_unit_any_mode(unit)
+				if success:
+					_dirty = true
 			)
 			action_row.add_child(recall_btn)
 
@@ -334,7 +337,8 @@ func _create_purchase_section() -> void:
 		buy_btn.custom_minimum_size = Vector2(0, 36)
 		buy_btn.disabled = GameState.money < cost
 		buy_btn.pressed.connect(func() -> void:
-			if GameState.purchase_mining_unit(entry):
+			var success := await GameState.purchase_mining_unit_any_mode(entry)
+			if success:
 				_dirty = true
 		)
 		vbox.add_child(buy_btn)

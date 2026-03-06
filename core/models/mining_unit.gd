@@ -22,6 +22,7 @@ const MAX_DURABILITY_DECAY_RATIO: float = 0.1
 # Below this max_durability threshold, the unit should be recalled for rebuild
 const REBUILD_THRESHOLD: float = 40.0
 
+@export var server_id: int = 0  # Database ID when in SERVER mode (0 = LOCAL mode)
 @export var unit_type: UnitType = UnitType.BASIC
 @export var unit_name: String = ""
 @export var mass: float = 0.0
