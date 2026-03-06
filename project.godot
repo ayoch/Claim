@@ -25,6 +25,7 @@ TimeScale="*res://core/autoloads/time_scale.gd"
 HTTPFetcher="*res://core/services/http_fetcher.gd"
 EphemerisVerifier="*res://core/services/ephemeris_verifier.gd"
 TestHarness="*res://core/autoloads/test_harness.gd"
+NotificationManager="*res://core/autoloads/notification_manager.gd"
 LeakDetector="*res://core/autoloads/leak_detector.gd"
 PerfLogger="*res://core/autoloads/perf_logger.gd"
 

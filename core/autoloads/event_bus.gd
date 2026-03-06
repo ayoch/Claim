@@ -163,4 +163,9 @@ signal partnership_created(leader: Ship, follower: Ship)
 signal partnership_broken(ship1: Ship, ship2: Ship, reason: String)
 signal partnership_aid_provided(leader_name: String, follower_name: String, aid_type: String, details: Dictionary)
 
+# Notification system
+signal notification_received(notification: Dictionary)
+signal notification_read(notification: Dictionary)
+signal notifications_cleared()
+
 @warning_ignore_restore("unused_signal")
