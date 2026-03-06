@@ -44,20 +44,20 @@ func _load_settings() -> void:
 	notifications_enabled_check.button_pressed = GameState.settings.get("notifications_enabled", true)
 
 	# Priority filters
-	critical_check.button_pressed = NotificationManager.settings.get(NotificationManager.Priority.CRITICAL, true)
-	important_check.button_pressed = NotificationManager.settings.get(NotificationManager.Priority.IMPORTANT, true)
-	optional_check.button_pressed = NotificationManager.settings.get(NotificationManager.Priority.OPTIONAL, true)
+	critical_check.button_pressed = NotificationManager.priority_settings.get(NotificationManager.Priority.CRITICAL, true)
+	important_check.button_pressed = NotificationManager.priority_settings.get(NotificationManager.Priority.IMPORTANT, true)
+	optional_check.button_pressed = NotificationManager.priority_settings.get(NotificationManager.Priority.OPTIONAL, true)
 
 	# Category filters
-	combat_check.button_pressed = NotificationManager.settings.get(NotificationManager.Category.COMBAT, true)
-	ship_health_check.button_pressed = NotificationManager.settings.get(NotificationManager.Category.SHIP_HEALTH, true)
-	crew_check.button_pressed = NotificationManager.settings.get(NotificationManager.Category.CREW, true)
-	equipment_check.button_pressed = NotificationManager.settings.get(NotificationManager.Category.EQUIPMENT, true)
-	missions_check.button_pressed = NotificationManager.settings.get(NotificationManager.Category.MISSIONS, true)
-	economy_check.button_pressed = NotificationManager.settings.get(NotificationManager.Category.ECONOMY, true)
-	colonies_check.button_pressed = NotificationManager.settings.get(NotificationManager.Category.COLONIES, true)
-	mining_check.button_pressed = NotificationManager.settings.get(NotificationManager.Category.MINING, true)
-	general_check.button_pressed = NotificationManager.settings.get(NotificationManager.Category.GENERAL, true)
+	combat_check.button_pressed = NotificationManager.category_settings.get(NotificationManager.Category.COMBAT, true)
+	ship_health_check.button_pressed = NotificationManager.category_settings.get(NotificationManager.Category.SHIP_HEALTH, true)
+	crew_check.button_pressed = NotificationManager.category_settings.get(NotificationManager.Category.CREW, true)
+	equipment_check.button_pressed = NotificationManager.category_settings.get(NotificationManager.Category.EQUIPMENT, true)
+	missions_check.button_pressed = NotificationManager.category_settings.get(NotificationManager.Category.MISSIONS, true)
+	economy_check.button_pressed = NotificationManager.category_settings.get(NotificationManager.Category.ECONOMY, true)
+	colonies_check.button_pressed = NotificationManager.category_settings.get(NotificationManager.Category.COLONIES, true)
+	mining_check.button_pressed = NotificationManager.category_settings.get(NotificationManager.Category.MINING, true)
+	general_check.button_pressed = NotificationManager.category_settings.get(NotificationManager.Category.GENERAL, true)
 
 	# Disable critical (always enabled)
 	critical_check.disabled = true

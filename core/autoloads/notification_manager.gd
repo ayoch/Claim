@@ -52,14 +52,14 @@ var notifications: Array[Dictionary] = []
 const MAX_NOTIFICATIONS: int = 100
 
 # Settings (which notification types are enabled)
-var settings: Dictionary = {
-	# Critical always enabled
-	Priority.CRITICAL: true,
-	# Important enabled by default
-	Priority.IMPORTANT: true,
-	# Optional enabled by default
-	Priority.OPTIONAL: true,
-	# Category filters (all enabled by default)
+# Separated into priority and category to avoid enum key collisions
+var priority_settings: Dictionary = {
+	Priority.CRITICAL: true,   # Always enabled
+	Priority.IMPORTANT: true,  # Enabled by default
+	Priority.OPTIONAL: true,   # Enabled by default
+}
+
+var category_settings: Dictionary = {
 	Category.COMBAT: true,
 	Category.SHIP_HEALTH: true,
 	Category.CREW: true,
@@ -330,11 +330,11 @@ func _is_notification_enabled(priority: Priority, category: Category) -> bool:
 		return true
 
 	# Check priority filter
-	if not settings.get(priority, true):
+	if not priority_settings.get(priority, true):
 		return false
 
 	# Check category filter
-	if not settings.get(category, true):
+	if not category_settings.get(category, true):
 		return false
 
 	return true
@@ -343,24 +343,30 @@ func set_priority_enabled(priority: Priority, enabled: bool) -> void:
 	"""Enable/disable a priority level"""
 	if priority == Priority.CRITICAL:
 		return  # Can't disable critical
-	settings[priority] = enabled
+	priority_settings[priority] = enabled
 	_save_settings()
 
 func set_category_enabled(category: Category, enabled: bool) -> void:
 	"""Enable/disable a category"""
-	settings[category] = enabled
+	category_settings[category] = enabled
 	_save_settings()
 
 func _load_settings() -> void:
 	"""Load notification settings from GameState"""
-	if GameState.settings.has("notification_settings"):
-		var saved: Dictionary = GameState.settings["notification_settings"]
+	if GameState.settings.has("notification_priority_settings"):
+		var saved: Dictionary = GameState.settings["notification_priority_settings"]
 		for key in saved:
-			settings[key] = saved[key]
+			priority_settings[key] = saved[key]
+
+	if GameState.settings.has("notification_category_settings"):
+		var saved: Dictionary = GameState.settings["notification_category_settings"]
+		for key in saved:
+			category_settings[key] = saved[key]
 
 func _save_settings() -> void:
 	"""Save notification settings to GameState"""
-	GameState.settings["notification_settings"] = settings.duplicate()
+	GameState.settings["notification_priority_settings"] = priority_settings.duplicate()
+	GameState.settings["notification_category_settings"] = category_settings.duplicate()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # MOBILE PUSH NOTIFICATIONS (Firebase Cloud Messaging)
