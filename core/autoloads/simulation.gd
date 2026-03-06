@@ -1421,7 +1421,7 @@ func _process_life_support(dt: float) -> void:
 
 		# Record violations for each crew death
 		for worker in ship.crew:
-			GameState.record_worker_death_violation(worker, "Crew died from life support failure aboard %s" % ship.ship_name)
+			WorkerManager.record_worker_death_violation(worker, "Crew died from life support failure aboard %s" % ship.ship_name)
 
 		# Check if a rescue was en route but arrived too late
 		if ship in GameState.rescue_missions:
@@ -2919,7 +2919,7 @@ func _trigger_starvation(ship: Ship, mission: Mission = null, trade_mission: Tra
 
 	# Record violations for starvation deaths
 	for w in dead_workers:
-		GameState.record_worker_death_violation(w, "Crew starved aboard %s (food depleted)" % ship.ship_name)
+		WorkerManager.record_worker_death_violation(w, "Crew starved aboard %s (food depleted)" % ship.ship_name)
 
 	# Remove dead workers from the game entirely
 	for w in dead_workers:

@@ -313,7 +313,7 @@ func new_game() -> void:
 	Reputation.score = 0.0
 	_init_resources()
 	_init_starter_ship()
-	_init_starter_crew()
+	WorkerManager.init_starter_crew()
 	asteroids = CelestialData.get_asteroids()
 	market = MarketState.new()
 	colonies = ColonyData.get_colonies()
@@ -454,23 +454,10 @@ func redirect_trade_mission(trade_mission: TradeMission, new_colony: Colony) -> 
 func _apply_redirect_trade_mission(trade_mission: TradeMission, new_colony: Colony) -> void:
 	MissionManager._apply_redirect_trade_mission(trade_mission, new_colony)
 
+## DEPRECATED: Forwarding stub - use WorkerManager.init_starter_crew() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func _init_starter_crew() -> void:
-	# Hire starter crew with guaranteed specialty coverage: pilot, engineer, miner
-	# Scale total workers to staff all starting ships plus a buffer of 3 spares
-	var total_min_crew := 0
-	for ship in ships:
-		total_min_crew += ship.min_crew
-	var total_workers := total_min_crew + 3
-
-	# First 3 workers get guaranteed primary specialties
-	var primaries := [0, 1, 2]  # pilot, engineer, mining
-	for i in range(total_workers):
-		var worker: Worker
-		if i < primaries.size():
-			worker = Worker.generate_with_primary(primaries[i])
-		else:
-			worker = Worker.generate_random()
-		workers.append(worker)
+	WorkerManager.init_starter_crew()
 
 func add_resource(ore_type: ResourceTypes.OreType, amount: float) -> void:
 	resources[ore_type] = resources.get(ore_type, 0.0) + amount
@@ -514,24 +501,15 @@ func hire_worker_any_mode(worker_id: int) -> void:
 func fire_worker_any_mode(worker: Worker) -> void:
 	WorkerManager.fire_worker_any_mode(worker)
 
-## Criminal Ban System: Record violations at colonies
+## DEPRECATED: Forwarding stub - use WorkerManager.record_worker_death_violation() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func record_worker_death_violation(worker: Worker, reason: String) -> void:
-	# Record death at worker's home colony
-	var colony_name: String = worker.home_colony if worker.home_colony != "" else "Earth"
-	var colony: Colony = _find_colony_by_name(colony_name)
-	if colony:
-		colony.add_violation(reason, total_ticks)
-		print("VIOLATION recorded at %s: %s" % [colony_name, reason])
-		EventBus.violation_recorded.emit(colony, reason)
+	WorkerManager.record_worker_death_violation(worker, reason)
 
+## DEPRECATED: Forwarding stub - use WorkerManager.record_abandonment_violation() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func record_abandonment_violation(worker: Worker, reason: String) -> void:
-	# Record abandonment at worker's home colony
-	var colony_name: String = worker.home_colony if worker.home_colony != "" else "Earth"
-	var colony: Colony = _find_colony_by_name(colony_name)
-	if colony:
-		colony.add_violation(reason, total_ticks)
-		print("VIOLATION recorded at %s: %s" % [colony_name, reason])
-		EventBus.violation_recorded.emit(colony, reason)
+	WorkerManager.record_abandonment_violation(worker, reason)
 
 func record_rescue_failure_violation(ship: Ship, reason: String) -> void:
 	# Record rescue failure at ship's last known colony (or Earth if never docked)
@@ -3482,50 +3460,10 @@ func _parse_ore_type(ore_key: String) -> ResourceTypes.OreType:
 # SERVER EVENT HANDLERS (SSE Real-Time Updates)
 # ══════════════════════════════════════════════════════════════════════════════
 
-## Apply worker skill level-up event from server
-## Event format: {type, worker_id, player_id, skill_type, new_value, worker_name}
+## DEPRECATED: Forwarding stub - use WorkerManager.apply_worker_skill_event() instead
+## TODO: Remove after all references are migrated to WorkerManager
 func apply_worker_skill_event(event: Dictionary) -> void:
-	var worker_name: String = event.get("worker_name", "")
-	var skill_type_str: String = event.get("skill_type", "")
-	var new_value: float = float(event.get("new_value", 0.0))
-
-	# Find worker by name
-	var found_worker: Worker = null
-	for worker in workers:
-		if worker.worker_name == worker_name:
-			found_worker = worker
-			break
-
-	if not found_worker:
-		push_warning("apply_worker_skill_event: Worker '%s' not found" % worker_name)
-		return
-
-	# Map skill type string to int (0=pilot, 1=engineer, 2=mining)
-	var skill_type_int := -1
-	match skill_type_str:
-		"pilot":
-			found_worker.pilot_skill = new_value
-			skill_type_int = 0
-		"engineer":
-			found_worker.engineer_skill = new_value
-			skill_type_int = 1
-		"mining":
-			found_worker.mining_skill = new_value
-			skill_type_int = 2
-		_:
-			push_warning("apply_worker_skill_event: Unknown skill type '%s'" % skill_type_str)
-			return
-
-	# Recalculate wage (server does this too, but we mirror it for consistency)
-	var total_skill := found_worker.pilot_skill + found_worker.engineer_skill + found_worker.mining_skill
-	found_worker.wage = int(80 + total_skill * 40)
-
-	print("[GameState] Worker skill updated via SSE: %s - %s → %.2f (wage: $%d)" % [
-		worker_name, skill_type_str, new_value, found_worker.wage
-	])
-
-	# Emit signal for UI update (signal expects int for skill_type)
-	EventBus.worker_skill_leveled.emit(found_worker, skill_type_int, new_value)
+	WorkerManager.apply_worker_skill_event(event)
 
 
 ## Apply market price update event from server

@@ -831,7 +831,7 @@ func _handle_server_event(event: Dictionary) -> void:
 				GameState.money = int(event["new_balance"])
 
 		"worker_skill_leveled":
-			GameState.apply_worker_skill_event(event)
+			WorkerManager.apply_worker_skill_event(event)
 
 		"market_update":
 			GameState.apply_market_update_event(event)

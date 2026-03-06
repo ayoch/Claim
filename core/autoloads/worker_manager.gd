@@ -305,6 +305,115 @@ func fire_tardy_worker(worker: Worker) -> void:
 
 
 ## ═══════════════════════════════════════════════════════════════════
+## VIOLATIONS & EVENTS
+## ═══════════════════════════════════════════════════════════════════
+
+## Record worker death violation at their home colony
+func record_worker_death_violation(worker: Worker, reason: String) -> void:
+	if not _game_state:
+		push_error("[WorkerManager] GameState not initialized")
+		return
+
+	# Record death at worker's home colony
+	var colony_name: String = worker.home_colony if worker.home_colony != "" else "Earth"
+	var colony: Colony = _game_state._find_colony_by_name(colony_name)
+	if colony:
+		colony.add_violation(reason, _game_state.total_ticks)
+		print("VIOLATION recorded at %s: %s" % [colony_name, reason])
+		EventBus.violation_recorded.emit(colony, reason)
+
+## Record worker abandonment violation at their home colony
+func record_abandonment_violation(worker: Worker, reason: String) -> void:
+	if not _game_state:
+		push_error("[WorkerManager] GameState not initialized")
+		return
+
+	# Record abandonment at worker's home colony
+	var colony_name: String = worker.home_colony if worker.home_colony != "" else "Earth"
+	var colony: Colony = _game_state._find_colony_by_name(colony_name)
+	if colony:
+		colony.add_violation(reason, _game_state.total_ticks)
+		print("VIOLATION recorded at %s: %s" % [colony_name, reason])
+		EventBus.violation_recorded.emit(colony, reason)
+
+## Apply worker skill update from server event
+func apply_worker_skill_event(event: Dictionary) -> void:
+	if not _game_state:
+		push_error("[WorkerManager] GameState not initialized")
+		return
+
+	var worker_name: String = event.get("worker_name", "")
+	var skill_type_str: String = event.get("skill_type", "")
+	var new_value: float = float(event.get("new_value", 0.0))
+
+	# Find worker by name
+	var found_worker: Worker = null
+	for worker in _game_state.workers:
+		if worker.worker_name == worker_name:
+			found_worker = worker
+			break
+
+	if not found_worker:
+		push_warning("apply_worker_skill_event: Worker '%s' not found" % worker_name)
+		return
+
+	# Map skill type string to int (0=pilot, 1=engineer, 2=mining)
+	var skill_type_int := -1
+	match skill_type_str:
+		"pilot":
+			found_worker.pilot_skill = new_value
+			skill_type_int = 0
+		"engineer":
+			found_worker.engineer_skill = new_value
+			skill_type_int = 1
+		"mining":
+			found_worker.mining_skill = new_value
+			skill_type_int = 2
+		_:
+			push_warning("apply_worker_skill_event: Unknown skill type '%s'" % skill_type_str)
+			return
+
+	# Recalculate wage (server does this too, but we mirror it for consistency)
+	var total_skill := found_worker.pilot_skill + found_worker.engineer_skill + found_worker.mining_skill
+	found_worker.wage = int(80 + total_skill * 40)
+
+	print("[WorkerManager] Worker skill updated via SSE: %s - %s → %.2f (wage: $%d)" % [
+		worker_name, skill_type_str, new_value, found_worker.wage
+	])
+
+	# Emit signal for UI update (signal expects int for skill_type)
+	EventBus.worker_skill_leveled.emit(found_worker, skill_type_int, new_value)
+
+
+## ═══════════════════════════════════════════════════════════════════
+## INITIALIZATION
+## ═══════════════════════════════════════════════════════════════════
+
+## Initialize starter crew for new game
+func init_starter_crew() -> void:
+	if not _game_state:
+		push_error("[WorkerManager] GameState not initialized")
+		return
+
+	# Hire starter crew with guaranteed specialty coverage: pilot, engineer, miner
+	# Scale total workers to staff all starting ships plus a buffer of 3 spares
+	var total_min_crew := 0
+	for ship in _game_state.ships:
+		total_min_crew += ship.min_crew
+	var total_workers := total_min_crew + 3
+
+	# First 3 workers get guaranteed primary specialties
+	var primaries := [0, 1, 2]  # pilot, engineer, mining
+	for i in range(total_workers):
+		var worker: Worker
+		if i < primaries.size():
+			worker = Worker.generate_with_primary(primaries[i])
+		else:
+			worker = Worker.generate_random()
+		_game_state.workers.append(worker)
+
+
+## ═══════════════════════════════════════════════════════════════════
 ## CACHE MANAGEMENT
 ## ═══════════════════════════════════════════════════════════════════
 
