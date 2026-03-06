@@ -851,7 +851,7 @@ func _try_redirect_missions() -> void:
 		var better := _pick_good_asteroid(ship)
 		if better == null or better == m.asteroid:
 			continue
-		GameState.redirect_mission(m, better)
+		MissionManager.redirect_mission(m, better)
 
 	# Redirect trade missions to different colonies
 	for ship in GameState.ships:

@@ -436,113 +436,14 @@ func sell_equipment_any_mode(equipment: Equipment, ship: Ship) -> void:
 
 ## Redirect a ship in transit to a new asteroid.
 ## Queues the order with lightspeed delay; returns true if order accepted/queued.
+## DEPRECATED: Forwarding stub - use MissionManager.redirect_mission() instead
+## TODO: Remove after all references are migrated to MissionManager
 func redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> bool:
-	if mission.status != Mission.Status.TRANSIT_OUT and mission.status != Mission.Status.TRANSIT_BACK:
-		return false
-	var ship := mission.ship
-	var label := "Redirect to " + new_asteroid.asteroid_name
-	queue_ship_order(ship, label, func(): _apply_redirect_mission(mission, new_asteroid))
-	return true
+	return MissionManager.redirect_mission(mission, new_asteroid)
 
+## DEPRECATED: Internal helper - forwards to MissionManager._apply_redirect_mission()
 func _apply_redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> void:
-	# Re-validate: mission may have completed or ship state changed during signal transit
-	if mission == null or mission.ship == null:
-		return
-	if mission.status != Mission.Status.TRANSIT_OUT and mission.status != Mission.Status.TRANSIT_BACK:
-		return
-
-	var ship := mission.ship
-	var thrust := ship.get_effective_thrust()
-
-	# Calculate intercept trajectory (predicts where asteroid will be at arrival)
-	var intercept := calculate_asteroid_intercept(ship.position_au, new_asteroid, thrust, mission.transit_mode)
-	var new_dest: Vector2 = intercept["intercept_position"]
-	var dist: float = intercept["distance"]
-	var new_transit_time: float = intercept["transit_time"]
-	var avg_velocity := dist / new_transit_time if new_transit_time > 0.0 else 0.0
-
-	# Determine if a momentum arc is needed (ship is moving at significant angle to new dest)
-	var velocity_dir := ship.velocity_au_per_tick.normalized() if ship.speed_au_per_tick > 1e-8 else Vector2.ZERO
-	var dest_dir := (new_dest - ship.position_au).normalized() if dist > 1e-6 else Vector2.ZERO
-	var dot := velocity_dir.dot(dest_dir) if ship.speed_au_per_tick > 1e-8 else 1.0
-	var speed_fraction: float = clampf(ship.speed_au_per_tick / (2.0 * avg_velocity), 0.0, 1.0) if avg_velocity > 0.0 else 0.0
-	var arc_fraction: float = clampf(sqrt((1.0 - dot) * 0.5) * speed_fraction * 0.4, 0.0, 0.30)
-
-	# Compute arc waypoint and check if it makes sense
-	var waypoint := ship.position_au + velocity_dir * (arc_fraction * dist)
-	var dist1 := arc_fraction * dist
-	var dist2 := waypoint.distance_to(new_dest)
-	var use_arc := arc_fraction >= 0.05 and ship.speed_au_per_tick > 1e-8 and dist1 > 1e-6
-
-	# Fuel check: outbound (redirect path) + return trip
-	var total_path := dist1 + dist2 if use_arc else dist
-	var fuel_out := ship.calc_fuel_for_distance(total_path)
-	var return_origin: Vector2
-	if mission.return_to_station and ship.station_colony:
-		return_origin = ship.station_colony.get_position_au()
-	else:
-		return_origin = CelestialData.get_earth_position_au()
-	var return_dist := new_dest.distance_to(return_origin)
-	var fuel_ret := ship.calc_fuel_for_distance(return_dist, ship.cargo_capacity)
-	var fuel_needed := fuel_out + fuel_ret
-
-	if fuel_needed > ship.fuel:
-		EventBus.mission_redirect_failed.emit(ship, "Insufficient fuel (need %.0f for redirect + return, have %.0f)" % [fuel_needed, ship.fuel])
-		return
-
-	# Redirect costs money (2x outbound fuel cost as opportunity cost penalty)
-	var redirect_cost := int(fuel_out * Ship.FUEL_COST_PER_UNIT * 2.0)
-	if money < redirect_cost:
-		EventBus.mission_redirect_failed.emit(ship, "Cannot afford redirect cost ($%d)" % redirect_cost)
-		return
-
-	money -= redirect_cost
-	mission.asteroid = new_asteroid
-	mission.origin_is_earth = false
-	mission.status = Mission.Status.TRANSIT_OUT
-	mission.outbound_legs.clear()
-	mission.outbound_waypoint_index = 0
-
-	var return_transit_time := Brachistochrone.transit_time(return_dist, thrust)
-
-	if use_arc:
-		# Two-leg route: arc in current direction, then turn to destination
-		var time1 := Brachistochrone.transit_time(dist1, thrust)
-		var time2 := Brachistochrone.transit_time(dist2, thrust)
-		var avg_velocity1 := dist1 / time1 if time1 > 0.0 else 0.0
-		var initial_t := 0.0
-		var adjusted_origin := ship.position_au
-		if avg_velocity1 > 0.0 and ship.speed_au_per_tick > 0.0:
-			initial_t = clampf(ship.speed_au_per_tick / (4.0 * avg_velocity1), 0.0, 0.5)
-			var dfrac := 2.0 * initial_t * initial_t
-			if dfrac < 0.98:
-				adjusted_origin = (ship.position_au - waypoint * dfrac) / (1.0 - dfrac)
-		mission.origin_position_au = adjusted_origin
-		mission.outbound_legs.append(WaypointLeg.make(waypoint, time1))
-		mission.elapsed_ticks = initial_t * time1
-		mission.transit_time = time2
-		var total_time_arc := time1 + time2 + return_transit_time
-		mission.fuel_per_tick = fuel_needed / total_time_arc if total_time_arc > 0.0 else 0.0
-	else:
-		# Single-leg velocity-preserving redirect
-		var initial_t := 0.0
-		var adjusted_origin := ship.position_au
-		if avg_velocity > 0.0 and ship.speed_au_per_tick > 0.0:
-			initial_t = clampf(ship.speed_au_per_tick / (4.0 * avg_velocity), 0.0, 0.5)
-			var dfrac := 2.0 * initial_t * initial_t
-			if dfrac < 0.98:
-				adjusted_origin = (ship.position_au - new_dest * dfrac) / (1.0 - dfrac)
-		mission.origin_position_au = adjusted_origin
-		mission.elapsed_ticks = initial_t * new_transit_time
-		mission.transit_time = new_transit_time
-		var total_time_single := new_transit_time + return_transit_time
-		mission.fuel_per_tick = fuel_needed / total_time_single if total_time_single > 0.0 else 0.0
-
-	# Recalculate trajectory visualization for new path
-	mission.destination_position_au = new_dest
-	mission.calculate_trajectory_curves()
-
-	EventBus.mission_redirected.emit(ship, new_asteroid, redirect_cost)
+	MissionManager._apply_redirect_mission(mission, new_asteroid)
 
 ## Redirect a ship in trade mission to a new colony.
 ## Queues the order with lightspeed delay; returns true if order accepted/queued.
