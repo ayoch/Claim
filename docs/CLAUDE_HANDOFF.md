@@ -6,24 +6,20 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Server Dead-Reckoning Clock Fix (SERVER Mode Orbital Jitter) — Take 2
+### Latest Work Session: SERVER Mode Orbital Jitter — Fixed
 **Date:** 2026-03-07 (Windows/Dweezil)
-**Status:** Complete — needs testing
+**Status:** Complete — tested, working
 
 **What was done:**
 
-Previous "fix" described in the handoff was never actually implemented in the code — `advance()` still did `_sim_elapsed += dt` and `sync_to_ticks` used a naive 86400-threshold re-sync. This was the root cause of the ongoing snap issue.
+Multiple iterations. Root cause confirmed via debug logging: server `game_seconds` is speed-independent, advancing at ~10 sim-sec/real-sec regardless of game speed. Dead-reckoning that value correctly mirrored it — which meant planets appeared frozen. The previous 86400-threshold approach caused backward snaps at high speeds (at 100,000x the threshold hit in under 1 second).
 
-**Root cause (confirmed):** Server `game_seconds` advances at TICK_INTERVAL(1.0)/tick × ~60Hz asyncio = ~60 sim-sec/real-sec, speed-independent. Client `advance(visual_dt)` uses `delta × game_speed`. At 1000x: client = 1000 sim-sec/real-sec vs server = 60 sim-sec/real-sec. Gap accumulates at 940 sim-sec/real-sec. The 86400 threshold was hit in ~92 real-seconds, triggering a hard backward snap. At 100,000x: hit in under 1 second — hence "orbits briefly then reverts."
+**Final fix:** Anchor `_sim_elapsed` to server's `game_seconds` on the first poll only, then let `advance(dt)` run at client `game_speed` locally — identical to single-player behavior. One snap on connect (unavoidable), smooth motion thereafter at whatever speed the client is set to.
 
-**Actual fix implemented:**
-- `_poll_count`, `_server_tick_rate`, `_last_poll_msec`, `_last_poll_sim` vars added.
-- `sync_to_ticks()` SERVER mode: polls 1 and 2 hard-snap (two snaps unavoidable to measure rate). Poll 2 computes `_server_tick_rate = sim_advance / real_elapsed_ms`. Poll 3+ refines via lerp(0.3), returns 0.0 (no snap).
-- `advance()` SERVER mode: when `_server_tick_rate >= 0`, computes `_sim_elapsed = _last_poll_sim + (now_ms - _last_poll_msec) * _server_tick_rate`. Ignores `dt`/`game_speed` entirely. Smooth dead-reckoning between polls.
-- LOCAL mode: unchanged (`_sim_elapsed += dt`).
+**Key insight:** `game_seconds` is only useful for the *starting position*, not ongoing tracking. After that, the client's local accumulation at game_speed is the correct visual driver.
 
 **Files modified:**
-- `core/data/ephemeris_data.gd` — replaced broken threshold approach with 2-snap + dead-reckoning
+- `core/data/ephemeris_data.gd` — single-anchor approach, removed all dead-reckoning complexity
 
 ---
 
