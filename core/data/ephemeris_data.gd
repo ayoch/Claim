@@ -126,6 +126,7 @@ func sync_to_ticks(ticks: float) -> float:
 		_last_poll_sim = ticks
 		_last_poll_msec = now
 		_dirty = true
+		print("[Ephemeris] Poll %d snap: ticks=%.1f rate=%.6f sim=%.1f" % [_poll_count, ticks, _server_tick_rate, _sim_elapsed])
 		return ticks - prev_sim
 
 	# Poll 3+: refine rate estimate via lerp, no snap — advance() handles position.
@@ -139,6 +140,7 @@ func sync_to_ticks(ticks: float) -> float:
 				_server_tick_rate = lerpf(_server_tick_rate, new_rate, 0.3)
 		_last_poll_sim = ticks
 		_last_poll_msec = now
+		print("[Ephemeris] Poll %d update: ticks=%.1f new_rate=%.6f smoothed_rate=%.6f sim=%.1f" % [_poll_count, ticks, new_rate, _server_tick_rate, _sim_elapsed])
 
 	return 0.0
 
