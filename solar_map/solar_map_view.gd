@@ -208,14 +208,7 @@ func _get_nebula_tile(tile_coord: Vector2i) -> Array:
 	return blobs
 
 func _draw_starfield() -> void:
-	# Background image rendered via CanvasLayer in _ready() — just fill with dark color
-	# in case the texture hasn't loaded yet.
-	var viewport_size := get_viewport_rect().size
-	var cam_pos := camera.global_position
-	var zoom := camera.zoom.x
-	var half_view := viewport_size / (2.0 * zoom)
-	var visible_rect := Rect2(cam_pos - half_view, half_view * 2.0)
-	draw_rect(visible_rect, Color(0.006, 0.009, 0.016))
+	pass  # Background image handled by CanvasLayer in _ready()
 
 func _draw() -> void:
 	_draw_starfield()
