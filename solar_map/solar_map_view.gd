@@ -88,6 +88,16 @@ var _redraw_accumulator: float = 0.0
 const REDRAW_INTERVAL: float = 1.0 / 60.0  # Cap map redraws at 60fps regardless of game framerate
 
 func _ready() -> void:
+	# Fixed starfield background — CanvasLayer ignores Camera2D so it never scrolls
+	var bg_layer := CanvasLayer.new()
+	bg_layer.layer = -1
+	add_child(bg_layer)
+	var bg_rect := TextureRect.new()
+	bg_rect.texture = _bg_texture
+	bg_rect.stretch_mode = TextureRect.STRETCH_SCALE
+	bg_rect.size = get_viewport_rect().size
+	bg_layer.add_child(bg_rect)
+
 	_setup_zoom_buttons()
 	_setup_search_panel()
 	_spawn_planet_labels()
@@ -198,45 +208,14 @@ func _get_nebula_tile(tile_coord: Vector2i) -> Array:
 	return blobs
 
 func _draw_starfield() -> void:
+	# Background image rendered via CanvasLayer in _ready() — just fill with dark color
+	# in case the texture hasn't loaded yet.
 	var viewport_size := get_viewport_rect().size
 	var cam_pos := camera.global_position
 	var zoom := camera.zoom.x
 	var half_view := viewport_size / (2.0 * zoom)
 	var visible_rect := Rect2(cam_pos - half_view, half_view * 2.0)
-
 	draw_rect(visible_rect, Color(0.006, 0.009, 0.016))
-	draw_texture_rect(_bg_texture, visible_rect, true)
-
-	var tile_min_x := int(floor(visible_rect.position.x / STAR_TILE_SIZE))
-	var tile_min_y := int(floor(visible_rect.position.y / STAR_TILE_SIZE))
-	var tile_max_x := int(floor(visible_rect.end.x / STAR_TILE_SIZE))
-	var tile_max_y := int(floor(visible_rect.end.y / STAR_TILE_SIZE))
-
-	# Nebula layer first (behind everything)
-	for tx in range(tile_min_x, tile_max_x + 1):
-		for ty in range(tile_min_y, tile_max_y + 1):
-			var tile_origin := Vector2(tx * STAR_TILE_SIZE, ty * STAR_TILE_SIZE)
-			for blob in _get_nebula_tile(Vector2i(tx, ty)):
-				var pos: Vector2 = tile_origin + blob["offset"]
-				draw_circle(pos, blob["radius"], NEBULA_COLORS[blob["color_idx"]])
-
-	# Stars
-	for tx in range(tile_min_x, tile_max_x + 1):
-		for ty in range(tile_min_y, tile_max_y + 1):
-			var tile_origin := Vector2(tx * STAR_TILE_SIZE, ty * STAR_TILE_SIZE)
-			for star in _get_star_tile(Vector2i(tx, ty)):
-				var pos: Vector2 = tile_origin + star["offset"]
-				var bright: float = clampf(
-					star["brightness"] + sin(_starfield_time + star["twinkle_phase"]) * star["twinkle_amount"],
-					0.08, 1.0)
-				var base: Color = STAR_COLORS[star["color_idx"]]
-				var color := Color(base.r, base.g, base.b, bright)
-				var sz: float = star["size"]
-				# Bloom: faint halo then sharp core for brighter stars
-				if star["bloom"]:
-					draw_circle(pos, sz * 3.0, Color(base.r, base.g, base.b, bright * 0.12))
-					draw_circle(pos, sz * 1.6, Color(base.r, base.g, base.b, bright * 0.30))
-				draw_circle(pos, sz, color)
 
 func _draw() -> void:
 	_draw_starfield()
@@ -798,8 +777,6 @@ func _process(delta: float) -> void:
 		_ships_need_refresh = false
 		_refresh_ship_markers()
 		_refresh_ship_selector()
-
-	_starfield_time += delta * STAR_TWINKLE_SPEED
 
 	# Keep asteroid labels the same screen size regardless of zoom source
 	if _zoom_level != _last_label_zoom:
