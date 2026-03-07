@@ -277,7 +277,20 @@ func _is_solar_map_visible() -> bool:
 	return tab_container.current_tab == 5
 
 func _process_orbits(dt: float) -> void:
-	# Adaptive orbital update frequency based on game speed AND map visibility
+	# In SERVER mode: bypass the accumulator entirely.
+	# _sim_elapsed must update every frame so the solar map's get_sim_elapsed()
+	# returns a fresh value each frame for smooth analytical orbit display.
+	# Asteroid/colony orbital_angle isn't needed (visual positions use analytical formula;
+	# gameplay is server-side). Docked ship sync still runs below.
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		CelestialData.advance_planets(dt)
+		var earth_pos := CelestialData.get_earth_position_au()
+		for ship in GameState.ships:
+			if ship.is_docked:
+				ship.position_au = ship.docked_at_colony.get_position_au() if ship.docked_at_colony != null else earth_pos
+		return
+
+	# LOCAL mode: adaptive orbital update frequency based on game speed AND map visibility
 	# At low speeds, orbital motion is imperceptible - no need to update every tick
 	# When map is hidden, we can reduce frequency even more (positions still accurate enough for gameplay)
 	var speed := TimeScale.speed_multiplier
