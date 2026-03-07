@@ -82,10 +82,18 @@ func advance(dt: float) -> void:
 	_dirty = true
 
 ## Sync to an authoritative tick count (save load, MP server poll)
-func sync_to_ticks(ticks: float) -> void:
+## Returns the delta applied (0 if no snap occurred)
+func sync_to_ticks(ticks: float) -> float:
 	if abs(ticks - _sim_elapsed) > 1.0:
+		var delta := ticks - _sim_elapsed
 		_sim_elapsed = ticks
 		_dirty = true
+		return delta
+	return 0.0
+
+## Get current sim elapsed time
+func get_sim_elapsed() -> float:
+	return _sim_elapsed
 
 ## Get JD from accumulated sim time
 func _get_sim_jd() -> float:

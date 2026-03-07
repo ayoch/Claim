@@ -98,9 +98,15 @@ static func advance_planets(dt: float) -> void:
 	ephemeris.advance(dt)
 
 ## Called when server sends an authoritative total_ticks (MP poll or save load)
-static func sync_ephemeris_to_ticks(ticks: float) -> void:
+## Returns the snap delta (0 if no snap occurred)
+static func sync_ephemeris_to_ticks(ticks: float) -> float:
 	_ensure_init()
-	ephemeris.sync_to_ticks(ticks)
+	return ephemeris.sync_to_ticks(ticks)
+
+## Get current sim elapsed seconds
+static func get_sim_elapsed() -> float:
+	_ensure_init()
+	return ephemeris.get_sim_elapsed()
 
 ## Compute gravitational acceleration at a position from Sun + all planets
 ## Returns acceleration in AU/s² (add to velocity each tick)

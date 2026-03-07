@@ -3,7 +3,14 @@
 
 ---
 
-## 2026-03-07 (Dweezil)
+## 2026-03-07 (Dweezil) [session 3]
+
+- **Asteroid/colony visual positions in SERVER mode (definitive fix)**: Asteroids and colonies showed zero movement in MP despite planets moving correctly. Root cause: visual positions read from `orbital_angle` accumulation which was disconnected from `_sim_elapsed`. Fix: `_spawn_asteroid_markers()` and `_spawn_colony_markers()` now store `initial_angle` (from `orbital_angle` at spawn) and `spawn_sim_elapsed` in marker meta. `_update_asteroid_targets()` and `_update_colony_targets()` compute visual position analytically as `initial_angle + (TAU/period) * (sim_elapsed - spawn_elapsed)` — same time source as planet positions, guaranteed to advance. Also: `sync_to_ticks()` now returns snap delta; `apply_server_state()` applies that delta to asteroid/colony `orbital_angle` values to keep gameplay positions in sync.
+- **Files**: `solar_map_view.gd`, `ephemeris_data.gd`, `celestial_data.gd`, `game_state.gd`
+
+---
+
+## 2026-03-07 (Dweezil) [session 2]
 
 - **Asteroid belt density shading**: Replaced flat annulus with 48 Gaussian radial bands. `_belt_density(au)` models real Kirkwood gaps (3:1, 5:2, 7:3, 4:3). Each band = one ring polygon (48 draw calls vs prior 3072). Soft edge falloff and visible dark lanes.
 - **Ship marker lerp fix**: At 100k sim speed, lerp factor clamped to 1.0 → hard snap → jitter. Capped position/progress/rotation lerp at 0.85 per frame. Smooth motion at all speeds.

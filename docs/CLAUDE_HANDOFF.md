@@ -6,7 +6,31 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Bug Fixes — Orbit Regression, Shipyard Popup, Window Scaling
+### Latest Work Session: Asteroid/Colony Orbit Sync Fix (SERVER Mode)
+**Date:** 2026-03-07 (Windows/Dweezil)
+**Status:** Complete — committed and pushed
+
+**What was done:**
+
+Asteroids and colonies showed **zero visual movement** in SERVER mode despite planets moving correctly. Root cause: visual positions were read from `orbital_angle` accumulation (incremented by `advance_orbit(dt)`) which was disconnected from `_sim_elapsed`. Since planets use `_sim_elapsed` for Keplerian computation and asteroids used `orbital_angle`, they were driven by different time tracking paths. Whether a stale reference, a missed sync snap, or something else, the `orbital_angle` path was broken for visual display.
+
+**Definitive fix:** Changed visual position computation to use the same time source as planets.
+- `_spawn_asteroid_markers()` and `_spawn_colony_markers()` now store `initial_angle` (asteroid's `orbital_angle` at spawn time) and `spawn_sim_elapsed` in each marker's meta.
+- `_update_asteroid_targets()` and `_update_colony_targets()` compute visual position as: `initial_angle + (TAU/period) * (sim_elapsed - spawn_elapsed)` — driven by `CelestialData.get_sim_elapsed()` (same as planets).
+
+**Additional fix:** `sync_to_ticks()` now returns the snap delta. When `apply_server_state()` causes a snap, all asteroid/colony `orbital_angle` values are also advanced by the delta to keep gameplay positions (used by ship navigation) in sync with `_sim_elapsed`.
+
+**Important:** At 10,000x, inner planets orbit in 12-50 real minutes, belt asteroids in 4-10 hours — this speed differential is physically correct.
+
+**Files modified:**
+- `solar_map/solar_map_view.gd` — `_spawn_asteroid_markers`, `_spawn_colony_markers`, `_update_asteroid_targets`, `_update_colony_targets`
+- `core/data/ephemeris_data.gd` — `sync_to_ticks()` returns delta, added `get_sim_elapsed()`
+- `core/data/celestial_data.gd` — `sync_ephemeris_to_ticks()` returns delta, added `get_sim_elapsed()`
+- `core/autoloads/game_state.gd` — `apply_server_state()` advances asteroid/colony angles on snap
+
+---
+
+### Previous Work Session: Bug Fixes — Orbit Regression, Shipyard Popup, Window Scaling
 **Date:** 2026-03-07 (Windows/Dweezil)
 **Status:** Complete — committed and pushed
 

@@ -3263,7 +3263,13 @@ func apply_server_state(server_data: Dictionary) -> void:
 
 	# Update total_ticks from server (for date/time display and orbital positions)
 	total_ticks = int(server_data.get("total_ticks", total_ticks))
-	CelestialData.sync_ephemeris_to_ticks(total_ticks)
+	var orbit_snap_delta := CelestialData.sync_ephemeris_to_ticks(total_ticks)
+	# Snap asteroid/colony orbital angles by the same delta so they stay in sync with planets
+	if abs(orbit_snap_delta) > 1.0:
+		for asteroid in asteroids:
+			asteroid.advance_orbit(orbit_snap_delta)
+		for colony in colonies:
+			colony.advance_orbit(orbit_snap_delta)
 
 	# Update speed multiplier from server (sync client display with server speed)
 	var server_speed: float = float(server_data.get("speed_multiplier", 1.0))

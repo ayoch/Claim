@@ -690,18 +690,26 @@ func _update_planet_targets() -> void:
 		_planet_targets[i] = CelestialData.get_planet_position_au(i) * AU_PIXELS
 
 func _spawn_asteroid_markers() -> void:
+	var spawn_sim_elapsed := CelestialData.get_sim_elapsed()
 	for asteroid in GameState.asteroids:
 		var marker: Node2D = asteroid_marker_scene.instantiate()
 		marker.asteroid = asteroid
+		# Store initial angle and spawn time so we can compute position analytically
+		# from _sim_elapsed (same time source as planets) rather than orbital_angle accumulation
+		marker.set_meta("initial_angle", asteroid.orbital_angle)
+		marker.set_meta("spawn_sim_elapsed", spawn_sim_elapsed)
 		var pos := asteroid.get_position_au() * AU_PIXELS
 		marker.position = pos
 		marker.set_meta("target_pos", pos)
 		asteroid_markers.add_child(marker)
 
 func _spawn_colony_markers() -> void:
+	var spawn_sim_elapsed := CelestialData.get_sim_elapsed()
 	for colony in GameState.colonies:
 		var marker := _ColonyMarkerNode.new()
 		marker.set_meta("colony", colony)
+		marker.set_meta("initial_angle", colony.orbital_angle)
+		marker.set_meta("spawn_sim_elapsed", spawn_sim_elapsed)
 		var label := Label.new()
 		label.text = colony.colony_name
 		label.position = Vector2(10, -8)
@@ -969,15 +977,44 @@ func _on_tick(_dt: float) -> void:
 	# No need to duplicate here
 
 func _update_asteroid_targets() -> void:
+	var sim_elapsed := CelestialData.get_sim_elapsed()
 	for marker in asteroid_markers.get_children():
-		if marker.asteroid:
-			marker.set_meta("target_pos", marker.asteroid.get_position_au() * AU_PIXELS)
+		var ast: AsteroidData = marker.asteroid
+		if not ast:
+			continue
+		var period := ast.get_orbital_period()
+		if period <= 0.0:
+			continue
+		var initial_angle: float = marker.get_meta("initial_angle", ast.orbital_angle)
+		var spawn_elapsed: float = marker.get_meta("spawn_sim_elapsed", 0.0)
+		var visual_angle := initial_angle + (TAU / period) * (sim_elapsed - spawn_elapsed)
+		var pos := Vector2(cos(visual_angle), sin(visual_angle)) * ast.orbit_au * AU_PIXELS
+		marker.set_meta("target_pos", pos)
 
 func _update_colony_targets() -> void:
+	var sim_elapsed := CelestialData.get_sim_elapsed()
 	for marker in _colony_markers:
 		var colony: Colony = marker.get_meta("colony")
-		if colony:
+		if not colony:
+			continue
+		# Tiny moon — snap to parent planet
+		if colony.parent_planet_index >= 0 and colony.orbit_au < 0.05:
 			marker.set_meta("target_pos", colony.get_position_au() * AU_PIXELS)
+			continue
+		var period := colony.get_orbital_period()
+		var initial_angle: float = marker.get_meta("initial_angle", colony.orbital_angle)
+		var spawn_elapsed: float = marker.get_meta("spawn_sim_elapsed", 0.0)
+		var visual_angle := initial_angle + (TAU / period) * (sim_elapsed - spawn_elapsed)
+		var local_pos := Vector2(cos(visual_angle), sin(visual_angle)) * colony.orbit_au
+		# Add parent body offset if applicable
+		var world_pos: Vector2
+		if colony.parent_planet_index >= 0:
+			world_pos = CelestialData.get_planet_position_au(colony.parent_planet_index) + local_pos
+		elif colony.orbits_earth:
+			world_pos = CelestialData.get_earth_position_au() + local_pos
+		else:
+			world_pos = local_pos
+		marker.set_meta("target_pos", world_pos * AU_PIXELS)
 
 func _unhandled_input(event: InputEvent) -> void:
 	# Cancel dispatch mode on Escape
