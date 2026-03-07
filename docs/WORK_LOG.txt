@@ -3,9 +3,16 @@
 
 ---
 
+## 2026-03-07 (Dweezil) [session 5]
+
+- **Server dead-reckoning clock fix (definitive)**: Diagnostic logging revealed the real problem: server `total_ticks` advances at 60× the client rate. `TICK_INTERVAL=1.0` × ~60Hz async loop = 60,000 sim-sec/real-sec at 1000x; client was 1,000. Every poll was a 7–9 million sim-second hard snap. Prior gradual-correction approach was wrong fix. Real fix: `EphemerisData` tracks `_server_tick_rate` (sim-sec/ms) measured empirically from consecutive polls (lerp-smoothed). `advance(dt)` in SERVER mode uses `real_elapsed_ms × _server_tick_rate` instead of `dt × speed`. After 2 calibration polls, snaps become sub-second. LOCAL mode unchanged.
+- **Files**: `ephemeris_data.gd`
+
+---
+
 ## 2026-03-07 (Dweezil) [session 4]
 
-- **Smooth clock correction (SERVER mode packet jitter fix)**: Server polls every ~2s cause `sync_to_ticks()` to snap `_sim_elapsed` by hundreds of sim-seconds due to network timing variance. With direct per-frame position assignment, snaps were visible as jumps. Fix: two-tier correction in `EphemerisData`. Large discontinuities (>86400s) snap immediately. Small drifts schedule `_sim_correction` for gradual bleed-off: `advance(dt)` applies ≤20% of correction per frame, capped at half frame step. Correction bleeds off in ~5–10 frames — invisible at orbital scales. Standard dead reckoning approach.
+- **Smooth clock correction (SERVER mode packet jitter fix — superseded)**: Attempted gradual bleed-off of `_sim_correction`. Didn't work because the drift was structural (60× rate mismatch), not variance.
 - **Files**: `ephemeris_data.gd`
 
 ---

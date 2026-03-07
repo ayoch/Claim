@@ -70,41 +70,59 @@ const GAME_EPOCH_UNIX: float = 4481654400.0
 var _cached_positions: Dictionary = {}  # body_name -> Vector2
 var _sim_elapsed: float = -1.0          # Seconds of sim time elapsed since game epoch
 var _dirty: bool = true                 # Recompute positions on next get_position()
-var _sim_correction: float = 0.0       # Pending smooth correction (avoids snap artifacts from server polls)
+var _sim_correction: float = 0.0       # Unused — kept for compatibility
+
+# Server dead-reckoning: measure actual server tick rate from consecutive polls.
+# The server's TICK_INTERVAL=1.0 running at ~60Hz makes total_ticks advance at
+# 60*speed sim-sec/real-sec, vs client's 1*speed sim-sec/real-sec. Rather than
+# hardcoding a correction factor, we measure the rate empirically and dead-reckon.
+var _server_tick_rate: float = 0.0   # sim-sec per real millisecond (0 = not yet measured)
+var _last_server_ticks: float = -1.0 # server total_ticks from previous poll
+var _last_poll_ms: int = -1          # real time (msec) of previous poll
+var _last_advance_ms: int = -1       # real time (msec) of last advance() call
 
 func initialize() -> void:
 	# Seed from GameState.total_ticks so saves and MP polls start at the right date
 	_sim_elapsed = GameState.total_ticks
 	_recompute_positions()
 
-## Advance sim time by dt seconds (called from CelestialData.advance_planets)
+## Advance sim time by dt seconds.
+## In SERVER mode (after rate is calibrated): uses wall-clock time × observed server rate,
+## so orbital motion matches the server's actual tick rate regardless of TICK_INTERVAL.
+## In LOCAL mode (or before first two polls): uses sim dt as-is.
 func advance(dt: float) -> void:
-	_sim_elapsed += dt
-	# Bleed off any pending correction gradually — at most 20% per frame,
-	# capped to half the frame step so we never overshoot or reverse motion.
-	if _sim_correction != 0.0:
-		var step := clampf(_sim_correction * 0.2, -dt * 0.5, dt * 0.5)
-		_sim_elapsed += step
-		_sim_correction -= step
-		if absf(_sim_correction) < 0.1:
-			_sim_correction = 0.0
+	if _server_tick_rate > 0.0:
+		var now_ms := Time.get_ticks_msec()
+		if _last_advance_ms >= 0:
+			_sim_elapsed += float(now_ms - _last_advance_ms) * _server_tick_rate
+		_last_advance_ms = now_ms
+	else:
+		_sim_elapsed += dt
 	_dirty = true
 
-## Sync to an authoritative tick count (save load, MP server poll)
-## Returns the snap delta if a hard snap occurred (large discontinuity), else 0.
-## Small drifts (network timing variance) are scheduled as gradual corrections.
+## Sync to an authoritative tick count (save load, MP server poll).
+## Calibrates server tick rate from consecutive polls, then snaps to server value.
+## Returns the snap delta (used by game_state to advance asteroid/colony orbit angles).
 func sync_to_ticks(ticks: float) -> float:
-	var drift := ticks - _sim_elapsed
-	if absf(drift) > 86400.0:
-		# Large discontinuity (load, reconnect, initial connect) — snap immediately
-		_sim_elapsed = ticks
-		_sim_correction = 0.0
-		_dirty = true
-		return drift
-	elif absf(drift) > 1.0:
-		# Small drift from network timing variance — correct gradually, no visible jump
-		_sim_correction = drift
-	return 0.0
+	var now_ms := Time.get_ticks_msec()
+
+	# Calibrate: measure rate from consecutive polls (need two polls minimum)
+	if _last_server_ticks >= 0.0 and _last_poll_ms >= 0:
+		var real_ms := float(now_ms - _last_poll_ms)
+		if real_ms > 100.0:  # Ignore spuriously close polls
+			var new_rate := (ticks - _last_server_ticks) / real_ms
+			if new_rate > 0.0:
+				# Smooth rate estimate to avoid outlier polls causing a glitch
+				_server_tick_rate = lerp(_server_tick_rate, new_rate, 0.3) if _server_tick_rate > 0.0 else new_rate
+
+	_last_server_ticks = ticks
+	_last_poll_ms = now_ms
+	_last_advance_ms = now_ms  # Re-anchor advance timer so we don't double-count
+
+	var delta := ticks - _sim_elapsed
+	_sim_elapsed = ticks
+	_dirty = true
+	return delta
 
 ## Get current sim elapsed time
 func get_sim_elapsed() -> float:

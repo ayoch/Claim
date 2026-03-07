@@ -6,22 +6,24 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Smooth Clock Correction (SERVER Mode Packet Jitter)
+### Latest Work Session: Server Dead-Reckoning Clock Fix (SERVER Mode Orbital Jitter)
 **Date:** 2026-03-07 (Windows/Dweezil)
 **Status:** Complete — committed and pushed
 
 **What was done:**
 
-Server polls arrive every ~2s with `total_ticks`. Network timing variance means each poll arrives slightly early or late, causing `sync_to_ticks()` to snap `_sim_elapsed` by hundreds of sim-seconds. With per-frame direct position assignment (no lerp), those snaps appeared as visible jumps in all orbital bodies.
+Root-cause identified from diagnostic logging: server `total_ticks` advances at `TICK_INTERVAL(1.0) × speed × ~60Hz` — **60× faster** than the client's `delta × speed`. Every 2-second poll brought a 7–9 million sim-second drift, causing a hard snap every single poll and constant visible jumps. The prior gradual-correction approach was fundamentally the wrong fix because the gap was structural, not variance.
 
-**Fix:** Two-tier correction in `EphemerisData`:
-- **Large discontinuities** (>86400s): snap immediately. Covers initial connect, save load, reconnect.
-- **Small drifts** (<86400s, >1s): schedule as `_sim_correction` for gradual bleed-off rather than snap. `advance(dt)` applies up to 20% of remaining correction per frame, capped at half the frame step so motion never reverses. Correction bled off in ~5–10 frames — invisible at orbital scales.
+**Root cause:** `server/server/config.py` has `TICK_INTERVAL = 1.0`. Each tick at 1000x adds 1000 sim-seconds. Python asyncio runs at ~60Hz. Result: 60,000 sim-sec/real-sec server rate vs 1,000 sim-sec/real-sec client rate.
 
-This is standard dead reckoning: client computes positions locally from a time source, server periodically re-anchors the clock. Small clock adjustments are invisible; large discontinuities snap only when genuinely warranted.
+**Fix:** `EphemerisData` now dead-reckons using the server's **empirically measured** tick rate:
+- `sync_to_ticks()` measures real time (`Time.get_ticks_msec()`) between consecutive polls and computes `_server_tick_rate` (sim-sec/ms). Rate is lerp-smoothed (0.3 weight) against outlier polls.
+- `advance(dt)` in SERVER mode: advances `_sim_elapsed` by `real_elapsed_ms × _server_tick_rate` — ignores `dt`/`speed_multiplier` entirely.
+- LOCAL mode (or before two polls calibrate rate): falls back to `_sim_elapsed += dt` unchanged.
+- `sync_to_ticks()` always snaps `_sim_elapsed = ticks`. After calibration, the snap delta is sub-second and invisible. Two initial hard snaps on connect are unavoidable (need two polls to compute rate).
 
 **Files modified:**
-- `core/data/ephemeris_data.gd` — `advance()` bleeds `_sim_correction`, `sync_to_ticks()` two-tier logic
+- `core/data/ephemeris_data.gd` — replaced gradual-correction approach with empirical rate dead reckoning
 
 ---
 
