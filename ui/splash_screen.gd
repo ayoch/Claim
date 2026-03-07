@@ -14,7 +14,7 @@ func _ready() -> void:
 
 	# Size logo to 30% of viewport, centered
 	var vp := get_viewport_rect().size
-	var logo_h := vp.y * 0.30
+	var logo_h := vp.y * 0.18
 	var logo_w := logo_h  # cropped image is nearly square
 	logo.set_anchor_and_offset(SIDE_LEFT,   0.5, -logo_w * 0.5)
 	logo.set_anchor_and_offset(SIDE_RIGHT,  0.5,  logo_w * 0.5)
