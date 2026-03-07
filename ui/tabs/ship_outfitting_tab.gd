@@ -463,7 +463,7 @@ func _build_buy_ship_ui() -> void:
 		class_header.add_child(class_label)
 
 		var price: int = ShipData.CLASS_PRICES[ship_class]
-		var price_label := _lbl()
+		var price_label := Label.new()
 		price_label.text = "$%s" % _format_number(price)
 		price_label.add_theme_font_size_override("font_size", 23)
 		if GameState.money >= price:

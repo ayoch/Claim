@@ -93,8 +93,7 @@ func _get_sim_jd() -> float:
 
 ## Compute position for a planet at the current sim time
 func get_position(body_name: String) -> Vector2:
-	# Auto-sync if GameState jumped ahead (e.g. save load before advance() is called)
-	if _sim_elapsed < 0.0 or GameState.total_ticks > _sim_elapsed + 3600.0:
+	if _sim_elapsed < 0.0:
 		_sim_elapsed = GameState.total_ticks
 		_dirty = true
 	if _dirty:

@@ -1,12 +1,31 @@
 # Claude Code Handoff Document
-**Last Updated:** 2026-03-06
+**Last Updated:** 2026-03-07
 **Current Instance:** Dweezil (Windows)
 
 ---
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Visual Polish + MP Planet Fix
+### Latest Work Session: Bug Fixes — Orbit Regression, Shipyard Popup, Window Scaling
+**Date:** 2026-03-07 (Windows/Dweezil)
+**Status:** Complete — committed and pushed
+
+**What was done:**
+
+1. **Orbit regression fix** — Previous session's `EphemerisData` changes introduced an auto-sync guard (`GameState.total_ticks > _sim_elapsed + 3600`) that could snap `_sim_elapsed` unexpectedly. Removed the 3600-second snap; kept only the `_sim_elapsed < 0` guard for pre-initialization safety. Planet motion at 1000x is working correctly (Mercury orbits in ~2 real hours at 1000x — this is correct behavior).
+
+2. **Shipyard popup price label** — `_build_buy_ship_ui()` created `price_label` via `_lbl()` which adds `autowrap_mode = AUTOWRAP_WORD_SMART`. Inside an `HBoxContainer` where `class_label` has `SIZE_EXPAND_FILL`, `price_label` got 0 width allocated, causing every character of the price text to wrap to its own line — making the HBoxContainer 300+ pixels tall. Fix: changed `price_label` creation from `_lbl()` to `Label.new()` (no autowrap), so it gets its natural text-width minimum size.
+
+3. **Window scaling** — `canvas_items` stretch mode with no aspect setting caused the portrait game to distort or appear capped on widescreen monitors. Added `window/stretch/aspect="keep"` to `project.godot` to maintain the 680:1200 portrait aspect ratio with letterboxing.
+
+**Files modified:**
+- `core/data/ephemeris_data.gd` — removed snap guard in `get_position()`, kept only `< 0` init guard
+- `ui/tabs/ship_outfitting_tab.gd` — `price_label` uses `Label.new()` instead of `_lbl()`
+- `project.godot` — added `window/stretch/aspect="keep"`
+
+---
+
+### Previous Work Session: Visual Polish + MP Planet Fix
 **Date:** 2026-03-07 (Windows/Dweezil)
 **Status:** Complete — committed and pushed
 

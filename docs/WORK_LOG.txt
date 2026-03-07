@@ -531,3 +531,10 @@
   - Created docs/PARTNERSHIP_SYSTEM.md and partnership_test.gd
   - ~800-1000 lines across 7 core files
 
+
+
+## 2026-03-07 (Dweezil)
+
+- **Orbit regression fix:** Removed flawed auto-sync guard from `EphemerisData.get_position()` — the `total_ticks > _sim_elapsed + 3600` check could snap planet positions unexpectedly. Kept only `_sim_elapsed < 0` guard for pre-initialization safety. Planet orbital motion at 1000x is correct (Mercury ~2 real hours per orbit).
+- **Shipyard "Buy New Ship" popup fixed:** Price label was created via `_lbl()` (AUTOWRAP_WORD_SMART), getting 0 width inside HBoxContainer due to class label's SIZE_EXPAND_FILL, causing each price character to wrap to its own line → ~300px tall header. Changed `price_label` creation to `Label.new()` (no autowrap).
+- **Window scaling:** Added `window/stretch/aspect="keep"` to `project.godot` so portrait game (680×1200) maintains aspect ratio with letterboxing on widescreen windows instead of distorting.
