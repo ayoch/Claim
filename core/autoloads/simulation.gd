@@ -151,24 +151,6 @@ var _rescue_log_file: FileAccess = null
 var _rescue_log_buffer: Array[String] = []
 const RESCUE_LOG_PATH := "res://rescue_debug.log"
 
-# Real-time synchronization: Game epoch is Jan 1, 2112 00:00:00 UTC
-# Unix timestamp: 4481654400 (calculated from datetime(2112, 1, 1, 0, 0, 0))
-const GAME_EPOCH_UNIX: int = 4481654400
-
-## Calculate total_ticks from real-world time mapped to year 2112
-## This keeps total_ticks synchronized with display time (both use real-world time)
-func _calculate_ticks_from_realtime() -> float:
-	var now := Time.get_datetime_dict_from_system()
-	var game_time := {
-		"year": 2112,
-		"month": now["month"],
-		"day": now["day"],
-		"hour": now["hour"],
-		"minute": now["minute"],
-		"second": now["second"]
-	}
-	var game_unix: int = Time.get_unix_time_from_datetime_dict(game_time)
-	return float(game_unix - GAME_EPOCH_UNIX)
 
 func _ready() -> void:
 	# Initialize rescue debug log
