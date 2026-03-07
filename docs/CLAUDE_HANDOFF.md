@@ -6,7 +6,26 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Asteroid/Colony Orbit Sync Fix (SERVER Mode)
+### Latest Work Session: Smooth Clock Correction (SERVER Mode Packet Jitter)
+**Date:** 2026-03-07 (Windows/Dweezil)
+**Status:** Complete — committed and pushed
+
+**What was done:**
+
+Server polls arrive every ~2s with `total_ticks`. Network timing variance means each poll arrives slightly early or late, causing `sync_to_ticks()` to snap `_sim_elapsed` by hundreds of sim-seconds. With per-frame direct position assignment (no lerp), those snaps appeared as visible jumps in all orbital bodies.
+
+**Fix:** Two-tier correction in `EphemerisData`:
+- **Large discontinuities** (>86400s): snap immediately. Covers initial connect, save load, reconnect.
+- **Small drifts** (<86400s, >1s): schedule as `_sim_correction` for gradual bleed-off rather than snap. `advance(dt)` applies up to 20% of remaining correction per frame, capped at half the frame step so motion never reverses. Correction bled off in ~5–10 frames — invisible at orbital scales.
+
+This is standard dead reckoning: client computes positions locally from a time source, server periodically re-anchors the clock. Small clock adjustments are invisible; large discontinuities snap only when genuinely warranted.
+
+**Files modified:**
+- `core/data/ephemeris_data.gd` — `advance()` bleeds `_sim_correction`, `sync_to_ticks()` two-tier logic
+
+---
+
+### Previous Work Session: Asteroid/Colony Orbit Sync Fix (SERVER Mode)
 **Date:** 2026-03-07 (Windows/Dweezil)
 **Status:** Complete — committed and pushed
 

@@ -70,6 +70,7 @@ const GAME_EPOCH_UNIX: float = 4481654400.0
 var _cached_positions: Dictionary = {}  # body_name -> Vector2
 var _sim_elapsed: float = -1.0          # Seconds of sim time elapsed since game epoch
 var _dirty: bool = true                 # Recompute positions on next get_position()
+var _sim_correction: float = 0.0       # Pending smooth correction (avoids snap artifacts from server polls)
 
 func initialize() -> void:
 	# Seed from GameState.total_ticks so saves and MP polls start at the right date
@@ -79,16 +80,30 @@ func initialize() -> void:
 ## Advance sim time by dt seconds (called from CelestialData.advance_planets)
 func advance(dt: float) -> void:
 	_sim_elapsed += dt
+	# Bleed off any pending correction gradually — at most 20% per frame,
+	# capped to half the frame step so we never overshoot or reverse motion.
+	if _sim_correction != 0.0:
+		var step := clampf(_sim_correction * 0.2, -dt * 0.5, dt * 0.5)
+		_sim_elapsed += step
+		_sim_correction -= step
+		if absf(_sim_correction) < 0.1:
+			_sim_correction = 0.0
 	_dirty = true
 
 ## Sync to an authoritative tick count (save load, MP server poll)
-## Returns the delta applied (0 if no snap occurred)
+## Returns the snap delta if a hard snap occurred (large discontinuity), else 0.
+## Small drifts (network timing variance) are scheduled as gradual corrections.
 func sync_to_ticks(ticks: float) -> float:
-	if abs(ticks - _sim_elapsed) > 1.0:
-		var delta := ticks - _sim_elapsed
+	var drift := ticks - _sim_elapsed
+	if absf(drift) > 86400.0:
+		# Large discontinuity (load, reconnect, initial connect) — snap immediately
 		_sim_elapsed = ticks
+		_sim_correction = 0.0
 		_dirty = true
-		return delta
+		return drift
+	elif absf(drift) > 1.0:
+		# Small drift from network timing variance — correct gradually, no visible jump
+		_sim_correction = drift
 	return 0.0
 
 ## Get current sim elapsed time

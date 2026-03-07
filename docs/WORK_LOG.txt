@@ -3,6 +3,13 @@
 
 ---
 
+## 2026-03-07 (Dweezil) [session 4]
+
+- **Smooth clock correction (SERVER mode packet jitter fix)**: Server polls every ~2s cause `sync_to_ticks()` to snap `_sim_elapsed` by hundreds of sim-seconds due to network timing variance. With direct per-frame position assignment, snaps were visible as jumps. Fix: two-tier correction in `EphemerisData`. Large discontinuities (>86400s) snap immediately. Small drifts schedule `_sim_correction` for gradual bleed-off: `advance(dt)` applies ≤20% of correction per frame, capped at half frame step. Correction bleeds off in ~5–10 frames — invisible at orbital scales. Standard dead reckoning approach.
+- **Files**: `ephemeris_data.gd`
+
+---
+
 ## 2026-03-07 (Dweezil) [session 3]
 
 - **Asteroid/colony visual positions in SERVER mode (definitive fix)**: Asteroids and colonies showed zero movement in MP despite planets moving correctly. Root cause: visual positions read from `orbital_angle` accumulation which was disconnected from `_sim_elapsed`. Fix: `_spawn_asteroid_markers()` and `_spawn_colony_markers()` now store `initial_angle` (from `orbital_angle` at spawn) and `spawn_sim_elapsed` in marker meta. `_update_asteroid_targets()` and `_update_colony_targets()` compute visual position analytically as `initial_angle + (TAU/period) * (sim_elapsed - spawn_elapsed)` — same time source as planet positions, guaranteed to advance. Also: `sync_to_ticks()` now returns snap delta; `apply_server_state()` applies that delta to asteroid/colony `orbital_angle` values to keep gameplay positions in sync.
