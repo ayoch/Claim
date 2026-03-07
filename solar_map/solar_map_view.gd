@@ -84,6 +84,8 @@ var _planet_targets: Array[Vector2] = []
 var _planet_positions: Array[Vector2] = []
 var _label_overlap_timer: float = 0.0
 const LABEL_OVERLAP_INTERVAL: float = 0.5  # Check label overlaps twice per second, not every frame
+var _redraw_accumulator: float = 0.0
+const REDRAW_INTERVAL: float = 1.0 / 60.0  # Cap map redraws at 60fps regardless of game framerate
 
 func _ready() -> void:
 	_setup_zoom_buttons()
@@ -840,7 +842,12 @@ func _process(delta: float) -> void:
 		if _preview_blink_time >= PREVIEW_BLINK_PERIOD:
 			_preview_blink_time -= PREVIEW_BLINK_PERIOD
 
-	queue_redraw()
+	# Throttle redraws to 60fps — draw calls are expensive and 120fps is unnecessary
+	# for a strategy map. Force immediate redraw while dragging for crisp panning.
+	_redraw_accumulator += delta
+	if _dragging or _redraw_accumulator >= REDRAW_INTERVAL:
+		_redraw_accumulator = 0.0
+		queue_redraw()
 
 ## Adjust label positions to prevent overlaps
 func _adjust_labels_to_prevent_overlap() -> void:
