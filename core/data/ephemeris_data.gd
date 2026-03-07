@@ -71,11 +71,7 @@ var _cached_positions: Dictionary = {}  # body_name -> Vector2
 var _sim_elapsed: float = -1.0          # Game-seconds elapsed since game epoch
 var _dirty: bool = true                 # Recompute positions on next get_position()
 
-# Server dead-reckoning state
-var _poll_count: int = 0               # Number of server polls received
-var _server_tick_rate: float = -1.0    # sim-sec/ms, empirically measured from polls
-var _last_poll_msec: float = -1.0      # Real wall time (ms) at last poll
-var _last_poll_sim: float = -1.0       # Server game_seconds at last poll
+var _anchored: bool = false             # True after first server sync
 
 func initialize() -> void:
 	# Seed from GameState.total_ticks so saves and MP polls start at the right date
@@ -84,19 +80,15 @@ func initialize() -> void:
 
 ## Advance sim time by dt sim-seconds (called from CelestialData.advance_planets).
 func advance(dt: float) -> void:
-	if BackendManager.current_mode == BackendManager.BackendMode.SERVER and _server_tick_rate > 0.0:
-		# Dead-reckon from last poll anchor using empirically measured server tick rate.
-		# Ignores dt/game_speed entirely — server rate is speed-independent.
-		_sim_elapsed = _last_poll_sim + (float(Time.get_ticks_msec()) - _last_poll_msec) * _server_tick_rate
-		_dirty = true
-		return
 	_sim_elapsed += dt
 	_dirty = true
 
 ## Sync to an authoritative game time value (save load, MP server poll).
 ## LOCAL mode: ticks = total_ticks which is already game-seconds — snap directly.
-## SERVER mode: first two polls snap to calibrate; thereafter dead-reckoning takes over
-##   using the empirically measured server tick rate, so no further snaps occur.
+## SERVER mode: snap once on first poll to get the correct starting position,
+##   then let advance(dt) drive _sim_elapsed at client game_speed locally.
+##   server game_seconds is speed-independent (~10 sim-sec/real-sec), so tracking
+##   it directly would freeze visual orbits — we only use it for the initial anchor.
 ## Returns the snap delta for asteroid/colony orbit angle advancement.
 func sync_to_ticks(ticks: float) -> float:
 	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
@@ -106,46 +98,18 @@ func sync_to_ticks(ticks: float) -> float:
 		_dirty = true
 		return delta
 
-	# SERVER mode: server game_seconds advances at TICK_INTERVAL/tick regardless of speed
-	# (~60 sim-sec/real-sec at asyncio 60Hz). Client game_speed may differ greatly.
-	# Strategy: hard-snap first two polls to establish baseline + measure rate.
-	# From poll 3 onward: dead-reckon only, no snaps.
-	var now := float(Time.get_ticks_msec())
-	var prev_sim := _sim_elapsed
-	_poll_count += 1
-
-	if _poll_count <= 2:
-		# Hard snap. On poll 2, compute the initial rate measurement.
-		if _poll_count == 2 and _last_poll_msec >= 0.0:
-			var real_elapsed := now - _last_poll_msec
-			if real_elapsed > 100.0:
-				var new_rate := (ticks - _last_poll_sim) / real_elapsed
-				if new_rate > 0.0:
-					_server_tick_rate = new_rate
+	# SERVER mode: anchor once, then never re-sync.
+	if not _anchored:
+		var delta := ticks - _sim_elapsed
 		_sim_elapsed = ticks
-		_last_poll_sim = ticks
-		_last_poll_msec = now
+		_anchored = true
 		_dirty = true
-		print("[Ephemeris] Poll %d snap: ticks=%.1f rate=%.6f sim=%.1f" % [_poll_count, ticks, _server_tick_rate, _sim_elapsed])
-		return ticks - prev_sim
-
-	# Poll 3+: refine rate estimate via lerp, no snap — advance() handles position.
-	var real_elapsed := now - _last_poll_msec
-	if real_elapsed > 100.0:
-		var new_rate := (ticks - _last_poll_sim) / real_elapsed
-		if new_rate > 0.0:
-			if _server_tick_rate <= 0.0:
-				_server_tick_rate = new_rate  # First valid measurement
-			else:
-				_server_tick_rate = lerpf(_server_tick_rate, new_rate, 0.3)
-		_last_poll_sim = ticks
-		_last_poll_msec = now
-		print("[Ephemeris] Poll %d update: ticks=%.1f new_rate=%.6f smoothed_rate=%.6f sim=%.1f" % [_poll_count, ticks, new_rate, _server_tick_rate, _sim_elapsed])
+		return delta
 
 	return 0.0
 
-## No-op: game_seconds on the server is speed-independent, so speed changes
-## don't require any re-anchoring. Local advance(dt) stays in sync automatically.
+## No-op: advance(dt) uses client game_speed directly, so speed changes are
+## reflected immediately without any re-anchoring needed.
 func scale_server_rate(_old_speed: float, _new_speed: float) -> void:
 	pass
 
