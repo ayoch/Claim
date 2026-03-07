@@ -88,16 +88,6 @@ var _redraw_accumulator: float = 0.0
 const REDRAW_INTERVAL: float = 1.0 / 60.0  # Cap map redraws at 60fps regardless of game framerate
 
 func _ready() -> void:
-	# Fixed starfield background — CanvasLayer ignores Camera2D so it never scrolls
-	var bg_layer := CanvasLayer.new()
-	bg_layer.layer = -1
-	add_child(bg_layer)
-	var bg_rect := TextureRect.new()
-	bg_rect.texture = _bg_texture
-	bg_rect.stretch_mode = TextureRect.STRETCH_SCALE
-	bg_rect.size = get_viewport_rect().size
-	bg_layer.add_child(bg_rect)
-
 	_setup_zoom_buttons()
 	_setup_search_panel()
 	_spawn_planet_labels()
@@ -208,7 +198,13 @@ func _get_nebula_tile(tile_coord: Vector2i) -> Array:
 	return blobs
 
 func _draw_starfield() -> void:
-	pass  # Background image handled by CanvasLayer in _ready()
+	var viewport_size := get_viewport_rect().size
+	var cam_pos := camera.global_position
+	var zoom := camera.zoom.x
+	var half_view := viewport_size / (2.0 * zoom)
+	var visible_rect := Rect2(cam_pos - half_view, half_view * 2.0)
+	draw_rect(visible_rect, Color(0.006, 0.009, 0.016))
+	draw_texture_rect(_bg_texture, visible_rect, true)
 
 func _draw() -> void:
 	_draw_starfield()
