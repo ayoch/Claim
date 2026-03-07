@@ -79,6 +79,7 @@ var _sim_correction: float = 0.0       # Unused — kept for compatibility
 var _server_hz: float = 60.0         # Server tick rate at 1x (ticks/real-second)
 var _last_server_ticks: float = -1.0 # total_ticks from previous server poll
 var _last_poll_ms: int = -1          # real time (msec) of previous poll
+var _hz_anchored: bool = false       # True after first snap; advance(dt) runs freely after
 
 func initialize() -> void:
 	# Seed from GameState.total_ticks so saves and MP polls start at the right date
@@ -86,16 +87,15 @@ func initialize() -> void:
 	_recompute_positions()
 
 ## Advance sim time by dt sim-seconds (called from CelestialData.advance_planets).
-## Simple accumulation — dead-reckoning rate is handled by sync_to_ticks conversion.
 func advance(dt: float) -> void:
 	_sim_elapsed += dt
 	_dirty = true
 
 ## Sync to an authoritative tick count (save load, MP server poll).
 ## LOCAL mode: ticks are game-seconds — snap directly.
-## SERVER mode: ticks are server-ticks — divide by _server_hz to get game-seconds.
-##   advance() advances at delta*speed (= speed game-sec/real-sec).
-##   ticks/hz also advances at speed game-sec/real-sec. Both match → snaps ≈ 0.
+## SERVER mode: snap _sim_elapsed ONCE on initial connection to anchor server time,
+##   then let advance(dt) run freely. Re-anchors after speed changes.
+##   Avoids repeated backward corrections from Hz calibration convergence.
 ## Returns the snap delta for asteroid/colony orbit angle advancement.
 func sync_to_ticks(ticks: float) -> float:
 	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
@@ -105,7 +105,7 @@ func sync_to_ticks(ticks: float) -> float:
 		_dirty = true
 		return delta
 
-	# SERVER mode: calibrate Hz then convert
+	# SERVER mode: measure Hz from consecutive polls (for accurate initial anchor)
 	var now_ms := Time.get_ticks_msec()
 	if _last_server_ticks >= 0.0 and _last_poll_ms >= 0:
 		var real_s := float(now_ms - _last_poll_ms) / 1000.0
@@ -114,23 +114,29 @@ func sync_to_ticks(ticks: float) -> float:
 			if speed > 0.0:
 				var new_hz := (ticks - _last_server_ticks) / (real_s * speed)
 				if new_hz > 1.0:
-					_server_hz = lerp(_server_hz, new_hz, 0.3)
+					_server_hz = new_hz  # Use directly — we only apply Hz on (re-)anchor
 
 	_last_server_ticks = ticks
 	_last_poll_ms = now_ms
 
-	var new_sim := ticks / _server_hz
-	var delta := new_sim - _sim_elapsed
-	_sim_elapsed = new_sim
-	_dirty = true
-	return delta
+	if not _hz_anchored:
+		# First poll after connect or speed change: anchor _sim_elapsed to server time
+		var new_sim := ticks / _server_hz
+		var delta := new_sim - _sim_elapsed
+		_sim_elapsed = new_sim
+		_hz_anchored = true
+		_dirty = true
+		return delta
 
-## Called when user changes sim speed.
-## Server Hz is speed-independent so no rescaling needed — just invalidate the
-## previous poll so next poll gets a clean Hz measurement at the new speed.
+	# Already anchored — advance(dt) keeps us in sync, no further snapping needed.
+	return 0.0
+
+## Called when user changes sim speed. Re-anchors on next poll so positions
+## align correctly at the new speed without requiring Hz re-convergence.
 func scale_server_rate(_old_speed: float, _new_speed: float) -> void:
 	_last_server_ticks = -1.0
 	_last_poll_ms = -1
+	_hz_anchored = false  # Re-anchor at next poll with fresh Hz measurement
 
 ## Get current sim elapsed time
 func get_sim_elapsed() -> float:
