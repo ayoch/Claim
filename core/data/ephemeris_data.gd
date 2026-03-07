@@ -70,16 +70,7 @@ const GAME_EPOCH_UNIX: float = 4481654400.0
 var _cached_positions: Dictionary = {}  # body_name -> Vector2
 var _sim_elapsed: float = -1.0          # Game-seconds elapsed since game epoch
 var _dirty: bool = true                 # Recompute positions on next get_position()
-var _sim_correction: float = 0.0       # Unused — kept for compatibility
-
-# Server Hz calibration.
-# Server TICK_INTERVAL=1.0 running at ~60Hz asyncio means total_ticks advances
-# at 60*speed per real-second. Dividing by _server_hz converts to game-seconds.
-# Between polls, advance() uses delta*speed — same rate. Snaps collapse to ~0.
-var _server_hz: float = 60.0         # Server tick rate at 1x (ticks/real-second)
-var _last_server_ticks: float = -1.0 # total_ticks from previous server poll
-var _last_poll_ms: int = -1          # real time (msec) of previous poll
-var _hz_anchored: bool = false       # True after first snap; advance(dt) runs freely after
+var _anchored: bool = false             # True after first server sync
 
 func initialize() -> void:
 	# Seed from GameState.total_ticks so saves and MP polls start at the right date
@@ -92,73 +83,51 @@ func advance(dt: float) -> void:
 	_dirty = true
 
 ## Sync to an authoritative tick count (save load, MP server poll).
-## LOCAL mode: ticks are game-seconds — snap directly.
-## SERVER mode: snap _sim_elapsed ONCE on initial connection to anchor server time,
-##   then let advance(dt) run freely. Re-anchors after speed changes.
-##   Avoids repeated backward corrections from Hz calibration convergence.
+## LOCAL mode: total_ticks is game-seconds — snap directly.
+## SERVER mode: server accumulates total_ticks at speed² per real-second, so
+##   game_seconds = total_ticks / speed_multiplier. Anchor once at login, then
+##   run locally like single-player. Re-sync only if genuine drift is detected.
 ## Returns the snap delta for asteroid/colony orbit angle advancement.
 func sync_to_ticks(ticks: float) -> float:
 	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
-		# LOCAL mode: total_ticks is already in game-seconds
+		# LOCAL mode: total_ticks is already game-seconds
 		var delta := ticks - _sim_elapsed
 		_sim_elapsed = ticks
 		_dirty = true
 		return delta
 
-	# SERVER mode: measure Hz from consecutive polls.
-	# Only calibrate BEFORE the first anchor — after that, Hz is frozen.
-	# Recalibrating on every poll causes new_sim = total_ticks/hz to drift by
-	# Hz measurement noise × total_ticks, which can exceed the snap threshold
-	# after the server has been running at high speed for many days.
-	var now_ms := Time.get_ticks_msec()
-	var hz_measured := false
-	if _last_server_ticks >= 0.0 and _last_poll_ms >= 0:
-		var real_s := float(now_ms - _last_poll_ms) / 1000.0
-		if real_s > 0.1:
-			var speed := TimeScale.speed_multiplier
-			if speed > 0.0:
-				var new_hz := (ticks - _last_server_ticks) / (real_s * speed)
-				if new_hz > 0.01:
-					if not _hz_anchored:
-						# Only calibrate until first anchor — then freeze Hz
-						_server_hz = new_hz
-					hz_measured = true
-
-	_last_server_ticks = ticks
-	_last_poll_ms = now_ms
-
-	if not hz_measured:
-		# No Hz data yet (first poll) — _sim_elapsed from initialize() is already correct.
-		# Don't anchor with uncalibrated _server_hz; that would snap wildly.
+	var speed := TimeScale.speed_multiplier
+	if speed <= 0.0:
 		return 0.0
 
-	if _hz_anchored:
-		# Already anchored with frozen Hz — advance(dt) keeps us in sync.
-		# The only valid re-anchor is after a genuine long disconnect, detected below.
-		var new_sim := ticks / _server_hz
-		if absf(new_sim - _sim_elapsed) > 86400.0:
-			# Genuine discontinuity (e.g. reconnect after long offline period)
-			var delta := new_sim - _sim_elapsed
-			_sim_elapsed = new_sim
-			_dirty = true
-			return delta
-		return 0.0
+	# Convert server ticks to game-seconds.
+	# Server: effective_tick_interval = TICK_INTERVAL/speed, dt = TICK_INTERVAL*speed
+	# → total_ticks/real_sec = speed/TICK_INTERVAL * TICK_INTERVAL*speed = speed²
+	# → game_seconds = total_ticks / speed
+	var game_seconds := ticks / speed
 
-	# First anchor: Hz is now measured. Snap _sim_elapsed to the correct game time.
-	var new_sim := ticks / _server_hz
-	var delta := new_sim - _sim_elapsed
-	_sim_elapsed = new_sim
-	_hz_anchored = true
-	_dirty = true
-	return delta
+	if not _anchored:
+		# First sync after login: snap to server's authoritative game time.
+		var delta := game_seconds - _sim_elapsed
+		_sim_elapsed = game_seconds
+		_anchored = true
+		_dirty = true
+		return delta
 
-## Called when user changes sim speed. Invalidates poll reference for fresh Hz
-## measurement — but does NOT clear the anchor. Re-anchoring after a speed
-## change causes a snap because the server may still be at the old speed when
-## the next poll arrives. The transient drift (~hundreds of sim-sec) is invisible.
+	# Already running locally. Only re-sync on genuine drift (long disconnect,
+	# or server history at a very different speed). Normal operation: drift ≈ 0.
+	var drift := game_seconds - _sim_elapsed
+	if absf(drift) > 86400.0:
+		_sim_elapsed = game_seconds
+		_dirty = true
+		return drift
+
+	return 0.0
+
+## Called when admin changes sim speed. Clear the anchor so the next poll
+## re-initializes game_seconds = ticks / new_speed cleanly.
 func scale_server_rate(_old_speed: float, _new_speed: float) -> void:
-	_last_server_ticks = -1.0
-	_last_poll_ms = -1
+	_anchored = false
 
 ## Get current sim elapsed time
 func get_sim_elapsed() -> float:
