@@ -67,6 +67,7 @@ const PREVIEW_BLINK_PERIOD: float = 1.0  # seconds for full blink cycle
 
 var asteroid_marker_scene: PackedScene = preload("res://solar_map/asteroid_marker.tscn")
 var ship_marker_scene: PackedScene = preload("res://solar_map/ship_marker.tscn")
+var _bg_texture: Texture2D = preload("res://new assets/Starfield-With-Color.png")
 var _ships_need_refresh: bool = false  # Debounce marker rebuilds to once per frame
 var _last_tick_msec: int = 0
 const TICK_THROTTLE_MSEC: int = 200  # Only process ticks every 200ms real-time
@@ -202,6 +203,7 @@ func _draw_starfield() -> void:
 	var visible_rect := Rect2(cam_pos - half_view, half_view * 2.0)
 
 	draw_rect(visible_rect, Color(0.006, 0.009, 0.016))
+	draw_texture_rect(_bg_texture, visible_rect, true)
 
 	var tile_min_x := int(floor(visible_rect.position.x / STAR_TILE_SIZE))
 	var tile_min_y := int(floor(visible_rect.position.y / STAR_TILE_SIZE))
