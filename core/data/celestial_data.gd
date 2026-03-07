@@ -108,6 +108,11 @@ static func get_sim_elapsed() -> float:
 	_ensure_init()
 	return ephemeris.get_sim_elapsed()
 
+## Rescale dead-reckoning rate when user changes sim speed
+static func scale_server_rate(old_speed: float, new_speed: float) -> void:
+	_ensure_init()
+	ephemeris.scale_server_rate(old_speed, new_speed)
+
 ## Compute gravitational acceleration at a position from Sun + all planets
 ## Returns acceleration in AU/s² (add to velocity each tick)
 ## cached_planet_positions: optional pre-calculated planet positions for performance

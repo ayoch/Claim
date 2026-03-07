@@ -648,10 +648,10 @@ func _poll_server_speed() -> void:
 		if json.parse(response_body.get_string_from_utf8()) == OK:
 			var data: Dictionary = json.data
 			var speed: float = data.get("speed", 1.0)
+			# Update index for 1/2 key stepping but do NOT update TimeScale —
+			# the user's requested speed is already set and we don't want stale
+			# server confirmations snapping the display to old values.
 			if speed != _current_server_speed:
-				_current_server_speed = speed
-				TimeScale.speed_multiplier = speed
-				# Sync index so 1/2 keys step relative to actual current speed
 				_server_speed_index = SERVER_SPEED_STEPS.find(speed)
 				if _server_speed_index < 0:
 					# Speed not in steps — find nearest
@@ -683,6 +683,9 @@ func _adjust_server_speed(keycode: int) -> void:
 
 
 func _set_server_speed(speed: float) -> void:
+	# Immediately rescale the orbital dead-reckoning rate so planets don't jerk
+	# for the 1-2 polls it takes the server to confirm the new speed.
+	CelestialData.scale_server_rate(_current_server_speed, speed)
 	_current_server_speed = speed
 	TimeScale.speed_multiplier = speed
 

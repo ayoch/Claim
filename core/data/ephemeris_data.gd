@@ -112,8 +112,15 @@ func sync_to_ticks(ticks: float) -> float:
 		if real_ms > 100.0:  # Ignore spuriously close polls
 			var new_rate := (ticks - _last_server_ticks) / real_ms
 			if new_rate > 0.0:
-				# Smooth rate estimate to avoid outlier polls causing a glitch
-				_server_tick_rate = lerp(_server_tick_rate, new_rate, 0.3) if _server_tick_rate > 0.0 else new_rate
+				if _server_tick_rate <= 0.0:
+					# First calibration — adopt directly
+					_server_tick_rate = new_rate
+				elif absf(new_rate / _server_tick_rate - 1.0) > 0.15:
+					# Rate changed by >15% — speed change event, adopt immediately
+					_server_tick_rate = new_rate
+				else:
+					# Normal variance — smooth lightly
+					_server_tick_rate = lerp(_server_tick_rate, new_rate, 0.5)
 
 	_last_server_ticks = ticks
 	_last_poll_ms = now_ms
@@ -123,6 +130,15 @@ func sync_to_ticks(ticks: float) -> float:
 	_sim_elapsed = ticks
 	_dirty = true
 	return delta
+
+## Immediately rescale the server tick rate when the user changes sim speed.
+## Avoids 1-2 polls of wrong dead-reckoning after a speed change.
+func scale_server_rate(old_speed: float, new_speed: float) -> void:
+	if _server_tick_rate > 0.0 and old_speed > 0.0:
+		_server_tick_rate *= new_speed / old_speed
+		# Invalidate the previous poll reference so next poll measures fresh
+		_last_server_ticks = -1.0
+		_last_poll_ms = -1
 
 ## Get current sim elapsed time
 func get_sim_elapsed() -> float:

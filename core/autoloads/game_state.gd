@@ -3271,10 +3271,8 @@ func apply_server_state(server_data: Dictionary) -> void:
 		for colony in colonies:
 			colony.advance_orbit(orbit_snap_delta)
 
-	# Update speed multiplier from server (sync client display with server speed)
-	var server_speed: float = float(server_data.get("speed_multiplier", 1.0))
-	if TimeScale.speed_multiplier != server_speed:
-		TimeScale.speed_multiplier = server_speed
+	# Speed multiplier is set by the user via main_ui._set_server_speed() and NOT synced
+	# back from server polls — avoids stale confirmations snapping the display to wrong values.
 
 	# Update player policies (always-on automation)
 	repair_policy = int(server_data.get("repair_policy", repair_policy))
