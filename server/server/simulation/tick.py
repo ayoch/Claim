@@ -18,6 +18,7 @@ from server.models.trade_mission import (
 )
 from server.models.worker import Worker
 from server.models.world_state import WorldState
+from server.routers import admin_speed as _admin_speed
 from server.simulation.contracts import process_contracts as _process_contracts
 from server.simulation.worker_spawning import process_worker_spawning
 
@@ -146,7 +147,9 @@ async def load_world_state(db: AsyncSession, world_id: int = 1) -> None:
 
     if world_state:
         _total_ticks = world_state.total_ticks
-        logger.info(f'Loaded world state: total_ticks={_total_ticks}')
+        speed = getattr(world_state, 'speed_multiplier', 1.0) or 1.0
+        _admin_speed._simulation_speed_multiplier = speed
+        logger.info(f'Loaded world state: total_ticks={_total_ticks}, speed={speed}x')
     else:
         # Create initial world state
         world_state = WorldState(world_id=world_id, total_ticks=0)

@@ -648,17 +648,20 @@ func _poll_server_speed() -> void:
 		if json.parse(response_body.get_string_from_utf8()) == OK:
 			var data: Dictionary = json.data
 			var speed: float = data.get("speed", 1.0)
-			# Update index for 1/2 key stepping but do NOT update TimeScale —
-			# the user's requested speed is already set and we don't want stale
-			# server confirmations snapping the display to old values.
-			if speed != _current_server_speed:
-				_server_speed_index = SERVER_SPEED_STEPS.find(speed)
-				if _server_speed_index < 0:
-					# Speed not in steps — find nearest
-					_server_speed_index = 0
-					for i in range(SERVER_SPEED_STEPS.size()):
-						if SERVER_SPEED_STEPS[i] <= speed:
-							_server_speed_index = i
+			if not _initial_speed_synced:
+				# First poll after login: server speed is authoritative. Sync UI to it.
+				_initial_speed_synced = true
+				_current_server_speed = speed
+				CelestialData.scale_server_rate(TimeScale.speed_multiplier, speed)
+				TimeScale.speed_multiplier = speed
+				_update_speed_display()
+			# Always keep step index in sync for 1/2 key stepping
+			_server_speed_index = SERVER_SPEED_STEPS.find(speed)
+			if _server_speed_index < 0:
+				_server_speed_index = 0
+				for i in range(SERVER_SPEED_STEPS.size()):
+					if SERVER_SPEED_STEPS[i] <= speed:
+						_server_speed_index = i
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -668,6 +671,7 @@ func _poll_server_speed() -> void:
 var _current_server_speed: float = 1.0
 const SERVER_SPEED_STEPS: Array[float] = [1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 200000.0]
 var _server_speed_index: int = 0
+var _initial_speed_synced: bool = false  # True after first poll sets UI to server's actual speed
 
 func _adjust_server_speed(keycode: int) -> void:
 	if keycode == KEY_2:

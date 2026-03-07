@@ -8,8 +8,12 @@ WARNING: This affects ALL players simultaneously!
 import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from server.auth import get_current_player
+from server.database import get_db
 from server.models.player import Player
+from server.models.world_state import WorldState
 from server.rate_limit import limiter
 from server.config import settings
 
@@ -40,6 +44,7 @@ async def set_simulation_speed(
     request: Request,
     payload: SpeedUpdate,
     player: Player = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Set simulation speed multiplier.
@@ -48,6 +53,13 @@ async def set_simulation_speed(
     global _simulation_speed_multiplier
     old_speed = _simulation_speed_multiplier
     _simulation_speed_multiplier = payload.multiplier
+
+    # Persist to DB so speed survives server restarts
+    result = await db.execute(select(WorldState).where(WorldState.world_id == 1))
+    world_state = result.scalar_one_or_none()
+    if world_state:
+        world_state.speed_multiplier = _simulation_speed_multiplier
+        await db.commit()
 
     logger.info(
         f"Admin {player.username} changed simulation speed: {old_speed}x → {payload.multiplier}x"

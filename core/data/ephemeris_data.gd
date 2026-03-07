@@ -107,17 +107,24 @@ func sync_to_ticks(ticks: float) -> float:
 
 	# SERVER mode: measure Hz from consecutive polls (for accurate initial anchor)
 	var now_ms := Time.get_ticks_msec()
+	var hz_measured := false
 	if _last_server_ticks >= 0.0 and _last_poll_ms >= 0:
 		var real_s := float(now_ms - _last_poll_ms) / 1000.0
 		if real_s > 0.1:
 			var speed := TimeScale.speed_multiplier
 			if speed > 0.0:
 				var new_hz := (ticks - _last_server_ticks) / (real_s * speed)
-				if new_hz > 1.0:
+				if new_hz > 0.01:
 					_server_hz = new_hz  # Use directly — we only apply Hz on (re-)anchor
+					hz_measured = true
 
 	_last_server_ticks = ticks
 	_last_poll_ms = now_ms
+
+	if not hz_measured:
+		# No Hz data yet (first poll) — _sim_elapsed from initialize() is already correct.
+		# Don't anchor with uncalibrated _server_hz; that would snap wildly.
+		return 0.0
 
 	var new_sim := ticks / _server_hz
 	if not _hz_anchored or absf(new_sim - _sim_elapsed) > 86400.0:
