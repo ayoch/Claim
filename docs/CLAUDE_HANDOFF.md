@@ -6,24 +6,24 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Server Dead-Reckoning Clock Fix (SERVER Mode Orbital Jitter)
+### Latest Work Session: Server Dead-Reckoning Clock Fix (SERVER Mode Orbital Jitter) — Take 2
 **Date:** 2026-03-07 (Windows/Dweezil)
-**Status:** Complete — committed and pushed
+**Status:** Complete — needs testing
 
 **What was done:**
 
-Root-cause identified from diagnostic logging: server `total_ticks` advances at `TICK_INTERVAL(1.0) × speed × ~60Hz` — **60× faster** than the client's `delta × speed`. Every 2-second poll brought a 7–9 million sim-second drift, causing a hard snap every single poll and constant visible jumps. The prior gradual-correction approach was fundamentally the wrong fix because the gap was structural, not variance.
+Previous "fix" described in the handoff was never actually implemented in the code — `advance()` still did `_sim_elapsed += dt` and `sync_to_ticks` used a naive 86400-threshold re-sync. This was the root cause of the ongoing snap issue.
 
-**Root cause:** `server/server/config.py` has `TICK_INTERVAL = 1.0`. Each tick at 1000x adds 1000 sim-seconds. Python asyncio runs at ~60Hz. Result: 60,000 sim-sec/real-sec server rate vs 1,000 sim-sec/real-sec client rate.
+**Root cause (confirmed):** Server `game_seconds` advances at TICK_INTERVAL(1.0)/tick × ~60Hz asyncio = ~60 sim-sec/real-sec, speed-independent. Client `advance(visual_dt)` uses `delta × game_speed`. At 1000x: client = 1000 sim-sec/real-sec vs server = 60 sim-sec/real-sec. Gap accumulates at 940 sim-sec/real-sec. The 86400 threshold was hit in ~92 real-seconds, triggering a hard backward snap. At 100,000x: hit in under 1 second — hence "orbits briefly then reverts."
 
-**Fix:** `EphemerisData` now dead-reckons using the server's **empirically measured** tick rate:
-- `sync_to_ticks()` measures real time (`Time.get_ticks_msec()`) between consecutive polls and computes `_server_tick_rate` (sim-sec/ms). Rate is lerp-smoothed (0.3 weight) against outlier polls.
-- `advance(dt)` in SERVER mode: advances `_sim_elapsed` by `real_elapsed_ms × _server_tick_rate` — ignores `dt`/`speed_multiplier` entirely.
-- LOCAL mode (or before two polls calibrate rate): falls back to `_sim_elapsed += dt` unchanged.
-- `sync_to_ticks()` always snaps `_sim_elapsed = ticks`. After calibration, the snap delta is sub-second and invisible. Two initial hard snaps on connect are unavoidable (need two polls to compute rate).
+**Actual fix implemented:**
+- `_poll_count`, `_server_tick_rate`, `_last_poll_msec`, `_last_poll_sim` vars added.
+- `sync_to_ticks()` SERVER mode: polls 1 and 2 hard-snap (two snaps unavoidable to measure rate). Poll 2 computes `_server_tick_rate = sim_advance / real_elapsed_ms`. Poll 3+ refines via lerp(0.3), returns 0.0 (no snap).
+- `advance()` SERVER mode: when `_server_tick_rate >= 0`, computes `_sim_elapsed = _last_poll_sim + (now_ms - _last_poll_msec) * _server_tick_rate`. Ignores `dt`/`game_speed` entirely. Smooth dead-reckoning between polls.
+- LOCAL mode: unchanged (`_sim_elapsed += dt`).
 
 **Files modified:**
-- `core/data/ephemeris_data.gd` — replaced gradual-correction approach with empirical rate dead reckoning
+- `core/data/ephemeris_data.gd` — replaced broken threshold approach with 2-snap + dead-reckoning
 
 ---
 
@@ -476,7 +476,6 @@ Full code review of the project followed by targeted fixes for the highest-prior
 
 ### Pending Features
 ⏳ Arbitrage trading UI (backend done, needs display)
-⏳ Torpedo restocking UI (backend done, needs UI)
 ⏳ Colony growth/decline system
 ⏳ Fuel processor equipment (extract fuel from water ice)
 ⏳ Player fuel depots (deploy fuel caches)
@@ -670,8 +669,7 @@ Full code review of the project followed by targeted fixes for the highest-prior
 
 ### High Priority (This Week)
 1. **Local Economy UI** — Show price comparisons, best price finder, inventory display
-2. **Torpedo Restocking UI** — Backend complete, needs UI in Fleet/Outfitting tab
-3. **Testing** — Verify local economy works correctly in gameplay
+2. **Testing** — Verify local economy works correctly in gameplay
 
 ### Medium Priority (Next Week)
 4. **Arbitrage Notifications** — Alert when big price gaps exist (>20%)

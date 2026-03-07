@@ -70,7 +70,12 @@ const GAME_EPOCH_UNIX: float = 4481654400.0
 var _cached_positions: Dictionary = {}  # body_name -> Vector2
 var _sim_elapsed: float = -1.0          # Game-seconds elapsed since game epoch
 var _dirty: bool = true                 # Recompute positions on next get_position()
-var _anchored: bool = false             # True after first server sync
+
+# Server dead-reckoning state
+var _poll_count: int = 0               # Number of server polls received
+var _server_tick_rate: float = -1.0    # sim-sec/ms, empirically measured from polls
+var _last_poll_msec: float = -1.0      # Real wall time (ms) at last poll
+var _last_poll_sim: float = -1.0       # Server game_seconds at last poll
 
 func initialize() -> void:
 	# Seed from GameState.total_ticks so saves and MP polls start at the right date
@@ -79,14 +84,19 @@ func initialize() -> void:
 
 ## Advance sim time by dt sim-seconds (called from CelestialData.advance_planets).
 func advance(dt: float) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER and _server_tick_rate >= 0.0:
+		# Dead-reckon from last poll anchor using empirically measured server tick rate.
+		# Ignores dt/game_speed entirely — server rate is speed-independent.
+		_sim_elapsed = _last_poll_sim + (float(Time.get_ticks_msec()) - _last_poll_msec) * _server_tick_rate
+		_dirty = true
+		return
 	_sim_elapsed += dt
 	_dirty = true
 
 ## Sync to an authoritative game time value (save load, MP server poll).
 ## LOCAL mode: ticks = total_ticks which is already game-seconds — snap directly.
-## SERVER mode: ticks = game_seconds from server (TICK_INTERVAL added per tick,
-##   speed-independent). Anchor once at login, then run locally like single-player.
-##   Re-sync only if genuine drift detected (long disconnect / process suspension).
+## SERVER mode: first two polls snap to calibrate; thereafter dead-reckoning takes over
+##   using the empirically measured server tick rate, so no further snaps occur.
 ## Returns the snap delta for asteroid/colony orbit angle advancement.
 func sync_to_ticks(ticks: float) -> float:
 	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
@@ -96,22 +106,34 @@ func sync_to_ticks(ticks: float) -> float:
 		_dirty = true
 		return delta
 
-	# SERVER mode: ticks is already game_seconds — no conversion needed.
-	# Server increments game_seconds by TICK_INTERVAL per tick regardless of speed,
-	# so it advances at speed game-sec/real-sec, same as advance(delta*speed) here.
-	if not _anchored:
-		var delta := ticks - _sim_elapsed
-		_sim_elapsed = ticks
-		_anchored = true
-		_dirty = true
-		return delta
+	# SERVER mode: server game_seconds advances at TICK_INTERVAL/tick regardless of speed
+	# (~60 sim-sec/real-sec at asyncio 60Hz). Client game_speed may differ greatly.
+	# Strategy: hard-snap first two polls to establish baseline + measure rate.
+	# From poll 3 onward: dead-reckon only, no snaps.
+	var now := float(Time.get_ticks_msec())
+	var prev_sim := _sim_elapsed
+	_poll_count += 1
 
-	# Already running locally. Only re-sync on genuine drift.
-	var drift := ticks - _sim_elapsed
-	if absf(drift) > 86400.0:
+	if _poll_count <= 2:
+		# Hard snap. On poll 2, compute the initial rate measurement.
+		if _poll_count == 2 and _last_poll_msec >= 0.0:
+			var real_elapsed := now - _last_poll_msec
+			if real_elapsed > 100.0:
+				_server_tick_rate = (ticks - _last_poll_sim) / real_elapsed
 		_sim_elapsed = ticks
+		_last_poll_sim = ticks
+		_last_poll_msec = now
 		_dirty = true
-		return drift
+		return ticks - prev_sim
+
+	# Poll 3+: refine rate estimate via lerp, no snap — advance() handles position.
+	var real_elapsed := now - _last_poll_msec
+	if real_elapsed > 100.0:
+		var new_rate := (ticks - _last_poll_sim) / real_elapsed
+		if new_rate > 0.0:
+			_server_tick_rate = lerpf(_server_tick_rate, new_rate, 0.3)
+		_last_poll_sim = ticks
+		_last_poll_msec = now
 
 	return 0.0
 
