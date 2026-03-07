@@ -53,6 +53,9 @@ func _on_new_game() -> void:
 	# Reset GameState to fresh start
 	GameState.new_game()
 
+	# New single-player games always start at 1x
+	TimeScale.speed_multiplier = 1.0
+
 	# Load main game scene
 	get_tree().change_scene_to_file("res://ui/main_ui.tscn")
 

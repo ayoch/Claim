@@ -147,7 +147,7 @@ def get_game_seconds() -> float:
 
 async def load_world_state(db: AsyncSession, world_id: int = 1) -> None:
     """Load world state from database on startup."""
-    global _total_ticks
+    global _total_ticks, _game_seconds
     result = await db.execute(select(WorldState).where(WorldState.world_id == world_id))
     world_state = result.scalar_one_or_none()
 
