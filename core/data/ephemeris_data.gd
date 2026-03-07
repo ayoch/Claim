@@ -119,24 +119,26 @@ func sync_to_ticks(ticks: float) -> float:
 	_last_server_ticks = ticks
 	_last_poll_ms = now_ms
 
-	if not _hz_anchored:
-		# First poll after connect or speed change: anchor _sim_elapsed to server time
-		var new_sim := ticks / _server_hz
+	var new_sim := ticks / _server_hz
+	if not _hz_anchored or absf(new_sim - _sim_elapsed) > 86400.0:
+		# Anchor on: initial connect, or large discontinuity (reconnect after long offline).
+		# Speed-change drift is ~hundreds of sim-sec — well under threshold, never triggers.
 		var delta := new_sim - _sim_elapsed
 		_sim_elapsed = new_sim
 		_hz_anchored = true
 		_dirty = true
 		return delta
 
-	# Already anchored — advance(dt) keeps us in sync, no further snapping needed.
+	# Already anchored and no large discontinuity — advance(dt) stays in sync.
 	return 0.0
 
-## Called when user changes sim speed. Re-anchors on next poll so positions
-## align correctly at the new speed without requiring Hz re-convergence.
+## Called when user changes sim speed. Invalidates poll reference for fresh Hz
+## measurement — but does NOT clear the anchor. Re-anchoring after a speed
+## change causes a snap because the server may still be at the old speed when
+## the next poll arrives. The transient drift (~hundreds of sim-sec) is invisible.
 func scale_server_rate(_old_speed: float, _new_speed: float) -> void:
 	_last_server_ticks = -1.0
 	_last_poll_ms = -1
-	_hz_anchored = false  # Re-anchor at next poll with fresh Hz measurement
 
 ## Get current sim elapsed time
 func get_sim_elapsed() -> float:
