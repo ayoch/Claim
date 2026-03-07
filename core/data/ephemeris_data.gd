@@ -84,7 +84,7 @@ func initialize() -> void:
 
 ## Advance sim time by dt sim-seconds (called from CelestialData.advance_planets).
 func advance(dt: float) -> void:
-	if BackendManager.current_mode == BackendManager.BackendMode.SERVER and _server_tick_rate >= 0.0:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER and _server_tick_rate > 0.0:
 		# Dead-reckon from last poll anchor using empirically measured server tick rate.
 		# Ignores dt/game_speed entirely — server rate is speed-independent.
 		_sim_elapsed = _last_poll_sim + (float(Time.get_ticks_msec()) - _last_poll_msec) * _server_tick_rate
@@ -119,7 +119,9 @@ func sync_to_ticks(ticks: float) -> float:
 		if _poll_count == 2 and _last_poll_msec >= 0.0:
 			var real_elapsed := now - _last_poll_msec
 			if real_elapsed > 100.0:
-				_server_tick_rate = (ticks - _last_poll_sim) / real_elapsed
+				var new_rate := (ticks - _last_poll_sim) / real_elapsed
+				if new_rate > 0.0:
+					_server_tick_rate = new_rate
 		_sim_elapsed = ticks
 		_last_poll_sim = ticks
 		_last_poll_msec = now
@@ -131,7 +133,10 @@ func sync_to_ticks(ticks: float) -> float:
 	if real_elapsed > 100.0:
 		var new_rate := (ticks - _last_poll_sim) / real_elapsed
 		if new_rate > 0.0:
-			_server_tick_rate = lerpf(_server_tick_rate, new_rate, 0.3)
+			if _server_tick_rate <= 0.0:
+				_server_tick_rate = new_rate  # First valid measurement
+			else:
+				_server_tick_rate = lerpf(_server_tick_rate, new_rate, 0.3)
 		_last_poll_sim = ticks
 		_last_poll_msec = now
 
