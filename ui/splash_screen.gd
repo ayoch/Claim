@@ -15,7 +15,7 @@ func _ready() -> void:
 	# Size logo to 30% of viewport, centered
 	var vp := get_viewport_rect().size
 	var logo_w := vp.y * 0.18
-	var logo_h := logo_w * 1.10  # stretched 10% taller than wide
+	var logo_h := logo_w * 1.21  # stretched 21% taller than wide (10% applied twice)
 	logo.set_anchor_and_offset(SIDE_LEFT,   0.5, -logo_w * 0.5)
 	logo.set_anchor_and_offset(SIDE_RIGHT,  0.5,  logo_w * 0.5)
 	logo.set_anchor_and_offset(SIDE_TOP,    0.5, -logo_h * 0.5)
