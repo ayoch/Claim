@@ -105,7 +105,11 @@ func sync_to_ticks(ticks: float) -> float:
 		_dirty = true
 		return delta
 
-	# SERVER mode: measure Hz from consecutive polls (for accurate initial anchor)
+	# SERVER mode: measure Hz from consecutive polls.
+	# Only calibrate BEFORE the first anchor — after that, Hz is frozen.
+	# Recalibrating on every poll causes new_sim = total_ticks/hz to drift by
+	# Hz measurement noise × total_ticks, which can exceed the snap threshold
+	# after the server has been running at high speed for many days.
 	var now_ms := Time.get_ticks_msec()
 	var hz_measured := false
 	if _last_server_ticks >= 0.0 and _last_poll_ms >= 0:
@@ -115,7 +119,9 @@ func sync_to_ticks(ticks: float) -> float:
 			if speed > 0.0:
 				var new_hz := (ticks - _last_server_ticks) / (real_s * speed)
 				if new_hz > 0.01:
-					_server_hz = new_hz  # Use directly — we only apply Hz on (re-)anchor
+					if not _hz_anchored:
+						# Only calibrate until first anchor — then freeze Hz
+						_server_hz = new_hz
 					hz_measured = true
 
 	_last_server_ticks = ticks
@@ -126,18 +132,25 @@ func sync_to_ticks(ticks: float) -> float:
 		# Don't anchor with uncalibrated _server_hz; that would snap wildly.
 		return 0.0
 
-	var new_sim := ticks / _server_hz
-	if not _hz_anchored or absf(new_sim - _sim_elapsed) > 86400.0:
-		# Anchor on: initial connect, or large discontinuity (reconnect after long offline).
-		# Speed-change drift is ~hundreds of sim-sec — well under threshold, never triggers.
-		var delta := new_sim - _sim_elapsed
-		_sim_elapsed = new_sim
-		_hz_anchored = true
-		_dirty = true
-		return delta
+	if _hz_anchored:
+		# Already anchored with frozen Hz — advance(dt) keeps us in sync.
+		# The only valid re-anchor is after a genuine long disconnect, detected below.
+		var new_sim := ticks / _server_hz
+		if absf(new_sim - _sim_elapsed) > 86400.0:
+			# Genuine discontinuity (e.g. reconnect after long offline period)
+			var delta := new_sim - _sim_elapsed
+			_sim_elapsed = new_sim
+			_dirty = true
+			return delta
+		return 0.0
 
-	# Already anchored and no large discontinuity — advance(dt) stays in sync.
-	return 0.0
+	# First anchor: Hz is now measured. Snap _sim_elapsed to the correct game time.
+	var new_sim := ticks / _server_hz
+	var delta := new_sim - _sim_elapsed
+	_sim_elapsed = new_sim
+	_hz_anchored = true
+	_dirty = true
+	return delta
 
 ## Called when user changes sim speed. Invalidates poll reference for fresh Hz
 ## measurement — but does NOT clear the anchor. Re-anchoring after a speed
