@@ -62,6 +62,7 @@ signal market_event(ore_type: ResourceTypes.OreType, old_price: float, new_price
 signal market_event_started(event: MarketEvent)
 signal market_event_ended(event: MarketEvent)
 signal market_state_changed()  # General market update (prices or inventory changed)
+signal arbitrage_opportunity(ore_name: String, low_hub: String, high_hub: String, gap_pct: float)
 
 # Contracts
 signal contract_offered(contract: Contract)
@@ -169,6 +170,30 @@ signal partnership_aid_provided(leader_name: String, follower_name: String, aid_
 signal notification_received(notification: Dictionary)
 signal notification_read(notification: Dictionary)
 signal notifications_cleared()
+
+# Loan system
+signal loan_taken(amount: int, total_debt: int)
+signal loan_repaid(amount: int, total_debt: int)
+signal loan_interest_charged(amount: int, total_debt: int)
+signal debt_warning(total_debt: int, daily_interest: int)
+
+# Salvage system
+signal salvage_target_appeared(target: SalvageTarget)
+signal salvage_target_expired(target: SalvageTarget)
+signal salvage_mission_started(mission: Mission)
+signal salvage_mission_completed(mission: Mission, credits: int, equipment_count: int)
+
+# Fuel production system
+signal power_source_purchased(ps: PowerSource)
+signal power_source_deployed(ps: PowerSource, asteroid: AsteroidData)
+signal power_source_recalled(ps: PowerSource)
+signal power_source_broken(ps: PowerSource)
+signal fuel_processor_purchased(fp: FuelProcessor)
+signal fuel_processor_deployed(fp: FuelProcessor, asteroid: AsteroidData)
+signal fuel_processor_recalled(fp: FuelProcessor)
+signal fuel_processor_broken(fp: FuelProcessor)
+signal fuel_stockpile_collected(asteroid: AsteroidData, fuel_amount: float)
+signal reactor_exploded(ps: PowerSource, asteroid_name: String)
 
 # Error notifications - Operation failures
 signal operation_failed(operation: String, reason: String)  # Generic operation failure

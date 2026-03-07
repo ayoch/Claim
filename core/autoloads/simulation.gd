@@ -23,6 +23,13 @@ var _market_accumulator: float = 0.0
 const MARKET_INTERVAL: float = 3600.0  # drift prices every game-hour
 const MARKET_EVENT_CHANCE: float = 0.08  # 8% chance of scripted event per interval
 
+# Arbitrage opportunity scanning
+var _arbitrage_accumulator: float = 0.0
+const ARBITRAGE_CHECK_INTERVAL: float = 7200.0   # scan every 2 game-hours
+const ARBITRAGE_ALERT_THRESHOLD: float = 0.20    # 20% gap triggers alert
+const ARBITRAGE_ALERT_COOLDOWN: float = 86400.0 * 3.0  # 3 game-days between alerts for same ore
+var _arbitrage_last_alert: Dictionary = {}  # OreType -> total_ticks of last alert
+
 # Orbital motion updates (adaptive frequency based on game speed)
 var _orbital_accumulator: float = 0.0
 var _orbital_interval: float = 1.0  # Dynamically adjusted based on TimeScale.speed_multiplier
@@ -241,6 +248,8 @@ func _process_tick(dt: float, emit_event: bool = true) -> void:
 	_process_worker_fatigue(dt)
 	_process_deployed_crews(dt)
 	_process_mining_units(dt)
+	_process_fuel_processors(dt)
+	_process_salvage_targets(dt)
 	_process_asteroid_supplies(dt)
 	_process_food_consumption(dt)
 	_process_hitchhike_pool(dt)
@@ -399,6 +408,10 @@ func _process_missions(dt: float) -> void:
 								mission.elapsed_ticks = 0.0
 								if mission.asteroid:
 									mission.ship.position_au = mission.asteroid.get_position_au()
+							Mission.MissionType.SALVAGE:
+								mission.status = Mission.Status.SALVAGING
+								mission.elapsed_ticks = 0.0
+								mission.ship.position_au = mission.destination_position_au
 						EventBus.mission_phase_changed.emit(mission)
 
 			Mission.Status.REFUELING:
@@ -460,6 +473,10 @@ func _process_missions(dt: float) -> void:
 			Mission.Status.COLLECTING:
 				if mission.elapsed_ticks >= 1800.0:  # 30 minutes to load ore
 					_complete_collection(mission)
+
+			Mission.Status.SALVAGING:
+				if mission.elapsed_ticks >= SalvageTarget.SALVAGE_DURATION:
+					_complete_salvage(mission)
 
 			Mission.Status.IDLE_AT_DESTINATION:
 				# Ship idles here until player orders return or new dispatch
@@ -977,7 +994,7 @@ func _update_ship_positions(dt: float) -> void:
 				var start_pos := mission.get_current_leg_start_pos()
 				var end_pos := mission.get_current_leg_end_pos()
 				_update_ship_transit_physics(ship, start_pos, end_pos, progress, mission.transit_mode, mission.transit_time, dt)
-			Mission.Status.MINING, Mission.Status.IDLE_AT_DESTINATION, Mission.Status.DEPLOYING, Mission.Status.COLLECTING:
+			Mission.Status.MINING, Mission.Status.IDLE_AT_DESTINATION, Mission.Status.DEPLOYING, Mission.Status.COLLECTING, Mission.Status.SALVAGING:
 				var target_pos := mission.asteroid.get_position_au() if mission.asteroid else Vector2.ZERO
 				if target_pos == Vector2.ZERO and mission.asteroid == null:
 					_log_rescue("POSITION RESET: %s | Mission has null asteroid! Status: %s | Old pos: (%.3f, %.3f) -> (0, 0)" % [
@@ -1047,6 +1064,8 @@ func _check_ship_collisions(prev_positions: Dictionary) -> void:
 			)
 
 	for ship in _destroyed_ships_buf:
+		# Insurance hull payout before removal
+		GameState.pay_insurance_hull(ship)
 		# Remove all crew (iterate copy - fire_worker mutates ship.crew)
 		for w in ship.crew.duplicate():
 			if w is Worker:
@@ -1440,6 +1459,8 @@ func _process_life_support(dt: float) -> void:
 		GameState.stranger_offers.erase(ship)
 		_life_support_warnings_fired.erase(ship)
 
+		# Insurance hull payout before removal
+		GameState.pay_insurance_hull(ship)
 		# Emit event before removing ship
 		EventBus.ship_destroyed.emit(ship, "Life support failure")
 		GameState.add_warning(
@@ -1572,6 +1593,8 @@ func _process_stationed_ships(dt: float) -> void:
 					took_job = _station_try_provisioning(ship)
 				"collect_ore":
 					took_job = _station_try_collect_ore(ship)
+				"collect_fuel":
+					took_job = _station_try_collect_fuel(ship)
 				"crew_ferry":
 					took_job = _station_try_crew_ferry(ship)
 				"patrol":
@@ -2040,6 +2063,56 @@ func _station_try_collect_ore(ship: Ship) -> bool:
 		mission.return_position_au = station_pos
 		ship.add_station_log("Collecting %.0ft ore from %s" % [best_stockpile, best_asteroid.asteroid_name], "mining")
 		EventBus.station_job_started.emit(ship, "collect_ore", best_asteroid.asteroid_name)
+	return mission != null
+
+func _station_try_collect_fuel(ship: Ship) -> bool:
+	# Auto-collect fuel stockpiles using the same CollectionPolicy thresholds as ore,
+	# but measured against ship fuel capacity rather than cargo capacity.
+	if GameState.get_collection_policy(ship) == CompanyPolicy.CollectionPolicy.MANUAL:
+		return false
+
+	var threshold_fraction: float = CompanyPolicy.COLLECTION_POLICY_THRESHOLDS[GameState.get_collection_policy(ship)]
+	var threshold_fuel: float = ship.get_effective_fuel_capacity() * threshold_fraction
+	if threshold_fuel <= 0.0:
+		return false
+
+	# Only dispatch if ship has meaningful tank space available
+	var space_in_tank := ship.get_effective_fuel_capacity() - ship.fuel
+	if space_in_tank < ship.get_effective_fuel_capacity() * 0.25:
+		return false
+
+	var station_pos: Vector2 = ship.station_colony.get_position_au()
+
+	var best_asteroid: AsteroidData = null
+	var best_dist: float = INF
+
+	for asteroid_name in GameState.fuel_stockpiles.keys():
+		var pile: float = GameState.fuel_stockpiles[asteroid_name]
+		if pile < threshold_fuel:
+			continue
+		var asteroid := GameState._find_asteroid(asteroid_name)
+		if asteroid == null:
+			continue
+		var dist := station_pos.distance_to(asteroid.get_position_au())
+		if dist >= STATION_RADIUS_AU:
+			continue
+		var fuel_needed := ship.calc_fuel_for_distance(dist, 0.0) * 2.0
+		if fuel_needed > ship.fuel:
+			continue
+		if dist < best_dist:
+			best_asteroid = asteroid
+			best_dist = dist
+
+	if best_asteroid == null:
+		return false
+
+	# Dispatch a reposition mission; fuel is collected on arrival via _on_ship_idle_at_destination
+	var mission := MissionManager.start_reposition_mission(ship, best_asteroid)
+	if mission:
+		mission.return_to_station = true
+		mission.return_position_au = station_pos
+		ship.add_station_log("Collecting fuel from %s" % best_asteroid.asteroid_name, "fuel")
+		EventBus.station_job_started.emit(ship, "collect_fuel", best_asteroid.asteroid_name)
 	return mission != null
 
 func _station_try_crew_ferry(ship: Ship) -> bool:
@@ -2590,6 +2663,10 @@ func _complete_collection(mission: Mission) -> void:
 		var tons := MarketManager.collect_from_stockpile(mission.asteroid.asteroid_name, mission.ship)
 		if tons > 0.0:
 			EventBus.stockpile_collected.emit(mission.asteroid, tons)
+		# Also collect fuel stockpile if ship tank has room
+		var fuel_collected := GameState.collect_fuel_from_asteroid(mission.ship, mission.asteroid)
+		if fuel_collected > 0.0:
+			EventBus.fuel_stockpile_collected.emit(mission.asteroid, fuel_collected)
 	# Transition to idle or return
 	if mission.ship.is_stationed:
 		_start_station_return(mission)
@@ -2598,6 +2675,84 @@ func _complete_collection(mission: Mission) -> void:
 		mission.elapsed_ticks = 0.0
 		EventBus.mission_phase_changed.emit(mission)
 		EventBus.ship_idle_at_destination.emit(mission.ship, mission)
+
+func _complete_salvage(mission: Mission) -> void:
+	var ship := mission.ship
+	var target: SalvageTarget = mission.salvage_target
+	var credits_gained := 0
+	var equip_count := 0
+
+	if target:
+		# Transfer scrap credits
+		credits_gained = target.scrap_credits
+		GameState.money += credits_gained
+		GameState.record_transaction(credits_gained, "Salvage: %s" % target.target_name)
+
+		# Transfer recoverable cargo (fill ship to capacity)
+		for ore_type in target.cargo:
+			var tons: float = target.cargo[ore_type]
+			var space := ship.get_cargo_remaining()
+			if space > 0.01:
+				var to_load := minf(tons, space)
+				ship.current_cargo[ore_type] = ship.current_cargo.get(ore_type, 0.0) + to_load
+
+		# Transfer remaining fuel
+		if target.fuel_remaining > 0.0:
+			var fuel_space := ship.get_effective_fuel_capacity() - ship.fuel
+			ship.fuel += minf(target.fuel_remaining, fuel_space)
+
+		# Add salvaged equipment to inventory
+		equip_count = target.salvage_equipment.size()
+		for equip: Equipment in target.salvage_equipment:
+			GameState.equipment_inventory.append(equip)
+
+		EventBus.salvage_mission_completed.emit(mission, credits_gained, equip_count)
+		GameState.remove_salvage_target(target)
+		mission.salvage_target = null
+
+	# Auto-return: calculate return leg to Earth or station
+	var return_pos: Vector2
+	if ship.is_stationed and ship.station_colony:
+		return_pos = ship.station_colony.get_position_au()
+	else:
+		return_pos = CelestialData.get_earth_position_au()
+
+	mission.return_position_au = return_pos
+	var dist := ship.position_au.distance_to(return_pos)
+	mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+	mission.elapsed_ticks = 0.0
+	mission.status = Mission.Status.TRANSIT_BACK
+	var cargo_mass := ship.get_cargo_total()
+	mission.fuel_per_tick = ship.calc_fuel_for_distance(dist, cargo_mass) / mission.transit_time if mission.transit_time > 0 else 0.0
+	EventBus.mission_phase_changed.emit(mission)
+
+func _process_salvage_targets(dt: float) -> void:
+	# Expire stale targets that no ship is heading to
+	var to_remove: Array[SalvageTarget] = []
+	for target: SalvageTarget in GameState.salvage_targets:
+		if target.expires_at_ticks <= 0:
+			continue
+		if GameState.total_ticks <= target.expires_at_ticks:
+			continue
+		var being_salvaged := false
+		for m: Mission in GameState.missions:
+			if m.salvage_target == target:
+				being_salvaged = true
+				break
+		if not being_salvaged:
+			to_remove.append(target)
+	for target in to_remove:
+		GameState.remove_salvage_target(target)
+		EventBus.salvage_target_expired.emit(target)
+
+	# Random derelict spawning: ~1 per 30 game-days, cap at 5 concurrent
+	const SPAWN_RATE_PER_TICK: float = 1.0 / (86400.0 * 30.0)
+	if GameState.salvage_targets.size() < 5 and randf() < SPAWN_RATE_PER_TICK * dt:
+		var rng_angle := randf() * TAU
+		var rng_dist_au := randf_range(0.5, 3.5)
+		var spawn_pos := Vector2(cos(rng_angle), sin(rng_angle)) * rng_dist_au
+		var target := SalvageTarget.create_random(spawn_pos, GameState.total_ticks)
+		GameState.add_salvage_target(target)
 
 func _process_mining_units(dt: float) -> void:
 	var days := dt / 86400.0
@@ -2667,6 +2822,108 @@ func _process_mining_units(dt: float) -> void:
 				# Accident also damages the unit
 				unit.durability = maxf(0.0, unit.durability - randf_range(5.0, 15.0))
 				EventBus.worker_injured.emit(victim)
+
+func _process_fuel_processors(dt: float) -> void:
+	var days := dt / 86400.0
+	if days <= 0.0:
+		return
+
+	for fp in GameState.deployed_fuel_processors:
+		if not fp.is_functional():
+			continue
+
+		var asteroid_name := fp.deployed_at_asteroid
+		var power := GameState.get_power_at(asteroid_name)
+
+		# Produce fuel proportional to available power
+		if power > 0.0:
+			var fuel_produced := fp.get_daily_output(power) * days
+			GameState.fuel_stockpiles[asteroid_name] = \
+				GameState.fuel_stockpiles.get(asteroid_name, 0.0) + fuel_produced
+			# Grant engineer XP to assigned workers
+			for w in fp.assigned_workers:
+				w.add_xp(1, dt)  # 1 = engineer skill
+
+		# Degrade fuel processor durability
+		fp.durability -= FuelProcessor.WEAR_PER_DAY[fp.processor_type] * days
+		fp.max_durability -= FuelProcessor.WEAR_PER_DAY[fp.processor_type] * \
+			MiningUnit.MAX_DURABILITY_DECAY_RATIO * days
+		fp.max_durability = maxf(fp.max_durability, 0.0)
+		if fp.durability <= 0.0:
+			fp.durability = 0.0
+			EventBus.fuel_processor_broken.emit(fp)
+
+	# Process deployed power sources — degrade + check reactor explosion
+	var _exploded: Array[PowerSource] = []
+	for ps in GameState.deployed_power_sources:
+		if ps.source_type == PowerSource.SourceType.SOLAR_ARRAY:
+			# Solar arrays degrade slowly, no explosion risk
+			ps.durability -= PowerSource.WEAR_PER_DAY[ps.source_type] * days
+			ps.max_durability -= PowerSource.WEAR_PER_DAY[ps.source_type] * \
+				MiningUnit.MAX_DURABILITY_DECAY_RATIO * days
+			ps.max_durability = maxf(ps.max_durability, 0.0)
+			if ps.durability <= 0.0:
+				ps.durability = 0.0
+				EventBus.power_source_broken.emit(ps)
+		else:
+			# Fusion reactor — degrade and check explosion
+			ps.durability -= PowerSource.WEAR_PER_DAY[ps.source_type] * days
+			ps.max_durability -= PowerSource.WEAR_PER_DAY[ps.source_type] * \
+				MiningUnit.MAX_DURABILITY_DECAY_RATIO * days
+			ps.max_durability = maxf(ps.max_durability, 0.0)
+			if ps.durability <= 0.0:
+				ps.durability = 0.0
+				EventBus.power_source_broken.emit(ps)
+			# Explosion check — per-tick chance when critically damaged
+			var explode_chance := ps.get_explosion_chance_per_tick() * dt
+			if explode_chance > 0.0 and randf() < explode_chance:
+				_exploded.append(ps)
+
+	for ps in _exploded:
+		_trigger_reactor_explosion(ps)
+
+func _trigger_reactor_explosion(ps: PowerSource) -> void:
+	var asteroid_name := ps.deployed_at_asteroid
+	EventBus.reactor_exploded.emit(ps, asteroid_name)
+	GameState.add_warning(
+		"💥 REACTOR EXPLOSION at %s — containment failure on %s!" % [asteroid_name, ps.source_name],
+		"critical", "explosion", Vector2.ZERO
+	)
+
+	# Vent fuel stockpile
+	GameState.fuel_stockpiles.erase(asteroid_name)
+
+	# Heavily damage all fuel processors at this asteroid
+	for fp in GameState.deployed_fuel_processors:
+		if fp.deployed_at_asteroid == asteroid_name:
+			fp.durability = maxf(fp.durability * 0.05, 0.0)
+			if fp.durability <= 0.0:
+				EventBus.fuel_processor_broken.emit(fp)
+
+	# Casualty roll for workers at this asteroid
+	var all_workers_here: Array[Worker] = []
+	for fp in GameState.deployed_fuel_processors:
+		if fp.deployed_at_asteroid == asteroid_name:
+			for w in fp.assigned_workers:
+				all_workers_here.append(w)
+	for unit in GameState.deployed_mining_units:
+		if unit.deployed_at_asteroid == asteroid_name:
+			for w in unit.assigned_workers:
+				all_workers_here.append(w)
+	for w in all_workers_here:
+		if randf() < 0.5:
+			WorkerManager.fire_worker(w)  # Casualty — worker lost
+
+	# Damage ships docked at the asteroid
+	for ship in GameState.ships:
+		if ship.current_mission and ship.current_mission.asteroid and \
+				ship.current_mission.asteroid.asteroid_name == asteroid_name:
+			ship.engine_condition = maxf(ship.engine_condition - randf_range(20.0, 50.0), 0.0)
+			for equip in ship.equipment:
+				equip.durability = maxf(equip.durability - randf_range(10.0, 30.0), 0.0)
+
+	# Remove the destroyed reactor
+	GameState.deployed_power_sources.erase(ps)
 
 const SUPPLY_ALERT_DAYS := 5.0
 
@@ -2819,6 +3076,28 @@ func _process_payroll(dt: float) -> void:
 		if total_wages > 0:
 			GameState.money -= total_wages
 			GameState.record_transaction(-total_wages, "Payroll (%d workers)" % GameState.workers.size())
+		# Loan interest (daily, same interval as payroll)
+		var daily_interest := GameState.get_daily_interest()
+		if daily_interest > 0:
+			GameState.money -= daily_interest
+			GameState.total_debt += daily_interest  # Unpaid interest capitalises
+			GameState.record_transaction(-daily_interest, "Loan interest")
+			EventBus.loan_interest_charged.emit(daily_interest, GameState.total_debt)
+			# Warn if carrying significant debt
+			if GameState.total_debt > 1_000_000:
+				EventBus.debt_warning.emit(GameState.total_debt, daily_interest)
+		# Insurance premium (daily, same interval as payroll)
+		var ip := GameState.insurance_policy
+		if ip != CompanyPolicy.InsurancePolicy.NONE:
+			var fleet_hull_value := 0
+			for s in GameState.ships:
+				fleet_hull_value += ShipData.CLASS_PRICES.get(s.ship_class, 0)
+			var rate := CompanyPolicy.INSURANCE_HULL_PREMIUM_RATE if ip == CompanyPolicy.InsurancePolicy.HULL \
+				else CompanyPolicy.INSURANCE_COMP_PREMIUM_RATE
+			var premium := int(fleet_hull_value * rate)
+			if premium > 0:
+				GameState.money -= premium
+				GameState.record_transaction(-premium, "Insurance premium (%d ships)" % GameState.ships.size())
 
 func _process_food_consumption(dt: float) -> void:
 	_food_consumption_accumulator += dt
@@ -3012,6 +3291,36 @@ func _process_market_events(dt: float) -> void:
 	if randf() < MARKET_EVENT_CHANCE and GameState.active_market_events.size() < GameState.MAX_ACTIVE_EVENTS:
 		_trigger_market_event()
 
+	# Check for arbitrage opportunities
+	_arbitrage_accumulator += dt
+	if _arbitrage_accumulator >= ARBITRAGE_CHECK_INTERVAL:
+		_arbitrage_accumulator -= ARBITRAGE_CHECK_INTERVAL
+		_check_arbitrage_opportunities()
+
+func _check_arbitrage_opportunities() -> void:
+	if not GameState.market:
+		return
+	for ore_type in ResourceTypes.OreType.values():
+		var best: Dictionary = GameState.market.find_best_sell_price(ore_type)
+		var worst: Dictionary = GameState.market.find_best_buy_price(ore_type)
+		var high_price: float = best.get("price", 0.0)
+		var low_price: float = worst.get("price", 0.0)
+		if low_price <= 0.0:
+			continue
+		var gap_pct: float = (high_price - low_price) / low_price
+		if gap_pct < ARBITRAGE_ALERT_THRESHOLD:
+			continue
+		var last_alert: float = _arbitrage_last_alert.get(ore_type, -ARBITRAGE_ALERT_COOLDOWN * 2.0)
+		if GameState.total_ticks - last_alert < ARBITRAGE_ALERT_COOLDOWN:
+			continue
+		_arbitrage_last_alert[ore_type] = GameState.total_ticks
+		EventBus.arbitrage_opportunity.emit(
+			ResourceTypes.get_ore_name(ore_type),
+			worst.get("location", "?"),
+			best.get("location", "?"),
+			gap_pct * 100.0
+		)
+
 func _trigger_market_event() -> void:
 	var event := MarketEvent.generate_random()
 	GameState.active_market_events.append(event)
@@ -3160,9 +3469,19 @@ func _auto_provision_at_location(ship: Ship) -> void:
 			_log_provision_failure(ship, "oxygen", needed, crew_size)
 
 	# ── Torpedo Restocking ────────────────────────────────────────────────────
-	# Automatically restock torpedo launchers when docked (if setting enabled)
-	# NOTE: Future enhancement - colony-specific pricing/availability for munitions
-	if GameState.settings.get("auto_restock_torpedoes", true):
+	var munitions_policy: int = GameState.munitions_policy
+	var should_restock := false
+	match munitions_policy:
+		CompanyPolicy.MunitionsPolicy.ALWAYS:
+			should_restock = true
+		CompanyPolicy.MunitionsPolicy.LOW_AMMO:
+			for equip in ship.equipment:
+				if equip.has_ammo() and equip.current_ammo < equip.ammo_capacity * CompanyPolicy.MUNITIONS_LOW_AMMO_THRESHOLD:
+					should_restock = true
+					break
+		CompanyPolicy.MunitionsPolicy.NEVER:
+			should_restock = false
+	if should_restock:
 		GameState.restock_torpedoes(ship)
 
 func _log_provision_failure(ship: Ship, supply_key: String, amount: float, crew_size: int) -> void:
@@ -3957,7 +4276,12 @@ func _resolve_bidirectional_combat(player_ship: Ship, rival_ship: RivalShip, cor
 	# Apply damage to rival ship
 	if player_damage > 0:
 		# Rival ship destroyed (simplified - no HP)
+		var destroyed_pos := rival_ship.get_position_au()
+		var destroyed_cargo := rival_ship.cargo_tons
 		corp.ships.erase(rival_ship)
+		# Spawn a salvage target at the destroyed ship's location
+		var salvage := SalvageTarget.create_from_rival(corp.corp_name, destroyed_pos, destroyed_cargo, GameState.total_ticks)
+		GameState.add_salvage_target(salvage)
 		GameState.add_warning(
 			"⚔️ DESTROYED: Rival ship from %s eliminated" % corp.corp_name,
 			"warning",

@@ -31,7 +31,7 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Ammunition Tracking** - Torpedoes auto-restock at colonies/Earth
 - ✅ **Equipment Slots** - Ships have max equipment capacity based on class
 - 🚧 **Ship Upgrades** - Dry dock vs modular upgrades (system exists, limited content)
-- ❌ **Fuel Processor** - Equipment to extract fuel from water ice asteroids
+- ✅ **Fuel Processor** - Deploy at water-ice asteroids to produce propellant; requires Solar Array or Fusion Reactor power source; fuel stockpiles collected on ship arrival or via policy dispatch
 - ❌ **Technology Research** - Unlock better equipment/ship improvements
 
 ### Workers & Crew
@@ -46,6 +46,7 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Crew Specialization** - Best pilot flies, best engineer repairs, all mine
 - ✅ **Worker Assignment** - Assign to ships or rigs
 - ✅ **Payroll System** - Daily wage deduction (1 game-day intervals)
+- ✅ **Worker Location System** - Workers have home colonies; can only board ships docked at their location
 
 ---
 
@@ -60,7 +61,7 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Reposition Missions** - Move ship to location and idle
 - 🚧 **Survey Missions** - Exploration (system exists, limited implementation)
 - 🚧 **Patrol Missions** - Security zones (system exists, limited implementation)
-- ❌ **Salvage Missions** - Recover derelict ships or equipment
+- ✅ **Salvage Missions** - Board and strip derelict ships (rival kills + random spawns); scrap credits, equipment recovery, cargo/fuel transfer; 2hr salvage phase, auto-returns to Earth
 
 ### Mission Mechanics
 - ✅ **Mission Redirect** - Change destination mid-flight with full dispatch UI
@@ -130,8 +131,8 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Payroll System** - Daily wage deduction for workers
 - ✅ **Equipment Costs** - Purchase/sell equipment
 - ✅ **Ship Costs** - Purchase ships with class-based pricing
-- ❌ **Loan System** - Borrow money, manage debt/interest
-- ❌ **Insurance** - Ship/cargo insurance options
+- ✅ **Loan System** - Borrow in $500K–$5M tiers, 9%/yr daily interest (capitalises if unpaid), repay anytime; HQ Loans panel with borrow/repay buttons and debt capacity bar
+- ✅ **Insurance** - Company policy: None / Hull (50% payout) / Comprehensive (75% hull + 50% cargo); daily premium deducted from payroll
 
 ---
 
@@ -217,17 +218,21 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 ## UI & Visualization
 
 ### Main Interface
-- ✅ **6 Main Tabs** - Dashboard, Fleet/Market, Workers, Ship Outfitting, Solar Map, (6th hidden?)
+- ✅ **7 Main Tabs** - Dashboard, Fleet/Market, Workers, Ship Outfitting, Solar Map, MUD (Mining Units), HQ
 - ✅ **Dashboard** - Overview, activity log, alerts, key metrics
 - ✅ **Fleet Management** - Ship cards with status, missions, crew, equipment
 - ✅ **Market Integration** - Fleet + Market combined in single tab
-- ✅ **Worker Management** - Hire/fire, skill progression, assignment
+- ✅ **Worker Management** - Hire/fire, skill progression, assignment; grouped by colony location
 - ✅ **Ship Outfitting** - Equipment purchase/sale, torpedo restocking
 - ✅ **Solar Map** - 2D orbital view with ship/asteroid positions
+- ✅ **MUD Tab** - Manage deployed mining units: status, worker assignment, degradation, stockpiles
 - ✅ **Dispatch Panel** - Full journey details, transit mode selection, worker assignment
 - ✅ **Redirect Panel** - Same as dispatch panel for mid-flight course changes
 - ✅ **Search & Sort** - Alphabetical sort and name search for destinations
 - ✅ **Expandable Sections** - Collapsible crew/stats/policy sections per ship
+- ✅ **Settings Screen** - Graphics, audio, and gameplay settings
+- ✅ **Registration Screen** - Separate account creation screen (distinct from login)
+- ✅ **Bug Report Dialog** - In-game issue reporting
 
 ### Visualization
 - ✅ **Orbital Positions** - Real-time 2D positions of all bodies
@@ -266,14 +271,15 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Exception Handler** - Graceful error responses
 
 ### Server Simulation
-- ✅ **Tick System** - Server-side simulation at configurable speed
+- ✅ **Tick System** - Server-side simulation at configurable speed (1x–200,000x)
 - ✅ **Mission Processing** - Transit, mining, collection, trade missions
 - ✅ **Rig Processing** - Ore generation, degradation, worker XP
 - ✅ **Market Simulation** - Price drift, supply/demand
 - ✅ **Payroll Processing** - Daily wage deduction
 - ✅ **Contract Processing** - Contract evaluation and completion
 - ✅ **State Sync** - /game/state endpoint returns full player state
-- ✅ **World State Persistence** - Total ticks saved to database
+- ✅ **World State Persistence** - Total ticks saved to database; game time survives server restarts
+- ✅ **Speed Multiplier** - Simulation speed applied correctly server-side (was constant 1s bug, fixed)
 
 ### Multiplayer Features
 - ✅ **Player Accounts** - Email-based with unique usernames
@@ -281,10 +287,14 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Shared Economy** - All players in same world
 - ✅ **Backend Abstraction Layer** - LOCAL vs SERVER mode routing
 - ✅ **Fog-of-War for Other Players** - Other players' ships use ghost contact system (light-speed delay, confidence decay, same as NPC rivals)
+- ✅ **Session Restoration** - "Continue as [username]" button; optional (can ignore to log into different account)
+- ✅ **Server-side Worker Spawning** - Colonies auto-generate available workers on independent timers
+- ✅ **Admin Web UI** - HTML dashboard for server administration (worker spawning, state inspection)
 - 🚧 **Local Leaderboards** - Backend complete, UI integration needed
 - ❌ **Player-to-Player Trading** - Direct ore/credit/ship exchanges
 - ❌ **Shared Asteroids** - Multiple players mining same locations
 - ❌ **PvP Combat** - Player vs player ship battles
+- ❌ **Anti-Cheat Analysis** - Server-side behavioral anomaly detection (impossible transit times, out-of-range mining rates, unexplained credit deltas)
 - ❌ **Chat System** - In-game communication
 - ❌ **Alliances** - Formal player groups with shared resources
 
@@ -314,6 +324,7 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Log-based Debugging** - Write diagnostics to res:// files
 - ✅ **Autotest System** - Validates ship state, mission consistency
 - ✅ **Console Logging** - Detailed event logging
+- ✅ **Bug Report Dialog** - In-game issue reporting with free-text input
 - ❌ **Replay System** - Record/playback game sessions
 
 ---
@@ -337,20 +348,20 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 
 ## Summary Statistics
 
-**Total Features Listed:** ~178
+**Total Features Listed:** ~190
 
-**Implemented (✅):** ~142 features (80%)
+**Implemented (✅):** ~153 features (80%)
 **Partial (🚧):** ~7 features (4%)
-**Planned (❌):** ~29 features (16%)
+**Planned (❌):** ~30 features (16%)
 
-**Lines of Code:** ~39,000 total
-- GDScript: 30,693 lines (client)
-- Python: 6,655 lines (server)
-- Scene files: 1,511 lines (UI)
+**Lines of Code:** ~39,000+ total (post-refactoring; exact count pending)
+- GDScript: 30,693+ lines (client)
+- Python: 6,655+ lines (server)
+- Scene files: 1,511+ lines (UI)
 
 **Development Status:** Core gameplay complete, multiplayer-ready, significant expansion potential
 
 ---
 
-*Last Updated: 2026-03-04 (fog-of-war for other players' ships implemented)*
+*Last Updated: 2026-03-06 (worker location system, MUD tab, settings/bug-report screens, server improvements, manager extraction refactoring)*
 *This document should be updated as features are completed or new features are designed.*

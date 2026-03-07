@@ -10,6 +10,7 @@ enum MissionType {
 	DEPLOY_UNIT,     # Deploy mining units to an asteroid
 	COLLECT_ORE,     # Collect stockpiled ore from an asteroid
 	REPOSITION,      # Move ship to location and leave idle
+	SALVAGE,         # Board and strip a derelict ship
 }
 
 enum Status {
@@ -25,6 +26,7 @@ enum Status {
 	PATROLLING,      # Watching area
 	DEPLOYING,       # Deploying mining units
 	COLLECTING,      # Collecting stockpiled ore
+	SALVAGING,       # Actively stripping a wreck
 }
 
 enum TransitMode {
@@ -54,6 +56,9 @@ enum TransitMode {
 @export var mining_units_to_deploy: Array[MiningUnit] = []
 @export var workers_to_deploy: Array[Worker] = []
 @export var deploy_duration: float = 3600.0  # 1 hour per unit being deployed
+
+# Salvage mission support
+@export var salvage_target: SalvageTarget = null
 
 # Derelict rescue support (CREW_FERRY targeting a derelict fleet ship)
 @export var is_derelict_rescue: bool = false
@@ -98,6 +103,8 @@ func get_current_phase_duration() -> float:
 			return deploy_duration
 		Status.COLLECTING:
 			return 1800.0  # 30 minutes to load ore
+		Status.SALVAGING:
+			return SalvageTarget.SALVAGE_DURATION
 		_:
 			return 0.0
 
@@ -181,6 +188,8 @@ func get_status_text() -> String:
 			return "Deploying units at %s (%s)" % [dest, home]
 		Status.COLLECTING:
 			return "Collecting ore at %s (%s)" % [dest, home]
+		Status.SALVAGING:
+			return "Salvaging %s (%s)" % [destination_name, home]
 	return "Unknown"
 
 func _get_origin_pos_live() -> Vector2:

@@ -25,6 +25,7 @@ var fabrication_queue: Array[Equipment] = []  # Equipment being fabricated
 var asteroids: Array[AsteroidData] = []
 var rival_corps: Array[RivalCorp] = []
 var ghost_contacts: Array = []  # Array[GhostContact]
+var salvage_targets: Array[SalvageTarget] = []
 
 # Lightspeed communication delay
 const LIGHT_SECONDS_PER_AU: float = 499.0
@@ -34,7 +35,6 @@ var settings: Dictionary = {
 	"auto_refuel": true,
 	"show_unreachable_destinations": false,
 	"auto_sell_at_markets": false,
-	"auto_restock_torpedoes": true,
 	"auto_sell_at_earth": true,
 	"auto_sell_on_return": true,  # SERVER mode: server sells cargo automatically on mission return
 	"autoplay": true,
@@ -57,6 +57,54 @@ var collection_policy: int = CompanyPolicy.CollectionPolicy.ROUTINE
 var supply_policy: int = CompanyPolicy.SupplyPolicy.ROUTINE
 var encounter_policy: int = CompanyPolicy.EncounterPolicy.COEXIST
 var maintenance_policy: int = CompanyPolicy.MaintenancePolicy.AS_NEEDED
+var munitions_policy: int = CompanyPolicy.MunitionsPolicy.ALWAYS
+var insurance_policy: int = CompanyPolicy.InsurancePolicy.NONE
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LOAN SYSTEM
+# ═══════════════════════════════════════════════════════════════════════════════
+var total_debt: int = 0
+const LOAN_INTEREST_RATE: float = 0.09  # 9% per game-year
+const LOAN_MAX_DEBT: int = 20_000_000   # $20M hard cap
+const LOAN_TIERS: Array[int] = [500_000, 1_000_000, 2_000_000, 5_000_000]
+const LOAN_DEBT_WARNING_RATIO: float = 0.5  # Warn when daily interest > 50% of daily revenue
+
+func borrow(amount: int) -> bool:
+	if total_debt + amount > LOAN_MAX_DEBT:
+		EventBus.operation_failed.emit("Borrow", "Would exceed maximum debt of $%s" % _format_loan_number(LOAN_MAX_DEBT))
+		return false
+	total_debt += amount
+	money += amount
+	record_transaction(amount, "Loan: borrowed $%s" % _format_loan_number(amount))
+	EventBus.loan_taken.emit(amount, total_debt)
+	return true
+
+func repay(amount: int) -> bool:
+	if amount <= 0:
+		return false
+	if money < amount:
+		EventBus.operation_failed.emit("Repay Loan", "Insufficient funds")
+		return false
+	var actual := mini(amount, total_debt)
+	if actual <= 0:
+		return false
+	money -= actual
+	total_debt -= actual
+	record_transaction(-actual, "Loan repayment: $%s" % _format_loan_number(actual))
+	EventBus.loan_repaid.emit(actual, total_debt)
+	return true
+
+func get_daily_interest() -> int:
+	if total_debt <= 0:
+		return 0
+	return int(total_debt * LOAN_INTEREST_RATE / 365.0)
+
+static func _format_loan_number(n: int) -> String:
+	if n >= 1_000_000:
+		return "%.1fM" % (n / 1_000_000.0)
+	if n >= 1_000:
+		return "%.0fK" % (n / 1_000.0)
+	return str(n)
 
 func get_thrust_policy(ship: Ship) -> int:
 	return ship.thrust_policy_override if ship.thrust_policy_override >= 0 else thrust_policy
@@ -78,6 +126,18 @@ func get_encounter_policy(ship: Ship) -> int:
 
 func get_maintenance_policy(ship: Ship) -> int:
 	return ship.maintenance_policy_override if ship.maintenance_policy_override >= 0 else maintenance_policy
+
+func get_munitions_policy(ship: Ship) -> int:
+	return ship.munitions_policy_override if ship.munitions_policy_override >= 0 else munitions_policy
+
+func get_trading_policy(ship: Ship) -> int:
+	return ship.trading_policy_override if ship.trading_policy_override >= 0 else CompanyPolicy.TradingPolicy.IMMEDIATE
+
+func get_morale_policy(ship: Ship) -> int:
+	return ship.morale_policy_override if ship.morale_policy_override >= 0 else CompanyPolicy.MoralePolicy.BALANCED
+
+func get_automation_policy(ship: Ship) -> int:
+	return ship.automation_policy_override if ship.automation_policy_override >= 0 else CompanyPolicy.AutomationPolicy.SEMI_AUTO
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # AUTOPLAY SETTINGS - AI Strategy (Only Active When Autoplay Enabled)
@@ -260,6 +320,13 @@ var deployed_mining_units: Array[MiningUnit] = []  # On asteroids, mining autono
 var ore_stockpiles: Dictionary = {}  # asteroid_name -> { OreType -> float }
 var asteroid_supplies: Dictionary = {}  # asteroid_name -> { "food": float, "water": float, "oxygen": float, "repair_parts": float }
 
+# Fuel production system
+var power_source_inventory: Array[PowerSource] = []   # Purchased, not yet deployed
+var deployed_power_sources: Array[PowerSource] = []   # Deployed at asteroids
+var fuel_processor_inventory: Array[FuelProcessor] = []  # Purchased, not yet deployed
+var deployed_fuel_processors: Array[FuelProcessor] = []  # Deployed at asteroids
+var fuel_stockpiles: Dictionary = {}  # asteroid_name -> float (fuel units)
+
 # Security zones created by patrolling ships
 # Each: { "center_au": Vector2, "radius_au": float, "ship_name": String, "expires_at": float }
 var security_zones: Array[Dictionary] = []
@@ -287,6 +354,7 @@ func new_game() -> void:
 	missions.clear()
 	trade_missions.clear()
 	rescue_missions.clear()
+	salvage_targets.clear()
 	refuel_missions.clear()
 	stranger_offers.clear()
 	pending_orders.clear()
@@ -295,6 +363,11 @@ func new_game() -> void:
 	deployed_mining_units.clear()
 	ore_stockpiles.clear()
 	asteroid_supplies.clear()
+	power_source_inventory.clear()
+	deployed_power_sources.clear()
+	fuel_processor_inventory.clear()
+	deployed_fuel_processors.clear()
+	fuel_stockpiles.clear()
 	security_zones.clear()
 	hitchhike_pool.clear()
 	tardy_workers.clear()
@@ -304,6 +377,7 @@ func new_game() -> void:
 	active_contracts.clear()
 	active_market_events.clear()
 	money = 10_000_000
+	total_debt = 0
 	total_ticks = 0.0
 	# Initialize game start date to today's date in 2112
 	var now := Time.get_datetime_dict_from_system()
@@ -337,6 +411,11 @@ func reset_for_server_mode() -> void:
 	deployed_mining_units.clear()
 	ore_stockpiles.clear()
 	asteroid_supplies.clear()
+	power_source_inventory.clear()
+	deployed_power_sources.clear()
+	fuel_processor_inventory.clear()
+	deployed_fuel_processors.clear()
+	fuel_stockpiles.clear()
 	security_zones.clear()
 	hitchhike_pool.clear()
 	tardy_workers.clear()
@@ -422,35 +501,8 @@ func purchase_equipment_any_mode(ship: Ship, equipment_name: String) -> void:
 		push_warning("purchase_equipment_any_mode() LOCAL mode not fully implemented")
 
 ## Mode-aware equipment selling - works in both LOCAL and SERVER modes
-## DEPRECATED: Forwarding stub - use MarketManager.sell_equipment_any_mode() instead
-## TODO: Remove after all references are migrated to MarketManager
 func sell_equipment_any_mode(equipment: Equipment, ship: Ship) -> void:
 	MarketManager.sell_equipment_any_mode(equipment, ship)
-
-## Redirect a ship in transit to a new asteroid.
-## Queues the order with lightspeed delay; returns true if order accepted/queued.
-## DEPRECATED: Forwarding stub - use MissionManager.redirect_mission() instead
-## TODO: Remove after all references are migrated to MissionManager
-func redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> bool:
-	return MissionManager.redirect_mission(mission, new_asteroid)
-
-## DEPRECATED: Internal helper - forwards to MissionManager._apply_redirect_mission()
-func _apply_redirect_mission(mission: Mission, new_asteroid: AsteroidData) -> void:
-	MissionManager._apply_redirect_mission(mission, new_asteroid)
-
-## DEPRECATED: Forwarding stub - use MissionManager.redirect_trade_mission() instead
-## TODO: Remove after all references are migrated to MissionManager
-func redirect_trade_mission(trade_mission: TradeMission, new_colony: Colony) -> bool:
-	return MissionManager.redirect_trade_mission(trade_mission, new_colony)
-
-## DEPRECATED: Internal helper - forwards to MissionManager._apply_redirect_trade_mission()
-func _apply_redirect_trade_mission(trade_mission: TradeMission, new_colony: Colony) -> void:
-	MissionManager._apply_redirect_trade_mission(trade_mission, new_colony)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.init_starter_crew() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func _init_starter_crew() -> void:
-	WorkerManager.init_starter_crew()
 
 func add_resource(ore_type: ResourceTypes.OreType, amount: float) -> void:
 	resources[ore_type] = resources.get(ore_type, 0.0) + amount
@@ -463,46 +515,6 @@ func remove_resource(ore_type: ResourceTypes.OreType, amount: float) -> bool:
 	resources[ore_type] = current - amount
 	EventBus.resource_changed.emit(ore_type, resources[ore_type])
 	return true
-
-## DEPRECATED: Forwarding stub - use WorkerManager.hire_worker() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func hire_worker(worker: Worker) -> void:
-	WorkerManager.hire_worker(worker)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.assign_worker_to_ship() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func assign_worker_to_ship(worker: Worker, ship: Ship) -> Dictionary:
-	return WorkerManager.assign_worker_to_ship(worker, ship)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.remove_worker_from_ship() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func remove_worker_from_ship(worker: Worker, ship: Ship) -> void:
-	WorkerManager.remove_worker_from_ship(worker, ship)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.fire_worker() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func fire_worker(worker: Worker) -> void:
-	WorkerManager.fire_worker(worker)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.hire_worker_any_mode() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func hire_worker_any_mode(worker_id: int) -> void:
-	await WorkerManager.hire_worker_any_mode(worker_id)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.fire_worker_any_mode() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func fire_worker_any_mode(worker: Worker) -> void:
-	WorkerManager.fire_worker_any_mode(worker)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.record_worker_death_violation() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func record_worker_death_violation(worker: Worker, reason: String) -> void:
-	WorkerManager.record_worker_death_violation(worker, reason)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.record_abandonment_violation() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func record_abandonment_violation(worker: Worker, reason: String) -> void:
-	WorkerManager.record_abandonment_violation(worker, reason)
 
 func record_rescue_failure_violation(ship: Ship, reason: String) -> void:
 	# Record rescue failure at ship's last known colony (or Earth if never docked)
@@ -743,18 +755,8 @@ func _send_ios_notification(title: String, body: String) -> void:
 		# Fallback: log for debugging
 		print("iOS notification (plugin required): %s - %s" % [title, body])
 
-## DEPRECATED: Forwarding stub - use WorkerManager._invalidate_worker_cache() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func _invalidate_worker_cache() -> void:
-	WorkerManager._invalidate_worker_cache()
-
 func _invalidate_ship_cache() -> void:
 	_docked_ships_dirty = true
-
-## DEPRECATED: Forwarding stub - use WorkerManager.get_available_workers() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func get_available_workers() -> Array[Worker]:
-	return WorkerManager.get_available_workers()
 
 func get_docked_ships() -> Array[Ship]:
 	if _docked_ships_dirty:
@@ -994,6 +996,171 @@ func recall_mining_unit_any_mode(unit: MiningUnit) -> bool:
 		recall_mining_unit(unit)
 		return true
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# FUEL PRODUCTION SYSTEM — Power Sources & Fuel Processors
+# ═══════════════════════════════════════════════════════════════════════════════
+
+func purchase_power_source(type: PowerSource.SourceType) -> PowerSource:
+	var ps := PowerSource.create(type)
+	if money < ps.cost:
+		EventBus.insufficient_funds.emit("Purchase " + ps.source_name, ps.cost, money)
+		return null
+	money -= ps.cost
+	record_transaction(-ps.cost, "Power source: %s" % ps.source_name)
+	power_source_inventory.append(ps)
+	EventBus.power_source_purchased.emit(ps)
+	return ps
+
+func purchase_fuel_processor(type: FuelProcessor.ProcessorType) -> FuelProcessor:
+	var fp := FuelProcessor.create(type)
+	if money < fp.cost:
+		EventBus.insufficient_funds.emit("Purchase " + fp.processor_name, fp.cost, money)
+		return null
+	money -= fp.cost
+	record_transaction(-fp.cost, "Fuel processor: %s" % fp.processor_name)
+	fuel_processor_inventory.append(fp)
+	EventBus.fuel_processor_purchased.emit(fp)
+	return fp
+
+func deploy_power_source(ps: PowerSource, asteroid: AsteroidData) -> bool:
+	if ps.is_deployed():
+		EventBus.deployment_failed.emit(ps.source_name, "Already deployed at %s" % ps.deployed_at_asteroid)
+		return false
+	power_source_inventory.erase(ps)
+	deployed_power_sources.append(ps)
+	ps.deployed_at_asteroid = asteroid.asteroid_name
+	EventBus.power_source_deployed.emit(ps, asteroid)
+	return true
+
+func deploy_fuel_processor(fp: FuelProcessor, asteroid: AsteroidData, unit_workers: Array[Worker]) -> bool:
+	if fp.is_deployed():
+		EventBus.deployment_failed.emit(fp.processor_name, "Already deployed at %s" % fp.deployed_at_asteroid)
+		return false
+	# Fuel processors only work at water-ice asteroids
+	if not asteroid.ore_yields.has(ResourceTypes.OreType.WATER_ICE):
+		EventBus.deployment_failed.emit(fp.processor_name, "%s has no water ice — fuel processor cannot operate here" % asteroid.asteroid_name)
+		return false
+	fuel_processor_inventory.erase(fp)
+	deployed_fuel_processors.append(fp)
+	fp.deployed_at_asteroid = asteroid.asteroid_name
+	fp.assigned_workers.clear()
+	for w in unit_workers:
+		fp.assigned_workers.append(w)
+		w.assigned_mining_unit = null  # fuel processors use a separate assignment
+	EventBus.fuel_processor_deployed.emit(fp, asteroid)
+	return true
+
+func recall_power_source(ps: PowerSource) -> void:
+	if not ps.is_deployed():
+		return
+	ps.deployed_at_asteroid = ""
+	deployed_power_sources.erase(ps)
+	power_source_inventory.append(ps)
+	EventBus.power_source_recalled.emit(ps)
+
+func recall_fuel_processor(fp: FuelProcessor) -> void:
+	if not fp.is_deployed():
+		return
+	fp.assigned_workers.clear()
+	fp.deployed_at_asteroid = ""
+	deployed_fuel_processors.erase(fp)
+	fuel_processor_inventory.append(fp)
+	EventBus.fuel_processor_recalled.emit(fp)
+
+func repair_power_source(ps: PowerSource) -> bool:
+	var cost := ps.calc_repair_cost()
+	if cost <= 0:
+		return false
+	if money < cost:
+		EventBus.insufficient_funds.emit("Repair " + ps.source_name, cost, money)
+		return false
+	money -= cost
+	record_transaction(-cost, "Repair: %s" % ps.source_name)
+	ps.apply_repair()
+	return true
+
+func repair_fuel_processor(fp: FuelProcessor) -> bool:
+	var cost := fp.calc_repair_cost()
+	if cost <= 0:
+		return false
+	if money < cost:
+		EventBus.insufficient_funds.emit("Repair " + fp.processor_name, cost, money)
+		return false
+	money -= cost
+	record_transaction(-cost, "Repair: %s" % fp.processor_name)
+	fp.apply_repair()
+	return true
+
+func rebuild_power_source(ps: PowerSource) -> bool:
+	if ps.is_deployed():
+		return false
+	var cost := ps.calc_rebuild_cost()
+	if money < cost:
+		return false
+	money -= cost
+	record_transaction(-cost, "Rebuild: %s" % ps.source_name)
+	ps.apply_rebuild()
+	return true
+
+func rebuild_fuel_processor(fp: FuelProcessor) -> bool:
+	if fp.is_deployed():
+		return false
+	var cost := fp.calc_rebuild_cost()
+	if money < cost:
+		return false
+	money -= cost
+	record_transaction(-cost, "Rebuild: %s" % fp.processor_name)
+	fp.apply_rebuild()
+	return true
+
+## Get total power output available at an asteroid (sum of all deployed power sources there).
+func get_power_at(asteroid_name: String) -> float:
+	var total := 0.0
+	var asteroid := _find_asteroid(asteroid_name)
+	var solar_intensity := 1.0
+	if asteroid:
+		var dist := maxf(asteroid.orbit_au, 0.1)
+		solar_intensity = 1.0 / (dist * dist)
+	for ps in deployed_power_sources:
+		if ps.deployed_at_asteroid == asteroid_name:
+			total += ps.get_output(solar_intensity)
+	return total
+
+## Collect fuel from an asteroid's stockpile into a ship's tank.
+## Returns amount collected.
+func collect_fuel_from_asteroid(ship: Ship, asteroid: AsteroidData) -> float:
+	var stockpile: float = fuel_stockpiles.get(asteroid.asteroid_name, 0.0)
+	if stockpile <= 0.0:
+		return 0.0
+	var space_in_tank := ship.get_effective_fuel_capacity() - ship.fuel
+	if space_in_tank <= 0.0:
+		return 0.0
+	var collected := minf(stockpile, space_in_tank)
+	fuel_stockpiles[asteroid.asteroid_name] = stockpile - collected
+	ship.fuel += collected
+	return collected
+
+## Helper — find AsteroidData by name.
+func _find_asteroid(asteroid_name: String) -> AsteroidData:
+	for a in asteroids:
+		if a.asteroid_name == asteroid_name:
+			return a
+	return null
+
+func get_power_sources_at(asteroid_name: String) -> Array[PowerSource]:
+	var result: Array[PowerSource] = []
+	for ps in deployed_power_sources:
+		if ps.deployed_at_asteroid == asteroid_name:
+			result.append(ps)
+	return result
+
+func get_fuel_processors_at(asteroid_name: String) -> Array[FuelProcessor]:
+	var result: Array[FuelProcessor] = []
+	for fp in deployed_fuel_processors:
+		if fp.deployed_at_asteroid == asteroid_name:
+			result.append(fp)
+	return result
+
 func get_mining_units_at(asteroid_name: String) -> Array[MiningUnit]:
 	var result: Array[MiningUnit] = []
 	for unit in deployed_mining_units:
@@ -1025,60 +1192,18 @@ func get_player_units_at(asteroid_name: String) -> int:
 			count += 1
 	return count
 
-## DEPRECATED: Forwarding stub - use MarketManager.get_ore_stockpile() instead
-## TODO: Remove after all references are migrated to MarketManager
-func get_ore_stockpile(asteroid_name: String) -> Dictionary:
-	return MarketManager.get_ore_stockpile(asteroid_name)
-
-## DEPRECATED: Forwarding stub - use MarketManager.add_to_stockpile() instead
-## TODO: Remove after all references are migrated to MarketManager
-func add_to_stockpile(asteroid_name: String, ore_type: ResourceTypes.OreType, amount: float) -> void:
-	MarketManager.add_to_stockpile(asteroid_name, ore_type, amount)
-
-## DEPRECATED: Forwarding stub - use MarketManager.collect_from_stockpile() instead
-## TODO: Remove after all references are migrated to MarketManager
-func collect_from_stockpile(asteroid_name: String, ship: Ship) -> float:
-	return MarketManager.collect_from_stockpile(asteroid_name, ship)
-
-## DEPRECATED: Forwarding stub - use MarketManager.get_asteroid_supplies() instead
-## TODO: Remove after all references are migrated to MarketManager
-func get_asteroid_supplies(asteroid_name: String) -> Dictionary:
-	return MarketManager.get_asteroid_supplies(asteroid_name)
-
-## DEPRECATED: Forwarding stub - use MarketManager.add_to_asteroid_supplies() instead
-## TODO: Remove after all references are migrated to MarketManager
-func add_to_asteroid_supplies(asteroid_name: String, supply_key: String, amount: float) -> void:
-	MarketManager.add_to_asteroid_supplies(asteroid_name, supply_key, amount)
-
-## DEPRECATED: Forwarding stub - use MarketManager.consume_asteroid_supply() instead
-## TODO: Remove after all references are migrated to MarketManager
-func consume_asteroid_supply(asteroid_name: String, supply_key: String, amount: float) -> float:
-	return MarketManager.consume_asteroid_supply(asteroid_name, supply_key, amount)
-
-## DEPRECATED: Forwarding stub - use MarketManager.get_asteroid_supply_days() instead
-## TODO: Remove after all references are migrated to MarketManager
-func get_asteroid_supply_days(asteroid_name: String, supply_key: String) -> float:
-	return MarketManager.get_asteroid_supply_days(asteroid_name, supply_key)
-
-## DEPRECATED: Forwarding stub - use MissionManager.start_deploy_mission() instead
-## TODO: Remove after all references are migrated to MissionManager
-func start_deploy_mission(ship: Ship, asteroid: AsteroidData, units: Array[MiningUnit], deploy_workers: Array[Worker], transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
-	push_warning("[GameState] start_deploy_mission() is deprecated, use MissionManager.start_deploy_mission()")
-	return MissionManager.start_deploy_mission(ship, asteroid, units, deploy_workers, transit_mode, slingshot_route)
-
-## DEPRECATED: Forwarding stub - use MissionManager.start_collect_mission() instead
-## TODO: Remove after all references are migrated to MissionManager
-func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
-	push_warning("[GameState] start_collect_mission() is deprecated, use MissionManager.start_collect_mission()")
-	return MissionManager.start_collect_mission(ship, asteroid, transit_mode, slingshot_route)
-
 func jettison_all_cargo(ship: Ship) -> float:
 	# Dump all cargo into space (lost forever)
 	var total_jettisoned := 0.0
+	var jettisoned_value := 0
 	for ore_type in ship.current_cargo:
-		total_jettisoned += ship.current_cargo[ore_type]
+		var amount: float = ship.current_cargo[ore_type]
+		total_jettisoned += amount
+		jettisoned_value += int(amount * market.get_price(ore_type))
 	ship.current_cargo.clear()
 	EventBus.cargo_jettisoned.emit(ship, total_jettisoned)
+	if jettisoned_value > 0:
+		pay_insurance_cargo(ship, jettisoned_value)
 	return total_jettisoned
 
 func jettison_cargo_for_trip(ship: Ship, distance_au: float, return_cargo_mass: float) -> float:
@@ -1111,13 +1236,43 @@ func jettison_cargo_for_trip(ship: Ship, distance_au: float, return_cargo_mass: 
 	# Actually jettison the cargo proportionally from all ore types
 	if needed_jettison > 0:
 		var jettison_ratio := needed_jettison / current_cargo
+		var jettisoned_value := 0
 		for ore_type in ship.current_cargo.keys():
 			var amount: float = ship.current_cargo[ore_type]
+			jettisoned_value += int(amount * jettison_ratio * market.get_price(ore_type))
 			ship.current_cargo[ore_type] = amount * (1.0 - jettison_ratio)
 		ship.cleanup_cargo()  # Clean up zero-value entries
 		EventBus.cargo_jettisoned.emit(ship, needed_jettison)
+		if jettisoned_value > 0:
+			pay_insurance_cargo(ship, jettisoned_value)
 
 	return needed_jettison
+
+## Pay insurance hull claim when a ship is destroyed.
+## Call this BEFORE removing the ship from the fleet.
+func pay_insurance_hull(ship: Ship) -> void:
+	var policy := insurance_policy
+	if policy == CompanyPolicy.InsurancePolicy.NONE:
+		return
+	var hull_value: int = ShipData.CLASS_PRICES.get(ship.ship_class, 0)
+	var payout_rate := CompanyPolicy.INSURANCE_HULL_PAYOUT if policy == CompanyPolicy.InsurancePolicy.HULL \
+		else CompanyPolicy.INSURANCE_COMP_HULL_PAYOUT
+	var payout := int(hull_value * payout_rate)
+	if payout <= 0:
+		return
+	money += payout
+	record_transaction(payout, "Insurance payout: %s (hull)" % ship.ship_name, ship.ship_name)
+
+## Pay insurance cargo claim after jettison (COMPREHENSIVE only).
+## cargo_value is the market value (at Earth prices) of the jettisoned ore.
+func pay_insurance_cargo(ship: Ship, cargo_value: int) -> void:
+	if insurance_policy != CompanyPolicy.InsurancePolicy.COMPREHENSIVE:
+		return
+	var payout := int(cargo_value * CompanyPolicy.INSURANCE_COMP_CARGO_PAYOUT)
+	if payout <= 0:
+		return
+	money += payout
+	record_transaction(payout, "Insurance payout: %s (cargo)" % ship.ship_name, ship.ship_name)
 
 func repair_equipment(ship: Ship, equip: Equipment) -> bool:
 	var cost := equip.repair_cost()
@@ -1238,29 +1393,6 @@ func get_torpedo_restock_cost(ship: Ship) -> int:
 ## Calculate intercept trajectory to a moving asteroid
 ## Uses iterative prediction: estimate transit time, predict where asteroid will be, recalculate
 ## Returns: { intercept_position: Vector2, distance: float, transit_time: float }
-## DEPRECATED: Forwarding stub - use MissionManager.calculate_asteroid_intercept() instead
-## TODO: Remove after all references are migrated to MissionManager
-func calculate_asteroid_intercept(start_pos: Vector2, asteroid: AsteroidData, thrust: float, transit_mode: int) -> Dictionary:
-	return MissionManager.calculate_asteroid_intercept(start_pos, asteroid, thrust, transit_mode)
-
-## Mode-aware mission dispatch - works in both LOCAL and SERVER modes
-## DEPRECATED: Forwarding stub - use MissionManager.dispatch_mission_any_mode() instead
-## TODO: Remove after all references are migrated to MissionManager
-func dispatch_mission_any_mode(ship: Ship, asteroid: AsteroidData) -> void:
-	MissionManager.dispatch_mission_any_mode(ship, asteroid)
-
-## DEPRECATED: Forwarding stub - use MissionManager.start_mission() instead
-## TODO: Remove after all references are migrated to MissionManager
-func start_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
-	push_warning("[GameState] start_mission() is deprecated, use MissionManager.start_mission()")
-	return MissionManager.start_mission(ship, asteroid, transit_mode, slingshot_route)
-
-## DEPRECATED: Forwarding stub - use MissionManager.complete_mission() instead
-## TODO: Remove after all references are migrated to MissionManager
-func complete_mission(mission: Mission) -> void:
-	push_warning("[GameState] complete_mission() is deprecated, use MissionManager.complete_mission()")
-	MissionManager.complete_mission(mission)
-
 func _name_for_position(pos: Vector2) -> String:
 	# Find nearest colony
 	var best_name := ""
@@ -1426,23 +1558,12 @@ func _apply_order_return_to_earth(ship: Ship) -> void:
 		missions.append(mission)
 		EventBus.mission_started.emit(mission)
 
-## DEPRECATED: Forwarding stub - use MissionManager.dispatch_idle_ship() instead
-## TODO: Remove after all references are migrated to MissionManager
-func dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE, slingshot_route = null) -> Mission:
-	return MissionManager.dispatch_idle_ship(ship, asteroid, transit_mode, slingshot_route)
+func add_salvage_target(target: SalvageTarget) -> void:
+	salvage_targets.append(target)
+	EventBus.salvage_target_appeared.emit(target)
 
-## DEPRECATED: Internal helper - forwards to MissionManager._apply_dispatch_idle_ship()
-func _apply_dispatch_idle_ship(ship: Ship, asteroid: AsteroidData, transit_mode: int, slingshot_route) -> void:
-	MissionManager._apply_dispatch_idle_ship(ship, asteroid, transit_mode, slingshot_route)
-
-## DEPRECATED: Forwarding stub - use MissionManager.dispatch_idle_ship_trade() instead
-## TODO: Remove after all references are migrated to MissionManager
-func dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
-	return MissionManager.dispatch_idle_ship_trade(ship, colony_target, cargo_to_load, transit_mode)
-
-## DEPRECATED: Internal helper - forwards to MissionManager._apply_dispatch_idle_ship_trade()
-func _apply_dispatch_idle_ship_trade(ship: Ship, colony_target: Colony, cargo_to_load: Dictionary, transit_mode: int) -> void:
-	MissionManager._apply_dispatch_idle_ship_trade(ship, colony_target, cargo_to_load, transit_mode)
+func remove_salvage_target(target: SalvageTarget) -> void:
+	salvage_targets.erase(target)
 
 const RESCUE_COST_BASE: int = 20000  # Crew wages, equipment, opportunity cost — even nearby rescues are expensive
 const RESCUE_COST_PER_AU: int = 8000  # Fuel + extended crew time for distance
@@ -1569,12 +1690,6 @@ func start_rescue(ship: Ship) -> bool:
 	EventBus.rescue_mission_started.emit(ship, cost)
 	return true
 
-## DEPRECATED: Forwarding stub - use MissionManager.start_fleet_rescue() instead
-## TODO: Remove after all references are migrated to MissionManager
-func start_fleet_rescue(ferry_ship: Ship, target_ship: Ship, rescue_crew: Array[Worker], food_units: float, parts_units: float) -> Mission:
-	push_warning("[GameState] start_fleet_rescue() is deprecated, use MissionManager.start_fleet_rescue()")
-	return MissionManager.start_fleet_rescue(ferry_ship, target_ship, rescue_crew, food_units, parts_units)
-
 ## Find the fleet rescue ferry currently heading to a derelict ship (if any).
 func find_fleet_rescue_ferry(derelict_ship: Ship) -> Ship:
 	for s in ships:
@@ -1683,14 +1798,14 @@ func station_ship(ship: Ship, colony: Colony, jobs: Array[String]) -> void:
 	ship.station_log.clear()
 	# Ensure ship has a crew assigned (use existing crew or auto-assign from available)
 	if ship.crew.is_empty() or ship.crew.size() < ship.min_crew:
-		var available := get_available_workers()
+		var available := WorkerManager.get_available_workers()
 		# Filter to workers at the same colony
 		var local_workers: Array[Worker] = []
 		for w in available:
 			if w.home_colony == colony.colony_name:
 				local_workers.append(w)
 		for i in range(mini(ship.min_crew - ship.crew.size(), local_workers.size())):
-			var result := assign_worker_to_ship(local_workers[i], ship)
+			var result := WorkerManager.assign_worker_to_ship(local_workers[i], ship)
 			if not result["success"]:
 				push_warning("Failed to auto-assign worker to stationed ship: %s" % result["error"])
 	else:
@@ -1709,60 +1824,6 @@ func unstation_ship(ship: Ship) -> void:
 func update_station_jobs(ship: Ship, jobs: Array[String]) -> void:
 	ship.station_jobs = jobs.duplicate()
 	ship.add_station_log("Jobs updated: %s" % ", ".join(jobs), "system")
-
-## DEPRECATED: Forwarding stub - use MarketManager.buy_supplies() instead
-## TODO: Remove after all references are migrated to MarketManager
-func buy_supplies(ship: Ship, supply_key: String, amount: float) -> bool:
-	return MarketManager.buy_supplies(ship, supply_key, amount)
-
-# --- Deployed crew methods ---
-
-## DEPRECATED: Forwarding stub - use WorkerManager.deploy_crew() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func deploy_crew(asteroid: AsteroidData, crew_workers: Array[Worker], initial_supplies: Dictionary) -> void:
-	WorkerManager.deploy_crew(asteroid, crew_workers, initial_supplies)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.recall_crew() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func recall_crew(asteroid: AsteroidData) -> void:
-	WorkerManager.recall_crew(asteroid)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.get_deployed_crew_at() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func get_deployed_crew_at(asteroid: AsteroidData) -> Dictionary:
-	return WorkerManager.get_deployed_crew_at(asteroid)
-
-# --- Hitchhike & discipline methods ---
-
-## DEPRECATED: Forwarding stub - use WorkerManager._get_colony_position() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func _get_colony_position(colony_name: String) -> Vector2:
-	return WorkerManager._get_colony_position(colony_name)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.add_to_hitchhike_pool() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func add_to_hitchhike_pool(worker: Worker, location_name: String, location_pos: Vector2) -> void:
-	WorkerManager.add_to_hitchhike_pool(worker, location_name, location_pos)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.check_hitchhike_opportunities() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func check_hitchhike_opportunities(ship: Ship, route_positions: Array[Vector2]) -> void:
-	WorkerManager.check_hitchhike_opportunities(ship, route_positions)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.forgive_tardy_worker() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func forgive_tardy_worker(worker: Worker) -> void:
-	WorkerManager.forgive_tardy_worker(worker)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.dock_pay_tardy_worker() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func dock_pay_tardy_worker(worker: Worker) -> void:
-	WorkerManager.dock_pay_tardy_worker(worker)
-
-## DEPRECATED: Forwarding stub - use WorkerManager.fire_tardy_worker() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func fire_tardy_worker(worker: Worker) -> void:
-	WorkerManager.fire_tardy_worker(worker)
 
 # --- Contract methods ---
 
@@ -1841,24 +1902,6 @@ func fulfill_contract_from_ship(contract: Contract, ship: Ship, amount: float) -
 	return result
 
 # --- Trade mission methods ---
-
-## DEPRECATED: Forwarding stub - use MissionManager.start_trade_mission() instead
-## TODO: Remove after all references are migrated to MissionManager
-func start_trade_mission(ship: Ship, colony_target: Colony, cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
-	push_warning("[GameState] start_trade_mission() is deprecated, use MissionManager.start_trade_mission()")
-	return MissionManager.start_trade_mission(ship, colony_target, cargo_to_load, transit_mode)
-
-## DEPRECATED: Forwarding stub - use MissionManager.complete_trade_mission() instead
-## TODO: Remove after all references are migrated to MissionManager
-func complete_trade_mission(tm: TradeMission) -> void:
-	push_warning("[GameState] complete_trade_mission() is deprecated, use MissionManager.complete_trade_mission()")
-	MissionManager.complete_trade_mission(tm)
-
-## DEPRECATED: Forwarding stub - use MissionManager._start_queued_mission() instead
-## TODO: Remove after all references are migrated to MissionManager
-func _start_queued_mission(ship: Ship) -> void:
-	MissionManager._start_queued_mission(ship)
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # LEADERBOARD SYSTEM
@@ -1944,6 +1987,9 @@ func save_game(save_name: String = "") -> void:
 		"supply_policy": supply_policy,
 		"encounter_policy": encounter_policy,
 		"maintenance_policy": maintenance_policy,
+		"munitions_policy": munitions_policy,
+		"insurance_policy": insurance_policy,
+		"total_debt": total_debt,
 		# Autoplay Settings (AI strategy)
 		"autoplay_risk_tolerance": autoplay_risk_tolerance,
 		"autoplay_growth_rate": autoplay_growth_rate,
@@ -2054,6 +2100,7 @@ func save_game(save_name: String = "") -> void:
 		ship_data["trading_policy_override"] = s.trading_policy_override
 		ship_data["morale_policy_override"] = s.morale_policy_override
 		ship_data["automation_policy_override"] = s.automation_policy_override
+		ship_data["munitions_policy_override"] = s.munitions_policy_override
 		ship_data["aggression_stance"] = s.aggression_stance
 		ship_data["docked_at_earth"] = s.docked_at_earth
 		# Partnership data
@@ -2116,6 +2163,7 @@ func save_game(save_name: String = "") -> void:
 			"outbound_waypoint_index": m.outbound_waypoint_index,
 			"return_legs": m.return_legs.map(func(l: WaypointLeg) -> Dictionary: return l.to_dict()),
 			"return_waypoint_index": m.return_waypoint_index,
+			"salvage_target_name": m.salvage_target.target_name if m.salvage_target else "",
 		})
 
 	# Save trade missions
@@ -2268,6 +2316,84 @@ func save_game(save_name: String = "") -> void:
 		})
 	save_data["deployed_mining_units"] = mu_deployed_data
 
+	# Save power sources (inventory)
+	var ps_inventory_data: Array[Dictionary] = []
+	for ps in power_source_inventory:
+		ps_inventory_data.append({
+			"source_type": ps.source_type, "source_name": ps.source_name,
+			"durability": ps.durability, "max_durability": ps.max_durability, "cost": ps.cost,
+		})
+	save_data["power_source_inventory"] = ps_inventory_data
+
+	# Save deployed power sources
+	var ps_deployed_data: Array[Dictionary] = []
+	for ps in deployed_power_sources:
+		ps_deployed_data.append({
+			"source_type": ps.source_type, "source_name": ps.source_name,
+			"durability": ps.durability, "max_durability": ps.max_durability, "cost": ps.cost,
+			"deployed_at_asteroid": ps.deployed_at_asteroid,
+		})
+	save_data["deployed_power_sources"] = ps_deployed_data
+
+	# Save fuel processors (inventory)
+	var fp_inventory_data: Array[Dictionary] = []
+	for fp in fuel_processor_inventory:
+		fp_inventory_data.append({
+			"processor_type": fp.processor_type, "processor_name": fp.processor_name,
+			"durability": fp.durability, "max_durability": fp.max_durability, "cost": fp.cost,
+		})
+	save_data["fuel_processor_inventory"] = fp_inventory_data
+
+	# Save deployed fuel processors
+	var fp_deployed_data: Array[Dictionary] = []
+	for fp in deployed_fuel_processors:
+		var fp_worker_names: Array[String] = []
+		for w in fp.assigned_workers:
+			fp_worker_names.append(w.worker_name)
+		fp_deployed_data.append({
+			"processor_type": fp.processor_type, "processor_name": fp.processor_name,
+			"durability": fp.durability, "max_durability": fp.max_durability, "cost": fp.cost,
+			"deployed_at_asteroid": fp.deployed_at_asteroid,
+			"worker_names": fp_worker_names,
+		})
+	save_data["deployed_fuel_processors"] = fp_deployed_data
+
+	# Save fuel stockpiles
+	save_data["fuel_stockpiles"] = fuel_stockpiles.duplicate()
+
+	# Save salvage targets
+	var salvage_data: Array[Dictionary] = []
+	for t: SalvageTarget in salvage_targets:
+		var equip_data: Array[Dictionary] = []
+		for e: Equipment in t.salvage_equipment:
+			equip_data.append({
+				"name": e.equipment_name, "type": e.type,
+				"mining_bonus": e.mining_bonus, "cost": e.cost,
+				"durability": e.durability, "max_durability": e.max_durability,
+				"wear_per_tick": e.wear_per_tick,
+				"weapon_power": e.weapon_power, "weapon_range": e.weapon_range,
+				"weapon_accuracy": e.weapon_accuracy, "weapon_role": e.weapon_role,
+				"fire_rate": e.fire_rate, "ammo_capacity": e.ammo_capacity,
+				"current_ammo": e.current_ammo, "ammo_cost": e.ammo_cost,
+				"ammo_quality": e.ammo_quality, "mining_speed_bonus": e.mining_speed_bonus,
+				"mass": e.mass,
+			})
+		var cargo_data := {}
+		for ore_type in t.cargo:
+			cargo_data[str(ore_type)] = t.cargo[ore_type]
+		salvage_data.append({
+			"target_name": t.target_name,
+			"pos_x": t.position_au.x, "pos_y": t.position_au.y,
+			"scrap_credits": t.scrap_credits,
+			"salvage_equipment": equip_data,
+			"cargo": cargo_data,
+			"fuel_remaining": t.fuel_remaining,
+			"spawned_at_ticks": t.spawned_at_ticks,
+			"expires_at_ticks": t.expires_at_ticks,
+			"source": t.source,
+		})
+	save_data["salvage_targets"] = salvage_data
+
 	# Save ore stockpiles
 	var stockpile_data := {}
 	for asteroid_name in ore_stockpiles:
@@ -2373,6 +2499,9 @@ func load_game(file_name: String = "save_game.json") -> bool:
 	supply_policy = int(data.get("supply_policy", CompanyPolicy.SupplyPolicy.ROUTINE))
 	encounter_policy = int(data.get("encounter_policy", CompanyPolicy.EncounterPolicy.COEXIST))
 	maintenance_policy = int(data.get("maintenance_policy", CompanyPolicy.MaintenancePolicy.AS_NEEDED))
+	munitions_policy = int(data.get("munitions_policy", CompanyPolicy.MunitionsPolicy.ALWAYS))
+	insurance_policy = int(data.get("insurance_policy", CompanyPolicy.InsurancePolicy.NONE))
+	total_debt = int(data.get("total_debt", 0))
 
 	# Autoplay Settings (AI strategy) - backward compatible with old saves
 	autoplay_risk_tolerance = int(data.get("autoplay_risk_tolerance", 50))
@@ -2500,6 +2629,7 @@ func load_game(file_name: String = "save_game.json") -> bool:
 		s.trading_policy_override = int(sd.get("trading_policy_override", -1))
 		s.morale_policy_override = int(sd.get("morale_policy_override", -1))
 		s.automation_policy_override = int(sd.get("automation_policy_override", -1))
+		s.munitions_policy_override = int(sd.get("munitions_policy_override", -1))
 		s.aggression_stance = int(sd.get("aggression_stance", Ship.AggressionStance.DEFENSIVE))
 		s.docked_at_earth = bool(sd.get("docked_at_earth", true))
 		# Restore partnership data (references resolved after all ships loaded)
@@ -2545,7 +2675,7 @@ func load_game(file_name: String = "save_game.json") -> bool:
 				for wname in sd.get("crew", []):
 					for w in workers:
 						if w.worker_name == wname:
-							var result := assign_worker_to_ship(w, ship)
+							var result := WorkerManager.assign_worker_to_ship(w, ship)
 							if not result["success"]:
 								# Backward compat: relocate worker to ship's location on load
 								if ship.docked_at_earth:
@@ -2553,7 +2683,7 @@ func load_game(file_name: String = "save_game.json") -> bool:
 								elif ship.docked_at_colony:
 									w.home_colony = ship.docked_at_colony.colony_name
 								# Try assignment again
-								result = assign_worker_to_ship(w, ship)
+								result = WorkerManager.assign_worker_to_ship(w, ship)
 								if not result["success"]:
 									push_warning("Failed to assign crew from save: %s" % result["error"])
 							break
@@ -2616,6 +2746,12 @@ func load_game(file_name: String = "save_game.json") -> bool:
 			float(md.get("destination_position_au_y", 0.0))
 		)
 		m.destination_name = str(md.get("destination_name", ""))
+		var salvage_target_name: String = str(md.get("salvage_target_name", ""))
+		if salvage_target_name != "" and m.mission_type == Mission.MissionType.SALVAGE:
+			for t: SalvageTarget in salvage_targets:
+				if t.target_name == salvage_target_name:
+					m.salvage_target = t
+					break
 		m.return_position_au = Vector2(
 			float(md.get("return_position_au_x", m.return_position_au.x)),
 			float(md.get("return_position_au_y", m.return_position_au.y))
@@ -2866,8 +3002,8 @@ func load_game(file_name: String = "save_game.json") -> bool:
 		# Validate unit type before casting
 		var unit_type_int: int = int(mud.get("unit_type", 0))
 		if unit_type_int < 0 or unit_type_int >= MiningUnit.UnitType.size():
-			push_error("[GameState] Invalid mining unit type %d in save data, defaulting to RIG" % unit_type_int)
-			unit_type_int = MiningUnit.UnitType.RIG
+			push_error("[GameState] Invalid mining unit type %d in save data, defaulting to BASIC" % unit_type_int)
+			unit_type_int = MiningUnit.UnitType.BASIC
 		unit.unit_type = unit_type_int as MiningUnit.UnitType
 		unit.unit_name = mud.get("unit_name", "")
 		unit.mass = float(mud.get("mass", 7.6))
@@ -2888,8 +3024,8 @@ func load_game(file_name: String = "save_game.json") -> bool:
 		# Validate unit type before casting
 		var unit_type_int: int = int(mud.get("unit_type", 0))
 		if unit_type_int < 0 or unit_type_int >= MiningUnit.UnitType.size():
-			push_error("[GameState] Invalid deployed mining unit type %d in save data, defaulting to RIG" % unit_type_int)
-			unit_type_int = MiningUnit.UnitType.RIG
+			push_error("[GameState] Invalid deployed mining unit type %d in save data, defaulting to BASIC" % unit_type_int)
+			unit_type_int = MiningUnit.UnitType.BASIC
 		unit.unit_type = unit_type_int as MiningUnit.UnitType
 		unit.unit_name = mud.get("unit_name", "")
 		unit.mass = float(mud.get("mass", 7.6))
@@ -2931,6 +3067,91 @@ func load_game(file_name: String = "save_game.json") -> bool:
 			"food": float(sd.get("food", 0.0)),
 			"repair_parts": float(sd.get("repair_parts", 0.0)),
 		}
+
+	# Restore power sources (inventory)
+	power_source_inventory.clear()
+	for psd in data.get("power_source_inventory", []):
+		var type_int: int = int(psd.get("source_type", 0))
+		if type_int < 0 or type_int >= PowerSource.SourceType.size():
+			type_int = PowerSource.SourceType.SOLAR_ARRAY
+		var ps := PowerSource.create(type_int as PowerSource.SourceType)
+		ps.source_name = psd.get("source_name", ps.source_name)
+		ps.durability = float(psd.get("durability", 100.0))
+		ps.max_durability = float(psd.get("max_durability", 100.0))
+		ps.cost = int(psd.get("cost", ps.cost))
+		power_source_inventory.append(ps)
+
+	# Restore deployed power sources
+	deployed_power_sources.clear()
+	for psd in data.get("deployed_power_sources", []):
+		var type_int: int = int(psd.get("source_type", 0))
+		if type_int < 0 or type_int >= PowerSource.SourceType.size():
+			type_int = PowerSource.SourceType.SOLAR_ARRAY
+		var ps := PowerSource.create(type_int as PowerSource.SourceType)
+		ps.source_name = psd.get("source_name", ps.source_name)
+		ps.durability = float(psd.get("durability", 100.0))
+		ps.max_durability = float(psd.get("max_durability", 100.0))
+		ps.cost = int(psd.get("cost", ps.cost))
+		ps.deployed_at_asteroid = psd.get("deployed_at_asteroid", "")
+		deployed_power_sources.append(ps)
+
+	# Restore fuel processors (inventory)
+	fuel_processor_inventory.clear()
+	for fpd in data.get("fuel_processor_inventory", []):
+		var type_int: int = int(fpd.get("processor_type", 0))
+		if type_int < 0 or type_int >= FuelProcessor.ProcessorType.size():
+			type_int = FuelProcessor.ProcessorType.BASIC
+		var fp := FuelProcessor.create(type_int as FuelProcessor.ProcessorType)
+		fp.processor_name = fpd.get("processor_name", fp.processor_name)
+		fp.durability = float(fpd.get("durability", 100.0))
+		fp.max_durability = float(fpd.get("max_durability", 100.0))
+		fp.cost = int(fpd.get("cost", fp.cost))
+		fuel_processor_inventory.append(fp)
+
+	# Restore deployed fuel processors
+	deployed_fuel_processors.clear()
+	for fpd in data.get("deployed_fuel_processors", []):
+		var type_int: int = int(fpd.get("processor_type", 0))
+		if type_int < 0 or type_int >= FuelProcessor.ProcessorType.size():
+			type_int = FuelProcessor.ProcessorType.BASIC
+		var fp := FuelProcessor.create(type_int as FuelProcessor.ProcessorType)
+		fp.processor_name = fpd.get("processor_name", fp.processor_name)
+		fp.durability = float(fpd.get("durability", 100.0))
+		fp.max_durability = float(fpd.get("max_durability", 100.0))
+		fp.cost = int(fpd.get("cost", fp.cost))
+		fp.deployed_at_asteroid = fpd.get("deployed_at_asteroid", "")
+		for wname in fpd.get("worker_names", []):
+			for w in workers:
+				if w.worker_name == wname:
+					fp.assigned_workers.append(w)
+					break
+		deployed_fuel_processors.append(fp)
+
+	# Restore fuel stockpiles
+	fuel_stockpiles.clear()
+	for asteroid_name in data.get("fuel_stockpiles", {}):
+		fuel_stockpiles[asteroid_name] = float(data["fuel_stockpiles"][asteroid_name])
+
+
+	# Restore salvage targets
+	salvage_targets.clear()
+	for td in data.get("salvage_targets", []):
+		var t := SalvageTarget.new()
+		t.target_name = str(td.get("target_name", "Unknown Derelict"))
+		t.position_au = Vector2(float(td.get("pos_x", 0.0)), float(td.get("pos_y", 0.0)))
+		t.scrap_credits = int(td.get("scrap_credits", 0))
+		t.fuel_remaining = float(td.get("fuel_remaining", 0.0))
+		t.spawned_at_ticks = float(td.get("spawned_at_ticks", 0.0))
+		t.expires_at_ticks = float(td.get("expires_at_ticks", 0.0))
+		t.source = str(td.get("source", "random"))
+		for cd in td.get("salvage_equipment", []):
+			var e := Equipment.from_catalog(cd)
+			e.durability = float(cd.get("durability", 100.0))
+			e.max_durability = float(cd.get("max_durability", 100.0))
+			t.salvage_equipment.append(e)
+		for ore_str in td.get("cargo", {}):
+			t.cargo[int(ore_str)] = float(td["cargo"][ore_str])
+		salvage_targets.append(t)
 
 	# Restore rival corp states — rebuild structure from RivalCorpData, then overlay saved state
 	rival_corps = RivalCorpData.create_all()
@@ -3229,8 +3450,8 @@ func apply_server_state(server_data: Dictionary) -> void:
 
 		# Validate unit type before casting
 		if server_unit_type < 0 or server_unit_type >= MiningUnit.UnitType.size():
-			push_error("[GameState] Invalid server mining unit type %d, defaulting to RIG" % server_unit_type)
-			server_unit_type = MiningUnit.UnitType.RIG
+			push_error("[GameState] Invalid server mining unit type %d, defaulting to BASIC" % server_unit_type)
+			server_unit_type = MiningUnit.UnitType.BASIC
 
 		if unit.unit_type != server_unit_type:
 			unit.unit_type = server_unit_type as MiningUnit.UnitType
@@ -3378,18 +3599,6 @@ func _parse_ore_type(ore_key: String) -> ResourceTypes.OreType:
 # SERVER EVENT HANDLERS (SSE Real-Time Updates)
 # ══════════════════════════════════════════════════════════════════════════════
 
-## DEPRECATED: Forwarding stub - use WorkerManager.apply_worker_skill_event() instead
-## TODO: Remove after all references are migrated to WorkerManager
-func apply_worker_skill_event(event: Dictionary) -> void:
-	WorkerManager.apply_worker_skill_event(event)
-
-
-## Apply market price update event from server
-## Event format: {type: "market_update", prices: {ore_name: new_price, ...}}
-## DEPRECATED: Forwarding stub - use MarketManager.apply_market_update_event() instead
-## TODO: Remove after all references are migrated to MarketManager
-func apply_market_update_event(event: Dictionary) -> void:
-	MarketManager.apply_market_update_event(event)
 
 
 

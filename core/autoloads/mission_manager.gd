@@ -484,6 +484,63 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int
 	return mission
 
 
+## Start a salvage mission to board and strip a derelict ship
+func start_salvage_mission(ship: Ship, target: SalvageTarget, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE) -> Mission:
+	if ship.crew.is_empty():
+		push_warning("[MissionManager] start_salvage_mission: no crew on %s" % ship.ship_name)
+		return null
+
+	if transit_mode < 0 or transit_mode >= Mission.TransitMode.size():
+		transit_mode = Mission.TransitMode.BRACHISTOCHRONE
+
+	# Clean up lingering idle mission
+	if ship.current_mission and ship.current_mission.status == Mission.Status.IDLE_AT_DESTINATION:
+		var old_mission := ship.current_mission
+		ship.current_mission = null
+		old_mission.cleanup()
+		missions.erase(old_mission)
+
+	var mission := Mission.new()
+	mission.ship = ship
+	mission.mission_type = Mission.MissionType.SALVAGE
+	mission.status = Mission.Status.TRANSIT_OUT
+	mission.salvage_target = target
+	mission.destination_name = target.target_name
+	mission.destination_position_au = target.position_au
+	mission.origin_position_au = ship.position_au
+	mission.transit_mode = transit_mode as Mission.TransitMode
+
+	var earth_pos := CelestialData.get_earth_position_au()
+	mission.origin_is_earth = ship.position_au.distance_to(earth_pos) < 0.05
+	if mission.origin_is_earth:
+		mission.origin_name = "Earth"
+	elif ship.docked_at_colony:
+		mission.origin_name = ship.docked_at_colony.colony_name
+	else:
+		mission.origin_name = "deep space"
+
+	var dist := ship.position_au.distance_to(target.position_au)
+	if transit_mode == Mission.TransitMode.HOHMANN:
+		mission.transit_time = Brachistochrone.hohmann_time(dist)
+	else:
+		mission.transit_time = Brachistochrone.transit_time(dist, ship.get_effective_thrust())
+
+	var fuel_needed := ship.calc_fuel_for_distance(dist, ship.get_cargo_total())
+	mission.fuel_per_tick = fuel_needed / mission.transit_time if mission.transit_time > 0 else 0.0
+
+	# Return to Earth (approximate position for trajectory/fuel planning)
+	mission.return_position_au = earth_pos
+	mission.trajectory_dirty = true
+
+	ship.current_mission = mission
+	ship.docked_at_earth = false
+	ship.docked_at_colony = null
+
+	missions.append(mission)
+	EventBus.mission_started.emit(mission)
+	EventBus.salvage_mission_started.emit(mission)
+	return mission
+
 ## Start a trade mission to sell ore at a colony
 func start_trade_mission(ship: Ship, colony_target: Colony, cargo_to_load: Dictionary, transit_mode: int = TradeMission.TransitMode.BRACHISTOCHRONE) -> TradeMission:
 	if ship.crew.size() < ship.min_crew:
@@ -644,7 +701,7 @@ func start_fleet_rescue(ferry_ship: Ship, target_ship: Ship, rescue_crew: Array[
 			all_workers.append(w)
 	# Top up to 2 from available workers if needed (minimum for rescue: 1 stays on derelict, 1 flies back)
 	if all_workers.size() < 2:
-		for w in _game_state.get_available_workers():
+		for w in WorkerManager.get_available_workers():
 			if w not in all_workers:
 				all_workers.append(w)
 			if all_workers.size() >= 2:

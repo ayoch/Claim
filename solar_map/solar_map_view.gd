@@ -42,6 +42,9 @@ var _planet_labels: Array[Node2D] = []
 # Label anti-overlap system
 var _label_base_offsets: Dictionary = {}  # Node2D -> Vector2 (original offset from parent)
 
+# Fuel range visualization
+var _fuel_range_reachable: Array[Vector2] = []  # destination positions (AU) reachable one-way
+
 # Trajectory preview
 var _preview_active: bool = false
 var _preview_ship_pos: Vector2 = Vector2.ZERO
@@ -217,6 +220,9 @@ func _draw() -> void:
 		var p4 := Vector2(cos(angle), sin(angle)) * outer_r
 		draw_colored_polygon(PackedVector2Array([p1, p2, p3, p4]), Color(0.5, 0.4, 0.3, 0.08))
 
+	# Draw fuel range indicators (behind markers)
+	_draw_fuel_range()
+
 	# Draw ghost ship observations (rival corps, fog-of-war)
 	_draw_ghost_observations()
 
@@ -260,6 +266,26 @@ func _draw() -> void:
 		var dest_indicator_color := Color(1.0, 0.9, 0.3, blink_alpha)
 		draw_circle(_preview_dest_pos, 12, dest_indicator_color)
 		draw_circle(_preview_dest_pos, 8, Color(0.0, 0.0, 0.0, blink_alpha * 0.5))
+
+func _draw_fuel_range() -> void:
+	for pos_au: Vector2 in _fuel_range_reachable:
+		var px := pos_au * AU_PIXELS
+		_draw_circle_outline(px, 22.0, Color(0.3, 1.0, 0.3, 0.55), 2.0)
+
+func _compute_fuel_range(ship: Ship) -> void:
+	_fuel_range_reachable.clear()
+	if not ship:
+		return
+	var ship_pos := ship.position_au
+	var available := ship.fuel
+	for asteroid: AsteroidData in GameState.asteroids:
+		var dist := ship_pos.distance_to(asteroid.get_position_au())
+		if ship.calc_fuel_for_distance(dist, 0.0) <= available:
+			_fuel_range_reachable.append(asteroid.get_position_au())
+	for colony: Colony in GameState.colonies:
+		var dist := ship_pos.distance_to(colony.get_position_au())
+		if ship.calc_fuel_for_distance(dist, 0.0) <= available:
+			_fuel_range_reachable.append(colony.get_position_au())
 
 func _draw_circle_outline(center: Vector2, radius: float, color: Color, width: float) -> void:
 	var points := 64
@@ -1029,6 +1055,7 @@ func _set_map_selected_ship(ship: Ship) -> void:
 		_apply_selection_border(_ship_buttons[s], s == ship)
 	if _dispatch_hint_label:
 		_dispatch_hint_label.visible = ship != null
+	_compute_fuel_range(ship)
 	EventBus.map_ship_selected.emit(ship)
 
 func _try_dispatch_to(screen_pos: Vector2) -> void:

@@ -184,6 +184,9 @@ func _setup_components() -> void:
 	_destination_selector.colony_selected.connect(func(colony) -> void:
 		_confirm_colony_dispatch(colony)
 	)
+	_destination_selector.salvage_target_selected.connect(func(target: SalvageTarget) -> void:
+		_confirm_salvage_dispatch(target)
+	)
 	_destination_selector.selection_cancelled.connect(func() -> void:
 		_hide_dispatch()
 		_cancel_preview()
@@ -292,7 +295,7 @@ func _setup_components() -> void:
 		var any_bought := false
 		for key in purchases:
 			var qty: float = purchases[key]
-			if GameState.buy_supplies(ship, key, qty):
+			if MarketManager.buy_supplies(ship, key, qty):
 				any_bought = true
 			else:
 				ship.add_station_log("Failed to buy %s" % key.replace("_", " "), "warning")
@@ -680,6 +683,32 @@ func _confirm_colony_dispatch(colony: Colony) -> void:
 	# Create confirmation popup
 	_show_confirmation_dialog(confirm_text, func() -> void:
 		_select_colony_trade(colony)
+	)
+
+func _confirm_salvage_dispatch(target: SalvageTarget) -> void:
+	_on_selection_screen = false
+	if _selected_ship.crew.is_empty():
+		_show_confirmation_dialog("No crew assigned to %s.\n\nAssign workers before dispatching a salvage mission." % _selected_ship.ship_name, null)
+		return
+	var dist := _selected_ship.position_au.distance_to(target.position_au)
+	var transit := Brachistochrone.transit_time(dist, _selected_ship.get_effective_thrust())
+	var equip_str := ""
+	if not target.salvage_equipment.is_empty():
+		var names: Array[String] = []
+		for e: Equipment in target.salvage_equipment:
+			names.append(e.equipment_name)
+		equip_str = "\nEquipment: %s" % ", ".join(names)
+	var days_left := (target.expires_at_ticks - GameState.total_ticks) / 86400.0
+	var confirm_text := "Salvage %s?\n\nTransit: %s\nScrap value: $%s%s\nExpires in: %.1f days" % [
+		target.target_name,
+		_format_time(transit),
+		_format_number(target.scrap_credits),
+		equip_str,
+		maxf(days_left, 0.0),
+	]
+	_show_confirmation_dialog(confirm_text, func() -> void:
+		MissionManager.start_salvage_mission(_selected_ship, target, _selected_transit_mode)
+		_hide_dispatch()
 	)
 
 func _confirm_asteroid_dispatch(asteroid: AsteroidData) -> void:

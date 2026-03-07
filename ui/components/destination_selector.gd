@@ -6,6 +6,7 @@ extends VBoxContainer
 
 signal asteroid_selected(asteroid: AsteroidData)
 signal colony_selected(colony: Colony)
+signal salvage_target_selected(target: SalvageTarget)
 signal selection_cancelled()
 
 # Ship context (set by parent)
@@ -107,6 +108,9 @@ func show_selection(ship: Ship, planning_mode: bool = false, redirect_mode: bool
 	# === FLEET SHIPS NEEDING HELP ===
 	_build_fleet_rescue_section()
 
+	# === SALVAGE TARGETS ===
+	_build_salvage_section()
+
 	# === MARKET DESTINATIONS SECTION ===
 	_build_market_section(colonies_expanded, ore_total)
 
@@ -160,6 +164,92 @@ func _build_fleet_rescue_section() -> void:
 
 	var sep := HSeparator.new()
 	content_container.add_child(sep)
+
+## Build salvage targets section
+func _build_salvage_section() -> void:
+	if GameState.salvage_targets.is_empty():
+		return
+
+	var header := _lbl()
+	header.text = "SALVAGE TARGETS"
+	header.add_theme_font_size_override("font_size", 23)
+	header.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
+	content_container.add_child(header)
+
+	for target: SalvageTarget in GameState.salvage_targets:
+		_add_salvage_button(target)
+
+	content_container.add_child(HSeparator.new())
+
+## Add single salvage target button
+func _add_salvage_button(target: SalvageTarget) -> void:
+	var dist := _selected_ship.position_au.distance_to(target.position_au)
+	var transit := Brachistochrone.transit_time(dist, _selected_ship.get_effective_thrust())
+	var fuel_needed := _selected_ship.calc_fuel_for_distance(dist, _selected_ship.get_cargo_total()) * 2.0
+	var feasible := fuel_needed <= _selected_ship.fuel
+	var days_remaining := (target.expires_at_ticks - GameState.total_ticks) / 86400.0
+
+	var row := VBoxContainer.new()
+	row.add_theme_constant_override("separation", 4)
+
+	var name_label := _lbl()
+	name_label.text = target.target_name
+	name_label.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
+	row.add_child(name_label)
+
+	var data_row := HBoxContainer.new()
+	data_row.add_theme_constant_override("separation", 8)
+
+	var time_label := _lbl()
+	time_label.text = TimeScale.format_time(transit)
+	time_label.custom_minimum_size = Vector2(100, 0)
+	time_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.7))
+	data_row.add_child(time_label)
+
+	var value_label := _lbl()
+	value_label.text = "$%s scrap" % _format_number(target.scrap_credits)
+	value_label.custom_minimum_size = Vector2(120, 0)
+	value_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+	data_row.add_child(value_label)
+
+	var expire_label := _lbl()
+	expire_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	expire_label.add_theme_font_size_override("font_size", 16)
+	expire_label.text = "%.1fd left" % maxf(days_remaining, 0.0)
+	if days_remaining < 5.0:
+		expire_label.add_theme_color_override("font_color", Color(0.9, 0.4, 0.3))
+	else:
+		expire_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	data_row.add_child(expire_label)
+
+	row.add_child(data_row)
+
+	if not target.salvage_equipment.is_empty():
+		var equip_names: Array[String] = []
+		for e: Equipment in target.salvage_equipment:
+			equip_names.append("%s (%.0f%%)" % [e.equipment_name, e.durability])
+		var equip_label := _lbl()
+		equip_label.add_theme_font_size_override("font_size", 16)
+		equip_label.text = "Equipment: %s" % ", ".join(equip_names)
+		equip_label.add_theme_color_override("font_color", Color(0.5, 0.7, 0.9))
+		equip_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		row.add_child(equip_label)
+
+	var btn := Button.new()
+	btn.text = "Dispatch Salvage"
+	btn.custom_minimum_size = Vector2(0, 36)
+	btn.focus_mode = Control.FOCUS_NONE
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	btn.disabled = not feasible
+	if not feasible:
+		btn.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	btn.pressed.connect(func() -> void:
+		salvage_target_selected.emit(target)
+	)
+	row.add_child(btn)
+
+	content_container.add_child(row)
+	content_container.add_child(HSeparator.new())
 
 ## Build market destinations section
 func _build_market_section(expanded: bool, ore_total: float) -> void:
@@ -269,14 +359,21 @@ func _add_colony_button(container: VBoxContainer, colony: Colony) -> void:
 	var fuel_needed := fuel_outbound + fuel_return
 
 	var revenue := 0
+	var earth_revenue := 0
 	var cargo_breakdown := ""
 	for ore_type in _selected_ship.current_cargo:
 		var amount: float = _selected_ship.current_cargo[ore_type]
-		var price: float = colony.get_ore_price(ore_type, GameState.market)
-		revenue += int(amount * price)
+		if amount <= 0.0:
+			continue
+		var colony_price: float = colony.get_ore_price(ore_type, GameState.market)
+		var earth_price: float = GameState.market.get_price(ore_type, "Earth")
+		revenue += int(amount * colony_price)
+		earth_revenue += int(amount * earth_price)
+		var diff_pct := ((colony_price - earth_price) / earth_price) * 100.0 if earth_price > 0.0 else 0.0
+		var diff_str := (" (%+.0f%%)" % diff_pct) if absf(diff_pct) >= 0.5 else ""
 		if cargo_breakdown != "":
-			cargo_breakdown += ", "
-		cargo_breakdown += "%s: $%s" % [ResourceTypes.get_ore_name(ore_type), _format_number(int(amount * price))]
+			cargo_breakdown += "  "
+		cargo_breakdown += "%s $%d/t%s" % [ResourceTypes.get_ore_name(ore_type), int(colony_price), diff_str]
 
 	var fuel_status := ""
 	var available_fuel := _selected_ship.get_effective_fuel_capacity() if _selected_ship.is_idle_remote else _selected_ship.fuel
@@ -336,6 +433,18 @@ func _add_colony_button(container: VBoxContainer, colony: Colony) -> void:
 		cargo_label.add_theme_color_override("font_color", Color(0.5, 0.7, 0.5))
 		cargo_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		colony_row.add_child(cargo_label)
+
+		var vs_earth := revenue - earth_revenue
+		if vs_earth != 0:
+			var vs_label := _lbl()
+			vs_label.add_theme_font_size_override("font_size", 16)
+			var sign := "+" if vs_earth >= 0 else ""
+			vs_label.text = "vs Earth: %s$%s" % [sign, _format_number(vs_earth)]
+			if vs_earth > 0:
+				vs_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.4))
+			else:
+				vs_label.add_theme_color_override("font_color", Color(0.9, 0.4, 0.3))
+			colony_row.add_child(vs_label)
 
 	var btn := Button.new()
 	btn.text = "Sell Here"

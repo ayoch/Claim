@@ -244,6 +244,28 @@ func _ready() -> void:
 		_queue_alert("===== GAME OVER: %s =====" % reason, Color(1.0, 0.0, 0.0))
 	)
 
+	# Loan system
+	EventBus.loan_taken.connect(func(_amount: int, _debt: int) -> void: _refresh_loan_panel())
+	EventBus.loan_repaid.connect(func(_amount: int, _debt: int) -> void: _refresh_loan_panel())
+	EventBus.loan_interest_charged.connect(func(amount: int, debt: int) -> void:
+		_queue_activity("Loan interest: -$%s (debt: $%s)" % [_format_number(amount), _format_number(debt)], Color(0.9, 0.5, 0.3))
+		_refresh_loan_panel()
+	)
+	EventBus.debt_warning.connect(func(_debt: int, daily: int) -> void:
+		_queue_alert("DEBT WARNING: paying $%s/day in interest" % _format_number(daily), Color(1.0, 0.6, 0.1))
+	)
+
+	# Salvage system
+	EventBus.salvage_target_appeared.connect(func(target: SalvageTarget) -> void:
+		_queue_alert("SALVAGE: %s at (%.2f, %.2f AU)" % [target.target_name, target.position_au.x, target.position_au.y], Color(0.9, 0.7, 0.3))
+	)
+	EventBus.salvage_mission_completed.connect(func(mission: Mission, credits: int, equip_count: int) -> void:
+		var msg := "Salvage complete: %s — +$%s" % [mission.destination_name, _format_number(credits)]
+		if equip_count > 0:
+			msg += " +%d equipment" % equip_count
+		_queue_activity(msg, Color(0.9, 0.7, 0.3))
+	)
+
 	# Warning system
 	EventBus.warning_added.connect(func(_id: String, _msg: String, _sev: String) -> void:
 		_refresh_warnings()
@@ -280,6 +302,26 @@ func _ready() -> void:
 		_queue_activity("🛡️ %s militia defended against %s" % [colony_name, corp_name], Color(0.3, 0.7, 1.0))
 	)
 
+	# Arbitrage alerts
+	EventBus.arbitrage_opportunity.connect(func(ore_name: String, low_hub: String, high_hub: String, gap_pct: float) -> void:
+		_queue_activity("ARBITRAGE: %s — sell at %s vs %s (+%.0f%%)" % [ore_name, high_hub, low_hub, gap_pct * 100.0], Color(0.3, 1.0, 0.6))
+	)
+
+	# Fuel production events
+	EventBus.fuel_processor_broken.connect(func(fp: FuelProcessor) -> void:
+		_queue_alert("FUEL PROCESSOR BROKEN: %s at %s" % [fp.processor_name, fp.deployed_at_asteroid], Color(0.9, 0.5, 0.2))
+	)
+	EventBus.power_source_broken.connect(func(ps: PowerSource) -> void:
+		_queue_alert("POWER SOURCE FAILED: %s at %s" % [ps.source_name, ps.deployed_at_asteroid], Color(0.9, 0.5, 0.2))
+	)
+	EventBus.reactor_exploded.connect(func(ps: PowerSource, asteroid_name: String) -> void:
+		_queue_alert("REACTOR EXPLOSION: %s at %s — fuel vented, workers may be lost!" % [ps.source_name, asteroid_name], Color(1.0, 0.1, 0.1))
+		_send_system_notification("Reactor Explosion", "%s at %s" % [ps.source_name, asteroid_name])
+	)
+	EventBus.fuel_stockpile_collected.connect(func(asteroid: AsteroidData, fuel: float) -> void:
+		_queue_activity("Collected %.2f fuel from %s" % [fuel, asteroid.asteroid_name], Color(0.3, 0.9, 0.9))
+	)
+
 	_refresh_all()
 	_setup_policies_ui()
 	_setup_stationed_ships_panel()
@@ -287,7 +329,9 @@ func _ready() -> void:
 	_setup_balance_history()
 	_setup_discipline_panel()
 	_setup_colony_standing_panel()
+	_setup_loan_panel()
 	_setup_warnings_panel()
+	_setup_leaderboard_panel()
 	_setup_collapsible_sections()
 
 func _setup_stationed_ships_panel() -> void:
@@ -514,20 +558,20 @@ func _refresh_discipline() -> void:
 		var forgive_btn := Button.new()
 		forgive_btn.text = "Forgive"
 		forgive_btn.custom_minimum_size = Vector2(0, 44)
-		forgive_btn.pressed.connect(GameState.forgive_tardy_worker.bind(worker))
+		forgive_btn.pressed.connect(WorkerManager.forgive_tardy_worker.bind(worker))
 		btn_row.add_child(forgive_btn)
 
 		var dock_btn := Button.new()
 		var dock_amount := worker.wage * 3
 		dock_btn.text = "Dock Pay -$%d" % dock_amount
 		dock_btn.custom_minimum_size = Vector2(0, 44)
-		dock_btn.pressed.connect(GameState.dock_pay_tardy_worker.bind(worker))
+		dock_btn.pressed.connect(WorkerManager.dock_pay_tardy_worker.bind(worker))
 		btn_row.add_child(dock_btn)
 
 		var fire_btn := Button.new()
 		fire_btn.text = "Fire"
 		fire_btn.custom_minimum_size = Vector2(0, 44)
-		fire_btn.pressed.connect(GameState.fire_tardy_worker.bind(worker))
+		fire_btn.pressed.connect(WorkerManager.fire_tardy_worker.bind(worker))
 		btn_row.add_child(fire_btn)
 
 		entry_vbox.add_child(btn_row)
@@ -636,6 +680,124 @@ func _refresh_colony_standing() -> void:
 			shown_count += 1
 
 		entries_list_node.add_child(entry_vbox)
+
+func _setup_loan_panel() -> void:
+	var scroll := get_node("ScrollContainer")
+	var vbox := scroll.get_node("VBox")
+
+	var card := PanelContainer.new()
+	card.name = "LoanCard"
+	var card_vbox := VBoxContainer.new()
+	card_vbox.add_theme_constant_override("separation", 8)
+
+	var title := _lbl()
+	title.name = "LoanTitle"
+	title.text = "LOANS & DEBT"
+	title.add_theme_font_size_override("font_size", 18)
+	title.add_theme_color_override("font_color", Color(0.9, 0.6, 0.3))
+	card_vbox.add_child(title)
+
+	var content := VBoxContainer.new()
+	content.name = "LoanContent"
+	content.add_theme_constant_override("separation", 6)
+	card_vbox.add_child(content)
+
+	card.add_child(card_vbox)
+	vbox.add_child(card)
+	_make_collapsible("loans", title, content, false)
+	_refresh_loan_panel()
+
+func _refresh_loan_panel() -> void:
+	var content := get_node_or_null("ScrollContainer/VBox/LoanCard/VBox/LoanContent")
+	if not content:
+		return
+	for child in content.get_children():
+		child.queue_free()
+
+	var debt := GameState.total_debt
+	var daily_interest := GameState.get_daily_interest()
+	var max_debt := GameState.LOAN_MAX_DEBT
+
+	# Status line
+	var status := _lbl()
+	if debt <= 0:
+		status.text = "No outstanding debt."
+		status.add_theme_color_override("font_color", Color(0.5, 0.8, 0.5))
+	else:
+		status.text = "Outstanding debt: $%s  |  Interest: $%s/day (9%%/yr)" % [
+			_format_number(debt), _format_number(daily_interest)
+		]
+		var debt_color := Color(0.9, 0.5, 0.2) if debt > max_debt * 0.5 else Color(0.9, 0.8, 0.4)
+		status.add_theme_color_override("font_color", debt_color)
+	status.add_theme_font_size_override("font_size", 16)
+	content.add_child(status)
+
+	# Borrow row
+	var borrow_lbl := _lbl()
+	borrow_lbl.text = "Borrow:"
+	borrow_lbl.add_theme_font_size_override("font_size", 14)
+	borrow_lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	content.add_child(borrow_lbl)
+
+	var borrow_row := HBoxContainer.new()
+	borrow_row.add_theme_constant_override("separation", 6)
+	for amount in GameState.LOAN_TIERS:
+		var can_borrow := debt + amount <= max_debt
+		var btn := Button.new()
+		btn.text = "$%s" % GameState._format_loan_number(amount)
+		btn.custom_minimum_size = Vector2(0, 30)
+		btn.disabled = not can_borrow
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.pressed.connect(func() -> void:
+			GameState.borrow(amount)
+		)
+		borrow_row.add_child(btn)
+	content.add_child(borrow_row)
+
+	# Repay row (only if debt > 0)
+	if debt > 0:
+		var repay_lbl := _lbl()
+		repay_lbl.text = "Repay:"
+		repay_lbl.add_theme_font_size_override("font_size", 14)
+		repay_lbl.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		content.add_child(repay_lbl)
+
+		var repay_row := HBoxContainer.new()
+		repay_row.add_theme_constant_override("separation", 6)
+		var repay_amounts := [100_000, 500_000, 1_000_000, debt]
+		var repay_labels := ["$100K", "$500K", "$1M", "All ($%s)" % GameState._format_loan_number(debt)]
+		for i in repay_amounts.size():
+			var amount: int = repay_amounts[i]
+			if amount <= 0 or amount > debt:
+				if i < 3:  # Skip fixed amounts that exceed debt, but always show "All"
+					continue
+			var btn := Button.new()
+			btn.text = repay_labels[i]
+			btn.custom_minimum_size = Vector2(0, 30)
+			btn.disabled = GameState.money < amount
+			btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			btn.add_theme_color_override("font_color", Color(0.3, 0.9, 0.5))
+			btn.pressed.connect(func() -> void:
+				GameState.repay(amount)
+			)
+			repay_row.add_child(btn)
+		if repay_row.get_child_count() > 0:
+			content.add_child(repay_row)
+
+	# Capacity bar
+	var cap_lbl := _lbl()
+	cap_lbl.text = "Debt capacity: $%s / $%s" % [_format_number(debt), _format_number(max_debt)]
+	cap_lbl.add_theme_font_size_override("font_size", 12)
+	cap_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+	content.add_child(cap_lbl)
+
+	var bar := ProgressBar.new()
+	bar.min_value = 0.0
+	bar.max_value = float(max_debt)
+	bar.value = float(debt)
+	bar.custom_minimum_size = Vector2(0, 12)
+	bar.show_percentage = false
+	content.add_child(bar)
 
 func _setup_warnings_panel() -> void:
 	var scroll := get_node("ScrollContainer")
@@ -881,6 +1043,24 @@ func _setup_policies_ui() -> void:
 		func() -> int: return GameState.maintenance_policy,
 		func(idx: int) -> void:
 			GameState.maintenance_policy = idx
+			TestHarness.on_settings_changed()
+	)
+	_add_policy_row.call(
+		"Torpedo Restock:",
+		CompanyPolicy.MUNITIONS_POLICY_NAMES,
+		CompanyPolicy.MUNITIONS_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.munitions_policy,
+		func(idx: int) -> void:
+			GameState.munitions_policy = idx
+			TestHarness.on_settings_changed()
+	)
+	_add_policy_row.call(
+		"Insurance:",
+		CompanyPolicy.INSURANCE_POLICY_NAMES,
+		CompanyPolicy.INSURANCE_POLICY_DESCRIPTIONS,
+		func() -> int: return GameState.insurance_policy,
+		func(idx: int) -> void:
+			GameState.insurance_policy = idx
 			TestHarness.on_settings_changed()
 	)
 
@@ -1302,7 +1482,7 @@ func _refresh_resources() -> void:
 
 		for asteroid_name in claim_asteroids:
 			var units := GameState.get_mining_units_at(asteroid_name)
-			var pile := GameState.get_ore_stockpile(asteroid_name)
+			var pile := MarketManager.get_ore_stockpile(asteroid_name)
 
 			# Find asteroid data for max slots
 			var max_slots := 0
@@ -1366,9 +1546,9 @@ func _refresh_resources() -> void:
 				resources_list.add_child(stockpile_label)
 
 			# Show supplies
-			var supplies := GameState.get_asteroid_supplies(asteroid_name)
-			var food_days := GameState.get_asteroid_supply_days(asteroid_name, "food")
-			var parts_days := GameState.get_asteroid_supply_days(asteroid_name, "repair_parts")
+			var supplies := MarketManager.get_asteroid_supplies(asteroid_name)
+			var food_days := MarketManager.get_asteroid_supply_days(asteroid_name, "food")
+			var parts_days := MarketManager.get_asteroid_supply_days(asteroid_name, "repair_parts")
 			var food_val: float = supplies.get("food", 0.0)
 			var parts_val: float = supplies.get("repair_parts", 0.0)
 			if food_val > 0.0 or parts_val > 0.0:
@@ -1693,6 +1873,137 @@ func _toggle_section(key: String, title_label: Label) -> void:
 	# Update arrow indicator
 	var base_text := title_label.text.trim_suffix(" ▾").trim_suffix(" ▸")
 	title_label.text = base_text + (" ▸" if collapsed else " ▾")
+
+func _setup_leaderboard_panel() -> void:
+	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+		return
+
+	var vbox := get_node("ScrollContainer/VBox")
+
+	var card := PanelContainer.new()
+	card.name = "LeaderboardCard"
+	var card_vbox := VBoxContainer.new()
+	card_vbox.add_theme_constant_override("separation", 8)
+
+	var header_row := HBoxContainer.new()
+
+	var title := _lbl()
+	title.text = "LEADERBOARD"
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title.add_theme_font_size_override("font_size", 21)
+	title.add_theme_color_override("font_color", Color(0.9, 0.8, 0.3))
+	header_row.add_child(title)
+
+	var refresh_btn := Button.new()
+	refresh_btn.text = "Refresh"
+	refresh_btn.custom_minimum_size = Vector2(0, 36)
+	refresh_btn.focus_mode = Control.FOCUS_NONE
+	refresh_btn.pressed.connect(func() -> void: _refresh_leaderboard())
+	header_row.add_child(refresh_btn)
+	card_vbox.add_child(header_row)
+
+	var entries_list := VBoxContainer.new()
+	entries_list.name = "LeaderboardEntries"
+	entries_list.add_theme_constant_override("separation", 4)
+	card_vbox.add_child(entries_list)
+
+	card.add_child(card_vbox)
+	vbox.add_child(card)
+
+	_refresh_leaderboard()
+
+
+func _refresh_leaderboard() -> void:
+	var card := get_node_or_null("ScrollContainer/VBox/LeaderboardCard")
+	if not card:
+		return
+	var entries_list: VBoxContainer = card.find_child("LeaderboardEntries", true, false)
+	if not entries_list:
+		return
+
+	_free_children(entries_list)
+	var loading_lbl := _lbl()
+	loading_lbl.text = "Loading..."
+	loading_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	entries_list.add_child(loading_lbl)
+
+	var server_backend = BackendManager.get_server_backend()
+	if not server_backend:
+		return
+
+	var data: Dictionary = await server_backend.get_leaderboard(20)
+
+	# Re-validate after await
+	card = get_node_or_null("ScrollContainer/VBox/LeaderboardCard")
+	if not card:
+		return
+	entries_list = card.find_child("LeaderboardEntries", true, false)
+	if not entries_list:
+		return
+
+	_free_children(entries_list)
+
+	var entries: Array = data.get("entries", [])
+	var total: int = data.get("total_players", 0)
+
+	if entries.is_empty():
+		var empty_lbl := _lbl()
+		empty_lbl.text = "No data available"
+		empty_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.5))
+		entries_list.add_child(empty_lbl)
+		return
+
+	var my_username := ""
+	var sb = BackendManager.get_server_backend()
+	if sb:
+		my_username = sb.get_saved_username()
+
+	var total_lbl := _lbl()
+	total_lbl.text = "%d players ranked" % total
+	total_lbl.add_theme_font_size_override("font_size", 16)
+	total_lbl.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	entries_list.add_child(total_lbl)
+
+	for entry in entries:
+		var is_me: bool = entry.get("username", "") == my_username
+
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 12)
+
+		var rank_lbl := _lbl()
+		rank_lbl.text = "#%d" % entry.get("rank", 0)
+		rank_lbl.custom_minimum_size = Vector2(48, 0)
+		rank_lbl.add_theme_font_size_override("font_size", 18)
+		rank_lbl.add_theme_color_override("font_color",
+			Color(1.0, 0.9, 0.3) if is_me else Color(0.7, 0.7, 0.8))
+
+		var name_lbl := _lbl()
+		name_lbl.text = entry.get("username", "?")
+		name_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name_lbl.add_theme_font_size_override("font_size", 18)
+		name_lbl.add_theme_color_override("font_color",
+			Color(1.0, 0.9, 0.3) if is_me else Color(0.9, 0.9, 0.9))
+
+		var worth_lbl := _lbl()
+		worth_lbl.text = "$%s" % _format_number(int(entry.get("net_worth", 0)))
+		worth_lbl.add_theme_font_size_override("font_size", 18)
+		worth_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		worth_lbl.add_theme_color_override("font_color",
+			Color(1.0, 0.9, 0.3) if is_me else Color(0.3, 0.9, 0.4))
+
+		row.add_child(rank_lbl)
+		row.add_child(name_lbl)
+		row.add_child(worth_lbl)
+		entries_list.add_child(row)
+
+		var sub_lbl := _lbl()
+		sub_lbl.text = "    %d ships  %d crew" % [entry.get("ships_count", 0), entry.get("workers_count", 0)]
+		sub_lbl.add_theme_font_size_override("font_size", 14)
+		sub_lbl.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
+		entries_list.add_child(sub_lbl)
+
+		entries_list.add_child(HSeparator.new())
+
 
 func _format_number(n: int) -> String:
 	var s := str(abs(n))
