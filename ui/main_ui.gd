@@ -13,6 +13,7 @@ const TESTING_MODE: bool = true
 
 var _settings_popup: PanelContainer = null
 var _speed_input: LineEdit = null
+var _speed_label: Label = null
 var _stored_speed: float = 0.0
 var _is_speed_paused: bool = false
 var _date_update_timer: float = 0.0
@@ -25,6 +26,8 @@ var _bug_report_dialog: AcceptDialog = null
 # Loading overlay (SERVER mode only)
 var _loading_overlay: Control = null
 var _initial_state_loaded: bool = false
+var _loading_timeout_timer: float = 0.0
+const LOADING_TIMEOUT: float = 15.0  # Force-dismiss overlay after 15s if server never responds
 
 # Server state polling (Phase 1)
 var _server_poll_timer: float = 0.0
@@ -119,6 +122,14 @@ func _process(delta: float) -> void:
 			_server_poll_timer = 0.0
 			_poll_server_state()  # Async call (doesn't block)
 
+		# Force-dismiss loading overlay if server is unresponsive
+		if not _initial_state_loaded and _loading_overlay:
+			_loading_timeout_timer += delta
+			if _loading_timeout_timer >= LOADING_TIMEOUT:
+				push_warning("Server did not respond within %.0fs — dismissing loading overlay" % LOADING_TIMEOUT)
+				_initial_state_loaded = true
+				_hide_loading_overlay()
+
 		# Poll server speed for display
 		_server_speed_poll_timer += delta
 		if _server_speed_poll_timer >= SERVER_SPEED_POLL_INTERVAL and not _polling_server_speed:
@@ -187,6 +198,17 @@ func _update_date_display() -> void:
 func _setup_speed_bar() -> void:
 	var hbox: HFlowContainer = speed_bar.get_node("HBox")
 
+	# Speed display label on the left
+	_speed_label = Label.new()
+	_speed_label.text = TimeScale.get_speed_display()
+	_speed_label.add_theme_font_size_override("font_size", 18)
+	_speed_label.add_theme_color_override("font_color", Color(0.9, 0.9, 0.6))
+	_speed_label.custom_minimum_size = Vector2(80, 0)
+	_speed_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_speed_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hbox.add_child(_speed_label)
+	hbox.move_child(_speed_label, 0)
+
 	# Wire decrease button
 	var dec_btn: Button = hbox.get_node("DecBtn")
 	dec_btn.pressed.connect(func() -> void:
@@ -254,6 +276,8 @@ func _update_speed_display() -> void:
 		if _speed_input.has_focus():
 			_speed_input.release_focus()
 		_speed_input.text = TimeScale.get_speed_display()
+	if _speed_label:
+		_speed_label.text = TimeScale.get_speed_display()
 
 func _on_money_changed(amount: int) -> void:
 	money_display.text = "$%s" % _format_number(amount)
@@ -627,6 +651,14 @@ func _poll_server_speed() -> void:
 			if speed != _current_server_speed:
 				_current_server_speed = speed
 				TimeScale.speed_multiplier = speed
+				# Sync index so 1/2 keys step relative to actual current speed
+				_server_speed_index = SERVER_SPEED_STEPS.find(speed)
+				if _server_speed_index < 0:
+					# Speed not in steps — find nearest
+					_server_speed_index = 0
+					for i in range(SERVER_SPEED_STEPS.size()):
+						if SERVER_SPEED_STEPS[i] <= speed:
+							_server_speed_index = i
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -63,57 +63,54 @@ static func _calculate_start_jd() -> float:
 
 	return jd
 
-# START_JD is no longer used - we calculate JD directly from system time
-# var START_JD: float = _calculate_start_jd()
+# Game epoch: Unix timestamp for 2112-01-01 00:00:00 UTC
+const GAME_EPOCH_UNIX: float = 4481654400.0
 
-# Cached positions (updated each second of real time)
+# Cached positions driven by sim time (not wall clock)
 var _cached_positions: Dictionary = {}  # body_name -> Vector2
-var _last_update_time: int = -1  # Unix timestamp of last update
+var _sim_elapsed: float = -1.0          # Seconds of sim time elapsed since game epoch
+var _dirty: bool = true                 # Recompute positions on next get_position()
 
 func initialize() -> void:
-	_update_all_positions_from_realtime()
+	# Seed from GameState.total_ticks so saves and MP polls start at the right date
+	_sim_elapsed = GameState.total_ticks
+	_recompute_positions()
 
-## Get current Julian Date based on real-world time in 2112
-static func _get_current_jd() -> float:
-	var now := Time.get_datetime_dict_from_system()
-	var game_date := {
-		"year": 2112,
-		"month": now["month"],
-		"day": now["day"],
-		"hour": now["hour"],
-		"minute": now["minute"],
-		"second": now["second"]
-	}
-	var unix_timestamp: int = Time.get_unix_time_from_datetime_dict(game_date)
-	return 2440587.5 + (float(unix_timestamp) / SECONDS_PER_DAY)
+## Advance sim time by dt seconds (called from CelestialData.advance_planets)
+func advance(dt: float) -> void:
+	_sim_elapsed += dt
+	_dirty = true
 
-## Compute position for a planet at the current game time
+## Sync to an authoritative tick count (save load, MP server poll)
+func sync_to_ticks(ticks: float) -> void:
+	if abs(ticks - _sim_elapsed) > 1.0:
+		_sim_elapsed = ticks
+		_dirty = true
+
+## Get JD from accumulated sim time
+func _get_sim_jd() -> float:
+	return 2440587.5 + (GAME_EPOCH_UNIX + _sim_elapsed) / SECONDS_PER_DAY
+
+## Compute position for a planet at the current sim time
 func get_position(body_name: String) -> Vector2:
-	# Update cache if real-world time changed (check once per second)
-	var current_time: int = Time.get_unix_time_from_system()
-	if current_time != _last_update_time:
-		_update_all_positions_from_realtime()
+	# Auto-sync if GameState jumped ahead (e.g. save load before advance() is called)
+	if _sim_elapsed < 0.0 or GameState.total_ticks > _sim_elapsed + 3600.0:
+		_sim_elapsed = GameState.total_ticks
+		_dirty = true
+	if _dirty:
+		_recompute_positions()
 	return _cached_positions.get(body_name, Vector2.ZERO)
 
-## Predict position at a future time (current time + dt_seconds)
+## Predict position at a future sim time (current + dt_seconds)
 func get_position_at_time(body_name: String, dt_seconds: float) -> Vector2:
-	# Get current JD and add dt to predict future position
-	var current_jd := _get_current_jd()
-	var future_jd := current_jd + (dt_seconds / SECONDS_PER_DAY)
+	var future_jd := _get_sim_jd() + (dt_seconds / SECONDS_PER_DAY)
 	var T := (future_jd - J2000_JD) / DAYS_PER_CENTURY
-
 	return _compute_position(body_name, T)
 
-## Update all planet positions based on current real-world time
-func _update_all_positions_from_realtime() -> void:
-	_last_update_time = Time.get_unix_time_from_system()
-
-	# Get Julian Date for current real-world time in 2112
-	var jd := _get_current_jd()
-
-	# Julian centuries from J2000
-	var T := (jd - J2000_JD) / DAYS_PER_CENTURY
-
+## Recompute all planet positions from current sim elapsed time
+func _recompute_positions() -> void:
+	_dirty = false
+	var T := (_get_sim_jd() - J2000_JD) / DAYS_PER_CENTURY
 	for body_name in ELEMENTS:
 		_cached_positions[body_name] = _compute_position(body_name, T)
 

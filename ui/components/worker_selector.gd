@@ -329,29 +329,29 @@ func _build_crew_selection() -> void:
 	# Get available workers (filtering by location)
 	var available: Array[Worker] = []
 
-	# If ship is remote and not at Earth, only show workers at same location or unassigned at Earth
-	if _selected_ship.mission and _selected_ship.mission.status == Mission.MissionStatus.STATIONED:
-		var ship_loc = _selected_ship.mission.destination
+	# If ship is stationed at a remote colony, only show workers at that colony
+	if _selected_ship.is_stationed and _selected_ship.station_colony:
+		var ship_loc: String = _selected_ship.station_colony.colony_name
 		for worker in _game_state.workers:
-			if worker.current_task == Worker.TaskType.IDLE:
+			if worker.is_available:
 				available.append(worker)
-			elif worker.current_task == Worker.TaskType.DEPLOYED:
+			elif worker.assigned_mining_unit != null:
 				# Skip deployed workers
 				pass
-			elif worker.current_ship:
-				var w_ship: Ship = worker.current_ship
-				if w_ship.mission and w_ship.mission.status == Mission.MissionStatus.STATIONED:
-					var w_loc = w_ship.mission.destination
+			elif worker.assigned_ship:
+				var w_ship: Ship = worker.assigned_ship
+				if w_ship.is_stationed and w_ship.station_colony:
+					var w_loc: String = w_ship.station_colony.colony_name
 					if w_loc == ship_loc:
 						available.append(worker)
 	else:
 		# Ship is at Earth or in transit - show all idle workers
 		for worker in _game_state.workers:
-			if worker.current_task == Worker.TaskType.IDLE:
+			if worker.is_available:
 				available.append(worker)
 
-	# Crew lock warning (if ship is remote)
-	if _selected_ship.mission and _selected_ship.mission.status == Mission.MissionStatus.STATIONED:
+	# Crew lock warning (if ship is stationed remotely)
+	if _selected_ship.is_stationed and _selected_ship.station_colony:
 		var lock_warning := _lbl()
 		lock_warning.text = "⚠ Ship is remote - only showing workers at same location"
 		lock_warning.add_theme_color_override("font_color", Color(0.9, 0.7, 0.3))
@@ -537,7 +537,7 @@ func _get_deployed_units_at_asteroid() -> Array:
 func _get_available_workers_for_deploy() -> Array[Worker]:
 	var workers: Array[Worker] = []
 	for worker in _game_state.workers:
-		if worker.current_task == Worker.TaskType.IDLE:
+		if worker.is_available:
 			workers.append(worker)
 	return workers
 

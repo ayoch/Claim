@@ -103,7 +103,6 @@ func _try_auto_login() -> void:
 	if state.has("player_id") and state.get("player_id", 0) > 0:
 		# Token is valid, proceed to game
 		_show_status("Session restored! Loading game...", Color(0.3, 0.9, 0.3))
-		await get_tree().create_timer(1.0).timeout
 		get_tree().change_scene_to_file("res://ui/main_ui.tscn")
 	else:
 		# Token expired or invalid, clear token but keep username
@@ -141,8 +140,6 @@ func _on_login() -> void:
 
 	if result.get("success", false):
 		_show_status("Login successful! Loading game...", Color(0.3, 0.9, 0.3))
-		await get_tree().create_timer(1.0).timeout
-		# Load main game scene
 		get_tree().change_scene_to_file("res://ui/main_ui.tscn")
 	else:
 		var error_msg: String = result.get("error", "Login failed")

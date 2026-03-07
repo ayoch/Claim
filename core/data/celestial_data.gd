@@ -93,10 +93,14 @@ static func get_earth_position_at_time(dt_ticks: float) -> Vector2:
 	_ensure_init()
 	return ephemeris.get_position_at_time("Earth", dt_ticks)
 
-static func advance_planets(_dt: float) -> void:
-	# Positions are computed from GameState.total_ticks in EphemerisData
-	# No explicit advancing needed — just ensure init
+static func advance_planets(dt: float) -> void:
 	_ensure_init()
+	ephemeris.advance(dt)
+
+## Called when server sends an authoritative total_ticks (MP poll or save load)
+static func sync_ephemeris_to_ticks(ticks: float) -> void:
+	_ensure_init()
+	ephemeris.sync_to_ticks(ticks)
 
 ## Compute gravitational acceleration at a position from Sun + all planets
 ## Returns acceleration in AU/s² (add to velocity each tick)

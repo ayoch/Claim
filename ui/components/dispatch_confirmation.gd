@@ -226,13 +226,19 @@ func _queue_mission() -> void:
 		var est: Dictionary = AsteroidData.estimate_mission(_selected_asteroid, _selected_ship, _selected_workers, -1)
 		mining_duration = est.get("mining_time", 86400.0)
 
+	var mission_type_int: int = Mission.MissionType.MINING
+	match _selected_mission_type:
+		"collect_ore": mission_type_int = Mission.MissionType.COLLECT_ORE
+		"reposition":  mission_type_int = Mission.MissionType.REPOSITION
+		"deploy_units": mission_type_int = Mission.MissionType.DEPLOY_UNIT
+
 	_selected_ship.crew = _selected_workers.duplicate()
 	_selected_ship.queue_mission(
 		_selected_asteroid,
 		_selected_transit_mode,
 		mining_duration,
 		_selected_slingshot_route,
-		_selected_mission_type
+		mission_type_int
 	)
 
 	# Remember crew for next dispatch
@@ -296,7 +302,11 @@ func _execute_dispatch() -> void:
 			return
 
 		var server_asteroid_id: int = asteroid_index + 1
-		var mission_type_int: int = _selected_mission_type as int
+		var mission_type_int: int = Mission.MissionType.MINING
+		match _selected_mission_type:
+			"collect_ore": mission_type_int = Mission.MissionType.COLLECT_ORE
+			"reposition":  mission_type_int = Mission.MissionType.REPOSITION
+			"deploy_units": mission_type_int = Mission.MissionType.DEPLOY_UNIT
 		var mining_duration: float = 86400.0  # Default 1 day
 		var return_to_station: bool = false
 

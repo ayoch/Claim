@@ -392,6 +392,8 @@ func apply_worker_skill_event(event: Dictionary) -> void:
 ## Initialize starter crew for new game
 func init_starter_crew() -> void:
 	if not _game_state:
+		_game_state = get_node_or_null("/root/GameState")
+	if not _game_state:
 		push_error("[WorkerManager] GameState not initialized")
 		return
 

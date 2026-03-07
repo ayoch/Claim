@@ -26,8 +26,8 @@ var _special_actions_panel: Node = null
 var _selected_ship: Ship = null
 var _selected_asteroid: AsteroidData = null
 var _selected_workers: Array[Worker] = []
-var _selected_transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE
-var _selected_mission_type: int = Mission.MissionType.MINING
+var _selected_transit_mode: int = 0  # Mission.TransitMode.BRACHISTOCHRONE
+var _selected_mission_type: int = 0  # Mission.MissionType.MINING
 var _selected_deploy_units: Array[MiningUnit] = []
 var _selected_deploy_workers: Array[Worker] = []
 var _sell_at_destination_markets: bool = true  # Toggle: return with ore vs sell at nearby markets
@@ -197,7 +197,11 @@ func _setup_components() -> void:
 		_selected_workers = workers
 		_selected_deploy_units = deploy_units
 		_selected_deploy_workers = deploy_workers
-		_selected_mission_type = mission_type
+		match mission_type:
+			"collect_ore":  _selected_mission_type = Mission.MissionType.COLLECT_ORE
+			"reposition":   _selected_mission_type = Mission.MissionType.REPOSITION
+			"deploy_units": _selected_mission_type = Mission.MissionType.DEPLOY_UNIT
+			_:              _selected_mission_type = Mission.MissionType.MINING
 		_mission_estimator.show_estimate(
 			_selected_ship, _selected_asteroid, workers, false,
 			_selected_transit_mode, _available_slingshot_routes, _selected_slingshot_route
@@ -685,10 +689,42 @@ func _confirm_colony_dispatch(colony: Colony) -> void:
 		_select_colony_trade(colony)
 	)
 
+func _select_colony_trade(colony: Colony) -> void:
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
+		var colony_idx := GameState.colonies.find(colony)
+		if _selected_ship and _selected_ship.server_id > 0 and colony_idx >= 0:
+			await BackendManager.dispatch_trade(_selected_ship.server_id, colony_idx + 1)
+			_hide_dispatch()
+			_mark_dirty()
+		return
+
+	var cargo := _selected_ship.current_cargo.duplicate()
+	if cargo.is_empty():
+		return
+
+	if GameState.settings.get("auto_refuel", true):
+		var colony_pos := colony.get_position_au()
+		var dist := _selected_ship.position_au.distance_to(colony_pos)
+		var fuel_needed := _selected_ship.calc_fuel_for_distance(dist)
+		var fuel_cost := int(fuel_needed * Ship.FUEL_COST_PER_UNIT)
+		if GameState.money >= fuel_cost:
+			_selected_ship.fuel = _selected_ship.fuel_capacity
+			GameState.money -= fuel_cost
+
+	var assigned: Array[Worker] = []
+	_selected_ship.crew = assigned
+	if _selected_ship.is_idle_remote:
+		MissionManager.dispatch_idle_ship_trade(_selected_ship, colony, cargo)
+	else:
+		MissionManager.start_trade_mission(_selected_ship, colony, cargo)
+	_hide_dispatch()
+	_mark_dirty()
+
+
 func _confirm_salvage_dispatch(target: SalvageTarget) -> void:
 	_on_selection_screen = false
 	if _selected_ship.crew.is_empty():
-		_show_confirmation_dialog("No crew assigned to %s.\n\nAssign workers before dispatching a salvage mission." % _selected_ship.ship_name, null)
+		_show_confirmation_dialog("No crew assigned to %s.\n\nAssign workers before dispatching a salvage mission." % _selected_ship.ship_name, Callable())
 		return
 	var dist := _selected_ship.position_au.distance_to(target.position_au)
 	var transit := Brachistochrone.transit_time(dist, _selected_ship.get_effective_thrust())
@@ -988,4 +1024,15 @@ func _add_contract_fulfillment_ui(container: VBoxContainer, ship: Ship, contract
 	vbox.add_child(btn_row)
 	panel.add_child(vbox)
 	container.add_child(panel)
-	# Clear existing content
+
+
+func _format_number(n: int) -> String:
+	var s := str(abs(n))
+	var result := ""
+	for i in range(s.length()):
+		if i > 0 and (s.length() - i) % 3 == 0:
+			result += ","
+		result += s[i]
+	if n < 0:
+		result = "-" + result
+	return result

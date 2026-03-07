@@ -36,8 +36,9 @@ PerfLogger="*res://core/autoloads/perf_logger.gd"
 
 window/size/viewport_width=680
 window/size/viewport_height=1200
+window/size/window_width_override=510
+window/size/window_height_override=900
 window/stretch/mode="canvas_items"
-window/stretch/aspect="keep"
 window/handheld/orientation=1
 
 [physics]

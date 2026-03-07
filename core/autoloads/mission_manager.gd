@@ -21,6 +21,8 @@ func _initialize() -> void:
 	_game_state = get_node("/root/GameState")
 	if not _game_state:
 		push_error("[MissionManager] Failed to find GameState autoload")
+		return
+	import_missions_from_game_state(_game_state.missions, _game_state.trade_missions)
 
 
 ## Transfer existing missions from GameState
@@ -481,6 +483,14 @@ func start_collect_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int
 
 	missions.append(mission)
 	EventBus.mission_started.emit(mission)
+	return mission
+
+
+## Start a reposition mission (transit to asteroid, no mining — used for fuel collection jobs)
+func start_reposition_mission(ship: Ship, asteroid: AsteroidData, transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE) -> Mission:
+	var mission := start_mission(ship, asteroid, transit_mode)
+	if mission:
+		mission.mission_type = Mission.MissionType.REPOSITION
 	return mission
 
 

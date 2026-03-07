@@ -261,6 +261,58 @@ const AUTOMATION_POLICY_DESCRIPTIONS := {
 	AutomationPolicy.ADAPTIVE: "AI analyzes patterns and optimizes operations. Ships learn best routes, timing, and strategies.",
 }
 
+# --- Munitions Policy ---
+# Controls when ships auto-restock torpedo launchers when docked.
+enum MunitionsPolicy {
+	ALWAYS,    # Restock to full every time docked — highest cost, always combat-ready
+	LOW_AMMO,  # Restock only when below 25% capacity — cost-conscious
+	NEVER,     # Never auto-restock — player manages manually
+}
+
+const MUNITIONS_POLICY_NAMES := {
+	MunitionsPolicy.ALWAYS: "Always",
+	MunitionsPolicy.LOW_AMMO: "Low Ammo",
+	MunitionsPolicy.NEVER: "Never",
+}
+
+const MUNITIONS_POLICY_DESCRIPTIONS := {
+	MunitionsPolicy.ALWAYS: "Restock torpedo launchers to full capacity every time the ship docks. Highest cost, always combat-ready.",
+	MunitionsPolicy.LOW_AMMO: "Restock only when torpedo launchers are below 25% capacity. Saves money, accepts occasional gaps in readiness.",
+	MunitionsPolicy.NEVER: "Never auto-restock munitions. You manage torpedo resupply manually.",
+}
+
+# Ammo fraction threshold for LOW_AMMO policy
+const MUNITIONS_LOW_AMMO_THRESHOLD: float = 0.25
+
+# --- Insurance Policy ---
+# Controls fleet-wide insurance coverage for ships and cargo.
+enum InsurancePolicy {
+	NONE,          # No coverage — no premiums, all losses are total
+	HULL,          # Hull only — 50% ship value on destruction, 0.1%/day premium
+	COMPREHENSIVE, # Hull + cargo — 75% hull + 50% cargo on jettison, 0.2%/day premium
+}
+
+const INSURANCE_POLICY_NAMES := {
+	InsurancePolicy.NONE: "None",
+	InsurancePolicy.HULL: "Hull Only",
+	InsurancePolicy.COMPREHENSIVE: "Comprehensive",
+}
+
+const INSURANCE_POLICY_DESCRIPTIONS := {
+	InsurancePolicy.NONE: "No insurance. No premiums, no payouts. All losses are total.",
+	InsurancePolicy.HULL: "Hull coverage only. Pays 50% of ship purchase value if destroyed. Costs 0.1%/day of total fleet hull value.",
+	InsurancePolicy.COMPREHENSIVE: "Full coverage. Pays 75% of ship value if destroyed, plus 50% of cargo value if jettisoned. Costs 0.2%/day of fleet hull value.",
+}
+
+# Payout fractions
+const INSURANCE_HULL_PAYOUT: float = 0.50         # HULL: fraction of ship value returned
+const INSURANCE_COMP_HULL_PAYOUT: float = 0.75    # COMPREHENSIVE: hull payout fraction
+const INSURANCE_COMP_CARGO_PAYOUT: float = 0.50   # COMPREHENSIVE: cargo payout fraction
+
+# Daily premium rate (fraction of total fleet hull value, charged once per game-day)
+const INSURANCE_HULL_PREMIUM_RATE: float = 0.001   # 0.1%/day
+const INSURANCE_COMP_PREMIUM_RATE: float = 0.002   # 0.2%/day
+
 # Calculate optimal thrust setting based on policy and mission parameters
 static func calculate_thrust_setting(
 	policy: ThrustPolicy,

@@ -147,7 +147,7 @@ func _check_server_status() -> void:
 		_set_server_status(false, "Server: " + error_msg)
 
 
-func _on_server_status_received(result: int, response_code: int, headers: PackedStringArray, body: PackedByteArray) -> void:
+func _on_server_status_received(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
 	print("Server response - Result: ", result, " Code: ", response_code)
 	print("Response body: ", body.get_string_from_utf8())
 

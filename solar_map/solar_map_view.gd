@@ -4,9 +4,19 @@ static func _free_children(container: Node) -> void:
 	for i in range(container.get_child_count() - 1, -1, -1):
 		container.get_child(i).free()
 
+# Returns a 0–1 density value for a given AU distance within the asteroid belt.
+# Core shape is a broad Gaussian; Kirkwood resonance gaps subtract narrow dips.
+static func _belt_density(au: float) -> float:
+	var core := exp(-pow((au - 2.70) / 0.48, 2.0))
+	var g31  := 0.80 * exp(-pow((au - 2.50) / 0.045, 2.0))  # 3:1 resonance — strongest gap
+	var g52  := 0.70 * exp(-pow((au - 2.82) / 0.040, 2.0))  # 5:2 resonance — strong
+	var g73  := 0.45 * exp(-pow((au - 2.95) / 0.035, 2.0))  # 7:3 resonance — moderate
+	var g43  := 0.30 * exp(-pow((au - 3.17) / 0.030, 2.0))  # 4:3 resonance — minor
+	return clamp(core - g31 - g52 - g73 - g43, 0.0, 1.0)
+
 const AU_PIXELS: float = 200.0  # 1 AU = 200 pixels
-const BELT_INNER_AU: float = 1.5
-const BELT_OUTER_AU: float = 3.5
+const BELT_INNER_AU: float = 2.1  # 4:1 Kirkwood gap — real inner edge of main belt
+const BELT_OUTER_AU: float = 3.3  # 2:1 Kirkwood gap — real outer edge
 
 @onready var camera: Camera2D = $Camera2D
 @onready var asteroid_markers: Node2D = $AsteroidMarkers
@@ -24,6 +34,7 @@ var _drag_start: Vector2 = Vector2.ZERO
 var _dragging: bool = false
 var _following_ship: Ship = null  # Ship the camera is tracking
 var _zoom_level: float = 1.0
+var _last_label_zoom: float = 0.0  # tracks last zoom applied to asteroid labels
 const ZOOM_MIN: float = 0.3
 const ZOOM_MAX: float = 3.0
 const ZOOM_STEP: float = 0.1
@@ -116,62 +127,115 @@ func _refresh_ships() -> void:
 	# Debounce: at high speed, many signals fire per frame. Only rebuild once.
 	_ships_need_refresh = true
 
+# Real stellar color palette by spectral type (OBAFGKM + dim background)
+const STAR_COLORS: Array[Color] = [
+	Color(0.70, 0.80, 1.00),  # O/B: hot blue-white
+	Color(0.88, 0.92, 1.00),  # A:   blue-white
+	Color(1.00, 0.97, 0.90),  # F:   yellow-white
+	Color(1.00, 0.92, 0.70),  # G:   yellow (sun-like)
+	Color(1.00, 0.80, 0.55),  # K:   orange
+	Color(1.00, 0.60, 0.38),  # M:   red-orange
+	Color(0.60, 0.65, 0.78),  # dim: background haze
+]
+
+# Nebula cloud colors — very faint, large, atmospheric
+const NEBULA_COLORS: Array[Color] = [
+	Color(0.20, 0.35, 0.60, 0.032),  # blue emission
+	Color(0.55, 0.22, 0.45, 0.025),  # magenta/purple
+	Color(0.60, 0.38, 0.18, 0.022),  # warm orange
+	Color(0.18, 0.45, 0.35, 0.020),  # teal
+]
+
+var _nebula_cache: Dictionary = {}
+
 func _get_star_tile(tile_coord: Vector2i) -> Array:
 	if tile_coord in _star_cache:
 		return _star_cache[tile_coord]
-	# Seed-based star generation for consistent tiles
 	var stars: Array = []
 	var seed_val := tile_coord.x * 73856093 + tile_coord.y * 19349663
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_val
 	for _i in range(STARS_PER_TILE):
+		var sz: float = rng.randf_range(0.4, 2.8)
+		# Weight toward dim/background — most stars are faint
+		var color_idx: int
+		var roll := rng.randf()
+		if roll < 0.05:   color_idx = 0  # O/B  rare
+		elif roll < 0.14: color_idx = 1  # A
+		elif roll < 0.26: color_idx = 2  # F
+		elif roll < 0.40: color_idx = 3  # G
+		elif roll < 0.56: color_idx = 4  # K
+		elif roll < 0.68: color_idx = 5  # M  red-orange
+		else:             color_idx = 6  # dim background
 		stars.append({
-			"offset": Vector2(rng.randf() * STAR_TILE_SIZE, rng.randf() * STAR_TILE_SIZE),
-			"size": rng.randf_range(0.5, 2.2),
-			"brightness": rng.randf_range(0.3, 1.0),
+			"offset":        Vector2(rng.randf() * STAR_TILE_SIZE, rng.randf() * STAR_TILE_SIZE),
+			"size":          sz,
+			"brightness":    rng.randf_range(0.25, 1.0),
 			"twinkle_phase": rng.randf() * TAU,
-			"twinkle_amount": rng.randf_range(0.0, 0.35),
-			"color_type": rng.randi() % 3,
+			"twinkle_amount":rng.randf_range(0.0, 0.30),
+			"color_idx":     color_idx,
+			"bloom":         sz > 2.0,  # large stars get a diffraction bloom
 		})
 	_star_cache[tile_coord] = stars
 	return stars
 
+func _get_nebula_tile(tile_coord: Vector2i) -> Array:
+	if tile_coord in _nebula_cache:
+		return _nebula_cache[tile_coord]
+	var blobs: Array = []
+	var seed_val := tile_coord.x * 91872347 + tile_coord.y * 44378429 + 7
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_val
+	# 1–3 nebula blobs per tile
+	var count := rng.randi_range(1, 3)
+	for _i in range(count):
+		blobs.append({
+			"offset":   Vector2(rng.randf() * STAR_TILE_SIZE, rng.randf() * STAR_TILE_SIZE),
+			"radius":   rng.randf_range(180.0, 600.0),
+			"color_idx":rng.randi() % NEBULA_COLORS.size(),
+		})
+	_nebula_cache[tile_coord] = blobs
+	return blobs
+
 func _draw_starfield() -> void:
-	# Get visible area in world coords
 	var viewport_size := get_viewport_rect().size
 	var cam_pos := camera.global_position
 	var zoom := camera.zoom.x
 	var half_view := viewport_size / (2.0 * zoom)
 	var visible_rect := Rect2(cam_pos - half_view, half_view * 2.0)
 
-	# Dark background covering visible area
-	draw_rect(visible_rect, Color(0.008, 0.012, 0.018))
+	draw_rect(visible_rect, Color(0.006, 0.009, 0.016))
 
-	# Determine which tiles are visible
 	var tile_min_x := int(floor(visible_rect.position.x / STAR_TILE_SIZE))
 	var tile_min_y := int(floor(visible_rect.position.y / STAR_TILE_SIZE))
 	var tile_max_x := int(floor(visible_rect.end.x / STAR_TILE_SIZE))
 	var tile_max_y := int(floor(visible_rect.end.y / STAR_TILE_SIZE))
 
+	# Nebula layer first (behind everything)
 	for tx in range(tile_min_x, tile_max_x + 1):
 		for ty in range(tile_min_y, tile_max_y + 1):
 			var tile_origin := Vector2(tx * STAR_TILE_SIZE, ty * STAR_TILE_SIZE)
-			var stars := _get_star_tile(Vector2i(tx, ty))
-			for star in stars:
+			for blob in _get_nebula_tile(Vector2i(tx, ty)):
+				var pos: Vector2 = tile_origin + blob["offset"]
+				draw_circle(pos, blob["radius"], NEBULA_COLORS[blob["color_idx"]])
+
+	# Stars
+	for tx in range(tile_min_x, tile_max_x + 1):
+		for ty in range(tile_min_y, tile_max_y + 1):
+			var tile_origin := Vector2(tx * STAR_TILE_SIZE, ty * STAR_TILE_SIZE)
+			for star in _get_star_tile(Vector2i(tx, ty)):
 				var pos: Vector2 = tile_origin + star["offset"]
-				var base_bright: float = star["brightness"]
-				var twinkle: float = star["twinkle_amount"]
-				var phase: float = star["twinkle_phase"]
-				var bright: float = clampf(base_bright + sin(_starfield_time + phase) * twinkle, 0.1, 1.0)
-				var star_size: float = star["size"]
-
-				var color: Color
-				match star["color_type"]:
-					0: color = Color(0.8, 0.85, 1.0, bright)   # blue-white
-					1: color = Color(0.85, 0.9, 1.0, bright)    # cool white
-					_: color = Color(0.6, 0.65, 0.75, bright)   # dim blue-grey
-
-				draw_circle(pos, star_size, color)
+				var bright: float = clampf(
+					star["brightness"] + sin(_starfield_time + star["twinkle_phase"]) * star["twinkle_amount"],
+					0.08, 1.0)
+				var base: Color = STAR_COLORS[star["color_idx"]]
+				var color := Color(base.r, base.g, base.b, bright)
+				var sz: float = star["size"]
+				# Bloom: faint halo then sharp core for brighter stars
+				if star["bloom"]:
+					draw_circle(pos, sz * 3.0, Color(base.r, base.g, base.b, bright * 0.12))
+					draw_circle(pos, sz * 1.6, Color(base.r, base.g, base.b, bright * 0.30))
+				draw_circle(pos, sz, color)
 
 func _draw() -> void:
 	_draw_starfield()
@@ -207,18 +271,38 @@ func _draw() -> void:
 			# Bright highlight
 			draw_circle(pos, radius * 0.4, Color(1.0, 1.0, 1.0, 0.35))
 
-	# Draw asteroid belt (translucent annulus)
-	var steps := 64
-	for i in range(steps):
-		var angle := (float(i) / steps) * TAU
-		var next_angle := (float(i + 1) / steps) * TAU
-		var inner_r := BELT_INNER_AU * AU_PIXELS
-		var outer_r := BELT_OUTER_AU * AU_PIXELS
-		var p1 := Vector2(cos(angle), sin(angle)) * inner_r
-		var p2 := Vector2(cos(next_angle), sin(next_angle)) * inner_r
-		var p3 := Vector2(cos(next_angle), sin(next_angle)) * outer_r
-		var p4 := Vector2(cos(angle), sin(angle)) * outer_r
-		draw_colored_polygon(PackedVector2Array([p1, p2, p3, p4]), Color(0.5, 0.4, 0.3, 0.08))
+	# Draw asteroid belt — density-shaded annulus with Kirkwood gap lanes.
+	# Each radial band is one polygon (outer arc forward + inner arc backward),
+	# so total draw calls = BELT_BANDS, not BELT_BANDS * angle_steps.
+	const BELT_BANDS: int = 48
+	const BELT_PEAK_ALPHA: float = 0.20
+	const BELT_ANG_STEPS: int = 64
+	var belt_width := BELT_OUTER_AU - BELT_INNER_AU
+	var _cos_cache := PackedFloat32Array()
+	var _sin_cache := PackedFloat32Array()
+	_cos_cache.resize(BELT_ANG_STEPS)
+	_sin_cache.resize(BELT_ANG_STEPS)
+	for i in range(BELT_ANG_STEPS):
+		var a := (float(i) / BELT_ANG_STEPS) * TAU
+		_cos_cache[i] = cos(a)
+		_sin_cache[i] = sin(a)
+	for b in range(BELT_BANDS):
+		var t0 := float(b) / BELT_BANDS
+		var t1 := float(b + 1) / BELT_BANDS
+		var au_mid := BELT_INNER_AU + (t0 + t1) * 0.5 * belt_width
+		var density := _belt_density(au_mid)
+		if density < 0.005:
+			continue
+		var r0 := (BELT_INNER_AU + t0 * belt_width) * AU_PIXELS
+		var r1 := (BELT_INNER_AU + t1 * belt_width) * AU_PIXELS
+		var col := Color(0.52, 0.42, 0.32, density * BELT_PEAK_ALPHA)
+		# Build ring polygon: outer arc forward (0..N-1), inner arc backward (N-1..0)
+		var verts := PackedVector2Array()
+		verts.resize(BELT_ANG_STEPS * 2)
+		for i in range(BELT_ANG_STEPS):
+			verts[i]                          = Vector2(_cos_cache[i], _sin_cache[i]) * r1
+			verts[BELT_ANG_STEPS * 2 - 1 - i] = Vector2(_cos_cache[i], _sin_cache[i]) * r0
+		draw_colored_polygon(verts, col)
 
 	# Draw fuel range indicators (behind markers)
 	_draw_fuel_range()
@@ -577,6 +661,11 @@ func _zoom_out_big() -> void:
 	_zoom_level = clampf(_zoom_level - ZOOM_STEP * 3.0, ZOOM_MIN, ZOOM_MAX)
 	camera.zoom = Vector2(_zoom_level, _zoom_level)
 
+func _apply_zoom_to_asteroid_labels() -> void:
+	for marker in asteroid_markers.get_children():
+		if marker.has_method("update_zoom"):
+			marker.update_zoom(_zoom_level)
+
 func _spawn_planet_labels() -> void:
 	for i in range(CelestialData.PLANETS.size()):
 		var planet: Dictionary = CelestialData.PLANETS[i]
@@ -702,6 +791,11 @@ func _process(delta: float) -> void:
 		_refresh_ship_selector()
 
 	_starfield_time += delta * STAR_TWINKLE_SPEED
+
+	# Keep asteroid labels the same screen size regardless of zoom source
+	if _zoom_level != _last_label_zoom:
+		_last_label_zoom = _zoom_level
+		_apply_zoom_to_asteroid_labels()
 
 	# Throttle orbital position updates - don't need to recalculate 60x/second
 	_orbital_update_timer += delta

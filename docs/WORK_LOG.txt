@@ -1,5 +1,23 @@
 ﻿# Claim — Work Log
-# Updated: 2026-03-04 EST
+# Updated: 2026-03-07 EST
+
+---
+
+## 2026-03-07 (Dweezil)
+
+- **Asteroid belt density shading**: Replaced flat annulus with 48 Gaussian radial bands. `_belt_density(au)` models real Kirkwood gaps (3:1, 5:2, 7:3, 4:3). Each band = one ring polygon (48 draw calls vs prior 3072). Soft edge falloff and visible dark lanes.
+- **Ship marker lerp fix**: At 100k sim speed, lerp factor clamped to 1.0 → hard snap → jitter. Capped position/progress/rotation lerp at 0.85 per frame. Smooth motion at all speeds.
+- **Asteroid label zoom-invariance**: Labels counter-scaled via `update_zoom()` on `AsteroidMarker`. Triggered from `_process` on `_zoom_level` change — covers all zoom input sources.
+- **Shipyard card stretch fix**: "Buy New Ship" cards stretched vertically. Added `SIZE_SHRINK_BEGIN` to each card PanelContainer and HBoxContainer header.
+- **Planet orbital motion (MP + SP)**: EphemerisData was using real wall-clock time — planets were frozen regardless of sim speed. Rewrote to track `_sim_elapsed` driven by `advance(dt)` from `_process_orbits` (runs in both LOCAL and SERVER mode). `sync_to_ticks()` handles save-load and MP poll jumps.
+- **Files**: `solar_map_view.gd`, `asteroid_marker.gd`, `ship_marker.gd`, `ship_outfitting_tab.gd`, `ephemeris_data.gd`, `celestial_data.gd`, `game_state.gd`
+
+---
+
+## 2026-03-06 (Dweezil) [6e4a711]
+
+- **Pulled HK-47's refactoring session**: 70 commits, 84 files. Full refactoring complete — MissionManager, WorkerManager, MarketManager all extracted from game_state.gd. fleet_market_tab.gd split into 6 UI components. GameBalance constants file. Circular reference cleanup() methods. Bug reporting system added. Settings screen added.
+- **Docs update**: Updated REFACTORING_PROGRESS.md (all 8 tasks complete), MISSION_MANAGER_STATUS.md (15/15 functions), CLAUDE_HANDOFF.md, WORK_LOG.txt. Status docs were written mid-session by HK-47 and never updated to reflect completion.
 
 ---
 

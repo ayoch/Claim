@@ -123,7 +123,7 @@ func _process(delta: float) -> void:
 	# Smooth progress to avoid jitter while preserving acceleration
 	# Much higher minimum at low speeds to smooth infrequent tick updates
 	var progress_lerp_speed: float = maxf(50.0, 12.0 * TimeScale.speed_multiplier)
-	_smooth_progress = lerp(_smooth_progress, actual_progress, minf(progress_lerp_speed * delta, 1.0))
+	_smooth_progress = lerp(_smooth_progress, actual_progress, minf(progress_lerp_speed * delta, 0.85))
 
 	# Update target position — use ship.position_au directly for transit
 	# (simulation already updates this each tick via _update_ship_transit_physics)
@@ -174,12 +174,12 @@ func _process(delta: float) -> void:
 		# Smooth rotation
 		var rotation_lerp_speed: float = maxf(40.0, 15.0 * TimeScale.speed_multiplier)
 		var angle_diff := fmod(target_angle - _rotation_angle + PI, TAU) - PI
-		_rotation_angle += angle_diff * minf(rotation_lerp_speed * delta, 1.0)
+		_rotation_angle += angle_diff * minf(rotation_lerp_speed * delta, 0.85)
 
 	# Smooth position lerp to avoid jitter
 	# Very aggressive at low speeds to smooth between infrequent tick updates
 	var position_lerp_speed: float = maxf(50.0, 12.0 * TimeScale.speed_multiplier)
-	position = position.lerp(_target_pos, minf(position_lerp_speed * delta, 1.0))
+	position = position.lerp(_target_pos, minf(position_lerp_speed * delta, 0.85))
 
 	# Update label with current speed
 	_update_label()

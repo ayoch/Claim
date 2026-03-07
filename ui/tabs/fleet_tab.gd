@@ -514,6 +514,36 @@ func _rebuild_ships() -> void:
 					"get": func() -> int: return ship.encounter_policy_override,
 					"set": func(v: int) -> void: ship.encounter_policy_override = v,
 				},
+				{
+					"label": "Repair",
+					"names": CompanyPolicy.REPAIR_POLICY_NAMES,
+					"get": func() -> int: return ship.repair_policy_override,
+					"set": func(v: int) -> void: ship.repair_policy_override = v,
+				},
+				{
+					"label": "Cargo",
+					"names": CompanyPolicy.CARGO_POLICY_NAMES,
+					"get": func() -> int: return ship.cargo_policy_override,
+					"set": func(v: int) -> void: ship.cargo_policy_override = v,
+				},
+				{
+					"label": "Maintenance",
+					"names": CompanyPolicy.MAINTENANCE_POLICY_NAMES,
+					"get": func() -> int: return ship.maintenance_policy_override,
+					"set": func(v: int) -> void: ship.maintenance_policy_override = v,
+				},
+				{
+					"label": "Trading",
+					"names": CompanyPolicy.TRADING_POLICY_NAMES,
+					"get": func() -> int: return ship.trading_policy_override,
+					"set": func(v: int) -> void: ship.trading_policy_override = v,
+				},
+				{
+					"label": "Torpedoes",
+					"names": CompanyPolicy.MUNITIONS_POLICY_NAMES,
+					"get": func() -> int: return ship.munitions_policy_override,
+					"set": func(v: int) -> void: ship.munitions_policy_override = v,
+				},
 			]
 
 			for pd in policy_defs:

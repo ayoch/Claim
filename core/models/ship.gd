@@ -47,6 +47,7 @@ const COLONY_PROXIMITY_AU: float = 0.02  # within this distance counts as "at co
 @export var trading_policy_override: int = -1
 @export var morale_policy_override: int = -1
 @export var automation_policy_override: int = -1
+@export var munitions_policy_override: int = -1
 
 # Combat stance
 @export var aggression_stance: int = AggressionStance.DEFENSIVE
@@ -83,10 +84,10 @@ var partner_ship: Ship = null  # Runtime reference (resolved at load time)
 
 # Queued mission data (set destination while ship is busy)
 var queued_destination: Variant = null  # AsteroidData or Colony
-var queued_transit_mode: int = Mission.TransitMode.BRACHISTOCHRONE
+var queued_transit_mode: int = 0  # Mission.TransitMode.BRACHISTOCHRONE
 var queued_mining_duration: float = 86400.0
 var queued_slingshot_route = null  # GravityAssist.SlingshotRoute or null
-var queued_mission_type: int = Mission.MissionType.MINING
+var queued_mission_type: int = 0  # Mission.MissionType.MINING
 
 var server_docked: bool = false  # Set by apply_server_state in SERVER mode
 
@@ -332,7 +333,7 @@ func add_station_log(message: String, type: String = "info") -> void:
 	if station_log.size() > 50:
 		station_log.resize(50)
 
-func queue_mission(destination: Variant, transit_mode: int, mining_dur: float = 86400.0, slingshot_route = null, mission_type: int = Mission.MissionType.MINING) -> void:
+func queue_mission(destination: Variant, transit_mode: int, mining_dur: float = 86400.0, slingshot_route = null, mission_type: int = 0) -> void:  # 0 = Mission.MissionType.MINING
 	queued_destination = destination
 	queued_transit_mode = transit_mode
 	queued_mining_duration = mining_dur

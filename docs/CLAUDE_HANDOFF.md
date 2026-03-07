@@ -6,7 +6,45 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Code Review Fixes (Bugs #1, #2, #11)
+### Latest Work Session: Visual Polish + MP Planet Fix
+**Date:** 2026-03-07 (Windows/Dweezil)
+**Status:** Complete — committed and pushed
+
+**What was done:**
+
+1. **Asteroid belt density shading** — replaced flat-alpha annulus with 48 Gaussian-density radial bands. `_belt_density(au)` uses broad Gaussian core minus narrow Gaussians at real Kirkwood gap positions (3:1 at 2.50, 5:2 at 2.82, 7:3 at 2.95, 4:3 at 3.17 AU). Each band is a single ring polygon (outer arc forward + inner arc backward = 48 draw calls, not 3072).
+
+2. **Ship marker lerp at high sim speed** — at 100k sim speed, lerp factor was clamping to 1.0 (hard snap), causing jitter. Capped all three lerp factors (position, progress, rotation) at 0.85 per frame. Marker converges in ~3 frames instead of snapping instantly.
+
+3. **Asteroid label zoom-invariance** — labels were scaling with camera zoom. Added `update_zoom(z)` to `asteroid_marker.gd` that counter-scales label and adjusts its position offset. Called from `_process` in `solar_map_view.gd` whenever `_zoom_level` changes — catches all zoom sources (buttons, scroll wheel, trackpad, touch pinch).
+
+4. **Shipyard tab vertical stretch** — cards in "Buy New Ship" popup were stretching to fill full panel height (gap between ship name and description). Added `SIZE_SHRINK_BEGIN` to each card's `PanelContainer` and `HBoxContainer` header to prevent VBox from expanding them beyond natural content height.
+
+5. **Planet orbital motion** — planets were driven by `Time.get_unix_time_from_system()` (real clock, 1 sec/sec), making them effectively frozen regardless of sim speed. Rewrote `EphemerisData` to track `_sim_elapsed` internally. `advance(dt)` increments it (called via `CelestialData.advance_planets(dt)` from `_process_orbits`, which already ran in both LOCAL and SERVER mode). `sync_to_ticks(ticks)` snaps to authoritative time when `total_ticks` jumps (save load, MP server poll). Planets now orbit at sim speed in both SP and MP.
+
+**Files modified:**
+- `solar_map/solar_map_view.gd` — belt density bands, `_belt_density()`, `_apply_zoom_to_asteroid_labels()`, `_last_label_zoom` check in `_process`
+- `solar_map/asteroid_marker.gd` — `update_zoom()`, `_LABEL_BASE_OFFSET` const
+- `solar_map/ship_marker.gd` — lerp cap 0.85 on position, progress, rotation
+- `ui/tabs/ship_outfitting_tab.gd` — `SIZE_SHRINK_BEGIN` on card panel + class_header
+- `core/data/ephemeris_data.gd` — sim-time driven positions (`_sim_elapsed`, `advance()`, `sync_to_ticks()`)
+- `core/data/celestial_data.gd` — `advance_planets()` now calls `ephemeris.advance(dt)`, added `sync_ephemeris_to_ticks()`
+- `core/autoloads/game_state.gd` — `sync_ephemeris_to_ticks()` called on save load and MP server poll
+
+---
+
+### Previous Work Session: Docs Update After Refactoring Pull
+**Date:** 2026-03-06 (Windows/Dweezil)
+**Status:** Complete — docs only, no code changes
+
+**What was done:**
+Pulled 70 commits from HK-47's large refactoring session. Updated stale status docs to reflect actual completion state. No code was modified.
+
+**Key finding:** The refactoring is fully complete. All three manager extractions (MissionManager, WorkerManager, MarketManager) and the fleet_market_tab component split are done. MISSION_MANAGER_STATUS.md and REFACTORING_PROGRESS.md were written mid-session and never updated.
+
+---
+
+### Previous Work Session: Code Review Fixes (Bugs #1, #2, #11)
 **Date:** 2026-03-06 (Windows/Dweezil)
 **Status:** Complete — committed
 

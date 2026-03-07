@@ -394,11 +394,13 @@ func _format_number(n: int) -> String:
 	return result
 
 func _show_buy_ship() -> void:
+	ships_list.get_parent().visible = false
 	buy_ship_popup.visible = true
 	_build_buy_ship_ui()
 
 func _hide_buy_ship() -> void:
 	buy_ship_popup.visible = false
+	ships_list.get_parent().visible = true
 
 func _build_buy_ship_ui() -> void:
 	# Clear existing content
@@ -445,6 +447,7 @@ func _build_buy_ship_ui() -> void:
 	for ship_class in ship_classes:
 		var panel := PanelContainer.new()
 		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		panel.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 
 		var vbox := VBoxContainer.new()
 		vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -452,6 +455,7 @@ func _build_buy_ship_ui() -> void:
 
 		# Ship class name and price
 		var class_header := HBoxContainer.new()
+		class_header.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		var class_label := _lbl()
 		class_label.text = ShipData.CLASS_NAMES[ship_class]
 		class_label.add_theme_font_size_override("font_size", 23)

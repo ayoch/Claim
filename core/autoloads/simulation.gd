@@ -994,7 +994,7 @@ func _update_ship_positions(dt: float) -> void:
 				var start_pos := mission.get_current_leg_start_pos()
 				var end_pos := mission.get_current_leg_end_pos()
 				_update_ship_transit_physics(ship, start_pos, end_pos, progress, mission.transit_mode, mission.transit_time, dt)
-			Mission.Status.MINING, Mission.Status.IDLE_AT_DESTINATION, Mission.Status.DEPLOYING, Mission.Status.COLLECTING, Mission.Status.SALVAGING:
+			Mission.Status.MINING, Mission.Status.IDLE_AT_DESTINATION, Mission.Status.DEPLOYING, Mission.Status.COLLECTING:
 				var target_pos := mission.asteroid.get_position_au() if mission.asteroid else Vector2.ZERO
 				if target_pos == Vector2.ZERO and mission.asteroid == null:
 					_log_rescue("POSITION RESET: %s | Mission has null asteroid! Status: %s | Old pos: (%.3f, %.3f) -> (0, 0)" % [
@@ -1004,6 +1004,12 @@ func _update_ship_positions(dt: float) -> void:
 						ship.position_au.y
 					])
 				ship.position_au = target_pos
+			Mission.Status.SALVAGING:
+				# Salvage targets have no asteroid — hold position at destination
+				if mission.destination_position_au != Vector2.ZERO:
+					ship.position_au = mission.destination_position_au
+				ship.velocity_au_per_tick = Vector2.ZERO
+				ship.speed_au_per_tick = 0.0
 				ship.velocity_au_per_tick = Vector2.ZERO
 				ship.speed_au_per_tick = 0.0
 

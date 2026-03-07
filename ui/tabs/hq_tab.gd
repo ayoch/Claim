@@ -331,7 +331,6 @@ func _ready() -> void:
 	_setup_colony_standing_panel()
 	_setup_loan_panel()
 	_setup_warnings_panel()
-	_setup_leaderboard_panel()
 	_setup_collapsible_sections()
 
 func _setup_stationed_ships_panel() -> void:
@@ -1874,46 +1873,7 @@ func _toggle_section(key: String, title_label: Label) -> void:
 	var base_text := title_label.text.trim_suffix(" ▾").trim_suffix(" ▸")
 	title_label.text = base_text + (" ▸" if collapsed else " ▾")
 
-func _setup_leaderboard_panel() -> void:
-	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
-		return
-
-	var vbox := get_node("ScrollContainer/VBox")
-
-	var card := PanelContainer.new()
-	card.name = "LeaderboardCard"
-	var card_vbox := VBoxContainer.new()
-	card_vbox.add_theme_constant_override("separation", 8)
-
-	var header_row := HBoxContainer.new()
-
-	var title := _lbl()
-	title.text = "LEADERBOARD"
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	title.add_theme_font_size_override("font_size", 21)
-	title.add_theme_color_override("font_color", Color(0.9, 0.8, 0.3))
-	header_row.add_child(title)
-
-	var refresh_btn := Button.new()
-	refresh_btn.text = "Refresh"
-	refresh_btn.custom_minimum_size = Vector2(0, 36)
-	refresh_btn.focus_mode = Control.FOCUS_NONE
-	refresh_btn.pressed.connect(func() -> void: _refresh_leaderboard())
-	header_row.add_child(refresh_btn)
-	card_vbox.add_child(header_row)
-
-	var entries_list := VBoxContainer.new()
-	entries_list.name = "LeaderboardEntries"
-	entries_list.add_theme_constant_override("separation", 4)
-	card_vbox.add_child(entries_list)
-
-	card.add_child(card_vbox)
-	vbox.add_child(card)
-
-	_refresh_leaderboard()
-
-
-func _refresh_leaderboard() -> void:
+func _refresh_leaderboard_UNUSED() -> void:
 	var card := get_node_or_null("ScrollContainer/VBox/LeaderboardCard")
 	if not card:
 		return

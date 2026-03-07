@@ -344,8 +344,45 @@ var tardy_workers: Array[Dictionary] = []
 var active_warnings: Array[Dictionary] = []
 var _next_warning_id: int = 0
 
+const _WINDOW_STATE_PATH := "user://window_state.cfg"
+
 func _ready() -> void:
-	new_game()
+	_restore_window_state()
+	get_tree().set_auto_accept_quit(false)
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_save_window_state()
+		get_tree().quit()
+
+func _save_window_state() -> void:
+	var cfg := ConfigFile.new()
+	var mode := DisplayServer.window_get_mode()
+	cfg.set_value("window", "maximized", mode == DisplayServer.WINDOW_MODE_MAXIMIZED)
+	if mode != DisplayServer.WINDOW_MODE_MAXIMIZED:
+		var pos := DisplayServer.window_get_position()
+		var size := DisplayServer.window_get_size()
+		cfg.set_value("window", "x", pos.x)
+		cfg.set_value("window", "y", pos.y)
+		cfg.set_value("window", "w", size.x)
+		cfg.set_value("window", "h", size.y)
+	cfg.save(_WINDOW_STATE_PATH)
+
+func _restore_window_state() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(_WINDOW_STATE_PATH) != OK:
+		return
+	if cfg.get_value("window", "maximized", false):
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
+		return
+	var x: int = cfg.get_value("window", "x", -1)
+	var y: int = cfg.get_value("window", "y", -1)
+	var w: int = cfg.get_value("window", "w", -1)
+	var h: int = cfg.get_value("window", "h", -1)
+	if w > 0 and h > 0:
+		DisplayServer.window_set_size(Vector2i(w, h))
+	if x >= 0 and y >= 0:
+		DisplayServer.window_set_position(Vector2i(x, y))
 
 func new_game() -> void:
 	# Clear all state before initializing (safe to call on first launch or restart)
@@ -2661,6 +2698,7 @@ func load_game(file_name: String = "save_game.json") -> bool:
 
 	# Restore game clock and statistics
 	total_ticks = float(data.get("total_ticks", 0.0))
+	CelestialData.sync_ephemeris_to_ticks(total_ticks)
 	game_start_month = int(data.get("game_start_month", 0))
 	game_start_day = int(data.get("game_start_day", 0))
 	game_start_year = int(data.get("game_start_year", 2112))
@@ -3223,8 +3261,9 @@ func apply_server_state(server_data: Dictionary) -> void:
 		money = new_money
 		state_changed = true
 
-	# Update total_ticks from server (for date/time display)
+	# Update total_ticks from server (for date/time display and orbital positions)
 	total_ticks = int(server_data.get("total_ticks", total_ticks))
+	CelestialData.sync_ephemeris_to_ticks(total_ticks)
 
 	# Update speed multiplier from server (sync client display with server speed)
 	var server_speed: float = float(server_data.get("speed_multiplier", 1.0))
