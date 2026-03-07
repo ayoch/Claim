@@ -79,11 +79,8 @@ var _starfield_time: float = 0.0
 const STAR_TWINKLE_SPEED: float = 1.2
 
 # Interpolation
-const LERP_SPEED: float = 8.0  # lerp factor per second
 var _planet_targets: Array[Vector2] = []
 var _planet_positions: Array[Vector2] = []
-var _orbital_update_timer: float = 0.0
-const ORBITAL_UPDATE_INTERVAL: float = 0.5  # Update orbital positions twice per second instead of 60x/sec
 var _label_overlap_timer: float = 0.0
 const LABEL_OVERLAP_INTERVAL: float = 0.5  # Check label overlaps twice per second, not every frame
 
@@ -805,40 +802,22 @@ func _process(delta: float) -> void:
 		_last_label_zoom = _zoom_level
 		_apply_zoom_to_asteroid_labels()
 
-	# Throttle orbital position updates - don't need to recalculate 60x/second
-	_orbital_update_timer += delta
-	if _orbital_update_timer >= ORBITAL_UPDATE_INTERVAL:
-		_orbital_update_timer = 0.0
-		_update_planet_targets()
-		_update_asteroid_targets()
-		_update_colony_targets()
+	# Update all orbital positions every frame — computation is analytical (cheap cos/sin),
+	# so throttling only adds visible stutter at high sim speeds.
+	_update_planet_targets()
+	_update_asteroid_targets()
+	_update_colony_targets()
 
-	# Lerp at a rate that keeps up with high sim speeds
-	# At high speed, targets jump far — use a higher lerp factor to keep up
-	var t: float = minf(LERP_SPEED * delta, 1.0)
-
-	# Interpolate planet positions and labels
+	# Apply positions directly — no lerp needed since targets update every frame
 	for i in range(_planet_positions.size()):
-		var target: Vector2 = _planet_targets[i]
-		var current: Vector2 = _planet_positions[i]
-		# If target jumped very far (high sim speed), snap instead of lerping
-		if current.distance_to(target) > 20.0:
-			_planet_positions[i] = target
-		else:
-			_planet_positions[i] = current.lerp(target, t)
+		_planet_positions[i] = _planet_targets[i]
 		if i < _planet_labels.size():
 			_planet_labels[i].position = _planet_positions[i]
 
-	# Interpolate asteroid markers
 	for marker in asteroid_markers.get_children():
 		if marker.has_meta("target_pos"):
-			var target: Vector2 = marker.get_meta("target_pos")
-			if marker.position.distance_to(target) > 20.0:
-				marker.position = target
-			else:
-				marker.position = marker.position.lerp(target, t)
+			marker.position = marker.get_meta("target_pos")
 
-	# Snap colony markers directly (no lerp — moon colonies orbit too fast for lerp)
 	for marker in _colony_markers:
 		if marker.has_meta("target_pos"):
 			marker.position = marker.get_meta("target_pos")
