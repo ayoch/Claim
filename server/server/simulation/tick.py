@@ -1,5 +1,6 @@
 from __future__ import annotations
 import logging, math, random, time
+from server.config import settings
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -37,7 +38,8 @@ _payroll_accum: dict[int, float] = {}
 # This keeps total_ticks synchronized with real-world time in 2112
 import datetime
 _GAME_EPOCH = datetime.datetime(2112, 1, 1, 0, 0, 0, tzinfo=datetime.timezone.utc).timestamp()
-_total_ticks: int = 0  # Will be calculated from real-time, not incremented
+_total_ticks: int = 0    # sum(dt) per tick — used for mission timing
+_game_seconds: float = 0.0  # sum(TICK_INTERVAL) per tick — true elapsed game-seconds, speed-independent
 
 # Worker skill progression constants
 BASE_XP: float = 86400.0  # 1 game-day at skill 0.0
@@ -138,6 +140,10 @@ def get_total_ticks() -> int:
     """Get current total_ticks value."""
     return _total_ticks
 
+def get_game_seconds() -> float:
+    """Get elapsed game-seconds. Increments by TICK_INTERVAL per tick regardless of speed."""
+    return _game_seconds
+
 
 async def load_world_state(db: AsyncSession, world_id: int = 1) -> None:
     """Load world state from database on startup."""
@@ -147,15 +153,17 @@ async def load_world_state(db: AsyncSession, world_id: int = 1) -> None:
 
     if world_state:
         _total_ticks = world_state.total_ticks
+        _game_seconds = getattr(world_state, 'game_seconds', 0.0) or 0.0
         speed = getattr(world_state, 'speed_multiplier', 1.0) or 1.0
         _admin_speed._simulation_speed_multiplier = speed
-        logger.info(f'Loaded world state: total_ticks={_total_ticks}, speed={speed}x')
+        logger.info(f'Loaded world state: total_ticks={_total_ticks}, game_seconds={_game_seconds:.1f}, speed={speed}x')
     else:
         # Create initial world state
         world_state = WorldState(world_id=world_id, total_ticks=0)
         db.add(world_state)
         await db.commit()
         _total_ticks = 0
+        _game_seconds = 0.0
         logger.info('Created new world state')
 
 
@@ -166,6 +174,7 @@ async def save_world_state(db: AsyncSession, world_id: int = 1) -> None:
 
     if world_state:
         world_state.total_ticks = _total_ticks
+        world_state.game_seconds = _game_seconds
         db.add(world_state)
         await db.commit()
 
@@ -174,9 +183,11 @@ _save_counter: int = 0
 _SAVE_INTERVAL: int = 100  # Save world state every 100 ticks
 
 async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]:
-    global _total_ticks, _save_counter
-    # Increment total_ticks (allows speed multiplier to affect game time)
+    global _total_ticks, _game_seconds, _save_counter
+    # total_ticks accumulates dt (speed-dependent) — used for mission timing
     _total_ticks += int(dt)
+    # game_seconds accumulates TICK_INTERVAL per tick (speed-independent) — used for orbital display
+    _game_seconds += settings.TICK_INTERVAL
     _save_counter += 1
 
     events: list[dict] = []

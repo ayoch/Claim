@@ -3261,9 +3261,13 @@ func apply_server_state(server_data: Dictionary) -> void:
 		money = new_money
 		state_changed = true
 
-	# Update total_ticks from server (for date/time display and orbital positions)
+	# Update total_ticks from server (for date/time display and mission timing)
 	total_ticks = int(server_data.get("total_ticks", total_ticks))
-	var orbit_snap_delta := CelestialData.sync_ephemeris_to_ticks(total_ticks)
+	# game_seconds is speed-independent (TICK_INTERVAL per tick), used for orbital display
+	var server_game_seconds: float = float(server_data.get("game_seconds", 0.0))
+	var orbit_snap_delta := CelestialData.sync_ephemeris_to_ticks(
+		server_game_seconds if server_game_seconds > 0.0 else float(total_ticks)
+	)
 	# Snap asteroid/colony orbital angles by the same delta so they stay in sync with planets
 	if abs(orbit_snap_delta) > 1.0:
 		for asteroid in asteroids:

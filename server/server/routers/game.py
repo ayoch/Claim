@@ -24,7 +24,7 @@ from server.schemas.game import (
     ShipOut, StockpileOut, TradeMissionOut, WorkerOut,
 )
 from server.schemas.player import PolicyUpdate
-from server.simulation.tick import get_market_prices, get_total_ticks
+from server.simulation.tick import get_market_prices, get_total_ticks, get_game_seconds
 
 router = APIRouter(prefix="/game", tags=["game"])
 
@@ -95,6 +95,7 @@ async def get_state(
         encounter_policy=player.encounter_policy,
         auto_sell_on_return=player.auto_sell_on_return,
         total_ticks=get_total_ticks(),
+        game_seconds=get_game_seconds(),
         speed_multiplier=admin_speed.get_speed_multiplier(),
         ships=[ShipOut.model_validate(s) for s in player.ships],
         workers=[WorkerOut.model_validate(w) for w in player.workers],

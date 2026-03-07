@@ -82,11 +82,11 @@ func advance(dt: float) -> void:
 	_sim_elapsed += dt
 	_dirty = true
 
-## Sync to an authoritative tick count (save load, MP server poll).
-## LOCAL mode: total_ticks is game-seconds — snap directly.
-## SERVER mode: server accumulates total_ticks at speed² per real-second, so
-##   game_seconds = total_ticks / speed_multiplier. Anchor once at login, then
-##   run locally like single-player. Re-sync only if genuine drift is detected.
+## Sync to an authoritative game time value (save load, MP server poll).
+## LOCAL mode: ticks = total_ticks which is already game-seconds — snap directly.
+## SERVER mode: ticks = game_seconds from server (TICK_INTERVAL added per tick,
+##   speed-independent). Anchor once at login, then run locally like single-player.
+##   Re-sync only if genuine drift detected (long disconnect / process suspension).
 ## Returns the snap delta for asteroid/colony orbit angle advancement.
 func sync_to_ticks(ticks: float) -> float:
 	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
@@ -96,38 +96,29 @@ func sync_to_ticks(ticks: float) -> float:
 		_dirty = true
 		return delta
 
-	var speed := TimeScale.speed_multiplier
-	if speed <= 0.0:
-		return 0.0
-
-	# Convert server ticks to game-seconds.
-	# Server: effective_tick_interval = TICK_INTERVAL/speed, dt = TICK_INTERVAL*speed
-	# → total_ticks/real_sec = speed/TICK_INTERVAL * TICK_INTERVAL*speed = speed²
-	# → game_seconds = total_ticks / speed
-	var game_seconds := ticks / speed
-
+	# SERVER mode: ticks is already game_seconds — no conversion needed.
+	# Server increments game_seconds by TICK_INTERVAL per tick regardless of speed,
+	# so it advances at speed game-sec/real-sec, same as advance(delta*speed) here.
 	if not _anchored:
-		# First sync after login: snap to server's authoritative game time.
-		var delta := game_seconds - _sim_elapsed
-		_sim_elapsed = game_seconds
+		var delta := ticks - _sim_elapsed
+		_sim_elapsed = ticks
 		_anchored = true
 		_dirty = true
 		return delta
 
-	# Already running locally. Only re-sync on genuine drift (long disconnect,
-	# or server history at a very different speed). Normal operation: drift ≈ 0.
-	var drift := game_seconds - _sim_elapsed
+	# Already running locally. Only re-sync on genuine drift.
+	var drift := ticks - _sim_elapsed
 	if absf(drift) > 86400.0:
-		_sim_elapsed = game_seconds
+		_sim_elapsed = ticks
 		_dirty = true
 		return drift
 
 	return 0.0
 
-## Called when admin changes sim speed. Clear the anchor so the next poll
-## re-initializes game_seconds = ticks / new_speed cleanly.
+## No-op: game_seconds on the server is speed-independent, so speed changes
+## don't require any re-anchoring. Local advance(dt) stays in sync automatically.
 func scale_server_rate(_old_speed: float, _new_speed: float) -> void:
-	_anchored = false
+	pass
 
 ## Get current sim elapsed time
 func get_sim_elapsed() -> float:

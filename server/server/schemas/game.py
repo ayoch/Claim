@@ -162,6 +162,7 @@ class GameState(BaseModel):
     encounter_policy: int
     auto_sell_on_return: bool
     total_ticks: int
+    game_seconds: float      # True elapsed game-seconds (speed-independent, for orbital display)
     speed_multiplier: float  # Server simulation speed
     ships: list[ShipOut]
     workers: list[WorkerOut]
