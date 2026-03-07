@@ -68,77 +68,69 @@ const GAME_EPOCH_UNIX: float = 4481654400.0
 
 # Cached positions driven by sim time (not wall clock)
 var _cached_positions: Dictionary = {}  # body_name -> Vector2
-var _sim_elapsed: float = -1.0          # Seconds of sim time elapsed since game epoch
+var _sim_elapsed: float = -1.0          # Game-seconds elapsed since game epoch
 var _dirty: bool = true                 # Recompute positions on next get_position()
 var _sim_correction: float = 0.0       # Unused — kept for compatibility
 
-# Server dead-reckoning: measure actual server tick rate from consecutive polls.
-# The server's TICK_INTERVAL=1.0 running at ~60Hz makes total_ticks advance at
-# 60*speed sim-sec/real-sec, vs client's 1*speed sim-sec/real-sec. Rather than
-# hardcoding a correction factor, we measure the rate empirically and dead-reckon.
-var _server_tick_rate: float = 0.0   # sim-sec per real millisecond (0 = not yet measured)
-var _last_server_ticks: float = -1.0 # server total_ticks from previous poll
+# Server Hz calibration.
+# Server TICK_INTERVAL=1.0 running at ~60Hz asyncio means total_ticks advances
+# at 60*speed per real-second. Dividing by _server_hz converts to game-seconds.
+# Between polls, advance() uses delta*speed — same rate. Snaps collapse to ~0.
+var _server_hz: float = 60.0         # Server tick rate at 1x (ticks/real-second)
+var _last_server_ticks: float = -1.0 # total_ticks from previous server poll
 var _last_poll_ms: int = -1          # real time (msec) of previous poll
-var _last_advance_ms: int = -1       # real time (msec) of last advance() call
 
 func initialize() -> void:
 	# Seed from GameState.total_ticks so saves and MP polls start at the right date
 	_sim_elapsed = GameState.total_ticks
 	_recompute_positions()
 
-## Advance sim time by dt seconds.
-## In SERVER mode (after rate is calibrated): uses wall-clock time × observed server rate,
-## so orbital motion matches the server's actual tick rate regardless of TICK_INTERVAL.
-## In LOCAL mode (or before first two polls): uses sim dt as-is.
+## Advance sim time by dt sim-seconds (called from CelestialData.advance_planets).
+## Simple accumulation — dead-reckoning rate is handled by sync_to_ticks conversion.
 func advance(dt: float) -> void:
-	if _server_tick_rate > 0.0:
-		var now_ms := Time.get_ticks_msec()
-		if _last_advance_ms >= 0:
-			_sim_elapsed += float(now_ms - _last_advance_ms) * _server_tick_rate
-		_last_advance_ms = now_ms
-	else:
-		_sim_elapsed += dt
+	_sim_elapsed += dt
 	_dirty = true
 
 ## Sync to an authoritative tick count (save load, MP server poll).
-## Calibrates server tick rate from consecutive polls, then snaps to server value.
-## Returns the snap delta (used by game_state to advance asteroid/colony orbit angles).
+## LOCAL mode: ticks are game-seconds — snap directly.
+## SERVER mode: ticks are server-ticks — divide by _server_hz to get game-seconds.
+##   advance() advances at delta*speed (= speed game-sec/real-sec).
+##   ticks/hz also advances at speed game-sec/real-sec. Both match → snaps ≈ 0.
+## Returns the snap delta for asteroid/colony orbit angle advancement.
 func sync_to_ticks(ticks: float) -> float:
-	var now_ms := Time.get_ticks_msec()
+	if BackendManager.current_mode != BackendManager.BackendMode.SERVER:
+		# LOCAL mode: total_ticks is already in game-seconds
+		var delta := ticks - _sim_elapsed
+		_sim_elapsed = ticks
+		_dirty = true
+		return delta
 
-	# Calibrate: measure rate from consecutive polls (need two polls minimum)
+	# SERVER mode: calibrate Hz then convert
+	var now_ms := Time.get_ticks_msec()
 	if _last_server_ticks >= 0.0 and _last_poll_ms >= 0:
-		var real_ms := float(now_ms - _last_poll_ms)
-		if real_ms > 100.0:  # Ignore spuriously close polls
-			var new_rate := (ticks - _last_server_ticks) / real_ms
-			if new_rate > 0.0:
-				if _server_tick_rate <= 0.0:
-					# First calibration — adopt directly
-					_server_tick_rate = new_rate
-				elif absf(new_rate / _server_tick_rate - 1.0) > 0.15:
-					# Rate changed by >15% — speed change event, adopt immediately
-					_server_tick_rate = new_rate
-				else:
-					# Normal variance — smooth lightly
-					_server_tick_rate = lerp(_server_tick_rate, new_rate, 0.5)
+		var real_s := float(now_ms - _last_poll_ms) / 1000.0
+		if real_s > 0.1:
+			var speed := TimeScale.speed_multiplier
+			if speed > 0.0:
+				var new_hz := (ticks - _last_server_ticks) / (real_s * speed)
+				if new_hz > 1.0:
+					_server_hz = lerp(_server_hz, new_hz, 0.3)
 
 	_last_server_ticks = ticks
 	_last_poll_ms = now_ms
-	_last_advance_ms = now_ms  # Re-anchor advance timer so we don't double-count
 
-	var delta := ticks - _sim_elapsed
-	_sim_elapsed = ticks
+	var new_sim := ticks / _server_hz
+	var delta := new_sim - _sim_elapsed
+	_sim_elapsed = new_sim
 	_dirty = true
 	return delta
 
-## Immediately rescale the server tick rate when the user changes sim speed.
-## Avoids 1-2 polls of wrong dead-reckoning after a speed change.
-func scale_server_rate(old_speed: float, new_speed: float) -> void:
-	if _server_tick_rate > 0.0 and old_speed > 0.0:
-		_server_tick_rate *= new_speed / old_speed
-		# Invalidate the previous poll reference so next poll measures fresh
-		_last_server_ticks = -1.0
-		_last_poll_ms = -1
+## Called when user changes sim speed.
+## Server Hz is speed-independent so no rescaling needed — just invalidate the
+## previous poll so next poll gets a clean Hz measurement at the new speed.
+func scale_server_rate(_old_speed: float, _new_speed: float) -> void:
+	_last_server_ticks = -1.0
+	_last_poll_ms = -1
 
 ## Get current sim elapsed time
 func get_sim_elapsed() -> float:
