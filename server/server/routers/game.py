@@ -310,23 +310,24 @@ _DAY = 86400.0  # game-seconds per day
 
 EQUIPMENT_CATALOG = {
     # Mining equipment — heavier use, wears faster
+    # wear_per_tick = 100.0 / (lifetime_days * _DAY)  [durability scale is 0-100]
     "Mining Processor": {"type": "processor", "mining_bonus": 1.5, "cost": 50000, "mass": 2.0,
-                         "wear_per_tick": 1.0 / (60 * _DAY)},   # breaks in 60 game-days mining
+                         "wear_per_tick": 100.0 / (60 * _DAY)},   # breaks in 60 game-days mining
     "Advanced Refinery": {"type": "refinery", "mining_bonus": 2.0, "cost": 150000, "mass": 5.0,
-                          "wear_per_tick": 1.0 / (45 * _DAY)},  # complex internals, 45 days
+                          "wear_per_tick": 100.0 / (45 * _DAY)},  # complex internals, 45 days
     "Laser Drill": {"type": "mining_laser", "mining_bonus": 1.3, "mining_speed_bonus": 0.2, "weapon_power": 5,
                     "weapon_range": 0.01, "weapon_accuracy": 0.8, "weapon_role": "dual", "cost": 80000, "mass": 3.0,
-                    "wear_per_tick": 1.0 / (60 * _DAY)},
+                    "wear_per_tick": 100.0 / (60 * _DAY)},
     # Weapons — lighter duty, wear more slowly
     "Railgun": {"type": "weapon", "weapon_power": 25, "weapon_range": 0.5, "weapon_accuracy": 0.7,
                 "weapon_role": "offensive", "cost": 200000, "mass": 8.0,
-                "wear_per_tick": 1.0 / (90 * _DAY)},
+                "wear_per_tick": 100.0 / (90 * _DAY)},
     "Point Defense": {"type": "weapon", "weapon_power": 10, "weapon_range": 0.1, "weapon_accuracy": 0.85,
                       "weapon_role": "defensive", "cost": 120000, "mass": 4.0,
-                      "wear_per_tick": 1.0 / (90 * _DAY)},
+                      "wear_per_tick": 100.0 / (90 * _DAY)},
     "Torpedo Launcher": {"type": "weapon", "weapon_power": 50, "weapon_range": 2.0, "weapon_accuracy": 0.6,
                          "weapon_role": "offensive", "ammo_capacity": 4, "ammo_cost": 15000, "cost": 300000, "mass": 12.0,
-                         "wear_per_tick": 1.0 / (120 * _DAY)},
+                         "wear_per_tick": 100.0 / (120 * _DAY)},
 }
 
 

@@ -203,6 +203,7 @@ func _check_and_clear_expired_token() -> void:
 		print("Invalid token format, clearing")
 		server_backend.auth_token = ""
 		server_backend.player_id = 0
+		server_backend._clear_auth_data()
 		return
 
 	# Decode payload (base64url)
@@ -223,6 +224,7 @@ func _check_and_clear_expired_token() -> void:
 		print("Failed to parse token, clearing")
 		server_backend.auth_token = ""
 		server_backend.player_id = 0
+		server_backend._clear_auth_data()
 		return
 
 	var payload: Dictionary = json.data
@@ -238,6 +240,7 @@ func _check_and_clear_expired_token() -> void:
 		print("Token expired, clearing (expired at %d, now is %d)" % [exp, int(current_time)])
 		server_backend.auth_token = ""
 		server_backend.player_id = 0
+		server_backend._clear_auth_data()  # Wipe disk so stale state doesn't persist
 		# Switch back to LOCAL mode
 		BackendManager.switch_mode(BackendManager.BackendMode.LOCAL)
 	else:

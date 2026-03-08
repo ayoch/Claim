@@ -105,11 +105,15 @@ func login(username: String, password: String) -> Dictionary:
 		var data: Dictionary = result["data"]
 		var token_value = data.get("access_token", "")
 		auth_token = str(token_value) if token_value != null else ""
-		# Extract player_id from token or fetch from /auth/me
-		# For now, we'll fetch the player info after login
+		# Decode player_id directly from JWT — don't depend on /auth/me succeeding
+		player_id = _decode_player_id_from_token(auth_token)
+		# Also fetch full player info (for is_admin flag)
 		await _fetch_player_info()
-		# Save auth data for persistent login
-		_save_auth_data(username)
+		# Only persist if we actually have a valid session
+		if auth_token != "" and player_id > 0:
+			_save_auth_data(username)
+		else:
+			push_warning("ServerBackend: login succeeded but player_id is 0 — session not saved")
 		return {
 			"success": true,
 			"token": auth_token,
@@ -598,8 +602,36 @@ func _fetch_player_info() -> void:
 
 	if result["success"]:
 		var data: Dictionary = result["data"]
-		player_id = data.get("id", 0)
+		var fetched_id: int = data.get("id", 0)
+		if fetched_id > 0:
+			player_id = fetched_id
 		is_admin = data.get("is_admin", false)
+	else:
+		push_warning("ServerBackend: /auth/me failed: " + str(result.get("error", "")))
+
+
+## Decode player_id from JWT sub claim (no signature verification)
+func _decode_player_id_from_token(token: String) -> int:
+	if token == "":
+		return 0
+	var parts := token.split(".")
+	if parts.size() != 3:
+		return 0
+	var payload_b64: String = parts[1]
+	while payload_b64.length() % 4 != 0:
+		payload_b64 += "="
+	payload_b64 = payload_b64.replace("-", "+").replace("_", "/")
+	var payload_bytes := Marshalls.base64_to_raw(payload_b64)
+	if payload_bytes.is_empty():
+		return 0
+	var payload_str := payload_bytes.get_string_from_utf8()
+	var json := JSON.new()
+	if json.parse(payload_str) != OK or not json.data is Dictionary:
+		return 0
+	var sub = json.data.get("sub", "")
+	if sub == "" or sub == null:
+		return 0
+	return int(str(sub))
 
 
 ## Get leaderboard entries sorted by net worth
