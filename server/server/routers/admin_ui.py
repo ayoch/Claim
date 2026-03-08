@@ -425,8 +425,9 @@ async def admin_grant_money(
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
 
-    # Grant money
-    player.money += amount
+    # Grant money (cap to avoid overflow; BigInteger max is ~9.2e18)
+    MAX_MONEY = 10_000_000_000_000  # 10 trillion
+    player.money = min(player.money + amount, MAX_MONEY)
     await db.commit()
 
     return RedirectResponse(url="/admin-ui/players", status_code=303)

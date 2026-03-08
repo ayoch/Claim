@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from server.database import Base
@@ -13,7 +13,7 @@ class Player(Base):
     username: Mapped[str] = mapped_column(String(64), unique=False, nullable=False, index=True)  # Not unique - multiple players can have same name
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)  # Required unique email - primary anti-cheat measure
     password_hash: Mapped[str] = mapped_column(String(128), nullable=False)
-    money: Mapped[int] = mapped_column(Integer, default=14_000_000, nullable=False)
+    money: Mapped[int] = mapped_column(BigInteger, default=14_000_000, nullable=False)
     reputation: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_npc: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
