@@ -463,17 +463,13 @@ func _manage_workforce() -> void:
 	var target := total_crew_needed + deployed_count + 2
 	target = clampi(target, 3, 30)
 
-	# Hire 1 per day if under target (rotate specialties)
-	if GameState.workers.size() < target:
+	# Hire to close the deficit — up to 3 per day when badly understaffed, 1 per day otherwise
+	var deficit := target - GameState.workers.size()
+	var to_hire := clampi(deficit, 0, 3) if deficit > GameState.ships.size() else mini(deficit, 1)
+	for _i in range(to_hire):
 		var primary := workers_hired % 3
 		var worker := Worker.generate_with_primary(primary)
-		# Mode-aware hiring (works in both LOCAL and SERVER modes)
-		if BackendManager.current_mode == BackendManager.BackendMode.SERVER:
-			# In SERVER mode, we need worker_id from available workers list
-			# For test harness, just hire locally for now (server hiring requires available worker pool)
-			WorkerManager.hire_worker(worker)
-		else:
-			WorkerManager.hire_worker(worker)
+		WorkerManager.hire_worker(worker)
 		workers_hired += 1
 
 	# Fire excess available workers (keep it gentle — 1 per day)
