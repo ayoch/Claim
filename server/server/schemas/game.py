@@ -4,6 +4,20 @@ import re
 from pydantic import BaseModel, Field, field_validator
 
 
+# ── Transaction ───────────────────────────────────────────────────────────────
+
+class TransactionOut(BaseModel):
+    id: int
+    created_at: datetime
+    amount: int
+    balance_after: int
+    game_ticks: float
+    source: str
+    detail: str
+
+    model_config = {"from_attributes": True}
+
+
 # ── Ship ──────────────────────────────────────────────────────────────────────
 
 class ShipOut(BaseModel):
@@ -206,6 +220,7 @@ class GameState(BaseModel):
     active_market_events: list[MarketEventOut] = []
     colony_tiers: dict[str, int] = {}  # colony_name -> tier
     maintenance_policy: int = 1  # 0=PREVENTIVE 1=AS_NEEDED 2=RUN_TO_FAILURE 3=MANUAL
+    transactions: list[TransactionOut] = []  # recent money history (newest first)
 
 
 # ── Action requests ───────────────────────────────────────────────────────────

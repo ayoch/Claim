@@ -600,7 +600,7 @@ func _poll_server_state() -> void:
 
 	_polling_server = false
 
-	if server_data.is_empty():
+	if server_data.is_empty() or server_data.has("_http_error"):
 		return
 
 	# Apply server state to local GameState (own ships, workers, money)

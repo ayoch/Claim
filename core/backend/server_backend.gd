@@ -175,7 +175,8 @@ func get_game_state() -> Dictionary:
 	else:
 		var err = result.get("error", "Unknown error")
 		push_warning("Failed to get game state: " + str(err))
-		return {}
+		# Return a sentinel dict so callers can distinguish 401 from network/server errors
+		return {"_http_error": result.get("response_code", 0)}
 
 
 ## Fetch unread notifications from server (marks them as read server-side)
@@ -776,7 +777,8 @@ func _http_request_async(http: HTTPRequest, url: String, headers: Array, method:
 		return {
 			"success": false,
 			"data": null,
-			"error": error_msg
+			"error": error_msg,
+			"response_code": response_code,
 		}
 
 	# Parse JSON response

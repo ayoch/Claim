@@ -29,6 +29,7 @@ from server.models.trade_mission import TradeMission
 from server.models.worker import Worker
 from server.models.world_state import WorldState
 from server.simulation.event_bus import event_bus
+from server.simulation.money_log import log_tx
 
 
 class ResetWorldRequest(BaseModel):
@@ -428,6 +429,7 @@ async def admin_grant_money(
     # Grant money (cap to avoid overflow; BigInteger max is ~9.2e18)
     MAX_MONEY = 10_000_000_000_000  # 10 trillion
     player.money = min(player.money + amount, MAX_MONEY)
+    log_tx(db, player, amount, "admin_grant", f"admin granted {amount:,} cr")
     await db.commit()
 
     return RedirectResponse(url="/admin-ui/players", status_code=303)
@@ -678,6 +680,7 @@ async def reset_world(
     for player in players:
         if body.reset_money:
             player.money = body.starting_money
+            log_tx(db, player, body.starting_money, "world_reset", "world reset")
             db.add(player)
         if player.is_npc:
             continue

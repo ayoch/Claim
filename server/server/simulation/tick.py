@@ -31,6 +31,7 @@ from server.simulation.market_events import (
     load_active_events,
 )
 from server.simulation.colony_growth import tier_price_multiplier, award_growth
+from server.simulation.money_log import log_tx, set_ticks as _set_money_ticks
 from server.models.colony import Colony as ColonyModel
 
 # ── Equipment Maintenance ──────────────────────────────────────────────────────
@@ -90,6 +91,7 @@ def _auto_repair_equipment(ship, player, db, maintenance_policy: int) -> list[di
             logger.debug('Cannot auto-repair %r on %r: insufficient funds', equip.equipment_name, ship.ship_name)
             continue
         player.money -= repair_cost
+        log_tx(db, player, -repair_cost, "auto_repair", equip.equipment_name)
         equip.durability = equip.max_durability
         db.add(equip)
         events.append({
@@ -289,6 +291,7 @@ async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]
     # game_seconds accumulates TICK_INTERVAL per tick (speed-independent) — used for orbital display
     _game_seconds += settings.TICK_INTERVAL
     _save_counter += 1
+    _set_money_ticks(_total_ticks)
 
     events: list[dict] = []
     try:
@@ -555,6 +558,7 @@ def _advance_transit_back(mission: Mission, ship: Ship, dt: float, player=None) 
             if total_value > 0:
                 if player:
                     player.money += total_value
+                    log_tx(db, player, total_value, "auto_sell", f"mission {mission.id}")
                 logger.info('Mission %d: completed, auto-sold cargo %.1fM cr', mission.id, total_value / 1e6)
         else:
             logger.info('Mission %d: completed, cargo held (auto_sell_on_return=False)', mission.id)
@@ -671,6 +675,7 @@ async def _process_trade_missions(db: AsyncSession, dt: float) -> list[dict]:
                 player = tm.player
                 if player:
                     player.money += revenue
+                    log_tx(db, player, revenue, "trade_sale", f"mission {tm.id}")
                     db.add(player)
 
                 # Fulfill any active contracts for this player at this colony
@@ -794,6 +799,7 @@ async def _fulfill_contracts(
 
             total_payout = contract.reward + bonus
             player.money += total_payout
+            log_tx(db, player, total_payout, "contract", f"contract {contract.id} ({contract.ore_type})")
             contract.status = CONTRACT_COMPLETED
             db.add(player)
             db.add(contract)
@@ -958,6 +964,7 @@ async def _process_payroll(db: AsyncSession, dt: float) -> list[dict]:
             deduction = daily * days
             if deduction > 0:
                 player.money -= deduction
+                log_tx(db, player, -deduction, "payroll", f"{days}d × {daily} cr/d")
                 db.add(player)
                 events.append({'type': 'payroll_deducted', 'player_id': player.id,
                     'amount': deduction, 'days': days, 'new_balance': player.money})

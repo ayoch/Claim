@@ -104,15 +104,20 @@ func _try_auto_login() -> void:
 		# Token is valid, proceed to game
 		_show_status("Session restored! Loading game...", Color(0.3, 0.9, 0.3))
 		get_tree().change_scene_to_file("res://ui/main_ui.tscn")
-	else:
-		# Token expired or invalid, clear token but keep username
+	elif state.get("_http_error", 0) == 401:
+		# 401 Unauthorized — token is genuinely expired or revoked
 		server_backend.auth_token = ""
 		server_backend.player_id = 0
 		server_backend._clear_auth_data()
 		_show_status("Session expired. Please log in.", Color(0.9, 0.6, 0.3))
 		_set_processing(false)
-		# Focus password field since username is already filled
 		password_input.grab_focus()
+	else:
+		# Network error or server error — keep the session, let user retry
+		_show_status("Server unavailable. Try again or log in manually.", Color(0.9, 0.6, 0.3))
+		_set_processing(false)
+		if continue_session_btn:
+			continue_session_btn.visible = true
 
 
 func _on_login() -> void:

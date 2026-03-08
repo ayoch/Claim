@@ -22,11 +22,13 @@ from server.models.worker import Worker
 from server.rate_limit import limiter
 from server.routers import admin_speed
 from server.models.market_event import MarketEvent
+from server.models.transaction import PlayerTransaction
 from server.schemas.game import (
     AsteroidOut, BuyEquipmentRequest, BuyShipRequest, ColonyOut, ContractOut, DispatchRequest,
     EquipmentOut, GameState, HireRequest, MarketEventOut, MissionOut, RigOut, SellEquipmentRequest,
-    ShipOut, StockpileOut, TradeMissionOut, WorkerOut,
+    ShipOut, StockpileOut, TradeMissionOut, TransactionOut, WorkerOut,
 )
+from server.simulation.money_log import log_tx
 from server.schemas.player import PolicyUpdate
 from server.simulation.tick import get_market_prices, get_total_ticks, get_game_seconds
 from server.simulation.event_bus import event_bus
@@ -108,6 +110,15 @@ async def get_state(
     colonies_result = await db.execute(select(Colony))
     colony_tiers = {c.colony_name: c.tier for c in colonies_result.scalars().all()}
 
+    # Load recent transactions (newest first, capped at 50)
+    tx_result = await db.execute(
+        select(PlayerTransaction)
+        .where(PlayerTransaction.player_id == player.id)
+        .order_by(PlayerTransaction.created_at.desc())
+        .limit(50)
+    )
+    recent_transactions = list(tx_result.scalars().all())
+
     return GameState(
         player_id=player.id,
         username=player.username,
@@ -131,6 +142,7 @@ async def get_state(
         active_market_events=[MarketEventOut.model_validate(e) for e in active_market_events],
         colony_tiers=colony_tiers,
         maintenance_policy=player.maintenance_policy,
+        transactions=[TransactionOut.model_validate(t) for t in recent_transactions],
     )
 
 @router.post("/dispatch", response_model=MissionOut, status_code=status.HTTP_201_CREATED)
@@ -298,6 +310,7 @@ async def buy_ship(
         supplies={},
     )
     player.money -= price
+    log_tx(db, player, -price, "buy_ship", f"{req.ship_name} (class {req.ship_class})")
     db.add(ship)
     db.add(player)
     await db.commit()
@@ -387,6 +400,7 @@ async def buy_equipment(
     )
 
     player.money -= cost
+    log_tx(db, player, -cost, "buy_equipment", f"{req.equipment_name} → ship {req.ship_id}")
     db.add(equipment)
     db.add(player)
     await db.commit()
@@ -415,6 +429,7 @@ async def sell_equipment(
     # Sell for 50% of cost
     refund = equipment.cost // 2
     player.money += refund
+    log_tx(db, player, refund, "sell_equipment", equipment.equipment_name)
 
     await db.delete(equipment)
     db.add(player)
@@ -484,6 +499,7 @@ async def buy_rig(
     )
 
     player.money -= cost
+    log_tx(db, player, -cost, "buy_rig", rig_name)
     db.add(rig)
     db.add(player)
     await db.commit()
@@ -557,6 +573,7 @@ async def repair_rig(
     # Repair rig
     rig.durability = rig.max_durability
     player.money -= repair_cost
+    log_tx(db, player, -repair_cost, "repair_rig", rig.unit_name)
 
     db.add(rig)
     db.add(player)
@@ -593,6 +610,7 @@ async def rebuild_rig(
     rig.max_durability = 100.0
     rig.durability = 100.0  # Also repair to full
     player.money -= rebuild_cost
+    log_tx(db, player, -rebuild_cost, "rebuild_rig", rig.unit_name)
 
     db.add(rig)
     db.add(player)
@@ -681,6 +699,7 @@ async def sell_cargo(
 
     ship.current_cargo = {}
     player.money += total
+    log_tx(db, player, total, "sell_cargo", f"ship {ship_id}")
     db.add(ship)
     db.add(player)
     await db.commit()

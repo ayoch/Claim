@@ -3721,6 +3721,22 @@ func apply_server_state(server_data: Dictionary) -> void:
 					state_changed = true
 					EventBus.colony_tier_up.emit(colony.colony_name, new_tier)
 
+	# Sync transaction history from server (replaces client-side financial_history in SERVER mode)
+	var server_transactions: Array = server_data.get("transactions", [])
+	if not server_transactions.is_empty():
+		financial_history.clear()
+		# Server returns newest-first; reverse so oldest is at index 0 (consistent with client append order)
+		var reversed_txs := server_transactions.duplicate()
+		reversed_txs.reverse()
+		for tx_data in reversed_txs:
+			financial_history.append({
+				"timestamp": float(tx_data.get("game_ticks", 0.0)),
+				"balance": int(tx_data.get("balance_after", 0)),
+				"change": int(tx_data.get("amount", 0)),
+				"desc": str(tx_data.get("detail", tx_data.get("source", ""))),
+				"ship": "",
+			})
+
 	# Check if ships, workers, or rigs changed
 	var new_rig_count := mining_unit_inventory.size() + deployed_mining_units.size()
 	if ships.size() != old_ship_count or workers.size() != old_worker_count or new_rig_count != old_rig_count:
