@@ -941,7 +941,9 @@ func _on_tick(_dt: float) -> void:
 		return
 	_last_tick_msec = now
 	# Planet/asteroid/colony targets already updated in _process with adaptive throttling
-	# No need to duplicate here
+	# Recompute fuel range rings so they track moving objects
+	if _map_selected_ship:
+		_compute_fuel_range(_map_selected_ship)
 
 func _update_asteroid_targets() -> void:
 	var sim_elapsed := CelestialData.get_sim_elapsed()

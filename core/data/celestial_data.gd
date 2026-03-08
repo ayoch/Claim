@@ -49,14 +49,14 @@ const SOI_RADII_AU: Array[float] = [
 
 # Planet data: [name, orbit_au, color_r, color_g, color_b, radius_px]
 const PLANETS: Array[Dictionary] = [
-	{"name": "Mercury", "orbit_au": 0.39, "color": Color(0.7, 0.7, 0.6), "radius": 5.0},
-	{"name": "Venus",   "orbit_au": 0.72, "color": Color(0.9, 0.8, 0.5), "radius": 6.0},
-	{"name": "Earth",   "orbit_au": 1.00, "color": Color(0.2, 0.5, 1.0), "radius": 7.0},
-	{"name": "Mars",    "orbit_au": 1.52, "color": Color(0.9, 0.4, 0.2), "radius": 6.0},
-	{"name": "Jupiter", "orbit_au": 5.20, "color": Color(0.8, 0.7, 0.5), "radius": 12.0},
-	{"name": "Saturn",  "orbit_au": 9.54, "color": Color(0.9, 0.8, 0.6), "radius": 10.0},
-	{"name": "Uranus",  "orbit_au": 19.19, "color": Color(0.5, 0.8, 0.9), "radius": 8.0},
-	{"name": "Neptune", "orbit_au": 30.07, "color": Color(0.3, 0.4, 0.9), "radius": 8.0},
+	{"name": "Mercury", "orbit_au": 0.39, "color": Color(0.7, 0.7, 0.6), "radius": 10.0},
+	{"name": "Venus",   "orbit_au": 0.72, "color": Color(0.9, 0.8, 0.5), "radius": 14.0},
+	{"name": "Earth",   "orbit_au": 1.00, "color": Color(0.2, 0.5, 1.0), "radius": 14.0},
+	{"name": "Mars",    "orbit_au": 1.52, "color": Color(0.9, 0.4, 0.2), "radius": 12.0},
+	{"name": "Jupiter", "orbit_au": 5.20, "color": Color(0.8, 0.7, 0.5), "radius": 28.0},
+	{"name": "Saturn",  "orbit_au": 9.54, "color": Color(0.9, 0.8, 0.6), "radius": 24.0},
+	{"name": "Uranus",  "orbit_au": 19.19, "color": Color(0.5, 0.8, 0.9), "radius": 20.0},
+	{"name": "Neptune", "orbit_au": 30.07, "color": Color(0.3, 0.4, 0.9), "radius": 20.0},
 ]
 
 # Keplerian ephemeris — computes positions from game time
