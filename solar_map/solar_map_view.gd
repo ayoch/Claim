@@ -68,6 +68,17 @@ const PREVIEW_BLINK_PERIOD: float = 1.0  # seconds for full blink cycle
 var asteroid_marker_scene: PackedScene = preload("res://solar_map/asteroid_marker.tscn")
 var ship_marker_scene: PackedScene = preload("res://solar_map/ship_marker.tscn")
 var _bg_texture: Texture2D = preload("res://new assets/Starfield-With-Color.png")
+
+# Planet textures — Mercury has no asset and keeps the circle fallback
+var _planet_textures: Dictionary = {
+	"Venus":   preload("res://new assets/Venus.png"),
+	"Earth":   preload("res://new assets/Earth.png"),
+	"Mars":    preload("res://new assets/Mars.png"),
+	"Jupiter": preload("res://new assets/Jupiter.png"),
+	"Saturn":  preload("res://new assets/Saturn.png"),
+	"Uranus":  preload("res://new assets/Uranus.png"),
+	"Neptune": preload("res://new assets/Neptune_Better.png"),
+}
 var _ships_need_refresh: bool = false  # Debounce marker rebuilds to once per frame
 var _last_tick_msec: int = 0
 const TICK_THROTTLE_MSEC: int = 200  # Only process ticks every 200ms real-time
@@ -235,10 +246,13 @@ func _draw() -> void:
 			draw_circle(pos, radius + 5, Color(color.r, color.g, color.b, 0.2))
 			# Bright outline ring for visibility
 			_draw_circle_outline(pos, radius + 1.5, Color(color.r, color.g, color.b, 0.7), 1.5)
-			# Planet body
-			draw_circle(pos, radius, color)
-			# Bright highlight
-			draw_circle(pos, radius * 0.4, Color(1.0, 1.0, 1.0, 0.35))
+			# Planet body — use texture if available, otherwise solid circle
+			if _planet_textures.has(planet_name):
+				var tex: Texture2D = _planet_textures[planet_name]
+				draw_texture_rect(tex, Rect2(pos - Vector2(radius, radius), Vector2(radius * 2.0, radius * 2.0)), false)
+			else:
+				draw_circle(pos, radius, color)
+				draw_circle(pos, radius * 0.4, Color(1.0, 1.0, 1.0, 0.35))
 
 	# Draw asteroid belt — density-shaded annulus with Kirkwood gap lanes.
 	# Each radial band is one polygon (outer arc forward + inner arc backward),
