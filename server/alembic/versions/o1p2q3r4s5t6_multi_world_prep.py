@@ -20,14 +20,19 @@ def upgrade() -> None:
         sa.Column('world_name', sa.String(64), nullable=False, server_default='Euterpe')
     )
 
-    # Add world_id to players (nullable — existing players assigned to world 1 below)
+    # Add world_id to players (nullable, no FK constraint at migration time —
+    # world_state may be empty when migrations run; FK is logical/ORM-level only)
     op.add_column('players',
-        sa.Column('world_id', sa.Integer(), sa.ForeignKey('world_state.world_id', ondelete='SET NULL'), nullable=True)
+        sa.Column('world_id', sa.Integer(), nullable=True)
     )
     op.create_index('ix_players_world_id', 'players', ['world_id'])
 
-    # Assign all existing players to world 1
-    op.execute("UPDATE players SET world_id = 1 WHERE world_id IS NULL")
+    # Assign existing players to world 1 only if that world row already exists
+    op.execute("""
+        UPDATE players SET world_id = 1
+        WHERE world_id IS NULL
+          AND EXISTS (SELECT 1 FROM world_state WHERE world_id = 1)
+    """)
 
 
 def downgrade() -> None:
