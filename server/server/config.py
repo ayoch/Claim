@@ -65,7 +65,7 @@ class Settings(BaseSettings):
 
     # JWT settings
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 90  # 90 days
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 30  # 30 days
 
     # CORS settings
     CORS_ORIGINS: str = Field(
