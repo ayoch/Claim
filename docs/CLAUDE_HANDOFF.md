@@ -6,7 +6,45 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: Planet Visuals + Bug Fixes (Dweezil, 2026-03-07)
+### Latest Work Session: Contracts + Notifications + Map Fixes (Dweezil, 2026-03-07)
+**Status:** Complete — pushed
+
+**Contracts with Deadlines (server + client)**
+- `server/server/simulation/tick.py`: `_fulfill_contracts()` called at `TM_SELLING` phase — applies cargo tonnage to accepted contracts for the player, pays reward + 20% early bonus if >50% of deadline remains when completed
+- `server/server/simulation/contracts.py`: Added `func` import (was missing, broke `func.now()` calls). `process_contracts()` ticks deadlines down; handles expiry/failure/partial completion
+- `server/server/routers/contracts.py` (new): `GET /game/contracts` (list available + player's), `POST /game/contracts/{id}/accept`
+- `server/server/schemas/game.py`: Added `ContractOut` schema, `contracts: list[ContractOut] = []` to `GameState`
+- `server/server/models/contract.py`: Added `original_deadline_ticks` column (for early bonus calc)
+- `server/server/routers/game.py`: `/game/state` now returns contracts; imports `ContractOut`
+- `server/server/main.py`: Registered contracts router
+- Migration `q3r4s5t6u7v8`: creates `contracts` table (all columns incl. `original_deadline_ticks`)
+- `core/models/contract.gd`: Added `server_id: int`, `server_ore_name: String`, `get_ore_display_name()` (handles server ore types not in client 5-value enum)
+- `core/autoloads/game_state.gd`: `apply_server_state()` syncs contracts by server_id; delivery colony matched by name via `ColonyData`
+- `core/backend/server_backend.gd`: `accept_contract(id)` POSTs to server
+- `ui/tabs/hq_tab.gd`: Accept button on available contracts (server mode only); `_accept_contract_server()` handler; uses `get_ore_display_name()` throughout
+
+**Notification Log Panel**
+- `server/server/models/notification.py` (new): `PlayerNotification` model (player_id, tick_number, event_type, message, is_read)
+- Migration `r4s5t6u7v8w9`: creates `player_notifications` table with indexes
+- `server/server/simulation/tick.py`: `_save_player_notifications()` writes key events to DB each tick — mission_completed, trade_mission_completed, contract_completed/partial/failed/offered, rig_broken. Capped at 100 per player (trims oldest)
+- `server/server/routers/game.py`: `GET /game/notifications` returns unread notifications and marks them read
+- `core/autoloads/event_bus.gd`: Added `server_notifications_received(notifications: Array)` signal
+- `core/backend/server_backend.gd`: `get_notifications()` fetches from endpoint
+- `ui/main_ui.gd`: Fetches notifications on first successful state load, emits signal
+- `ui/tabs/hq_tab.gd`: `_on_server_notifications_received()` injects offline events into Activity log with color coding and "— N events while offline —" divider
+
+**Solar Map Fixes**
+- Stars now scroll with pan: replaced `draw_texture_rect` tiling (UV always 0,0 per rect = stationary appearance) with procedural `_get_star_tile` system. Stars at world-space positions scroll naturally. Nebula blobs drawn behind. `_starfield_time` incremented in `_process` for twinkle animation.
+- Fuel range rings now follow orbiting objects: `_fuel_range_reachable` changed from `Array[Vector2]` (position snapshots) to `Array` of object references. `_draw_fuel_range()` calls `get_position_au()` live each frame.
+- Fleet tab in server mode: connected `server_state_synced` to `_mark_dirty()` so ship list rebuilds when server poll updates `GameState.ships`
+
+**⚠️ New migrations to run on Railway:**
+- `q3r4s5t6u7v8` — creates `contracts` table
+- `r4s5t6u7v8w9` — creates `player_notifications` table
+
+---
+
+### Previous Session: Planet Visuals + Bug Fixes (Dweezil, 2026-03-07)
 **Status:** Complete — pushed
 
 **What was done:**
