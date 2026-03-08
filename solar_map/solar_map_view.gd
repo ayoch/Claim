@@ -54,7 +54,7 @@ var _planet_labels: Array[Node2D] = []
 var _label_base_offsets: Dictionary = {}  # Node2D -> Vector2 (original offset from parent)
 
 # Fuel range visualization
-var _fuel_range_reachable: Array[Vector2] = []  # destination positions (AU) reachable one-way
+var _fuel_range_reachable: Array = []  # AsteroidData or Colony objects reachable one-way
 
 # Trajectory preview
 var _preview_active: bool = false
@@ -216,7 +216,40 @@ func _draw_starfield() -> void:
 	var half_view := viewport_size / (2.0 * zoom)
 	var visible_rect := Rect2(cam_pos - half_view, half_view * 2.0)
 	draw_rect(visible_rect, Color(0.006, 0.009, 0.016))
-	draw_texture_rect(_bg_texture, visible_rect, true)
+
+	# Which tiles are visible?
+	var tile_min := Vector2i(
+		int(floor(visible_rect.position.x / STAR_TILE_SIZE)),
+		int(floor(visible_rect.position.y / STAR_TILE_SIZE))
+	)
+	var tile_max := Vector2i(
+		int(floor((visible_rect.position.x + visible_rect.size.x) / STAR_TILE_SIZE)),
+		int(floor((visible_rect.position.y + visible_rect.size.y) / STAR_TILE_SIZE))
+	)
+
+	# Draw nebula blobs first (behind stars)
+	for tx in range(tile_min.x, tile_max.x + 1):
+		for ty in range(tile_min.y, tile_max.y + 1):
+			var tile_origin := Vector2(tx * STAR_TILE_SIZE, ty * STAR_TILE_SIZE)
+			for blob in _get_nebula_tile(Vector2i(tx, ty)):
+				var pos := tile_origin + blob["offset"]
+				var col: Color = NEBULA_COLORS[blob["color_idx"]]
+				draw_circle(pos, blob["radius"], col)
+
+	# Draw stars at their world-space positions — they scroll naturally with pan
+	for tx in range(tile_min.x, tile_max.x + 1):
+		for ty in range(tile_min.y, tile_max.y + 1):
+			var tile_origin := Vector2(tx * STAR_TILE_SIZE, ty * STAR_TILE_SIZE)
+			for star in _get_star_tile(Vector2i(tx, ty)):
+				var pos := tile_origin + star["offset"]
+				var twinkle: float = sin(_starfield_time * STAR_TWINKLE_SPEED + star["twinkle_phase"]) * star["twinkle_amount"]
+				var brightness: float = clampf(star["brightness"] + twinkle, 0.1, 1.0)
+				var base_color: Color = STAR_COLORS[star["color_idx"]]
+				var color := Color(base_color.r * brightness, base_color.g * brightness, base_color.b * brightness)
+				var sz: float = star["size"]
+				if star["bloom"]:
+					draw_circle(pos, sz * 2.2, Color(color.r, color.g, color.b, 0.15))
+				draw_circle(pos, sz, color)
 
 func _draw() -> void:
 	_draw_starfield()
@@ -334,7 +367,8 @@ func _draw() -> void:
 		draw_circle(_preview_dest_pos, 8, Color(0.0, 0.0, 0.0, blink_alpha * 0.5))
 
 func _draw_fuel_range() -> void:
-	for pos_au: Vector2 in _fuel_range_reachable:
+	for dest in _fuel_range_reachable:
+		var pos_au: Vector2 = dest.get_position_au()
 		var px := pos_au * AU_PIXELS
 		_draw_circle_outline(px, 22.0, Color(0.3, 1.0, 0.3, 0.55), 2.0)
 
@@ -347,11 +381,11 @@ func _compute_fuel_range(ship: Ship) -> void:
 	for asteroid: AsteroidData in GameState.asteroids:
 		var dist := ship_pos.distance_to(asteroid.get_position_au())
 		if ship.calc_fuel_for_distance(dist, 0.0) <= available:
-			_fuel_range_reachable.append(asteroid.get_position_au())
+			_fuel_range_reachable.append(asteroid)
 	for colony: Colony in GameState.colonies:
 		var dist := ship_pos.distance_to(colony.get_position_au())
 		if ship.calc_fuel_for_distance(dist, 0.0) <= available:
-			_fuel_range_reachable.append(colony.get_position_au())
+			_fuel_range_reachable.append(colony)
 
 func _draw_circle_outline(center: Vector2, radius: float, color: Color, width: float) -> void:
 	var points := 64
@@ -820,6 +854,8 @@ func _process(delta: float) -> void:
 		_preview_blink_time += delta
 		if _preview_blink_time >= PREVIEW_BLINK_PERIOD:
 			_preview_blink_time -= PREVIEW_BLINK_PERIOD
+
+	_starfield_time += delta
 
 	# Throttle redraws to 60fps — draw calls are expensive and 120fps is unnecessary
 	# for a strategy map. Force immediate redraw while dragging for crisp panning.

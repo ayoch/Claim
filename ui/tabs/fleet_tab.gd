@@ -59,6 +59,7 @@ func _ready() -> void:
 	EventBus.stranger_rescue_offered.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
 	EventBus.stranger_rescue_completed.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
 	EventBus.stranger_rescue_declined.connect(func(_s: Ship, _n: String) -> void: _mark_dirty())
+	EventBus.server_state_synced.connect(func() -> void: _mark_dirty())
 	EventBus.tick.connect(_on_tick)
 	EventBus.map_ship_selected.connect(_on_map_ship_selected)
 	_rebuild_ships()
