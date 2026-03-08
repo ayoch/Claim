@@ -69,8 +69,9 @@ var asteroid_marker_scene: PackedScene = preload("res://solar_map/asteroid_marke
 var ship_marker_scene: PackedScene = preload("res://solar_map/ship_marker.tscn")
 var _bg_texture: Texture2D = preload("res://new assets/Starfield-With-Color.png")
 
-# Planet textures — Mercury has no asset and keeps the circle fallback
+# Planet textures
 var _planet_textures: Dictionary = {
+	"Mercury": preload("res://new assets/Mercury.png"),
 	"Venus":   preload("res://new assets/Venus.png"),
 	"Earth":   preload("res://new assets/Earth.png"),
 	"Mars":    preload("res://new assets/Mars.png"),
