@@ -32,6 +32,7 @@ class Contract(Base):
     quantity_delivered: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     reward: Mapped[int] = mapped_column(Integer, nullable=False)  # Payment in credits
     deadline_ticks: Mapped[float] = mapped_column(Float, nullable=False)  # Remaining ticks
+    original_deadline_ticks: Mapped[float] = mapped_column(Float, nullable=False, server_default="0")  # At acceptance, for early-bonus calc
 
     # Contract metadata
     status: Mapped[int] = mapped_column(Integer, default=STATUS_AVAILABLE, nullable=False, index=True)

@@ -14,13 +14,14 @@ from server.models.mission import Mission, STATUS_TRANSIT_OUT
 from server.models.player import Player
 from server.models.rig import Rig, UNIT_TYPE_BASIC, UNIT_TYPE_ADVANCED, UNIT_TYPE_REFINERY
 from server.models.ship import Ship, SHIP_CLASS_STATS
+from server.models.contract import Contract, STATUS_AVAILABLE, STATUS_ACCEPTED
 from server.models.stockpile import Stockpile
 from server.models.trade_mission import TradeMission
 from server.models.worker import Worker
 from server.rate_limit import limiter
 from server.routers import admin_speed
 from server.schemas.game import (
-    AsteroidOut, BuyEquipmentRequest, BuyShipRequest, ColonyOut, DispatchRequest,
+    AsteroidOut, BuyEquipmentRequest, BuyShipRequest, ColonyOut, ContractOut, DispatchRequest,
     EquipmentOut, GameState, HireRequest, MissionOut, RigOut, SellEquipmentRequest,
     ShipOut, StockpileOut, TradeMissionOut, WorkerOut,
 )
@@ -86,6 +87,15 @@ async def get_state(
     stockpiles_result = await db.execute(select(Stockpile).where(Stockpile.player_id == player.id))
     stockpiles = list(stockpiles_result.scalars().all())
 
+    # Load contracts: available to all players + this player's active contracts
+    contracts_result = await db.execute(
+        select(Contract).where(
+            (Contract.status == STATUS_AVAILABLE) |
+            (Contract.player_id == player.id)
+        )
+    )
+    contracts = list(contracts_result.scalars().all())
+
     return GameState(
         player_id=player.id,
         username=player.username,
@@ -105,6 +115,7 @@ async def get_state(
         trade_missions=[TradeMissionOut.model_validate(tm) for tm in trade_missions],
         rigs=[RigOut.model_validate(r) for r in rigs],
         stockpiles=[StockpileOut.model_validate(s) for s in stockpiles],
+        contracts=[ContractOut.model_validate(c) for c in contracts],
     )
 
 @router.post("/dispatch", response_model=MissionOut, status_code=status.HTTP_201_CREATED)

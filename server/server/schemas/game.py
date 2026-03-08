@@ -150,6 +150,24 @@ class TradeMissionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Contract ──────────────────────────────────────────────────────────────────
+
+class ContractOut(BaseModel):
+    id: int
+    ore_type: str
+    quantity: float
+    quantity_delivered: float
+    reward: int
+    deadline_ticks: float
+    original_deadline_ticks: float
+    status: int
+    issuer_name: str
+    delivery_colony_id: int | None
+    allows_partial: bool
+
+    model_config = {"from_attributes": True}
+
+
 # ── Full game state ───────────────────────────────────────────────────────────
 
 class GameState(BaseModel):
@@ -171,6 +189,7 @@ class GameState(BaseModel):
     trade_missions: list[TradeMissionOut]
     rigs: list[RigOut]
     stockpiles: list[StockpileOut]
+    contracts: list[ContractOut] = []
 
 
 # ── Action requests ───────────────────────────────────────────────────────────

@@ -3,6 +3,9 @@ extends Resource
 
 enum Status { AVAILABLE, ACCEPTED, COMPLETED, EXPIRED, FAILED }
 
+var server_id: int = 0  # Server DB id (0 = local-only)
+var server_ore_name: String = ""  # Raw ore name from server (for ores not in client enum)
+
 @export var ore_type: ResourceTypes.OreType = ResourceTypes.OreType.IRON
 @export var quantity: float = 10.0       # tons required
 @export var quantity_delivered: float = 0.0  # tons delivered so far
@@ -104,8 +107,13 @@ func get_delivery_location_text() -> String:
 		return delivery_colony.colony_name
 	return "Any Colony"
 
+func get_ore_display_name() -> String:
+	if server_ore_name != "":
+		return server_ore_name.replace("_", " ").capitalize()
+	return ResourceTypes.get_ore_name(ore_type)
+
 func get_display_text() -> String:
-	var ore_name := ResourceTypes.get_ore_name(ore_type)
+	var ore_name := get_ore_display_name()
 	var location := get_delivery_location_text()
 	var progress_text := ""
 	if quantity_delivered > 0:

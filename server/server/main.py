@@ -18,7 +18,7 @@ from server.blog_database import init_blog_db
 from server.config import settings
 from server.database import init_db
 from server.rate_limit import limiter, rate_limit_handler
-from server.routers import account_settings, admin, admin_speed, admin_ui, auth, blog, bug_reports, events, game, leaderboard, password_reset
+from server.routers import account_settings, admin, admin_speed, admin_ui, auth, blog, bug_reports, contracts, events, game, leaderboard, password_reset
 from server.simulation.runner import simulation_loop
 
 # Configure logging
@@ -98,6 +98,7 @@ app.include_router(leaderboard.router)
 app.include_router(blog.router)
 app.include_router(blog.admin_router)
 app.include_router(bug_reports.router)
+app.include_router(contracts.router)
 
 # Static files (website frontend)
 static_dir = Path(__file__).parent.parent / "static"

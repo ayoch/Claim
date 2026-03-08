@@ -2,7 +2,7 @@
 
 import logging
 import random
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from server.models.contract import Contract, STATUS_AVAILABLE, STATUS_ACCEPTED, STATUS_EXPIRED, STATUS_FAILED, STATUS_COMPLETED
 from server.models.colony import Colony

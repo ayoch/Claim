@@ -1689,7 +1689,7 @@ func _refresh_contracts() -> void:
 		hbox.add_theme_constant_override("separation", 8)
 
 		var info := _lbl()
-		var ore_name := ResourceTypes.get_ore_name(c.ore_type)
+		var ore_name := c.get_ore_display_name() if c.has_method("get_ore_display_name") else ResourceTypes.get_ore_name(c.ore_type)
 		var deadline_days: float = c.deadline_ticks / 86400.0
 		info.text = "%s: %.1ft %s → %s — $%s (%.1fd left)" % [
 			c.issuer_name, c.quantity, ore_name,
@@ -1714,18 +1714,30 @@ func _refresh_contracts() -> void:
 		contracts_list.add_child(hbox)
 
 	# Available contracts
+	var in_server_mode := BackendManager.current_mode == BackendManager.BackendMode.SERVER
 	for c in GameState.available_contracts:
 		has_any = true
+		var ore_name := c.get_ore_display_name() if c.has_method("get_ore_display_name") else ResourceTypes.get_ore_name(c.ore_type)
+		var days_left := c.deadline_ticks / 86400.0
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
 		var label := _lbl()
-		var ore_name := ResourceTypes.get_ore_name(c.ore_type)
-		label.text = "[Available] %s: %.1ft %s → %s — $%s" % [
+		label.text = "[Available] %s: %.1ft %s → %s — $%s (%.1f days)" % [
 			c.issuer_name, c.quantity, ore_name,
-			c.get_delivery_location_text(), _format_number(c.reward)
+			c.get_delivery_location_text(), _format_number(c.reward), days_left
 		]
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		label.add_theme_color_override("font_color", Color(0.5, 0.7, 0.8))
-		contracts_list.add_child(label)
+		row.add_child(label)
+		if in_server_mode and c.server_id > 0:
+			var btn := Button.new()
+			btn.text = "Accept"
+			btn.custom_minimum_size.x = 70
+			var captured_c := c
+			btn.pressed.connect(func() -> void: _accept_contract_server(captured_c))
+			row.add_child(btn)
+		contracts_list.add_child(row)
 
 	# Separator before log if we have both active contracts and log entries
 	if has_any and not _contract_messages.is_empty():
@@ -1748,6 +1760,25 @@ func _refresh_contracts() -> void:
 		label.text = "No contracts"
 		label.add_theme_color_override("font_color", Color(0.4, 0.4, 0.4))
 		contracts_list.add_child(label)
+
+func _accept_contract_server(c: Contract) -> void:
+	if c.server_id <= 0:
+		return
+	var server_backend = BackendManager.get_server_backend()
+	if not server_backend:
+		return
+	var result: Dictionary = await server_backend.accept_contract(c.server_id)
+	if result.is_empty():
+		_queue_contract_log("Failed to accept contract", Color(0.9, 0.3, 0.3))
+		return
+	# Update local state optimistically; server poll will confirm
+	c.status = Contract.Status.ACCEPTED
+	GameState.available_contracts.erase(c)
+	if not GameState.active_contracts.has(c):
+		GameState.active_contracts.append(c)
+	_queue_contract_log("Accepted: %s — %.1ft %s" % [c.issuer_name, c.quantity, c.get_ore_display_name() if c.has_method("get_ore_display_name") else ""], Color(0.3, 0.9, 0.4))
+	_dirty_contracts = true
+
 
 func _send_system_notification(p_title: String, p_body: String) -> void:
 	# Desktop: flash the taskbar/window

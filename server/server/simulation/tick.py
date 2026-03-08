@@ -18,6 +18,7 @@ from server.models.trade_mission import (
     STATUS_COMPLETED as TM_COMPLETED
 )
 from server.models.worker import Worker
+from server.models.contract import Contract, STATUS_ACCEPTED as CONTRACT_ACCEPTED, STATUS_COMPLETED as CONTRACT_COMPLETED, STATUS_FAILED as CONTRACT_FAILED
 from server.models.world_state import WorldState
 from server.routers import admin_speed as _admin_speed
 from server.simulation.contracts import process_contracts as _process_contracts
@@ -523,8 +524,9 @@ async def _process_trade_missions(db: AsyncSession, dt: float) -> list[dict]:
 
             if tm.elapsed_ticks >= SELLING_DURATION:
                 # Calculate revenue from cargo
+                cargo_sold = dict(tm.cargo)  # snapshot before clearing
                 revenue = 0
-                for ore_type, tonnes in tm.cargo.items():
+                for ore_type, tonnes in cargo_sold.items():
                     ore_price = _market_prices.get(ore_type, BASE_ORE_PRICES.get(ore_type, 1000.0))
                     revenue += int(tonnes * ore_price)
 
@@ -536,6 +538,13 @@ async def _process_trade_missions(db: AsyncSession, dt: float) -> list[dict]:
                 if player:
                     player.money += revenue
                     db.add(player)
+
+                # Fulfill any active contracts for this player at this colony
+                if player and cargo_sold:
+                    contract_events = await _fulfill_contracts(
+                        db, player, tm.colony_id, cargo_sold
+                    )
+                    events += contract_events
 
                 # Transition to return trip
                 tm.status = TM_TRANSIT_BACK
@@ -591,6 +600,81 @@ async def _process_trade_missions(db: AsyncSession, dt: float) -> list[dict]:
                 'player_id': tm.player_id,
                 'old_status': prev_status,
                 'new_status': tm.status
+            })
+
+    return events
+
+
+async def _fulfill_contracts(
+    db: AsyncSession,
+    player,
+    colony_id: int | None,
+    cargo_sold: dict[str, float],
+) -> list[dict]:
+    """
+    Apply cargo delivered to active contracts for this player.
+    Called at TM_SELLING phase when a trade ship sells its cargo at a colony.
+    """
+    events: list[dict] = []
+
+    result = await db.execute(
+        select(Contract).where(
+            Contract.player_id == player.id,
+            Contract.status == CONTRACT_ACCEPTED,
+            Contract.ore_type.in_(list(cargo_sold.keys())),
+        )
+    )
+    contracts = list(result.scalars().all())
+
+    for contract in contracts:
+        # Colony check: contract.delivery_colony_id == None means any colony is fine
+        if contract.delivery_colony_id is not None and contract.delivery_colony_id != colony_id:
+            continue
+
+        tonnes_available = cargo_sold.get(contract.ore_type, 0.0)
+        if tonnes_available <= 0.0:
+            continue
+
+        still_needed = contract.quantity - contract.quantity_delivered
+        delivered = min(tonnes_available, still_needed)
+        contract.quantity_delivered += delivered
+        # Reduce the cargo pool so two contracts can't claim the same ore
+        cargo_sold[contract.ore_type] = tonnes_available - delivered
+
+        if contract.is_complete():
+            # Early bonus: 20% extra if more than half the deadline remains
+            bonus = 0
+            if contract.original_deadline_ticks > 0 and contract.deadline_ticks > contract.original_deadline_ticks * 0.5:
+                bonus = int(contract.reward * 0.20)
+
+            total_payout = contract.reward + bonus
+            player.money += total_payout
+            contract.status = CONTRACT_COMPLETED
+            db.add(player)
+            db.add(contract)
+
+            events.append({
+                "type": "contract_completed",
+                "contract_id": contract.id,
+                "player_id": player.id,
+                "reward": contract.reward,
+                "bonus": bonus,
+                "total_payout": total_payout,
+                "ore_type": contract.ore_type,
+                "quantity_delivered": contract.quantity_delivered,
+            })
+            logger.info(
+                "Contract %d completed by player %d — payout %d (bonus %d)",
+                contract.id, player.id, total_payout, bonus,
+            )
+        else:
+            db.add(contract)
+            events.append({
+                "type": "contract_progress",
+                "contract_id": contract.id,
+                "player_id": player.id,
+                "quantity_delivered": contract.quantity_delivered,
+                "quantity": contract.quantity,
             })
 
     return events

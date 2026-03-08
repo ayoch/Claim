@@ -174,6 +174,20 @@ func get_game_state() -> Dictionary:
 		return {}
 
 
+## Accept a contract by server ID
+func accept_contract(contract_server_id: int) -> Dictionary:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var url := base_url + "/game/contracts/%d/accept" % contract_server_id
+	var result := await _http_request_async(http, url, headers, HTTPClient.METHOD_POST, "")
+	_return_http_request(http)
+	if result["success"]:
+		return result["data"]
+	else:
+		push_warning("Failed to accept contract %d: %s" % [contract_server_id, str(result.get("error", ""))])
+		return {}
+
+
 ## Get shared world state (all players' ships for multiplayer)
 func get_world_state() -> Dictionary:
 	var http := _get_http_request()

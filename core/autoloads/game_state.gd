@@ -3615,6 +3615,77 @@ func apply_server_state(server_data: Dictionary) -> void:
 	# TODO: Sync mission state when server has full mission data
 	# For now, client-side missions are the source of truth
 
+	# Sync contracts from server
+	var server_contracts: Array = server_data.get("contracts", [])
+	if not server_contracts.is_empty():
+		var local_by_server_id: Dictionary = {}
+		for c in available_contracts:
+			if c.server_id > 0:
+				local_by_server_id[c.server_id] = c
+		for c in active_contracts:
+			if c.server_id > 0:
+				local_by_server_id[c.server_id] = c
+
+		var seen_contract_ids: Array[int] = []
+		for cd in server_contracts:
+			var sid: int = int(cd.get("id", 0))
+			seen_contract_ids.append(sid)
+			var c: Contract
+			if local_by_server_id.has(sid):
+				c = local_by_server_id[sid]
+			else:
+				c = Contract.new()
+				c.server_id = sid
+				var ore_key := str(cd.get("ore_type", "iron"))
+				c.server_ore_name = ore_key
+				var parsed_type := _parse_ore_type(ore_key)
+				if parsed_type >= 0:
+					c.ore_type = parsed_type
+				c.issuer_name = str(cd.get("issuer_name", "Unknown"))
+				c.allows_partial = bool(cd.get("allows_partial", true))
+				var delivery_col_id: int = int(cd.get("delivery_colony_id", 0))
+				if delivery_col_id > 0:
+					var col_name := ColonyData.get_colony_name(delivery_col_id)
+					for col in colonies:
+						if col.colony_name == col_name:
+							c.delivery_colony = col
+							break
+			c.quantity = float(cd.get("quantity", 0.0))
+			c.quantity_delivered = float(cd.get("quantity_delivered", 0.0))
+			c.reward = int(cd.get("reward", 0))
+			c.deadline_ticks = float(cd.get("deadline_ticks", 0.0))
+			var srv_status: int = int(cd.get("status", 0))
+			c.status = srv_status as Contract.Status
+
+			if not local_by_server_id.has(sid):
+				if srv_status == Contract.Status.AVAILABLE:
+					available_contracts.append(c)
+				elif srv_status == Contract.Status.ACCEPTED:
+					active_contracts.append(c)
+			else:
+				# Move between arrays if status changed
+				if srv_status == Contract.Status.AVAILABLE:
+					active_contracts.erase(c)
+					if not available_contracts.has(c):
+						available_contracts.append(c)
+				elif srv_status == Contract.Status.ACCEPTED:
+					available_contracts.erase(c)
+					if not active_contracts.has(c):
+						active_contracts.append(c)
+				elif srv_status == Contract.Status.COMPLETED or srv_status == Contract.Status.FAILED:
+					available_contracts.erase(c)
+					active_contracts.erase(c)
+
+		# Remove local contracts that no longer appear in server response
+		for i in range(available_contracts.size() - 1, -1, -1):
+			var c := available_contracts[i]
+			if c.server_id > 0 and not seen_contract_ids.has(c.server_id):
+				available_contracts.remove_at(i)
+		for i in range(active_contracts.size() - 1, -1, -1):
+			var c := active_contracts[i]
+			if c.server_id > 0 and not seen_contract_ids.has(c.server_id):
+				active_contracts.remove_at(i)
+
 	# Check if ships, workers, or rigs changed
 	var new_rig_count := mining_unit_inventory.size() + deployed_mining_units.size()
 	if ships.size() != old_ship_count or workers.size() != old_worker_count or new_rig_count != old_rig_count:
