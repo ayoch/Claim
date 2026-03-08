@@ -25,6 +25,11 @@ from server.routers import admin_speed as _admin_speed
 from server.simulation.contracts import process_contracts as _process_contracts
 from server.simulation.worker_spawning import process_worker_spawning
 from server.simulation.npc_corps import process_npc_tick
+from server.simulation.market_events import (
+    process_market_events as _process_market_events,
+    get_event_multipliers,
+    load_active_events,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +142,11 @@ def _add_worker_xp(worker: Worker, skill_type: int, amount: float) -> list[dict]
     return events
 
 def get_market_prices() -> dict[str, float]:
-    return dict(_market_prices)
+    """Return current prices with active market event multipliers applied."""
+    mults = get_event_multipliers()
+    if not mults:
+        return dict(_market_prices)
+    return {ore: price * mults.get(ore, 1.0) for ore, price in _market_prices.items()}
 
 def get_total_ticks() -> int:
     """Get current total_ticks value."""
@@ -205,7 +214,7 @@ async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]
         events += await _process_missions(db, dt)
         events += await _process_trade_missions(db, dt)
         events += await _process_rigs(db, dt)
-        events += await _process_market(dt)
+        events += await _process_market(db, dt)
         events += await _process_payroll(db, dt)
         events += await _process_contracts(db, dt)
         events += await process_worker_spawning(db, dt)
@@ -776,7 +785,8 @@ async def _save_player_notifications(db: AsyncSession, events: list[dict], tick:
         )
 
 
-async def _process_market(dt: float) -> list[dict]:
+async def _process_market(db: AsyncSession, dt: float) -> list[dict]:
+    # Base price drift (supply/demand noise)
     changed: dict[str, float] = {}
     for ore, price in _market_prices.items():
         base = BASE_ORE_PRICES[ore]
@@ -785,9 +795,14 @@ async def _process_market(dt: float) -> list[dict]:
         _market_prices[ore] = new_price
         if abs(new_price - price) / base > 0.005:
             changed[ore] = round(new_price, 2)
+
+    events: list[dict] = []
     if changed:
-        return [{'type': 'market_update', 'prices': changed}]
-    return []
+        events.append({'type': 'market_update', 'prices': changed})
+
+    # Market event processing (may spawn/expire events)
+    events += await _process_market_events(db, _total_ticks, dt)
+    return events
 
 _PAYROLL_INTERVAL = 86400.0
 

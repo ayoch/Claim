@@ -21,9 +21,10 @@ from server.models.trade_mission import TradeMission
 from server.models.worker import Worker
 from server.rate_limit import limiter
 from server.routers import admin_speed
+from server.models.market_event import MarketEvent
 from server.schemas.game import (
     AsteroidOut, BuyEquipmentRequest, BuyShipRequest, ColonyOut, ContractOut, DispatchRequest,
-    EquipmentOut, GameState, HireRequest, MissionOut, RigOut, SellEquipmentRequest,
+    EquipmentOut, GameState, HireRequest, MarketEventOut, MissionOut, RigOut, SellEquipmentRequest,
     ShipOut, StockpileOut, TradeMissionOut, WorkerOut,
 )
 from server.schemas.player import PolicyUpdate
@@ -97,6 +98,12 @@ async def get_state(
     )
     contracts = list(contracts_result.scalars().all())
 
+    # Load active market events (world-wide)
+    events_result = await db.execute(
+        select(MarketEvent).where(MarketEvent.is_active == True)  # noqa: E712
+    )
+    active_market_events = list(events_result.scalars().all())
+
     return GameState(
         player_id=player.id,
         username=player.username,
@@ -117,6 +124,7 @@ async def get_state(
         rigs=[RigOut.model_validate(r) for r in rigs],
         stockpiles=[StockpileOut.model_validate(s) for s in stockpiles],
         contracts=[ContractOut.model_validate(c) for c in contracts],
+        active_market_events=[MarketEventOut.model_validate(e) for e in active_market_events],
     )
 
 @router.post("/dispatch", response_model=MissionOut, status_code=status.HTTP_201_CREATED)

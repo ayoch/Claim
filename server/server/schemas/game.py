@@ -168,6 +168,19 @@ class ContractOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Market Events ─────────────────────────────────────────────────────────────
+
+class MarketEventOut(BaseModel):
+    id: int
+    ore_type: str
+    multiplier: float
+    headline: str
+    start_tick: float
+    duration_ticks: float
+
+    model_config = {"from_attributes": True}
+
+
 # ── Full game state ───────────────────────────────────────────────────────────
 
 class GameState(BaseModel):
@@ -190,6 +203,7 @@ class GameState(BaseModel):
     rigs: list[RigOut]
     stockpiles: list[StockpileOut]
     contracts: list[ContractOut] = []
+    active_market_events: list[MarketEventOut] = []
 
 
 # ── Action requests ───────────────────────────────────────────────────────────

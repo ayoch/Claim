@@ -7,6 +7,7 @@ from server.database import AsyncSessionLocal
 from server.simulation.event_bus import event_bus
 from server.simulation.tick import process_tick, load_world_state
 from server.simulation.npc_corps import seed_npc_corps
+from server.simulation.market_events import load_active_events
 from server.routers import admin_speed
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ async def simulation_loop(world_id: int = 1) -> None:
     async with AsyncSessionLocal() as db:
         await load_world_state(db, world_id)
         await seed_npc_corps(db)
+        await load_active_events(db)
 
     while True:
         loop = asyncio.get_event_loop()

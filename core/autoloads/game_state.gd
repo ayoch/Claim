@@ -3686,6 +3686,30 @@ func apply_server_state(server_data: Dictionary) -> void:
 			if c.server_id > 0 and not seen_contract_ids.has(c.server_id):
 				active_contracts.remove_at(i)
 
+	# Sync active market events from server
+	var server_events: Array = server_data.get("active_market_events", [])
+	var prev_event_ids: Array[int] = []
+	for ev in active_market_events:
+		if ev.has_meta("server_id"):
+			prev_event_ids.append(ev.get_meta("server_id"))
+	active_market_events.clear()
+	for ed in server_events:
+		var ev := MarketEvent.new()
+		var srv_id: int = int(ed.get("id", 0))
+		ev.set_meta("server_id", srv_id)
+		ev.event_name = str(ed.get("headline", "Market Event"))
+		ev.price_multiplier = float(ed.get("multiplier", 1.0))
+		var start_t := float(ed.get("start_tick", 0.0))
+		var dur_t := float(ed.get("duration_ticks", 0.0))
+		ev.duration_ticks = dur_t
+		ev.remaining_ticks = max(0.0, start_t + dur_t - float(total_ticks))
+		ev.is_active = true
+		ev.event_type = MarketEvent.EventType.SHORTAGE if ev.price_multiplier > 1.0 else MarketEvent.EventType.SURPLUS
+		active_market_events.append(ev)
+		# Emit signal for new events (so activity log picks them up)
+		if not prev_event_ids.has(srv_id):
+			EventBus.market_event_started.emit(ev)
+
 	# Check if ships, workers, or rigs changed
 	var new_rig_count := mining_unit_inventory.size() + deployed_mining_units.size()
 	if ships.size() != old_ship_count or workers.size() != old_worker_count or new_rig_count != old_rig_count:

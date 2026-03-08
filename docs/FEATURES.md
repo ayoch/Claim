@@ -121,7 +121,7 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Arbitrage Opportunities** - Price differences between locations
 - ✅ **Trade Missions** - Sell ore at colonies for revenue
 - ✅ **Arbitrage Trading UI** - Price comparison across colonies with route recommendations
-- ❌ **Market Events** - Crashes, booms, shortages that cascade (e.g. Trojan belt depletion → Nickel price spike at all hubs)
+- ✅ **Market Events** - Server-driven price shocks (18 templates: shortages, surpluses, demand spikes); up to 3 concurrent events; 5-21 day duration; shown in HQ Market News panel and activity log; prices applied globally via get_market_prices()
 - ✅ **Contracts with Deadlines** - Deliver ore to colony by deadline; 20% early bonus if >50% time remains; auto-fulfilled on trade mission return; accept button in HQ
 
 ### Economy Management

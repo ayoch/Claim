@@ -78,6 +78,7 @@ func _ready() -> void:
 	)
 	EventBus.tick.connect(_on_tick)
 	EventBus.server_notifications_received.connect(_on_server_notifications_received)
+	EventBus.server_state_synced.connect(func() -> void: _dirty_contracts = true)
 
 	# Create session info label
 	_create_session_info_label()
@@ -86,6 +87,13 @@ func _ready() -> void:
 	EventBus.market_event.connect(func(_ore: ResourceTypes.OreType, _old: float, _new: float, msg: String) -> void:
 		var color := Color(0.3, 0.9, 0.4) if _new > _old else Color(0.9, 0.4, 0.3)
 		_queue_activity(msg, color)
+	)
+	EventBus.market_event_started.connect(func(ev: MarketEvent) -> void:
+		var pct := (ev.price_multiplier - 1.0) * 100.0
+		var pct_str := "+%.0f%%" % pct if pct > 0.0 else "%.0f%%" % pct
+		var color := Color(0.9, 0.4, 0.3) if pct > 0.0 else Color(0.3, 0.9, 0.4)
+		_queue_activity("MARKET EVENT [%s]: %s" % [pct_str, ev.event_name], color)
+		_dirty_contracts = true
 	)
 
 	# Equipment events
@@ -1681,6 +1689,37 @@ func _queue_contract_log(message: String, color: Color = Color.WHITE) -> void:
 
 func _refresh_contracts() -> void:
 	_free_children(contracts_list)
+
+	# Market News — active price events
+	var events := GameState.active_market_events
+	if not events.is_empty():
+		var news_header := _lbl()
+		news_header.text = "▶ MARKET NEWS"
+		news_header.add_theme_font_size_override("font_size", 14)
+		news_header.add_theme_color_override("font_color", Color(1.0, 0.85, 0.2))
+		contracts_list.add_child(news_header)
+
+		for ev in events:
+			var pct := (ev.price_multiplier - 1.0) * 100.0
+			var pct_str: String
+			var color: Color
+			if pct > 0.0:
+				pct_str = "+%.0f%%" % pct
+				color = Color(0.9, 0.35, 0.35)
+			else:
+				pct_str = "%.0f%%" % pct
+				color = Color(0.3, 0.85, 0.45)
+			var days_left := ev.remaining_ticks / 86400.0
+			var time_str := "%.1fd" % days_left if days_left >= 1.0 else "%.0fh" % (ev.remaining_ticks / 3600.0)
+			var row := _lbl()
+			row.text = "[%s] %s (%s remaining)" % [pct_str, ev.event_name, time_str]
+			row.add_theme_color_override("font_color", color)
+			row.add_theme_font_size_override("font_size", 13)
+			contracts_list.add_child(row)
+
+		var sep := HSeparator.new()
+		sep.add_theme_constant_override("separation", 6)
+		contracts_list.add_child(sep)
 
 	# Active contracts first
 	var has_any := false
