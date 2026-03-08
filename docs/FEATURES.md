@@ -121,8 +121,8 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Arbitrage Opportunities** - Price differences between locations
 - ✅ **Trade Missions** - Sell ore at colonies for revenue
 - 🚧 **Arbitrage Trading UI** - Backend complete, UI visualization needed
-- ❌ **Market Events** - Crashes, booms, shortages (system exists, limited events)
-- ❌ **Contracts System** - Delivery contracts with deadlines/bonuses (processing exists, limited variety)
+- ❌ **Market Events** - Crashes, booms, shortages that cascade (e.g. Trojan belt depletion → Nickel price spike at all hubs)
+- ✅ **Contracts with Deadlines** - Deliver ore to colony by deadline; 20% early bonus if >50% time remains; auto-fulfilled on trade mission return; accept button in HQ
 
 ### Economy Management
 - ✅ **Money System** - Track credits, expenses, income
@@ -182,7 +182,9 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Rival Partnerships** - NPCs form partnerships for contested targets
 - ✅ **NPC Violations** - Rivals face same criminal consequences as player
 - ✅ **Combat Encounters** - Rival ships can attack player ships
+- ❌ **Piracy** - Set ships to intercept and raid trade routes rather than mine
 - ❌ **Diplomacy** - Negotiations, alliances, trade agreements
+- ❌ **Alliances** - Formal player groups; optional sub-features: shared ship location visibility, no-attack pacts
 - ❌ **Corporate Espionage** - Intel gathering, sabotage
 
 ---
@@ -198,9 +200,9 @@ Complete list of implemented and planned features for the asteroid mining tycoon
   - Repair Policy (Always/As Needed/Never)
   - Mining Threshold (50%/75%/95%)
 - ✅ **Per-Ship Policy Overrides** - Individual ship settings override company defaults
-- ❌ **Equipment Maintenance Policy** - When to repair broken equipment
+- ❌ **Equipment Maintenance Policy** - When to repair broken equipment; thrust-linked wear (aggressive thrust = faster degradation)
 - ❌ **Trading Policy** - When/how to sell ore
-- ❌ **Crew Morale Policy** - Rest vs productivity balance
+- ❌ **Crew Morale Policy** - Rest vs productivity balance; fatigue/morale affecting skill rolls
 - ❌ **Automation Policy** - Ship autonomy level
 
 ### Automation & AI
@@ -233,6 +235,11 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Settings Screen** - Graphics, audio, and gameplay settings
 - ✅ **Registration Screen** - Separate account creation screen (distinct from login)
 - ✅ **Bug Report Dialog** - In-game issue reporting
+
+### Notifications & Automation
+- ✅ **Notification Log Panel** - Server persists up to 100 events per player (completions, contracts, breakdowns); fetched and shown in HQ Activity log on login
+- ✅ **Mission Queue** - Pre-plan next mission while current is in flight; ship executes on arrival
+- ❌ **Autopilot Profiles** - Save/recall fleet strategy (target asteroids, preferred colonies, transit mode)
 
 ### Visualization
 - ✅ **Orbital Positions** - Real-time 2D positions of all bodies
@@ -293,7 +300,8 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - 🚧 **Local Leaderboards** - Backend complete, UI integration needed
 - ❌ **Player-to-Player Trading** - Direct ore/credit/ship exchanges
 - ❌ **Shared Asteroids** - Multiple players mining same locations
-- ❌ **PvP Combat** - Player vs player ship battles
+- ✅ **PvP Combat** - Proximity-based combat via /game/attack; SSE notification to defender; NPC corps use same system
+- ❌ **Colony Ownership** - Claim and develop asteroid colonies, collect tariffs from ships using them
 - ❌ **Anti-Cheat Analysis** - Server-side behavioral anomaly detection (impossible transit times, out-of-range mining rates, unexplained credit deltas)
 - ❌ **Chat System** - In-game communication
 - ❌ **Alliances** - Formal player groups with shared resources
@@ -325,6 +333,7 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Autotest System** - Validates ship state, mission consistency
 - ✅ **Console Logging** - Detailed event logging
 - ✅ **Bug Report Dialog** - In-game issue reporting with free-text input
+- ❌ **Realistic Launch Windows** - Hohmann transfers only valid at certain orbital phases; waiting for window is part of the decision
 - ❌ **Replay System** - Record/playback game sessions
 
 ---
@@ -363,5 +372,5 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 
 ---
 
-*Last Updated: 2026-03-06 (worker location system, MUD tab, settings/bug-report screens, server improvements, manager extraction refactoring)*
+*Last Updated: 2026-03-07 (planet textures, buy-ship Earth fix, BigInteger money, NPC corps, PvP combat, world reset, multi-world prep, new planned features)*
 *This document should be updated as features are completed or new features are designed.*

@@ -77,6 +77,7 @@ func _ready() -> void:
 		_queue_activity(msg, color)
 	)
 	EventBus.tick.connect(_on_tick)
+	EventBus.server_notifications_received.connect(_on_server_notifications_received)
 
 	# Create session info label
 	_create_session_info_label()
@@ -1760,6 +1761,29 @@ func _refresh_contracts() -> void:
 		label.text = "No contracts"
 		label.add_theme_color_override("font_color", Color(0.4, 0.4, 0.4))
 		contracts_list.add_child(label)
+
+func _on_server_notifications_received(notifications: Array) -> void:
+	if notifications.is_empty():
+		return
+	_queue_activity("— %d events while offline —" % notifications.size(), Color(0.6, 0.6, 0.6))
+	for n in notifications:
+		var msg: String = str(n.get("message", ""))
+		var event_type: String = str(n.get("event_type", ""))
+		var color := Color.WHITE
+		match event_type:
+			"mission_completed", "trade_mission_completed":
+				color = Color(0.3, 0.9, 0.4)
+			"contract_completed", "contract_partial_completed":
+				color = Color(0.3, 0.8, 1.0)
+			"contract_failed":
+				color = Color(0.9, 0.3, 0.3)
+			"rig_broken":
+				color = Color(1.0, 0.6, 0.2)
+			"contract_offered":
+				color = Color(0.5, 0.7, 0.9)
+		_queue_activity(msg, color)
+	_dirty_activity = true
+
 
 func _accept_contract_server(c: Contract) -> void:
 	if c.server_id <= 0:

@@ -174,6 +174,19 @@ func get_game_state() -> Dictionary:
 		return {}
 
 
+## Fetch unread notifications from server (marks them as read server-side)
+func get_notifications() -> Array:
+	var http := _get_http_request()
+	var headers := _auth_headers()
+	var result := await _http_request_async(http, base_url + "/game/notifications", headers, HTTPClient.METHOD_GET, "")
+	_return_http_request(http)
+	if result["success"]:
+		var data = result["data"]
+		if data is Array:
+			return data
+	return []
+
+
 ## Accept a contract by server ID
 func accept_contract(contract_server_id: int) -> Dictionary:
 	var http := _get_http_request()

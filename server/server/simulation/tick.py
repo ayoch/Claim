@@ -19,6 +19,7 @@ from server.models.trade_mission import (
 )
 from server.models.worker import Worker
 from server.models.contract import Contract, STATUS_ACCEPTED as CONTRACT_ACCEPTED, STATUS_COMPLETED as CONTRACT_COMPLETED, STATUS_FAILED as CONTRACT_FAILED
+from server.models.notification import PlayerNotification
 from server.models.world_state import WorldState
 from server.routers import admin_speed as _admin_speed
 from server.simulation.contracts import process_contracts as _process_contracts
@@ -209,6 +210,9 @@ async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]
         events += await _process_contracts(db, dt)
         events += await process_worker_spawning(db, dt)
         events += await process_npc_tick(db, dt)
+
+        # Persist player-relevant events as notifications
+        await _save_player_notifications(db, events, _total_ticks)
 
         # Periodically save world state
         if _save_counter >= _SAVE_INTERVAL:
@@ -453,6 +457,7 @@ def _advance_transit_back(mission: Mission, ship: Ship, dt: float, player=None) 
             logger.info('Mission %d: completed, cargo held (auto_sell_on_return=False)', mission.id)
         ev = {'type': 'mission_completed', 'mission_id': mission.id,
               'player_id': mission.player_id, 'ship_id': mission.ship_id,
+              'ship_name': ship.ship_name,
               'auto_sold': auto_sell}
         if total_value > 0:
             ev['cargo_value'] = total_value
@@ -587,6 +592,8 @@ async def _process_trade_missions(db: AsyncSession, dt: float) -> list[dict]:
                     'mission_id': tm.id,
                     'player_id': tm.player_id,
                     'ship_id': tm.ship_id,
+                    'ship_name': ship.ship_name,
+                    'colony_id': tm.colony_id,
                     'revenue': tm.revenue
                 })
 
@@ -678,6 +685,95 @@ async def _fulfill_contracts(
             })
 
     return events
+
+
+_MAX_NOTIFICATIONS_PER_PLAYER = 100
+
+
+async def _save_player_notifications(db: AsyncSession, events: list[dict], tick: int) -> None:
+    """
+    Filter player-relevant events and persist them as PlayerNotification rows.
+    These are the events players see when they log in after being offline.
+    """
+    # Map event type → human-readable formatter
+    def _msg(ev: dict) -> str | None:
+        t = ev.get("type", "")
+        if t == "mission_completed":
+            ship = ev.get("ship_name", "Ship")
+            val = ev.get("cargo_value", 0)
+            if val:
+                return f"{ship} returned from mission — auto-sold cargo for ${val:,}"
+            return f"{ship} returned from mission"
+        if t == "trade_mission_completed":
+            ship = ev.get("ship_name", "Ship")
+            rev = ev.get("revenue", 0)
+            return f"{ship} completed trade run — revenue ${rev:,}"
+        if t == "contract_completed":
+            ore = ev.get("ore_type", "ore")
+            qty = ev.get("quantity_delivered", 0.0)
+            payout = ev.get("total_payout", ev.get("reward", 0))
+            bonus = ev.get("bonus", 0)
+            suffix = f" (+${bonus:,} early bonus)" if bonus else ""
+            return f"Contract fulfilled: {qty:.0f}t {ore} delivered — ${payout:,}{suffix}"
+        if t == "contract_partial_completed":
+            ore = ev.get("ore_type", "ore")
+            qty = ev.get("quantity_delivered", 0.0)
+            total = ev.get("quantity_required", 0.0)
+            reward = ev.get("reward", 0)
+            return f"Contract partial: {qty:.0f}/{total:.0f}t {ore} delivered — ${reward:,}"
+        if t == "contract_failed":
+            ore = ev.get("ore_type", "ore")
+            return f"Contract FAILED: {ore} not delivered in time"
+        if t == "contract_offered":
+            ore = ev.get("ore_type", "ore")
+            qty = ev.get("quantity", 0.0)
+            reward = ev.get("reward", 0)
+            issuer = ev.get("issuer_name", "Unknown Corp")
+            days = ev.get("deadline_days", 0.0)
+            return f"New contract: {issuer} wants {qty:.0f}t {ore} — ${reward:,} ({days:.0f} days)"
+        if t == "rig_broken":
+            name = ev.get("rig_name", "Rig")
+            asteroid = ev.get("asteroid_name", "asteroid")
+            return f"Rig '{name}' broke down at {asteroid}"
+        return None
+
+    # Group insertions by player_id to enforce cap
+    by_player: dict[int, list[PlayerNotification]] = {}
+    for ev in events:
+        pid = ev.get("player_id")
+        if not pid:
+            continue
+        msg = _msg(ev)
+        if not msg:
+            continue
+        n = PlayerNotification(
+            player_id=pid,
+            tick_number=float(tick),
+            event_type=ev["type"],
+            message=msg,
+            is_read=False,
+        )
+        by_player.setdefault(pid, []).append(n)
+
+    if not by_player:
+        return
+
+    from sqlalchemy import delete, func as sa_func
+
+    for pid, notifications in by_player.items():
+        for n in notifications:
+            db.add(n)
+
+        # Trim to cap: delete oldest beyond _MAX_NOTIFICATIONS_PER_PLAYER
+        subq = (
+            select(PlayerNotification.id)
+            .where(PlayerNotification.player_id == pid)
+            .order_by(PlayerNotification.id.desc())
+            .offset(_MAX_NOTIFICATIONS_PER_PLAYER)
+        )
+        await db.execute(
+            delete(PlayerNotification).where(PlayerNotification.id.in_(subq))
+        )
 
 
 async def _process_market(dt: float) -> list[dict]:

@@ -609,6 +609,12 @@ func _poll_server_state() -> void:
 	if not _initial_state_loaded:
 		_initial_state_loaded = true
 		_hide_loading_overlay()
+		# Fetch offline notifications (events that happened while logged out)
+		var server_backend = BackendManager.get_server_backend()
+		if server_backend:
+			var notifs: Array = await server_backend.get_notifications()
+			if not notifs.is_empty():
+				EventBus.server_notifications_received.emit(notifs)
 
 	# Apply world state (all players' ships for multiplayer visibility)
 	if not world_data.is_empty():

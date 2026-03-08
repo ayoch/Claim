@@ -15,6 +15,7 @@ from server.models.player import Player
 from server.models.rig import Rig, UNIT_TYPE_BASIC, UNIT_TYPE_ADVANCED, UNIT_TYPE_REFINERY
 from server.models.ship import Ship, SHIP_CLASS_STATS
 from server.models.contract import Contract, STATUS_AVAILABLE, STATUS_ACCEPTED
+from server.models.notification import PlayerNotification
 from server.models.stockpile import Stockpile
 from server.models.trade_mission import TradeMission
 from server.models.worker import Worker
@@ -948,3 +949,36 @@ async def get_world_state(
         ships_out.append(ShipOut(**ship_dict))
 
     return {"ships": ships_out}
+
+
+@router.get("/notifications")
+async def get_notifications(
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return unread notifications for this player and mark them as read."""
+    result = await db.execute(
+        select(PlayerNotification)
+        .where(
+            PlayerNotification.player_id == player.id,
+            PlayerNotification.is_read == False,  # noqa: E712
+        )
+        .order_by(PlayerNotification.id.asc())
+    )
+    notifications = list(result.scalars().all())
+
+    for n in notifications:
+        n.is_read = True
+        db.add(n)
+
+    await db.commit()
+
+    return [
+        {
+            "id": n.id,
+            "event_type": n.event_type,
+            "message": n.message,
+            "tick_number": n.tick_number,
+        }
+        for n in notifications
+    ]
