@@ -610,7 +610,6 @@ func _poll_server_state() -> void:
 		_initial_state_loaded = true
 		_hide_loading_overlay()
 		# Fetch offline notifications (events that happened while logged out)
-		var server_backend = BackendManager.get_server_backend()
 		if server_backend:
 			var notifs: Array = await server_backend.get_notifications()
 			if not notifs.is_empty():
