@@ -3,22 +3,31 @@ Admin UI router - Web interface for server administration.
 
 Requires admin key for all operations.
 """
+import datetime as _dt
+import json
 from pathlib import Path
+
 from fastapi import APIRouter, Request, Form, Depends, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timedelta
 
 from server.database import get_db
-from server.models.player import Player
-from server.models.ship import Ship
-from server.models.mission import Mission
 from server.models.asteroid import Asteroid
 from server.models.bug_report import BugReport
+from server.models.equipment import Equipment
+from server.models.mission import Mission
+from server.models.player import Player
+from server.models.rig import Rig
+from server.models.ship import Ship, SHIP_CLASS_STATS, COURIER
+from server.models.stockpile import Stockpile
+from server.models.trade_mission import TradeMission
+from server.models.worker import Worker
+from server.models.world_state import WorldState
 from server.config import settings
-import json
+
+_GAME_EPOCH = _dt.datetime(2112, 1, 1, 0, 0, 0, tzinfo=_dt.timezone.utc)
 
 
 router = APIRouter(prefix="/admin-ui", tags=["admin-ui"])
@@ -558,3 +567,110 @@ async def delete_bug_report(
     await db.commit()
 
     return RedirectResponse(url="/admin-ui/bug-reports", status_code=303)
+
+
+@router.post("/reset-world")
+async def reset_world(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Full world reset:
+    - Sets game time to current real date mapped to year 2112
+    - Wipes all ships, missions, trade missions, rigs, stockpiles, equipment
+    - Resets asteroid reserves to empty (preserves ore_yields for regeneration)
+    - Resets all player money to starting amount, gives each one fresh Courier
+    - Rebuilds NPC corp ships
+    - Releases all workers from ship assignments
+    """
+    admin_key = check_admin_session(request)
+    if not admin_key:
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+    if not await validate_admin_key(admin_key, db):
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+
+    # ── Compute new game time ──────────────────────────────────────────────────
+    now_real = _dt.datetime.now(_dt.timezone.utc)
+    now_2112 = now_real.replace(year=2112)
+    new_ticks = int((now_2112 - _GAME_EPOCH).total_seconds())
+    new_game_seconds = float(new_ticks)
+
+    # ── Wipe game objects ──────────────────────────────────────────────────────
+    await db.execute(delete(Mission))
+    await db.execute(delete(TradeMission))
+    await db.execute(delete(Stockpile))
+    await db.execute(delete(Rig))
+    await db.execute(delete(Equipment))
+    await db.execute(delete(Ship))
+
+    # ── Reset asteroid reserves ────────────────────────────────────────────────
+    ast_result = await db.execute(select(Asteroid))
+    for asteroid in ast_result.scalars().all():
+        asteroid.reserves = {}
+        db.add(asteroid)
+
+    # ── Release workers from ship assignments ──────────────────────────────────
+    w_result = await db.execute(select(Worker))
+    for worker in w_result.scalars().all():
+        worker.assigned_ship_id = None
+        db.add(worker)
+
+    # ── Reset players + give starting ship ────────────────────────────────────
+    STARTING_MONEY = 14_000_000
+    p_result = await db.execute(select(Player))
+    players = p_result.scalars().all()
+    human_count = 0
+    for player in players:
+        player.money = STARTING_MONEY
+        db.add(player)
+        if player.is_npc:
+            continue
+        human_count += 1
+        stats = SHIP_CLASS_STATS[COURIER]
+        ship = Ship(
+            player_id=player.id,
+            ship_name="Starter",
+            ship_class=COURIER,
+            max_thrust_g=stats["max_thrust_g"],
+            thrust_setting=1.0,
+            cargo_capacity=stats["cargo_capacity"],
+            cargo_volume=stats["cargo_volume"],
+            fuel_capacity=stats["fuel_capacity"],
+            fuel=stats["fuel_capacity"],
+            base_mass=stats["base_mass"],
+            min_crew=stats["min_crew"],
+            max_equipment_slots=stats["max_equipment_slots"],
+            is_stationed=True,
+            station_colony_id=None,
+            current_cargo={},
+            supplies={},
+            position_x=1.0,
+            position_y=0.0,
+        )
+        db.add(ship)
+
+    # ── Rebuild NPC corp ships ─────────────────────────────────────────────────
+    from server.simulation.npc_corps import reseed_npc_ships
+    await db.flush()  # ensure ship deletes committed before re-inserting
+    await reseed_npc_ships(db)
+
+    # ── Update WorldState ──────────────────────────────────────────────────────
+    ws_result = await db.execute(select(WorldState).where(WorldState.id == 1))
+    ws = ws_result.scalar_one_or_none()
+    if ws:
+        ws.total_ticks = new_ticks
+        ws.game_seconds = new_game_seconds
+        db.add(ws)
+
+    await db.commit()
+
+    # ── Sync in-memory tick counters on the running simulation ────────────────
+    from server.simulation.tick import reset_world_time
+    reset_world_time(new_ticks, new_game_seconds)
+
+    return JSONResponse({
+        "ok": True,
+        "new_ticks": new_ticks,
+        "game_date": now_2112.strftime("%Y-%m-%d"),
+        "human_players_reset": human_count,
+    })

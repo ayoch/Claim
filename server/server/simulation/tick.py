@@ -146,6 +146,13 @@ def get_game_seconds() -> float:
     return _game_seconds
 
 
+def reset_world_time(new_ticks: int, new_game_seconds: float) -> None:
+    """Directly set in-memory tick counters. Called after a world reset."""
+    global _total_ticks, _game_seconds
+    _total_ticks = new_ticks
+    _game_seconds = new_game_seconds
+
+
 async def load_world_state(db: AsyncSession, world_id: int = 1) -> None:
     """Load world state from database on startup."""
     global _total_ticks, _game_seconds

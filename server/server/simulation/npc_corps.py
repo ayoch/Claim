@@ -117,6 +117,45 @@ async def seed_npc_corps(db: AsyncSession) -> None:
         )
 
 
+# ── Post-reset reseeding ───────────────────────────────────────────────────────
+
+async def reseed_npc_ships(db: AsyncSession) -> None:
+    """Recreate starting ships for existing NPC corp accounts. Called after world reset."""
+    for corp_def in NPC_CORPS:
+        result = await db.execute(
+            select(Player).where(Player.email == corp_def["email"])
+        )
+        npc = result.scalar_one_or_none()
+        if not npc:
+            continue  # Shouldn't happen, but skip if missing
+
+        stats = SHIP_CLASS_STATS[corp_def["ship_class"]]
+        for name in corp_def["ship_names"]:
+            ship = Ship(
+                player_id=npc.id,
+                ship_name=name,
+                ship_class=corp_def["ship_class"],
+                max_thrust_g=stats["max_thrust_g"],
+                thrust_setting=1.0,
+                cargo_capacity=stats["cargo_capacity"],
+                cargo_volume=stats["cargo_volume"],
+                fuel_capacity=stats["fuel_capacity"],
+                fuel=stats["fuel_capacity"],
+                base_mass=stats["base_mass"],
+                min_crew=stats["min_crew"],
+                max_equipment_slots=stats["max_equipment_slots"],
+                is_stationed=True,
+                station_colony_id=None,
+                current_cargo={},
+                supplies={},
+                position_x=1.0,
+                position_y=0.0,
+            )
+            db.add(ship)
+
+        logger.info("Reseeded ships for NPC corp '%s'", corp_def["username"])
+
+
 # ── AI tick ────────────────────────────────────────────────────────────────────
 
 _NPC_DECISION_INTERVAL = 3600.0  # Game-seconds between NPC decisions

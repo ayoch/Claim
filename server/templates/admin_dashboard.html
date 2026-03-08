@@ -33,6 +33,81 @@ async function updateDashboard() {
 // Update every 2 seconds
 setInterval(updateDashboard, 2000);
 
+// ── World Reset ──────────────────────────────────────────────────────────────
+let _resetTimer = null;
+let _resetSecondsLeft = 0;
+
+function armReset() {
+    const armBtn = document.getElementById('armResetBtn');
+    const resetBtn = document.getElementById('resetWorldBtn');
+    const countdown = document.getElementById('resetCountdown');
+
+    armBtn.disabled = true;
+    armBtn.classList.replace('btn-warning', 'btn-secondary');
+    armBtn.textContent = '⚠ Armed';
+
+    resetBtn.classList.remove('d-none');
+    resetBtn.disabled = false;
+    countdown.classList.remove('d-none');
+
+    _resetSecondsLeft = 30;
+    countdown.textContent = `(disarms in ${_resetSecondsLeft}s)`;
+
+    _resetTimer = setInterval(() => {
+        _resetSecondsLeft--;
+        if (_resetSecondsLeft <= 0) {
+            disarmReset();
+        } else {
+            countdown.textContent = `(disarms in ${_resetSecondsLeft}s)`;
+        }
+    }, 1000);
+}
+
+function disarmReset() {
+    clearInterval(_resetTimer);
+    _resetTimer = null;
+    const armBtn = document.getElementById('armResetBtn');
+    const resetBtn = document.getElementById('resetWorldBtn');
+    const countdown = document.getElementById('resetCountdown');
+    armBtn.disabled = false;
+    armBtn.classList.replace('btn-secondary', 'btn-warning');
+    armBtn.textContent = '⚠ Arm World Reset';
+    resetBtn.classList.add('d-none');
+    resetBtn.disabled = true;
+    countdown.classList.add('d-none');
+    countdown.textContent = '';
+}
+
+async function executeReset() {
+    clearInterval(_resetTimer);
+    _resetTimer = null;
+    const resetBtn = document.getElementById('resetWorldBtn');
+    const countdown = document.getElementById('resetCountdown');
+    const status = document.getElementById('resetStatus');
+    resetBtn.disabled = true;
+    resetBtn.textContent = 'Resetting...';
+    countdown.classList.add('d-none');
+    status.textContent = 'Working...';
+    try {
+        const response = await fetch('/admin-ui/reset-world', { method: 'POST' });
+        const data = await response.json();
+        if (data.ok) {
+            status.innerHTML = `<span style="color:#4ade80;">✓ Reset complete. Game date: ${data.game_date}. ${data.human_players_reset} players reset.</span>`;
+            resetBtn.classList.add('d-none');
+            document.getElementById('armResetBtn').disabled = false;
+            document.getElementById('armResetBtn').classList.replace('btn-secondary', 'btn-warning');
+            document.getElementById('armResetBtn').textContent = '⚠ Arm World Reset';
+            setTimeout(updateDashboard, 1000);
+        } else {
+            status.innerHTML = `<span style="color:#ef4444;">✗ ${data.error || 'Unknown error'}</span>`;
+            disarmReset();
+        }
+    } catch (err) {
+        status.innerHTML = `<span style="color:#ef4444;">✗ ${err.message}</span>`;
+        disarmReset();
+    }
+}
+
 // Generate asteroid reserves
 async function generateReserves() {
     const btn = document.getElementById('genReservesBtn');
@@ -172,6 +247,29 @@ async function generateReserves() {
         </div>
     </div>
 
+    <div class="col-md-6">
+        <div class="card border-danger">
+            <div class="card-body">
+                <h5 class="card-title text-danger">Danger Zone</h5>
+                <p class="text-muted mb-3" style="font-size:0.85rem;">
+                    World reset wipes all ships, missions, rigs, stockpiles, and equipment.
+                    Resets game time to today's date in 2112. Each player gets one starter ship and $14M.
+                    Asteroid reserves are cleared. NPC corps are rebuilt.
+                </p>
+                <button id="armResetBtn" onclick="armReset()" class="btn btn-warning">
+                    ⚠ Arm World Reset
+                </button>
+                <button id="resetWorldBtn" onclick="executeReset()" class="btn btn-danger d-none" disabled>
+                    ☠ RESET WORLD
+                </button>
+                <span id="resetCountdown" class="ms-2 text-danger fw-bold d-none"></span>
+                <div id="resetStatus" class="mt-2" style="font-size:0.9rem;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
     <div class="col-md-6">
         <div class="card">
             <div class="card-body">
