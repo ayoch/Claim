@@ -41,10 +41,14 @@ function armReset() {
     const armBtn = document.getElementById('armResetBtn');
     const resetBtn = document.getElementById('resetWorldBtn');
     const countdown = document.getElementById('resetCountdown');
+    const worldId = parseInt(document.getElementById('resetWorldId').value);
+
+    // Broadcast warning to all connected clients
+    fetch(`/admin-ui/broadcast-warning?world_id=${worldId}&seconds=30`, { method: 'POST' });
 
     armBtn.disabled = true;
     armBtn.classList.replace('btn-warning', 'btn-secondary');
-    armBtn.textContent = '⚠ Armed';
+    armBtn.textContent = '⚠ Armed — warning sent to players';
 
     resetBtn.classList.remove('d-none');
     resetBtn.disabled = false;
@@ -88,11 +92,28 @@ async function executeReset() {
     resetBtn.textContent = 'Resetting...';
     countdown.classList.add('d-none');
     status.textContent = 'Working...';
+
+    const payload = {
+        world_id:            parseInt(document.getElementById('resetWorldId').value),
+        reset_money:         document.getElementById('optResetMoney').checked,
+        starting_money:      parseInt(document.getElementById('optStartingMoney').value) || 14000000,
+        starting_ship_class: parseInt(document.getElementById('optStartingShip').value),
+        reset_reserves:      document.getElementById('optResetReserves').checked,
+        auto_regen_reserves: document.getElementById('optAutoRegen').checked,
+        reset_speed:         document.getElementById('optResetSpeed').checked,
+        wipe_bug_reports:    document.getElementById('optWipeBugs').checked,
+    };
+
     try {
-        const response = await fetch('/admin-ui/reset-world', { method: 'POST' });
+        const response = await fetch('/admin-ui/reset-world', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload),
+        });
         const data = await response.json();
         if (data.ok) {
-            status.innerHTML = `<span style="color:#4ade80;">✓ Reset complete. Game date: ${data.game_date}. ${data.human_players_reset} players reset.</span>`;
+            let msg = `✓ ${data.world_name} reset. Date: ${data.game_date}. ${data.human_players_reset} players, ${data.reserves_regenerated} asteroids.`;
+            status.innerHTML = `<span style="color:#4ade80;">${msg}</span>`;
             resetBtn.classList.add('d-none');
             document.getElementById('armResetBtn').disabled = false;
             document.getElementById('armResetBtn').classList.replace('btn-secondary', 'btn-warning');
@@ -250,12 +271,57 @@ async function generateReserves() {
     <div class="col-md-6">
         <div class="card border-danger">
             <div class="card-body">
-                <h5 class="card-title text-danger">Danger Zone</h5>
-                <p class="text-muted mb-3" style="font-size:0.85rem;">
-                    World reset wipes all ships, missions, rigs, stockpiles, and equipment.
-                    Resets game time to today's date in 2112. Each player gets one starter ship and $14M.
-                    Asteroid reserves are cleared. NPC corps are rebuilt.
+                <h5 class="card-title text-danger">Danger Zone — World Reset</h5>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold">World</label>
+                    <select id="resetWorldId" class="form-select form-select-sm" style="max-width:220px;">
+                        {% for world in worlds %}
+                        <option value="{{ world.id }}">{{ world.name }} (World {{ world.id }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-3" style="font-size:0.9rem;">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="optResetMoney" checked>
+                        <label class="form-check-label" for="optResetMoney">Reset player money to
+                            <input type="number" id="optStartingMoney" value="14000000" class="form-control form-control-sm d-inline-block ms-1" style="width:130px;">
+                        </label>
+                    </div>
+                    <div class="form-check mt-1">
+                        <label class="form-check-label me-2">Starting ship class</label>
+                        <select id="optStartingShip" class="form-select form-select-sm d-inline-block" style="width:140px;">
+                            <option value="0">Courier</option>
+                            <option value="1">Hauler</option>
+                            <option value="2">Prospector</option>
+                            <option value="3">Explorer</option>
+                        </select>
+                    </div>
+                    <div class="form-check mt-1">
+                        <input class="form-check-input" type="checkbox" id="optResetReserves" checked>
+                        <label class="form-check-label" for="optResetReserves">Clear asteroid reserves</label>
+                    </div>
+                    <div class="form-check ms-3 mt-1">
+                        <input class="form-check-input" type="checkbox" id="optAutoRegen" checked>
+                        <label class="form-check-label" for="optAutoRegen">Auto-regenerate reserves after reset</label>
+                    </div>
+                    <div class="form-check mt-1">
+                        <input class="form-check-input" type="checkbox" id="optResetSpeed" checked>
+                        <label class="form-check-label" for="optResetSpeed">Reset simulation speed to 1×</label>
+                    </div>
+                    <div class="form-check mt-1">
+                        <input class="form-check-input" type="checkbox" id="optWipeBugs">
+                        <label class="form-check-label" for="optWipeBugs">Wipe bug reports</label>
+                    </div>
+                </div>
+
+                <p class="text-muted mb-3" style="font-size:0.8rem;">
+                    Arming broadcasts a 30-second warning to all connected players via SSE.
+                    Ships, missions, rigs, stockpiles, and equipment are always wiped.
+                    NPC corps are always rebuilt.
                 </p>
+
                 <button id="armResetBtn" onclick="armReset()" class="btn btn-warning">
                     ⚠ Arm World Reset
                 </button>

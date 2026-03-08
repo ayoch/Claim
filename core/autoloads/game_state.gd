@@ -3746,3 +3746,19 @@ func apply_pvp_combat_event(event: Dictionary) -> void:
 			attacker_user, attacker_ship, target_ship, dmg, engine_pct
 		]
 	add_warning(msg, "critical", "combat", Vector2.ZERO, total_ticks)
+
+
+## Handle world_reset_warning SSE event — server reset is imminent
+func apply_world_reset_warning(event: Dictionary) -> void:
+	var world_name: String = event.get("world_name", "Server")
+	var seconds: int = event.get("seconds", 30)
+	var msg: String = "⚠ SERVER RESET IN %ds — dock your ships! (%s)" % [seconds, world_name]
+	add_warning(msg, "critical", "system", Vector2.ZERO, total_ticks)
+	EventBus.server_reset_warning.emit(world_name, seconds)
+
+
+## Handle world_reset_complete SSE event — server has been reset, force re-sync
+func apply_world_reset_complete(event: Dictionary) -> void:
+	var world_name: String = event.get("world_name", "Server")
+	add_warning("Server reset complete. Reconnecting...", "info", "system", Vector2.ZERO, total_ticks)
+	EventBus.server_reset_complete.emit(world_name)

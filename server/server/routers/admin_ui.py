@@ -13,6 +13,9 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from pydantic import BaseModel
+
+from server.config import settings
 from server.database import get_db
 from server.models.asteroid import Asteroid
 from server.models.bug_report import BugReport
@@ -25,7 +28,18 @@ from server.models.stockpile import Stockpile
 from server.models.trade_mission import TradeMission
 from server.models.worker import Worker
 from server.models.world_state import WorldState
-from server.config import settings
+from server.simulation.event_bus import event_bus
+
+
+class ResetWorldRequest(BaseModel):
+    world_id: int = 1
+    reset_money: bool = True
+    starting_money: int = 14_000_000
+    starting_ship_class: int = COURIER
+    reset_reserves: bool = True
+    auto_regen_reserves: bool = True
+    reset_speed: bool = True
+    wipe_bug_reports: bool = False
 
 _GAME_EPOCH = _dt.datetime(2112, 1, 1, 0, 0, 0, tzinfo=_dt.timezone.utc)
 
@@ -236,6 +250,10 @@ async def admin_dashboard(
         # Check if reserves already generated
         has_reserves = any(a.reserves and len(a.reserves) > 0 for a in asteroids)
 
+        # Load all worlds for reset selector
+        worlds_result = await db.execute(select(WorldState))
+        worlds = [{"id": w.world_id, "name": w.world_name} for w in worlds_result.scalars().all()]
+
         return templates.TemplateResponse("admin_dashboard.html", {
             "request": request,
             "admin_key": admin_key,
@@ -243,6 +261,7 @@ async def admin_dashboard(
             "total_players": total_players,
             "total_ships": total_ships,
             "active_missions": active_missions,
+            "worlds": worlds,
             "total_reserves": total_reserves,
             "total_iron": total_iron,
             "total_water_ice": total_water_ice,
@@ -569,20 +588,41 @@ async def delete_bug_report(
     return RedirectResponse(url="/admin-ui/bug-reports", status_code=303)
 
 
+@router.post("/broadcast-warning")
+async def broadcast_reset_warning(
+    request: Request,
+    world_id: int = 1,
+    seconds: int = 30,
+    db: AsyncSession = Depends(get_db),
+):
+    """Broadcast an imminent world-reset warning to all connected SSE clients."""
+    admin_key = check_admin_session(request)
+    if not admin_key:
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+    if not await validate_admin_key(admin_key, db):
+        return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
+
+    ws_result = await db.execute(select(WorldState).where(WorldState.world_id == world_id))
+    ws = ws_result.scalar_one_or_none()
+    world_name = ws.world_name if ws else "Server"
+
+    await event_bus.publish({
+        "type": "world_reset_warning",
+        "world_id": world_id,
+        "world_name": world_name,
+        "seconds": seconds,
+        "message": f"[{world_name}] Server reset in {seconds} seconds — dock your ships!",
+    })
+    return JSONResponse({"ok": True, "world_name": world_name})
+
+
 @router.post("/reset-world")
 async def reset_world(
     request: Request,
+    body: ResetWorldRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Full world reset:
-    - Sets game time to current real date mapped to year 2112
-    - Wipes all ships, missions, trade missions, rigs, stockpiles, equipment
-    - Resets asteroid reserves to empty (preserves ore_yields for regeneration)
-    - Resets all player money to starting amount, gives each one fresh Courier
-    - Rebuilds NPC corp ships
-    - Releases all workers from ship assignments
-    """
+    """Full (or selective) world reset with configurable options."""
     admin_key = check_admin_session(request)
     if not admin_key:
         return JSONResponse({"ok": False, "error": "Unauthorized"}, status_code=401)
@@ -595,82 +635,118 @@ async def reset_world(
     new_ticks = int((now_2112 - _GAME_EPOCH).total_seconds())
     new_game_seconds = float(new_ticks)
 
-    # ── Wipe game objects ──────────────────────────────────────────────────────
-    await db.execute(delete(Mission))
-    await db.execute(delete(TradeMission))
-    await db.execute(delete(Stockpile))
-    await db.execute(delete(Rig))
-    await db.execute(delete(Equipment))
-    await db.execute(delete(Ship))
+    # ── Identify players in this world ────────────────────────────────────────
+    if body.world_id == 1:
+        p_result = await db.execute(
+            select(Player).where((Player.world_id == 1) | (Player.world_id.is_(None)))
+        )
+    else:
+        p_result = await db.execute(
+            select(Player).where(Player.world_id == body.world_id)
+        )
+    players = p_result.scalars().all()
+    player_ids = [p.id for p in players]
 
-    # ── Reset asteroid reserves ────────────────────────────────────────────────
-    ast_result = await db.execute(select(Asteroid))
-    for asteroid in ast_result.scalars().all():
-        asteroid.reserves = {}
-        db.add(asteroid)
+    # ── Wipe game objects ──────────────────────────────────────────────────────
+    await db.execute(delete(Mission).where(Mission.player_id.in_(player_ids)))
+    await db.execute(delete(TradeMission).where(TradeMission.player_id.in_(player_ids)))
+    await db.execute(delete(Stockpile).where(Stockpile.player_id.in_(player_ids)))
+    await db.execute(delete(Rig).where(Rig.player_id.in_(player_ids)))
+    await db.execute(delete(Ship).where(Ship.player_id.in_(player_ids)))
 
     # ── Release workers from ship assignments ──────────────────────────────────
-    w_result = await db.execute(select(Worker))
+    w_result = await db.execute(select(Worker).where(Worker.player_id.in_(player_ids)))
     for worker in w_result.scalars().all():
         worker.assigned_ship_id = None
         db.add(worker)
 
+    # ── Reset asteroid reserves ────────────────────────────────────────────────
+    if body.reset_reserves:
+        ast_result = await db.execute(select(Asteroid))
+        for asteroid in ast_result.scalars().all():
+            asteroid.reserves = {}
+            db.add(asteroid)
+
+    # ── Optional: wipe bug reports ────────────────────────────────────────────
+    if body.wipe_bug_reports:
+        await db.execute(delete(BugReport))
+
     # ── Reset players + give starting ship ────────────────────────────────────
-    STARTING_MONEY = 14_000_000
-    p_result = await db.execute(select(Player))
-    players = p_result.scalars().all()
+    ship_stats = SHIP_CLASS_STATS[body.starting_ship_class]
     human_count = 0
     for player in players:
-        player.money = STARTING_MONEY
-        db.add(player)
+        if body.reset_money:
+            player.money = body.starting_money
+            db.add(player)
         if player.is_npc:
             continue
         human_count += 1
-        stats = SHIP_CLASS_STATS[COURIER]
-        ship = Ship(
+        db.add(Ship(
             player_id=player.id,
             ship_name="Starter",
-            ship_class=COURIER,
-            max_thrust_g=stats["max_thrust_g"],
+            ship_class=body.starting_ship_class,
+            max_thrust_g=ship_stats["max_thrust_g"],
             thrust_setting=1.0,
-            cargo_capacity=stats["cargo_capacity"],
-            cargo_volume=stats["cargo_volume"],
-            fuel_capacity=stats["fuel_capacity"],
-            fuel=stats["fuel_capacity"],
-            base_mass=stats["base_mass"],
-            min_crew=stats["min_crew"],
-            max_equipment_slots=stats["max_equipment_slots"],
+            cargo_capacity=ship_stats["cargo_capacity"],
+            cargo_volume=ship_stats["cargo_volume"],
+            fuel_capacity=ship_stats["fuel_capacity"],
+            fuel=ship_stats["fuel_capacity"],
+            base_mass=ship_stats["base_mass"],
+            min_crew=ship_stats["min_crew"],
+            max_equipment_slots=ship_stats["max_equipment_slots"],
             is_stationed=True,
             station_colony_id=None,
             current_cargo={},
             supplies={},
             position_x=1.0,
             position_y=0.0,
-        )
-        db.add(ship)
+        ))
 
     # ── Rebuild NPC corp ships ─────────────────────────────────────────────────
     from server.simulation.npc_corps import reseed_npc_ships
-    await db.flush()  # ensure ship deletes committed before re-inserting
+    await db.flush()
     await reseed_npc_ships(db)
 
     # ── Update WorldState ──────────────────────────────────────────────────────
-    ws_result = await db.execute(select(WorldState).where(WorldState.id == 1))
+    ws_result = await db.execute(select(WorldState).where(WorldState.world_id == body.world_id))
     ws = ws_result.scalar_one_or_none()
+    world_name = ws.world_name if ws else "Unknown"
     if ws:
         ws.total_ticks = new_ticks
         ws.game_seconds = new_game_seconds
+        if body.reset_speed:
+            ws.speed_multiplier = 1.0
         db.add(ws)
 
     await db.commit()
 
-    # ── Sync in-memory tick counters on the running simulation ────────────────
+    # ── Sync in-memory state ───────────────────────────────────────────────────
     from server.simulation.tick import reset_world_time
     reset_world_time(new_ticks, new_game_seconds)
+    if body.reset_speed:
+        from server.routers import admin_speed as _aspeed
+        _aspeed._simulation_speed_multiplier = 1.0
+
+    # ── Auto-regenerate reserves ───────────────────────────────────────────────
+    regen_count = 0
+    if body.reset_reserves and body.auto_regen_reserves:
+        from server.simulation.world_setup import generate_reserves
+        summary = await generate_reserves(db, force=True)
+        regen_count = summary.get("count", 0)
+
+    # ── Notify all clients ─────────────────────────────────────────────────────
+    await event_bus.publish({
+        "type": "world_reset_complete",
+        "world_id": body.world_id,
+        "world_name": world_name,
+        "message": f"[{world_name}] Server has been reset. Returning to start.",
+    })
 
     return JSONResponse({
         "ok": True,
-        "new_ticks": new_ticks,
+        "world_id": body.world_id,
+        "world_name": world_name,
         "game_date": now_2112.strftime("%Y-%m-%d"),
         "human_players_reset": human_count,
+        "reserves_regenerated": regen_count,
     })

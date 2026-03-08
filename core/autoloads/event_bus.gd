@@ -52,7 +52,9 @@ signal tick(delta_ticks: float)
 signal game_speed_changed(new_speed: float)
 
 # Multiplayer
-signal world_state_updated()  # Other players' ships updated
+signal world_state_updated()          # Other players' ships updated
+signal server_reset_warning(world_name: String, seconds: int)
+signal server_reset_complete(world_name: String)
 
 # Random events
 signal survey_update(asteroid: AsteroidData, message: String)

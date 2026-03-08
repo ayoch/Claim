@@ -17,6 +17,10 @@ class Player(Base):
     reputation: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_npc: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Multi-world prep: which world this player belongs to. Nullable for backward compat.
+    world_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("world_state.world_id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     hq_colony_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("colonies.id", ondelete="SET NULL"), nullable=True

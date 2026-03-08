@@ -854,6 +854,12 @@ func _handle_server_event(event: Dictionary) -> void:
 		"pvp_combat":
 			GameState.apply_pvp_combat_event(event)
 
+		"world_reset_warning":
+			GameState.apply_world_reset_warning(event)
+
+		"world_reset_complete":
+			GameState.apply_world_reset_complete(event)
+
 		_:
 			pass  # Unhandled event type
 
