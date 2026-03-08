@@ -49,14 +49,16 @@ const SOI_RADII_AU: Array[float] = [
 
 # Planet data: [name, orbit_au, color_r, color_g, color_b, radius_px]
 const PLANETS: Array[Dictionary] = [
-	{"name": "Mercury", "orbit_au": 0.39, "color": Color(0.7, 0.7, 0.6), "radius": 30.0},
-	{"name": "Venus",   "orbit_au": 0.72, "color": Color(0.9, 0.8, 0.5), "radius": 42.0},
-	{"name": "Earth",   "orbit_au": 1.00, "color": Color(0.2, 0.5, 1.0), "radius": 42.0},
-	{"name": "Mars",    "orbit_au": 1.52, "color": Color(0.9, 0.4, 0.2), "radius": 36.0},
-	{"name": "Jupiter", "orbit_au": 5.20, "color": Color(0.8, 0.7, 0.5), "radius": 84.0},
-	{"name": "Saturn",  "orbit_au": 9.54, "color": Color(0.9, 0.8, 0.6), "radius": 72.0},
-	{"name": "Uranus",  "orbit_au": 19.19, "color": Color(0.5, 0.8, 0.9), "radius": 60.0},
-	{"name": "Neptune", "orbit_au": 30.07, "color": Color(0.3, 0.4, 0.9), "radius": 60.0},
+	# Display radii use sqrt scaling (real ratio compressed): Earth=16px reference
+	# Real km: Mercury 2440, Venus 6052, Earth 6371, Mars 3390, Jupiter 71492, Saturn 60268, Uranus 25559, Neptune 24764
+	{"name": "Mercury", "orbit_au": 0.39, "color": Color(0.7, 0.7, 0.6), "radius": 10.0},
+	{"name": "Venus",   "orbit_au": 0.72, "color": Color(0.9, 0.8, 0.5), "radius": 16.0},
+	{"name": "Earth",   "orbit_au": 1.00, "color": Color(0.2, 0.5, 1.0), "radius": 16.0},
+	{"name": "Mars",    "orbit_au": 1.52, "color": Color(0.9, 0.4, 0.2), "radius": 12.0},
+	{"name": "Jupiter", "orbit_au": 5.20, "color": Color(0.8, 0.7, 0.5), "radius": 54.0},
+	{"name": "Saturn",  "orbit_au": 9.54, "color": Color(0.9, 0.8, 0.6), "radius": 49.0},
+	{"name": "Uranus",  "orbit_au": 19.19, "color": Color(0.5, 0.8, 0.9), "radius": 32.0},
+	{"name": "Neptune", "orbit_au": 30.07, "color": Color(0.3, 0.4, 0.9), "radius": 32.0},
 ]
 
 # Keplerian ephemeris — computes positions from game time
