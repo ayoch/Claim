@@ -82,6 +82,7 @@ async def seed_npc_corps(db: AsyncSession) -> None:
             password_hash="NPC_NO_LOGIN",
             money=corp_def["starting_money"],
             is_npc=True,
+            world_id=1,  # NPC corps belong to world 1; update when multi-world is live
         )
         db.add(npc)
         await db.flush()  # get npc.id before creating ships
