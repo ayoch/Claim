@@ -120,7 +120,7 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Supply/Demand** - Inventory levels affect prices (oversupply lowers, shortage raises)
 - ✅ **Arbitrage Opportunities** - Price differences between locations
 - ✅ **Trade Missions** - Sell ore at colonies for revenue
-- 🚧 **Arbitrage Trading UI** - Backend complete, UI visualization needed
+- ✅ **Arbitrage Trading UI** - Price comparison across colonies with route recommendations
 - ❌ **Market Events** - Crashes, booms, shortages that cascade (e.g. Trojan belt depletion → Nickel price spike at all hubs)
 - ✅ **Contracts with Deadlines** - Deliver ore to colony by deadline; 20% early bonus if >50% time remains; auto-fulfilled on trade mission return; accept button in HQ
 
@@ -297,7 +297,7 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Session Restoration** - "Continue as [username]" button; optional (can ignore to log into different account)
 - ✅ **Server-side Worker Spawning** - Colonies auto-generate available workers on independent timers
 - ✅ **Admin Web UI** - HTML dashboard for server administration (worker spawning, state inspection)
-- 🚧 **Local Leaderboards** - Backend complete, UI integration needed
+- ✅ **Local Leaderboards** - Net worth ranking (cash + ships + cargo); NPC corps excluded; breakdown tooltip on hover
 - ❌ **Player-to-Player Trading** - Direct ore/credit/ship exchanges
 - ❌ **Shared Asteroids** - Multiple players mining same locations
 - ✅ **PvP Combat** - Proximity-based combat via /game/attack; SSE notification to defender; NPC corps use same system

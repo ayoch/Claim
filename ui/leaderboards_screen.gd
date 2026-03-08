@@ -74,16 +74,34 @@ func _create_leaderboard_row(rank: int, entry: Dictionary) -> HBoxContainer:
 	# Player name
 	var player_label := Label.new()
 	player_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	player_label.text = entry.get("player_name", "Unknown")
+	player_label.text = entry.get("username", entry.get("player_name", "Unknown"))
 	player_label.add_theme_font_size_override("font_size", 18)
 	row.add_child(player_label)
 
+	# Ships count
+	var ships_label := Label.new()
+	ships_label.custom_minimum_size = Vector2(60, 0)
+	ships_label.text = "%d ships" % entry.get("ships_count", 0)
+	ships_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ships_label.add_theme_font_size_override("font_size", 16)
+	ships_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+	row.add_child(ships_label)
+
 	# Net worth
 	var worth_label := Label.new()
-	worth_label.custom_minimum_size = Vector2(150, 0)
+	worth_label.custom_minimum_size = Vector2(160, 0)
 	worth_label.text = "$%s" % _format_number(entry.get("net_worth", 0))
 	worth_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	worth_label.add_theme_font_size_override("font_size", 18)
+	# Tooltip breakdown (only shown for MP entries that include breakdown fields)
+	var ship_val: int = entry.get("ship_value", 0)
+	var cargo_val: int = entry.get("cargo_value", 0)
+	if ship_val > 0 or cargo_val > 0:
+		worth_label.tooltip_text = "Cash: $%s\nShips: $%s\nCargo: $%s" % [
+			_format_number(entry.get("money", 0)),
+			_format_number(ship_val),
+			_format_number(cargo_val),
+		]
 	row.add_child(worth_label)
 
 	return row
