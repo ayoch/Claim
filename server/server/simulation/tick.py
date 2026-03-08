@@ -170,14 +170,23 @@ async def load_world_state(db: AsyncSession, world_id: int = 1) -> None:
     result = await db.execute(select(WorldState).where(WorldState.world_id == world_id))
     world_state = result.scalar_one_or_none()
 
+    if not world_state:
+        # Fallback: grab any row (handles NULL world_id from failed backfill)
+        fallback = await db.execute(select(WorldState).limit(1))
+        world_state = fallback.scalar_one_or_none()
+        if world_state:
+            world_state.world_id = world_id
+            await db.commit()
+            logger.warning('Adopted orphaned world_state row (world_id was NULL), set to %d', world_id)
+
     if world_state:
         _total_ticks = world_state.total_ticks
         _game_seconds = getattr(world_state, 'game_seconds', 0.0) or 0.0
         speed = getattr(world_state, 'speed_multiplier', 1.0) or 1.0
         _admin_speed._simulation_speed_multiplier = speed
-        logger.info(f'Loaded world state: total_ticks={_total_ticks}, game_seconds={_game_seconds:.1f}, speed={speed}x')
+        logger.info('Loaded world state: total_ticks=%d, game_seconds=%.1f, speed=%sx', _total_ticks, _game_seconds, speed)
     else:
-        # Create initial world state
+        # Genuinely no world state — first ever boot
         world_state = WorldState(world_id=world_id, total_ticks=0)
         db.add(world_state)
         await db.commit()
