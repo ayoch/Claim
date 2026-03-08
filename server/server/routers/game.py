@@ -244,10 +244,13 @@ async def buy_ship(
     price = stats["base_price"]
     if player.money < price:
         raise HTTPException(status_code=402, detail=f"Insufficient funds (need {price:,} cr)")
-    col_result = await db.execute(select(Colony).where(Colony.id == req.colony_id))
-    colony = col_result.scalar_one_or_none()
-    if not colony:
-        raise HTTPException(status_code=404, detail="Colony not found")
+    # colony_id=0 means "start at Earth" (no colony required)
+    colony = None
+    if req.colony_id:
+        col_result = await db.execute(select(Colony).where(Colony.id == req.colony_id))
+        colony = col_result.scalar_one_or_none()
+        if not colony:
+            raise HTTPException(status_code=404, detail="Colony not found")
     ship = Ship(
         player_id=player.id,
         ship_name=req.ship_name,
@@ -261,8 +264,10 @@ async def buy_ship(
         base_mass=stats["base_mass"],
         min_crew=stats["min_crew"],
         max_equipment_slots=stats["max_equipment_slots"],
-        is_stationed=True,
-        station_colony_id=colony.id,
+        is_stationed=False,
+        station_colony_id=colony.id if colony else None,
+        position_x=1.0,
+        position_y=0.0,
         current_cargo={},
         supplies={},
     )

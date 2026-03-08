@@ -6,8 +6,39 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: NPC Corps + Arbitrage UI (Dweezil, 2026-03-07)
-**Status:** Complete — needs `alembic upgrade head` on Railway before deploy
+### Latest Work Session: Planet Visuals + Bug Fixes (Dweezil, 2026-03-07)
+**Status:** Complete — pushed
+
+**What was done:**
+
+**Planet textures on solar map** — `solar_map/solar_map_view.gd`, `core/data/celestial_data.gd`
+- Preloaded all 8 planet PNGs from `new assets/` (Mercury through Neptune)
+- `draw_circle` bodies replaced with `draw_texture_rect`; glow/outline rings removed for textured planets
+- Radii: sqrt-scaled (Earth=16px ref): Mercury 10, Venus/Earth 16, Mars 12, Jupiter 22, Saturn 49, Uranus/Neptune 32px
+- Colony markers offset from planet surface by `planet_radius + 16px` in direction of `orbital_angle` (no longer on top of planet)
+- Fuel-range green rings now recompute every throttled tick (was snapshot only)
+
+**Server fixes** — `server/server/routers/game.py`
+- `/game/buy-ship` now accepts `colony_id=0` as "start at Earth" (was 404). Ships created with `is_stationed=False`, `position_x=1.0`. This fixes test harness auto-buying ships in SERVER mode.
+- `player.money` column upgraded to `BigInteger` (was `Integer`, max ~2.1B). Migration `p2q3r4s5t6u7` applied.
+- Grant-money endpoint capped at 10 trillion.
+
+**Multi-world prep + migration fixes** — `server/alembic/versions/o1p2q3r4s5t6_multi_world_prep.py`
+- `world_name` added to `world_state`, `world_id` added to `players`
+- FK constraint removed from migration (world_state empty at migration time); data backfill guarded with EXISTS check
+
+**Test harness** — `core/autoloads/test_harness.gd`
+- Worker hiring now closes large deficits at 3/day (was always 1/day), so auto-bought fleets crew up in days not weeks
+
+**⚠️ Migrations to run on Railway:**
+- `n0o1p2q3r4s5` — adds `is_npc` to players
+- `o1p2q3r4s5t6` — adds `world_name` to world_state, `world_id` to players
+- `p2q3r4s5t6u7` — upgrades `money` to BigInteger
+
+---
+
+### Previous Session: NPC Corps + Arbitrage UI (Dweezil, 2026-03-07)
+**Status:** Complete
 
 **What was done:**
 
