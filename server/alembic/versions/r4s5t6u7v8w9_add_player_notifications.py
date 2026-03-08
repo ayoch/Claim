@@ -17,19 +17,22 @@ MAX_ROWS = 100  # Keep latest N notifications per player (enforced in app logic)
 
 
 def upgrade() -> None:
-    op.create_table(
-        'player_notifications',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('player_id', sa.Integer(), sa.ForeignKey('players.id', ondelete='CASCADE'), nullable=False, index=True),
-        sa.Column('tick_number', sa.Float(), nullable=False),
-        sa.Column('event_type', sa.String(64), nullable=False),
-        sa.Column('message', sa.String(512), nullable=False),
-        sa.Column('is_read', sa.Boolean(), nullable=False, server_default='0'),
-        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index('ix_player_notifications_id', 'player_notifications', ['id'], unique=False)
-    op.create_index('ix_player_notifications_player_unread', 'player_notifications', ['player_id', 'is_read'])
+    conn = op.get_bind()
+    existing = sa.inspect(conn).get_table_names()
+    if 'player_notifications' not in existing:
+        op.create_table(
+            'player_notifications',
+            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('player_id', sa.Integer(), sa.ForeignKey('players.id', ondelete='CASCADE'), nullable=False, index=True),
+            sa.Column('tick_number', sa.Float(), nullable=False),
+            sa.Column('event_type', sa.String(64), nullable=False),
+            sa.Column('message', sa.String(512), nullable=False),
+            sa.Column('is_read', sa.Boolean(), nullable=False, server_default='0'),
+            sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+            sa.PrimaryKeyConstraint('id'),
+        )
+        op.create_index('ix_player_notifications_id', 'player_notifications', ['id'], unique=False)
+        op.create_index('ix_player_notifications_player_unread', 'player_notifications', ['player_id', 'is_read'])
 
 
 def downgrade() -> None:
