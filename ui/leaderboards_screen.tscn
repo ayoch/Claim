@@ -64,47 +64,125 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="Single Player" type="MarginContainer" parent="MarginContainer/VBox/TabContainer"]
+[node name="My Records" type="MarginContainer" parent="MarginContainer/VBox/TabContainer"]
 layout_mode = 2
 theme_override_constants/margin_left = 10
 theme_override_constants/margin_top = 10
 theme_override_constants/margin_right = 10
 theme_override_constants/margin_bottom = 10
 
-[node name="VBox" type="VBoxContainer" parent="MarginContainer/VBox/TabContainer/Single Player"]
+[node name="VBox" type="VBoxContainer" parent="MarginContainer/VBox/TabContainer/My Records"]
 layout_mode = 2
 theme_override_constants/separation = 8
 
-[node name="HeaderRow" type="HBoxContainer" parent="MarginContainer/VBox/TabContainer/Single Player/VBox"]
+[node name="HeaderRow" type="HBoxContainer" parent="MarginContainer/VBox/TabContainer/My Records/VBox"]
 layout_mode = 2
 
-[node name="RankLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Single Player/VBox/HeaderRow"]
+[node name="RankLabel" type="Label" parent="MarginContainer/VBox/TabContainer/My Records/VBox/HeaderRow"]
 custom_minimum_size = Vector2(60, 0)
 layout_mode = 2
 text = "Rank"
 theme_override_font_sizes/font_size = 18
 
-[node name="PlayerLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Single Player/VBox/HeaderRow"]
+[node name="PlayerLabel" type="Label" parent="MarginContainer/VBox/TabContainer/My Records/VBox/HeaderRow"]
 layout_mode = 2
 size_flags_horizontal = 3
-text = "Player"
+text = "Save"
 theme_override_font_sizes/font_size = 18
 
-[node name="NetWorthLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Single Player/VBox/HeaderRow"]
-custom_minimum_size = Vector2(150, 0)
+[node name="ShipsLabel" type="Label" parent="MarginContainer/VBox/TabContainer/My Records/VBox/HeaderRow"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+text = "Ships"
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+
+[node name="NetWorthLabel" type="Label" parent="MarginContainer/VBox/TabContainer/My Records/VBox/HeaderRow"]
+custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
 text = "Net Worth"
 theme_override_font_sizes/font_size = 18
 horizontal_alignment = 2
 
-[node name="Separator" type="HSeparator" parent="MarginContainer/VBox/TabContainer/Single Player/VBox"]
+[node name="Separator" type="HSeparator" parent="MarginContainer/VBox/TabContainer/My Records/VBox"]
 layout_mode = 2
 
-[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBox/TabContainer/Single Player/VBox"]
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBox/TabContainer/My Records/VBox"]
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="SPEntriesContainer" type="VBoxContainer" parent="MarginContainer/VBox/TabContainer/Single Player/VBox/ScrollContainer"]
+[node name="SPEntriesContainer" type="VBoxContainer" parent="MarginContainer/VBox/TabContainer/My Records/VBox/ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 4
+
+[node name="SP Global" type="MarginContainer" parent="MarginContainer/VBox/TabContainer"]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="VBox" type="VBoxContainer" parent="MarginContainer/VBox/TabContainer/SP Global"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TopBar" type="HBoxContainer" parent="MarginContainer/VBox/TabContainer/SP Global/VBox"]
+layout_mode = 2
+
+[node name="SPGlobalStatusLabel" type="Label" parent="MarginContainer/VBox/TabContainer/SP Global/VBox/TopBar"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Not loaded"
+theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(0.7, 0.7, 0.7, 1)
+
+[node name="SPGlobalRefreshButton" type="Button" parent="MarginContainer/VBox/TabContainer/SP Global/VBox/TopBar"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(100, 32)
+layout_mode = 2
+text = "Refresh"
+
+[node name="HeaderRow" type="HBoxContainer" parent="MarginContainer/VBox/TabContainer/SP Global/VBox"]
+layout_mode = 2
+
+[node name="RankLabel" type="Label" parent="MarginContainer/VBox/TabContainer/SP Global/VBox/HeaderRow"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+text = "Rank"
+theme_override_font_sizes/font_size = 18
+
+[node name="PlayerLabel" type="Label" parent="MarginContainer/VBox/TabContainer/SP Global/VBox/HeaderRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Player"
+theme_override_font_sizes/font_size = 18
+
+[node name="ShipsLabel" type="Label" parent="MarginContainer/VBox/TabContainer/SP Global/VBox/HeaderRow"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+text = "Ships"
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+
+[node name="NetWorthLabel" type="Label" parent="MarginContainer/VBox/TabContainer/SP Global/VBox/HeaderRow"]
+custom_minimum_size = Vector2(160, 0)
+layout_mode = 2
+text = "Net Worth"
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 2
+
+[node name="Separator" type="HSeparator" parent="MarginContainer/VBox/TabContainer/SP Global/VBox"]
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/VBox/TabContainer/SP Global/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SPGlobalEntriesContainer" type="VBoxContainer" parent="MarginContainer/VBox/TabContainer/SP Global/VBox/ScrollContainer"]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
@@ -161,8 +239,15 @@ size_flags_horizontal = 3
 text = "Player"
 theme_override_font_sizes/font_size = 18
 
+[node name="ShipsLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox/HeaderRow"]
+custom_minimum_size = Vector2(60, 0)
+layout_mode = 2
+text = "Ships"
+theme_override_font_sizes/font_size = 18
+horizontal_alignment = 1
+
 [node name="NetWorthLabel" type="Label" parent="MarginContainer/VBox/TabContainer/Multiplayer/VBox/HeaderRow"]
-custom_minimum_size = Vector2(150, 0)
+custom_minimum_size = Vector2(160, 0)
 layout_mode = 2
 text = "Net Worth"
 theme_override_font_sizes/font_size = 18

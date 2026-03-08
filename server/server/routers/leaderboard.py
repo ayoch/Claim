@@ -1,12 +1,14 @@
 """Leaderboard API endpoints."""
 
 from fastapi import APIRouter, Depends, Request
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from server.database import get_db
 from server.models.player import Player
 from server.models.ship import SHIP_CLASS_STATS, Ship
+from server.models.sp_score import SPScore
 from server.rate_limit import limiter
 from server.simulation.tick import BASE_ORE_PRICES, get_market_prices
 
@@ -114,3 +116,82 @@ async def get_player_rank(
         "ships_count": len(player.ships),
         "workers_count": len(player.workers),
     }
+
+
+# ---------------------------------------------------------------------------
+# Single-player global leaderboard (unauthenticated, score submissions)
+# ---------------------------------------------------------------------------
+
+class SPScoreSubmit(BaseModel):
+    player_name: str
+    net_worth: int
+    ships_count: int = 0
+    workers_count: int = 0
+    game_date: str = ""
+
+
+@router.get("/sp")
+@limiter.limit("30/minute")
+async def get_sp_leaderboard(
+    request: Request,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+):
+    """Top single-player scores. No auth required."""
+    limit = min(limit, 100)
+
+    # Best score per player_name
+    subq = (
+        select(SPScore.player_name, func.max(SPScore.net_worth).label("best"))
+        .group_by(SPScore.player_name)
+        .subquery()
+    )
+    stmt = (
+        select(SPScore)
+        .join(subq, (SPScore.player_name == subq.c.player_name) & (SPScore.net_worth == subq.c.best))
+        .order_by(SPScore.net_worth.desc())
+        .limit(limit)
+    )
+    result = await db.execute(stmt)
+    scores = result.scalars().all()
+
+    entries = [
+        {
+            "rank": i + 1,
+            "player_name": s.player_name,
+            "net_worth": s.net_worth,
+            "ships_count": s.ships_count,
+            "workers_count": s.workers_count,
+            "game_date": s.game_date,
+        }
+        for i, s in enumerate(scores)
+    ]
+
+    count_stmt = select(func.count(func.distinct(SPScore.player_name)))
+    total = (await db.execute(count_stmt)).scalar_one()
+
+    return {"entries": entries, "total_players": total}
+
+
+@router.post("/sp")
+@limiter.limit("10/minute")
+async def submit_sp_score(
+    request: Request,
+    payload: SPScoreSubmit,
+    db: AsyncSession = Depends(get_db),
+):
+    """Submit a single-player score. No auth required."""
+    if not payload.player_name.strip():
+        return {"error": "player_name required"}
+    player_name = payload.player_name.strip()[:64]
+
+    score = SPScore(
+        player_name=player_name,
+        net_worth=max(0, payload.net_worth),
+        ships_count=max(0, payload.ships_count),
+        workers_count=max(0, payload.workers_count),
+        game_date=payload.game_date[:64],
+    )
+    db.add(score)
+    await db.commit()
+    return {"ok": True}
