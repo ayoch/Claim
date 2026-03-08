@@ -8,6 +8,21 @@ extends Resource
 @export var orbits_earth: bool = false  # if true, orbit_au is distance from Earth (legacy)
 @export var parent_planet_index: int = -1  # if >= 0, orbits this planet from CelestialData.PLANETS
 @export var has_rescue_ops: bool = false  # Large colonies can dispatch rescue missions
+@export var tier: int = 3  # Colony tier 1-5; synced from server via colony_tiers in game state
+
+# Tier price multipliers — must match server's TIER_PRICE_MULT in colony_growth.py
+const TIER_PRICE_MULT: Dictionary = {
+	1: 0.85, 2: 0.92, 3: 1.00, 4: 1.10, 5: 1.22,
+}
+const TIER_NAMES: Dictionary = {
+	1: "Outpost", 2: "Settlement", 3: "Colony", 4: "Hub", 5: "Metropolis",
+}
+
+func get_tier_name() -> String:
+	return TIER_NAMES.get(tier, "Colony")
+
+func get_tier_price_mult() -> float:
+	return TIER_PRICE_MULT.get(tier, 1.0)
 
 # Criminal ban system
 @export var violations: Array[Dictionary] = []  # [{timestamp: float, reason: String}]
@@ -38,12 +53,15 @@ func get_ore_price(ore_type: ResourceTypes.OreType, market: MarketState) -> floa
 	# Apply colony-specific multipliers (structural supply/demand)
 	var mult: float = price_multipliers.get(ore_type, 1.0)
 
+	# Apply tier multiplier
+	var tier_mult: float = get_tier_price_mult()
+
 	# Apply market event modifiers
 	var event_multiplier := 1.0
 	for event in GameState.active_market_events:
 		event_multiplier *= event.get_price_modifier(ore_type, self)
 
-	return local_market_price * mult * event_multiplier
+	return local_market_price * mult * tier_mult * event_multiplier
 
 func get_position_au() -> Vector2:
 	# Moons with tiny orbits (< 0.05 AU) sit at their parent's position

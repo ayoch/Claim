@@ -30,6 +30,78 @@ from server.simulation.market_events import (
     get_event_multipliers,
     load_active_events,
 )
+from server.simulation.colony_growth import tier_price_multiplier, award_growth
+from server.models.colony import Colony as ColonyModel
+
+# ── Equipment Maintenance ──────────────────────────────────────────────────────
+
+# ThrustPolicy wear multipliers (index = ThrustPolicy enum value)
+# CONSERVATIVE=0  BALANCED=1  AGGRESSIVE=2  ECONOMICAL=3
+_THRUST_WEAR_MULT: dict[int, float] = {0: 0.7, 1: 1.0, 2: 1.5, 3: 0.85}
+
+# MaintenancePolicy repair thresholds (fraction of max_durability; -1 = never)
+# PREVENTIVE=0  AS_NEEDED=1  RUN_TO_FAILURE=2  MANUAL=3
+_MAINT_THRESHOLD: dict[int, float] = {0: 0.30, 1: 0.10, 2: 0.0, 3: -1.0}
+
+
+def _wear_ship_equipment(ship, dt: float, thrust_policy: int, is_mining: bool) -> list[dict]:
+    """Degrade equipment durability. Returns equipment_broken events."""
+    events: list[dict] = []
+    thrust_mult = _THRUST_WEAR_MULT.get(thrust_policy, 1.0)
+    phase_mult = 1.0 if is_mining else 0.25  # Transit is lighter on equipment
+    for equip in ship.equipment:
+        if equip.durability <= 0.0:
+            continue
+        old_dur = equip.durability
+        equip.durability = max(0.0, equip.durability - equip.wear_per_tick * thrust_mult * phase_mult * dt)
+        if equip.durability <= 0.0 and old_dur > 0.0:
+            events.append({
+                'type': 'equipment_broken',
+                'ship_id': ship.id,
+                'player_id': ship.player_id,
+                'ship_name': ship.ship_name,
+                'equipment_name': equip.equipment_name,
+            })
+            logger.info('Equipment %r broke on ship %r', equip.equipment_name, ship.ship_name)
+    return events
+
+
+def _auto_repair_equipment(ship, player, db, maintenance_policy: int) -> list[dict]:
+    """Auto-repair equipment per maintenance policy when ship returns to station."""
+    threshold = _MAINT_THRESHOLD.get(maintenance_policy, -1.0)
+    if threshold < 0.0:  # MANUAL — player does it manually
+        return []
+    events: list[dict] = []
+    for equip in ship.equipment:
+        if equip.max_durability <= 0.0:
+            continue
+        # Determine if this piece needs repair per policy
+        if threshold == 0.0:
+            needs_repair = equip.durability <= 0.0  # RUN_TO_FAILURE: only when broken
+        else:
+            needs_repair = (equip.durability / equip.max_durability) < threshold
+        if not needs_repair:
+            continue
+        missing = equip.max_durability - equip.durability
+        repair_cost = int(missing / equip.max_durability * equip.cost * 0.30)
+        if repair_cost <= 0:
+            continue
+        if player.money < repair_cost:
+            logger.debug('Cannot auto-repair %r on %r: insufficient funds', equip.equipment_name, ship.ship_name)
+            continue
+        player.money -= repair_cost
+        equip.durability = equip.max_durability
+        db.add(equip)
+        events.append({
+            'type': 'equipment_repaired',
+            'ship_id': ship.id,
+            'player_id': player.id,
+            'ship_name': ship.ship_name,
+            'equipment_name': equip.equipment_name,
+            'cost': repair_cost,
+        })
+        logger.info('Auto-repaired %r on %r for %d cr', equip.equipment_name, ship.ship_name, repair_cost)
+    return events
 
 logger = logging.getLogger(__name__)
 
@@ -254,10 +326,11 @@ async def _process_missions(db: AsyncSession, dt: float) -> list[dict]:
         if ship is None or ship.is_derelict:
             continue
         prev_status = mission.status
+        thrust_pol = mission.player.thrust_policy if mission.player else 1
         if mission.status == STATUS_TRANSIT_OUT:
             events += await _advance_transit_out(mission, ship, dt, db)
         elif mission.status == STATUS_MINING:
-            events += _advance_mining(mission, ship, dt)
+            events += _advance_mining(mission, ship, dt, thrust_pol)
         elif mission.status == STATUS_COLLECTING:
             events += await _advance_collecting(mission, ship, dt, db)
         elif mission.status == STATUS_TRANSIT_BACK:
@@ -267,6 +340,13 @@ async def _process_missions(db: AsyncSession, dt: float) -> list[dict]:
             events.append({'type': 'mission_status_changed', 'mission_id': mission.id,
                 'player_id': mission.player_id, 'ship_id': mission.ship_id,
                 'old_status': prev_status, 'new_status': mission.status})
+            # Auto-repair equipment when ship returns to station
+            if mission.status == STATUS_COMPLETED and mission.player:
+                maint = getattr(mission.player, 'maintenance_policy', 1)
+                repair_events = _auto_repair_equipment(ship, mission.player, db, maint)
+                events += repair_events
+                if repair_events:
+                    db.add(mission.player)
     return events
 
 async def _advance_transit_out(mission: Mission, ship: Ship, dt: float, db: AsyncSession) -> list[dict]:
@@ -279,11 +359,13 @@ async def _advance_transit_out(mission: Mission, ship: Ship, dt: float, db: Asyn
         ship.position_x = mission.origin_x + (mission.destination_x - mission.origin_x) * progress
         ship.position_y = mission.origin_y + (mission.destination_y - mission.origin_y) * progress
 
-    # Grant pilot and engineer XP to all crew during transit
+    # Grant pilot and engineer XP; degrade equipment during transit
     events: list[dict] = []
+    thrust_pol = mission.player.thrust_policy if mission.player else 1
     for worker in ship.workers:
         events += _add_worker_xp(worker, 0, dt)  # 0 = pilot skill
         events += _add_worker_xp(worker, 1, dt)  # 1 = engineer skill
+    events += _wear_ship_equipment(ship, dt, thrust_pol, is_mining=False)
 
     if mission.elapsed_ticks >= mission.transit_time:
         mission.elapsed_ticks = 0.0
@@ -304,13 +386,14 @@ async def _advance_transit_out(mission: Mission, ship: Ship, dt: float, db: Asyn
 
     return events
 
-def _advance_mining(mission: Mission, ship: Ship, dt: float) -> list[dict]:
+def _advance_mining(mission: Mission, ship: Ship, dt: float, thrust_policy: int = 1) -> list[dict]:
     mission.elapsed_ticks += dt
     events: list[dict] = []
 
-    # Grant mining XP to all crew during mining
+    # Grant mining XP; degrade equipment during active mining
     for worker in ship.workers:
         events += _add_worker_xp(worker, 2, dt)  # 2 = mining skill
+    events += _wear_ship_equipment(ship, dt, thrust_policy, is_mining=True)
 
     if mission.asteroid and mission.asteroid.ore_yields:
         cargo = dict(ship.current_cargo or {})
@@ -450,11 +533,13 @@ def _advance_transit_back(mission: Mission, ship: Ship, dt: float, player=None) 
         ship.position_x = mission.destination_x + (mission.origin_x - mission.destination_x) * progress
         ship.position_y = mission.destination_y + (mission.origin_y - mission.destination_y) * progress
 
-    # Grant pilot and engineer XP to all crew during transit
+    # Grant pilot and engineer XP; degrade equipment during return transit
     events: list[dict] = []
+    thrust_pol = player.thrust_policy if player is not None else 1
     for worker in ship.workers:
         events += _add_worker_xp(worker, 0, dt)  # 0 = pilot skill
         events += _add_worker_xp(worker, 1, dt)  # 1 = engineer skill
+    events += _wear_ship_equipment(ship, dt, thrust_pol, is_mining=False)
 
     if mission.elapsed_ticks >= mission.transit_time:
         mission.status = STATUS_COMPLETED
@@ -503,6 +588,11 @@ async def _process_trade_missions(db: AsyncSession, dt: float) -> list[dict]:
     4. COMPLETED: Pay player and mark ship as stationed
     """
     events: list[dict] = []
+
+    # Load colony lookup for multiplier calculations
+    colony_result = await db.execute(select(ColonyModel))
+    colony_map: dict[int, ColonyModel] = {c.id: c for c in colony_result.scalars().all()}
+
     result = await db.execute(
         select(TradeMission)
         .where(TradeMission.status.in_([TM_TRANSIT_TO, TM_SELLING, TM_TRANSIT_BACK]))
@@ -517,6 +607,8 @@ async def _process_trade_missions(db: AsyncSession, dt: float) -> list[dict]:
 
         prev_status = tm.status
 
+        thrust_pol = tm.player.thrust_policy if tm.player else 1
+
         if tm.status == TM_TRANSIT_TO:
             # Travel to colony
             tm.elapsed_ticks += dt
@@ -528,10 +620,11 @@ async def _process_trade_missions(db: AsyncSession, dt: float) -> list[dict]:
                 ship.position_x = tm.origin_x + (tm.destination_x - tm.origin_x) * progress
                 ship.position_y = tm.origin_y + (tm.destination_y - tm.origin_y) * progress
 
-            # Grant pilot/engineer XP
+            # Grant pilot/engineer XP; degrade equipment
             for worker in ship.workers:
                 events += _add_worker_xp(worker, 0, dt)  # pilot
                 events += _add_worker_xp(worker, 1, dt)  # engineer
+            events += _wear_ship_equipment(ship, dt, thrust_pol, is_mining=False)
 
             if tm.elapsed_ticks >= tm.transit_time:
                 tm.status = TM_SELLING
@@ -546,15 +639,33 @@ async def _process_trade_missions(db: AsyncSession, dt: float) -> list[dict]:
             tm.elapsed_ticks += dt
 
             if tm.elapsed_ticks >= SELLING_DURATION:
-                # Calculate revenue from cargo
+                # Calculate revenue from cargo, applying colony and tier multipliers
                 cargo_sold = dict(tm.cargo)  # snapshot before clearing
+                colony = colony_map.get(tm.colony_id) if tm.colony_id else None
+                colony_price_mults: dict = colony.price_multipliers if colony else {}
+                colony_tier_mult: float = tier_price_multiplier(colony.tier if colony else 3)
+
                 revenue = 0
                 for ore_type, tonnes in cargo_sold.items():
-                    ore_price = _market_prices.get(ore_type, BASE_ORE_PRICES.get(ore_type, 1000.0))
-                    revenue += int(tonnes * ore_price)
+                    base_price = _market_prices.get(ore_type, BASE_ORE_PRICES.get(ore_type, 1000.0))
+                    col_mult = colony_price_mults.get(ore_type, 1.0)
+                    revenue += int(tonnes * base_price * col_mult * colony_tier_mult)
 
                 tm.revenue = revenue
                 tm.cargo = {}  # Clear cargo
+
+                # Award colony growth points from this sale
+                if colony and revenue > 0:
+                    new_tier = award_growth(colony, revenue)
+                    if new_tier:
+                        logger.info('Colony %s grew to tier %d', colony.colony_name, new_tier)
+                        events.append({
+                            'type': 'colony_tier_up',
+                            'colony_id': colony.id,
+                            'colony_name': colony.colony_name,
+                            'new_tier': new_tier,
+                        })
+                    db.add(colony)
 
                 # Pay player
                 player = tm.player
@@ -592,10 +703,11 @@ async def _process_trade_missions(db: AsyncSession, dt: float) -> list[dict]:
                 ship.position_x = tm.destination_x + (tm.origin_x - tm.destination_x) * progress
                 ship.position_y = tm.destination_y + (tm.origin_y - tm.destination_y) * progress
 
-            # Grant pilot/engineer XP
+            # Grant pilot/engineer XP; degrade equipment
             for worker in ship.workers:
                 events += _add_worker_xp(worker, 0, dt)  # pilot
                 events += _add_worker_xp(worker, 1, dt)  # engineer
+            events += _wear_ship_equipment(ship, dt, thrust_pol, is_mining=False)
 
             if tm.elapsed_ticks >= tm.transit_time:
                 tm.status = TM_COMPLETED
@@ -614,6 +726,14 @@ async def _process_trade_missions(db: AsyncSession, dt: float) -> list[dict]:
                     'colony_id': tm.colony_id,
                     'revenue': tm.revenue
                 })
+
+                # Auto-repair equipment per maintenance policy on dock
+                if tm.player:
+                    maint = getattr(tm.player, 'maintenance_policy', 1)
+                    repair_events = _auto_repair_equipment(ship, tm.player, db, maint)
+                    events += repair_events
+                    if repair_events:
+                        db.add(tm.player)
 
         db.add(tm)
         db.add(ship)
@@ -753,6 +873,15 @@ async def _save_player_notifications(db: AsyncSession, events: list[dict], tick:
             name = ev.get("rig_name", "Rig")
             asteroid = ev.get("asteroid_name", "asteroid")
             return f"Rig '{name}' broke down at {asteroid}"
+        if t == "equipment_broken":
+            equip = ev.get("equipment_name", "Equipment")
+            ship_name = ev.get("ship_name", "ship")
+            return f"{equip} on {ship_name} has broken down — repair required"
+        if t == "equipment_repaired":
+            equip = ev.get("equipment_name", "Equipment")
+            ship_name = ev.get("ship_name", "ship")
+            cost = ev.get("cost", 0)
+            return f"{equip} on {ship_name} auto-repaired for ${cost:,}"
         return None
 
     # Group insertions by player_id to enforce cap

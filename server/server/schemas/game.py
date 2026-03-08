@@ -204,6 +204,8 @@ class GameState(BaseModel):
     stockpiles: list[StockpileOut]
     contracts: list[ContractOut] = []
     active_market_events: list[MarketEventOut] = []
+    colony_tiers: dict[str, int] = {}  # colony_name -> tier
+    maintenance_policy: int = 1  # 0=PREVENTIVE 1=AS_NEEDED 2=RUN_TO_FAILURE 3=MANUAL
 
 
 # ── Action requests ───────────────────────────────────────────────────────────
@@ -284,5 +286,7 @@ class ColonyOut(BaseModel):
     planet_id: str
     has_rescue_ops: bool
     price_multipliers: dict
+    tier: int = 3
+    growth_points: float = 2500.0
 
     model_config = {"from_attributes": True}

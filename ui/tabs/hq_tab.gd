@@ -96,6 +96,11 @@ func _ready() -> void:
 		_dirty_contracts = true
 	)
 
+	EventBus.colony_tier_up.connect(func(colony_name: String, new_tier: int) -> void:
+		var tier_name: String = Colony.TIER_NAMES.get(new_tier, "Tier %d" % new_tier)
+		_queue_activity("★ %s grew to %s (Tier %d)" % [colony_name, tier_name, new_tier], Color(0.4, 0.8, 1.0))
+	)
+
 	# Equipment events
 	EventBus.equipment_broken.connect(func(ship: Ship, equip: Equipment) -> void:
 		_queue_alert("%s on %s has broken!" % [equip.equipment_name, ship.ship_name], Color(0.9, 0.3, 0.3))

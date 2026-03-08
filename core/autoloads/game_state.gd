@@ -3710,6 +3710,17 @@ func apply_server_state(server_data: Dictionary) -> void:
 		if not prev_event_ids.has(srv_id):
 			EventBus.market_event_started.emit(ev)
 
+	# Sync colony tiers from server
+	var server_colony_tiers: Dictionary = server_data.get("colony_tiers", {})
+	if not server_colony_tiers.is_empty():
+		for colony in colonies:
+			if server_colony_tiers.has(colony.colony_name):
+				var new_tier: int = int(server_colony_tiers[colony.colony_name])
+				if new_tier != colony.tier:
+					colony.tier = new_tier
+					state_changed = true
+					EventBus.colony_tier_up.emit(colony.colony_name, new_tier)
+
 	# Check if ships, workers, or rigs changed
 	var new_rig_count := mining_unit_inventory.size() + deployed_mining_units.size()
 	if ships.size() != old_ship_count or workers.size() != old_worker_count or new_rig_count != old_rig_count:

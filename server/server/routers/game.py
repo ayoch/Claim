@@ -104,6 +104,10 @@ async def get_state(
     )
     active_market_events = list(events_result.scalars().all())
 
+    # Load colony tiers (world-wide, small data)
+    colonies_result = await db.execute(select(Colony))
+    colony_tiers = {c.colony_name: c.tier for c in colonies_result.scalars().all()}
+
     return GameState(
         player_id=player.id,
         username=player.username,
@@ -125,6 +129,8 @@ async def get_state(
         stockpiles=[StockpileOut.model_validate(s) for s in stockpiles],
         contracts=[ContractOut.model_validate(c) for c in contracts],
         active_market_events=[MarketEventOut.model_validate(e) for e in active_market_events],
+        colony_tiers=colony_tiers,
+        maintenance_policy=player.maintenance_policy,
     )
 
 @router.post("/dispatch", response_model=MissionOut, status_code=status.HTTP_201_CREATED)
@@ -300,17 +306,27 @@ async def buy_ship(
 
 
 # Equipment catalog (simplified - matches client MarketData)
+_DAY = 86400.0  # game-seconds per day
+
 EQUIPMENT_CATALOG = {
-    "Mining Processor": {"type": "processor", "mining_bonus": 1.5, "cost": 50000, "mass": 2.0},
-    "Advanced Refinery": {"type": "refinery", "mining_bonus": 2.0, "cost": 150000, "mass": 5.0},
+    # Mining equipment — heavier use, wears faster
+    "Mining Processor": {"type": "processor", "mining_bonus": 1.5, "cost": 50000, "mass": 2.0,
+                         "wear_per_tick": 1.0 / (60 * _DAY)},   # breaks in 60 game-days mining
+    "Advanced Refinery": {"type": "refinery", "mining_bonus": 2.0, "cost": 150000, "mass": 5.0,
+                          "wear_per_tick": 1.0 / (45 * _DAY)},  # complex internals, 45 days
     "Laser Drill": {"type": "mining_laser", "mining_bonus": 1.3, "mining_speed_bonus": 0.2, "weapon_power": 5,
-                    "weapon_range": 0.01, "weapon_accuracy": 0.8, "weapon_role": "dual", "cost": 80000, "mass": 3.0},
+                    "weapon_range": 0.01, "weapon_accuracy": 0.8, "weapon_role": "dual", "cost": 80000, "mass": 3.0,
+                    "wear_per_tick": 1.0 / (60 * _DAY)},
+    # Weapons — lighter duty, wear more slowly
     "Railgun": {"type": "weapon", "weapon_power": 25, "weapon_range": 0.5, "weapon_accuracy": 0.7,
-                "weapon_role": "offensive", "cost": 200000, "mass": 8.0},
+                "weapon_role": "offensive", "cost": 200000, "mass": 8.0,
+                "wear_per_tick": 1.0 / (90 * _DAY)},
     "Point Defense": {"type": "weapon", "weapon_power": 10, "weapon_range": 0.1, "weapon_accuracy": 0.85,
-                      "weapon_role": "defensive", "cost": 120000, "mass": 4.0},
+                      "weapon_role": "defensive", "cost": 120000, "mass": 4.0,
+                      "wear_per_tick": 1.0 / (90 * _DAY)},
     "Torpedo Launcher": {"type": "weapon", "weapon_power": 50, "weapon_range": 2.0, "weapon_accuracy": 0.6,
-                         "weapon_role": "offensive", "ammo_capacity": 4, "ammo_cost": 15000, "cost": 300000, "mass": 12.0},
+                         "weapon_role": "offensive", "ammo_capacity": 4, "ammo_cost": 15000, "cost": 300000, "mass": 12.0,
+                         "wear_per_tick": 1.0 / (120 * _DAY)},
 }
 
 
@@ -366,6 +382,7 @@ async def buy_equipment(
         ammo_cost=template.get("ammo_cost", 0),
         mass=template.get("mass", 0.0),
         mining_speed_bonus=template.get("mining_speed_bonus", 0.0),
+        wear_per_tick=template.get("wear_per_tick", 1.929e-5),
     )
 
     player.money -= cost
@@ -766,6 +783,8 @@ async def update_policies(
         player.collection_policy = payload.collection_policy
     if payload.encounter_policy is not None:
         player.encounter_policy = payload.encounter_policy
+    if payload.maintenance_policy is not None:
+        player.maintenance_policy = payload.maintenance_policy
     if payload.auto_sell_on_return is not None:
         player.auto_sell_on_return = payload.auto_sell_on_return
     db.add(player)

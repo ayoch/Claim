@@ -38,6 +38,8 @@ class Player(Base):
     # Whether the server automatically sells cargo when a ship returns from a mission.
     # If False, cargo stays on the ship and the player must sell manually.
     auto_sell_on_return: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # MaintenancePolicy: 0=PREVENTIVE 1=AS_NEEDED 2=RUN_TO_FAILURE 3=MANUAL
+    maintenance_policy: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

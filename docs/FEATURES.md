@@ -144,8 +144,8 @@ Complete list of implemented and planned features for the asteroid mining tycoon
 - ✅ **Colony Markets** - Independent pricing and inventory per colony
 - ✅ **Station Assignment** - Ships can be stationed at colonies
 - ✅ **Rescue Operations** - Colonies with rescue capability
-- ✅ **Price Multipliers** - Colony-specific price adjustments
-- ❌ **Colony Tiers** - Growth levels affecting services/prices
+- ✅ **Price Multipliers** - Colony-specific price adjustments (now enforced server-side on revenue)
+- ✅ **Colony Tiers** - T1-T5 growth system; trade revenue grows colonies, tier affects sell prices (0.85x–1.22x)
 - ❌ **Colony Growth/Decline** - Population and economy changes over time
 - ❌ **Colony Construction** - Build new colonies or expand existing
 - ❌ **Colony Resources** - Resource needs and production
@@ -200,7 +200,7 @@ Complete list of implemented and planned features for the asteroid mining tycoon
   - Repair Policy (Always/As Needed/Never)
   - Mining Threshold (50%/75%/95%)
 - ✅ **Per-Ship Policy Overrides** - Individual ship settings override company defaults
-- ❌ **Equipment Maintenance Policy** - When to repair broken equipment; thrust-linked wear (aggressive thrust = faster degradation)
+- ✅ **Equipment Maintenance Policy** - 4 modes (Preventive 30%/As Needed 10%/Run to Failure/Manual); thrust-linked wear during transit+mining; auto-repair on dock; equipment_broken/repaired notifications
 - ❌ **Trading Policy** - When/how to sell ore
 - ❌ **Crew Morale Policy** - Rest vs productivity balance; fatigue/morale affecting skill rolls
 - ❌ **Automation Policy** - Ship autonomy level

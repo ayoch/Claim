@@ -36,6 +36,10 @@ class Equipment(Base):
     mass: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     mining_speed_bonus: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
 
+    # Wear rate (durability lost per game-second of active use).
+    # Default ~19.3e-6 → breaks in 60 game-days of continuous mining.
+    wear_per_tick: Mapped[float] = mapped_column(Float, default=1.929e-5, nullable=False)
+
     # Relationships
     ship: Mapped["Ship"] = relationship("Ship", back_populates="equipment")  # noqa: F821
 

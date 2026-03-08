@@ -54,10 +54,11 @@ class PlayerOut(BaseModel):
 
 
 class PolicyUpdate(BaseModel):
-    thrust_policy: int | None = Field(None, ge=0, le=2)
-    supply_policy: int | None = Field(None, ge=0, le=2)
-    collection_policy: int | None = Field(None, ge=0, le=2)
-    encounter_policy: int | None = Field(None, ge=0, le=2)
+    thrust_policy: int | None = Field(None, ge=0, le=3)
+    supply_policy: int | None = Field(None, ge=0, le=3)
+    collection_policy: int | None = Field(None, ge=0, le=3)
+    encounter_policy: int | None = Field(None, ge=0, le=3)
+    maintenance_policy: int | None = Field(None, ge=0, le=3)
     auto_sell_on_return: bool | None = None
 
 

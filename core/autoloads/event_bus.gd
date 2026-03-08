@@ -66,6 +66,9 @@ signal market_event_ended(event: MarketEvent)
 signal market_state_changed()  # General market update (prices or inventory changed)
 signal arbitrage_opportunity(ore_name: String, low_hub: String, high_hub: String, gap_pct: float)
 
+# Colony tiers
+signal colony_tier_up(colony_name: String, new_tier: int)
+
 # Contracts
 signal contract_offered(contract: Contract)
 signal contract_accepted(contract: Contract)
