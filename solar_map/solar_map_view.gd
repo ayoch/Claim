@@ -240,18 +240,16 @@ func _draw() -> void:
 			var orbit_au: float = planet["orbit_au"]
 			_draw_circle_outline(Vector2.ZERO, orbit_au * AU_PIXELS, Color(color.r, color.g, color.b, 0.25), 1.0)
 
-		# Planet with glow and outline
+		# Planet body
 		if i < _planet_positions.size():
 			var pos: Vector2 = _planet_positions[i]
-			# Outer glow
-			draw_circle(pos, radius + 5, Color(color.r, color.g, color.b, 0.2))
-			# Bright outline ring for visibility
-			_draw_circle_outline(pos, radius + 1.5, Color(color.r, color.g, color.b, 0.7), 1.5)
-			# Planet body — use texture if available, otherwise solid circle
 			if _planet_textures.has(planet_name):
 				var tex: Texture2D = _planet_textures[planet_name]
 				draw_texture_rect(tex, Rect2(pos - Vector2(radius, radius), Vector2(radius * 2.0, radius * 2.0)), false)
 			else:
+				# Fallback circles for planets without textures
+				draw_circle(pos, radius + 5, Color(color.r, color.g, color.b, 0.2))
+				_draw_circle_outline(pos, radius + 1.5, Color(color.r, color.g, color.b, 0.7), 1.5)
 				draw_circle(pos, radius, color)
 				draw_circle(pos, radius * 0.4, Color(1.0, 1.0, 1.0, 0.35))
 
