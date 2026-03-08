@@ -6,7 +6,60 @@
 
 ## 🚨 IMMEDIATE CONTEXT (Read This First)
 
-### Latest Work Session: SERVER Mode Orbital Jitter — Fixed
+### Latest Work Session: NPC Corps + Arbitrage UI (Dweezil, 2026-03-07)
+**Status:** Complete — needs `alembic upgrade head` on Railway before deploy
+
+**What was done:**
+
+**Arbitrage UI** — `ui/tabs/market_tab.tscn` + `market_tab.gd`
+- Added ArbitrageSection to market tab showing best sell prices across all 10 trading hubs
+- Sorted by premium above base price, color-coded (green ≥15%, yellow ≥5%, grey <5%)
+- Columns: ore name | hub name | best price | premium %
+
+**PvP combat** — `server/server/routers/game.py`, `server_backend.gd`, `backend_manager.gd`, `game_state.gd`, `fleet_market_tab.gd`
+- `POST /game/attack?attacker_ship_id=X&target_ship_id=Y` — server-authoritative, validates proximity (0.08 AU), resolves weapon fire, applies engine_condition damage
+- Target auto-defends at 0.5x accuracy (surprise penalty)
+- Notifies defender via SSE `pvp_combat` event
+- `pvp_ships_in_range` computed in `apply_world_state()` — other ships within 0.08 AU of any player ship
+- Attack UI in `fleet_market_tab._build_pvp_contacts_ui()` — shown before dispatch selector when contacts in range
+
+**NPC rival corps** — unified with PvP infrastructure
+- `player.py`: added `is_npc: bool = False`
+- Migration: `n0o1p2q3r4s5_add_is_npc_to_player.py`
+- `schemas/game.py`: added `owner_is_npc: bool = False` to ShipOut
+- `simulation/npc_corps.py` (NEW): 3 corps (Helios Mining Corp/Prospectors, Apex Industries/Haulers, Ironclad Freight/Couriers), seeder + NPC AI tick
+- `simulation/tick.py`: calls `process_npc_tick(db, dt)` every tick; NPC missions processed by existing `_process_missions()` for free
+- `simulation/runner.py`: calls `seed_npc_corps(db)` on startup (idempotent)
+- `/game/world`: includes `owner_is_npc` field — client reads it
+- `game_state.gd`: stores `owner_is_npc` in each `other_players_ships` entry
+- `fleet_market_tab.gd`: NPC contacts labeled "[NPC] Corp — Ship" vs player contacts labeled "Player's Ship"
+- **Key design point:** `/game/attack` handles NPC targets identically to player targets — no separate infrastructure needed
+
+**Architecture:**
+- NPC corps = Player rows with `is_npc=True`, ships = regular Ship rows
+- Server tick dispatches idle NPC ships to random asteroids every game-hour
+- NPC ships appear in `/game/world` → `other_players_ships` → proximity detection → same attack flow as PvP
+- Existing `_process_missions()` advances NPC missions without any modification
+
+**Files modified:**
+- `server/server/models/player.py` — `is_npc` field
+- `server/server/schemas/game.py` — `owner_is_npc` in ShipOut
+- `server/server/routers/game.py` — `owner_is_npc` in `/game/world` response
+- `server/server/simulation/npc_corps.py` (NEW)
+- `server/server/simulation/tick.py` — import + call `process_npc_tick`
+- `server/server/simulation/runner.py` — import + call `seed_npc_corps`
+- `server/alembic/versions/n0o1p2q3r4s5_add_is_npc_to_player.py` (NEW)
+- `core/autoloads/game_state.gd` — `owner_is_npc` in other_players_ships, `pvp_ships_in_range`
+- `ui/tabs/fleet_market_tab.gd` — NPC contact label format, `_build_pvp_contacts_ui`
+- `ui/tabs/market_tab.tscn` + `market_tab.gd` — arbitrage section
+
+**⚠️ Railway Action Required:**
+- `alembic upgrade head` to apply `n0o1p2q3r4s5` migration before server restart
+- NPC corps will auto-seed on next server start after migration
+
+---
+
+### Previous Work Session: SERVER Mode Orbital Jitter — Fixed
 **Date:** 2026-03-07 (Windows/Dweezil)
 **Status:** Complete — tested, working
 

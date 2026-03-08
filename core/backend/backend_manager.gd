@@ -178,6 +178,10 @@ func dispatch_trade(ship_id: int, colony_id: int):
 	return await _active_backend.dispatch_trade(ship_id, colony_id)
 
 
+func attack_ship(attacker_ship_id: int, target_ship_id: int):
+	return await _active_backend.attack_ship(attacker_ship_id, target_ship_id)
+
+
 # Policies
 func update_policies(policies: Dictionary) -> void:
 	await _active_backend.update_policies(policies)

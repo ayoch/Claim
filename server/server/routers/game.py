@@ -1,4 +1,5 @@
 import math
+import random
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 import sqlalchemy as sa
 from sqlalchemy import select
@@ -25,6 +26,7 @@ from server.schemas.game import (
 )
 from server.schemas.player import PolicyUpdate
 from server.simulation.tick import get_market_prices, get_total_ticks, get_game_seconds
+from server.simulation.event_bus import event_bus
 
 router = APIRouter(prefix="/game", tags=["game"])
 
@@ -746,6 +748,127 @@ async def update_policies(
     return {"ok": True}
 
 
+COMBAT_RANGE_AU = 0.08  # Must match client COMBAT_ENCOUNTER_RANGE
+
+@router.post("/attack")
+@limiter.limit("30/minute")
+async def attack_ship(
+    request: Request,
+    attacker_ship_id: int,
+    target_ship_id: int,
+    player: Player = Depends(get_current_player),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    PvP: attack another player's ship.
+    Validates proximity, resolves weapon fire from both sides, applies engine damage.
+    Derelicts the ship if engine_condition reaches 0.
+    """
+    # Load attacker (must belong to caller)
+    att_result = await db.execute(
+        select(Ship).options(selectinload(Ship.equipment))
+        .where(Ship.id == attacker_ship_id, Ship.player_id == player.id)
+    )
+    attacker = att_result.scalar_one_or_none()
+    if not attacker:
+        raise HTTPException(status_code=404, detail="Attacker ship not found")
+    if attacker.is_stationed or attacker.is_derelict:
+        raise HTTPException(status_code=409, detail="Attacker ship is not in space")
+
+    # Load target + player info
+    tgt_result = await db.execute(
+        select(Ship).options(selectinload(Ship.equipment), selectinload(Ship.player))
+        .where(Ship.id == target_ship_id)
+    )
+    target = tgt_result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="Target ship not found")
+    if target.player_id == player.id:
+        raise HTTPException(status_code=422, detail="Cannot attack your own ship")
+    if target.is_stationed or target.is_derelict:
+        raise HTTPException(status_code=409, detail="Target ship is not in space")
+
+    # Proximity check (server-authoritative)
+    dist = math.sqrt(
+        (attacker.position_x - target.position_x) ** 2 +
+        (attacker.position_y - target.position_y) ** 2
+    )
+    if dist > COMBAT_RANGE_AU:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Ships too far apart ({dist:.3f} AU, max {COMBAT_RANGE_AU} AU)"
+        )
+
+    # Attacker weapons in range
+    att_weapons = [
+        e for e in attacker.equipment
+        if e.weapon_power > 0 and e.weapon_range >= dist
+    ]
+    if not att_weapons:
+        raise HTTPException(status_code=409, detail="No weapons in range")
+
+    # Resolve attacker damage
+    attacker_damage = 0.0
+    for w in att_weapons:
+        if w.ammo_capacity > 0:
+            if w.current_ammo > 0 and random.random() < w.weapon_accuracy:
+                attacker_damage += w.weapon_power
+                w.current_ammo -= 1
+                db.add(w)
+        else:
+            if random.random() < w.weapon_accuracy:
+                attacker_damage += w.weapon_power
+
+    # Target auto-defends with its own weapons (defender at 0.5x — surprise disadvantage)
+    tgt_weapons = [
+        e for e in target.equipment
+        if e.weapon_power > 0 and e.weapon_range >= dist
+    ]
+    defender_damage = 0.0
+    for w in tgt_weapons:
+        if random.random() < w.weapon_accuracy:
+            defender_damage += w.weapon_power * 0.5
+
+    # Apply damage: engine_condition is HP (0 = derelict)
+    if attacker_damage > 0:
+        target.engine_condition = max(0.0, target.engine_condition - attacker_damage)
+        if target.engine_condition <= 0.0:
+            target.is_derelict = True
+        db.add(target)
+
+    if defender_damage > 0:
+        attacker.engine_condition = max(0.0, attacker.engine_condition - defender_damage)
+        if attacker.engine_condition <= 0.0:
+            attacker.is_derelict = True
+        db.add(attacker)
+
+    await db.commit()
+
+    target_username = target.player.username if target.player else "Unknown"
+
+    result = {
+        "type": "pvp_combat",
+        "attacker_player_id": player.id,
+        "attacker_username": player.username,
+        "attacker_ship": attacker.ship_name,
+        "target_player_id": target.player_id,
+        "target_username": target_username,
+        "target_ship": target.ship_name,
+        "damage_dealt": attacker_damage,
+        "damage_taken": defender_damage,
+        "target_engine_condition": target.engine_condition,
+        "target_derelict": target.is_derelict,
+        "attacker_engine_condition": attacker.engine_condition,
+        "attacker_derelict": attacker.is_derelict,
+        "distance_au": dist,
+    }
+
+    # Notify defender via SSE
+    await event_bus.publish({**result, "player_id": target.player_id, "perspective": "defender"})
+
+    return result
+
+
 @router.get("/asteroids", response_model=list[AsteroidOut])
 async def list_asteroids(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Asteroid))
@@ -785,6 +908,7 @@ async def get_world_state(
             "id": ship.id,
             "player_id": ship.player_id,
             "owner_username": ship.player.username if ship.player else "Unknown",
+            "owner_is_npc": ship.player.is_npc if ship.player else False,
             "ship_name": ship.ship_name,
             "ship_class": ship.ship_class,
             "max_thrust_g": ship.max_thrust_g,

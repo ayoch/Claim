@@ -22,6 +22,7 @@ from server.models.world_state import WorldState
 from server.routers import admin_speed as _admin_speed
 from server.simulation.contracts import process_contracts as _process_contracts
 from server.simulation.worker_spawning import process_worker_spawning
+from server.simulation.npc_corps import process_npc_tick
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +200,7 @@ async def process_tick(db: AsyncSession, world_id: int, dt: float) -> list[dict]
         events += await _process_payroll(db, dt)
         events += await _process_contracts(db, dt)
         events += await process_worker_spawning(db, dt)
+        events += await process_npc_tick(db, dt)
 
         # Periodically save world state
         if _save_counter >= _SAVE_INTERVAL:

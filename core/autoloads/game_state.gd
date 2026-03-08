@@ -18,6 +18,7 @@ var _available_workers_dirty: bool = true
 var _docked_ships_cache: Array[Ship] = []
 var _docked_ships_dirty: bool = true
 var other_players_ships: Array[Dictionary] = []  # Other players' ships (multiplayer) - stored as dictionaries with owner info
+var pvp_ships_in_range: Array[Dictionary] = []   # Other player ships within combat range of any of our ships
 var missions: Array[Mission] = []
 var equipment_inventory: Array[Equipment] = []
 var upgrade_inventory: Array[ShipUpgrade] = []  # Purchased but not yet installed
@@ -3681,9 +3682,11 @@ func apply_world_state(world_data: Dictionary) -> void:
 			continue
 
 		# Store other players' ships as dictionaries
-		# Extract just the fields we need for display
+		# Extract just the fields we need for display and PvP
 		var other_ship := {
+			"server_id": int(ship_data.get("id", 0)),
 			"owner_username": ship_data.get("owner_username", "Unknown"),
+			"owner_is_npc": bool(ship_data.get("owner_is_npc", false)),
 			"ship_name": ship_data.get("ship_name", "Ship"),
 			"ship_class": int(ship_data.get("ship_class", 0)),
 			"position_x": float(ship_data.get("position_x", 0.0)),
@@ -3694,8 +3697,52 @@ func apply_world_state(world_data: Dictionary) -> void:
 
 		other_players_ships.append(other_ship)
 
+	# Recompute which other-player ships are within combat range of our ships
+	pvp_ships_in_range.clear()
+	const PVP_COMBAT_RANGE: float = 0.08  # AU — must match server COMBAT_RANGE_AU
+	for other_ship in other_players_ships:
+		if other_ship.get("is_stationed", true) or other_ship.get("is_derelict", false):
+			continue
+		var other_pos := Vector2(other_ship.get("position_x", 0.0), other_ship.get("position_y", 0.0))
+		for player_ship in ships:
+			if player_ship.is_docked or player_ship.is_derelict:
+				continue
+			var dist := player_ship.position_au.distance_to(other_pos)
+			if dist <= PVP_COMBAT_RANGE:
+				pvp_ships_in_range.append({
+					"player_ship": player_ship,
+					"target": other_ship,
+					"distance_au": dist,
+				})
+
 	if other_players_ships.size() > 0:
 		print("[GameState] Multiplayer: Loaded %d other players' ships" % other_players_ships.size())
 
 		# Emit signal so solar map can update
 		EventBus.world_state_updated.emit()
+
+## Return other-player ships in combat range of the given ship
+func get_pvp_contacts_for_ship(ship: Ship) -> Array:
+	var result: Array = []
+	for entry in pvp_ships_in_range:
+		if entry["player_ship"] == ship:
+			result.append(entry)
+	return result
+
+## Handle incoming pvp_combat SSE event (defender perspective)
+func apply_pvp_combat_event(event: Dictionary) -> void:
+	var attacker_user: String = event.get("attacker_username", "Unknown")
+	var attacker_ship: String = event.get("attacker_ship", "Unknown")
+	var target_ship: String = event.get("target_ship", "Unknown")
+	var dmg: float = event.get("damage_dealt", 0.0)
+	var is_derelict: bool = event.get("target_derelict", false)
+	var engine_pct: float = event.get("target_engine_condition", 100.0)
+
+	var msg: String
+	if is_derelict:
+		msg = "🚨 SHIP DISABLED: %s's %s destroyed your %s!" % [attacker_user, attacker_ship, target_ship]
+	else:
+		msg = "⚔️ UNDER ATTACK: %s's %s hit your %s for %.0f damage (engine %.0f%%)" % [
+			attacker_user, attacker_ship, target_ship, dmg, engine_pct
+		]
+	add_warning(msg, "critical", "combat", Vector2.ZERO, total_ticks)

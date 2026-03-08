@@ -10,6 +10,7 @@ class ShipOut(BaseModel):
     id: int
     player_id: int  # Owner of this ship
     owner_username: str | None = None  # Owner's username for display (populated for world state)
+    owner_is_npc: bool = False  # True if owner is a server-controlled NPC corp
     ship_name: str
     ship_class: int
     max_thrust_g: float

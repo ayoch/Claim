@@ -4,6 +4,7 @@ extends MarginContainer
 @onready var equip_list: VBoxContainer = %EquipList
 @onready var contracts_list: VBoxContainer = %ContractsList
 @onready var colony_list: VBoxContainer = %ColonyList
+@onready var prices_list: VBoxContainer = %PricesList
 
 static func _free_children(container: Node) -> void:
 	for i in range(container.get_child_count() - 1, -1, -1):
@@ -18,6 +19,7 @@ var _dirty_sell: bool = false
 var _dirty_equip: bool = false
 var _dirty_contracts: bool = false
 var _dirty_colony: bool = false
+var _dirty_prices: bool = true
 var _last_refresh_msec: int = 0
 const REFRESH_INTERVAL_MSEC: int = 200
 
@@ -45,9 +47,10 @@ func _ready() -> void:
 	_refresh_equip()
 	_refresh_contracts()
 	_refresh_colony()
+	_refresh_prices()
 
 func _on_tick(_dt: float) -> void:
-	if not _dirty_sell and not _dirty_equip and not _dirty_contracts and not _dirty_colony:
+	if not _dirty_sell and not _dirty_equip and not _dirty_contracts and not _dirty_colony and not _dirty_prices:
 		return
 	var now := Time.get_ticks_msec()
 	if now - _last_refresh_msec < REFRESH_INTERVAL_MSEC:
@@ -55,6 +58,7 @@ func _on_tick(_dt: float) -> void:
 	_last_refresh_msec = now
 	if _dirty_sell:
 		_dirty_sell = false
+		_dirty_prices = true  # market drift also changes best hub prices
 		_refresh_sell()
 	if _dirty_equip:
 		_dirty_equip = false
@@ -65,6 +69,9 @@ func _on_tick(_dt: float) -> void:
 	if _dirty_colony:
 		_dirty_colony = false
 		_refresh_colony()
+	if _dirty_prices:
+		_dirty_prices = false
+		_refresh_prices()
 
 # ═══════════════════════════════════════════════════
 #  SELL ORE SECTION
@@ -815,6 +822,85 @@ func _start_remote_trade(colony: Colony, ship: Ship) -> void:
 	MissionManager.dispatch_idle_ship_trade(ship, colony, cargo)
 	_refresh_colony()
 	_refresh_sell()
+
+# ═══════════════════════════════════════════════════
+#  ARBITRAGE / PRICE OVERVIEW SECTION
+# ═══════════════════════════════════════════════════
+
+func _refresh_prices() -> void:
+	_free_children(prices_list)
+
+	if not GameState.market:
+		var no_data := _lbl()
+		no_data.text = "Market data unavailable"
+		prices_list.add_child(no_data)
+		return
+
+	var note := _lbl()
+	note.text = "Best sell prices across all 10 trading hubs vs base price"
+	note.add_theme_color_override("font_color", Color(0.5, 0.5, 0.6))
+	prices_list.add_child(note)
+
+	var rows: Array = []
+	for ore_type in ResourceTypes.OreType.values():
+		var base_price: float = GameState.market.get_base_price(ore_type)
+		if base_price <= 0.0:
+			continue
+		var best := GameState.market.find_best_sell_price(ore_type)
+		var best_price: float = best["price"]
+		var best_loc: String = best["location"]
+		var premium := (best_price - base_price) / base_price * 100.0
+		rows.append({
+			"ore_name": ResourceTypes.get_ore_name(ore_type),
+			"best_price": best_price,
+			"best_loc": best_loc,
+			"premium": premium,
+		})
+
+	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return a["premium"] > b["premium"]
+	)
+
+	for row in rows:
+		var premium: float = row["premium"]
+		var row_color: Color
+		if premium >= 15.0:
+			row_color = Color(0.3, 0.9, 0.4)
+		elif premium >= 5.0:
+			row_color = Color(0.9, 0.85, 0.3)
+		else:
+			row_color = Color(0.55, 0.55, 0.6)
+
+		var hbox := HBoxContainer.new()
+		hbox.add_theme_constant_override("separation", 8)
+
+		var ore_lbl := Label.new()
+		ore_lbl.text = row["ore_name"]
+		ore_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		ore_lbl.add_theme_color_override("font_color", row_color)
+		hbox.add_child(ore_lbl)
+
+		var hub_lbl := Label.new()
+		hub_lbl.text = row["best_loc"]
+		hub_lbl.custom_minimum_size = Vector2(140, 0)
+		hub_lbl.add_theme_color_override("font_color", row_color)
+		hbox.add_child(hub_lbl)
+
+		var price_lbl := Label.new()
+		price_lbl.text = "$%.0f/t" % row["best_price"]
+		price_lbl.custom_minimum_size = Vector2(80, 0)
+		price_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		price_lbl.add_theme_color_override("font_color", row_color)
+		hbox.add_child(price_lbl)
+
+		var prem_lbl := Label.new()
+		prem_lbl.text = "%+.0f%%" % premium
+		prem_lbl.custom_minimum_size = Vector2(55, 0)
+		prem_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		prem_lbl.add_theme_color_override("font_color", row_color)
+		hbox.add_child(prem_lbl)
+
+		prices_list.add_child(hbox)
 
 func _format_number(n: int) -> String:
 	var s := str(abs(n))

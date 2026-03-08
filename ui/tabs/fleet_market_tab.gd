@@ -607,8 +607,15 @@ func _start_dispatch(ship: Ship, planning_mode: bool = false, redirect_mode: boo
 	# Populate content in next frame (feels instant, avoids UI lag)
 	await get_tree().process_frame
 
-	# Show destination selector component
 	_clear_dispatch_content()
+
+	# PvP contacts section: show hostile player ships in range (SERVER mode only)
+	if BackendManager.current_mode == BackendManager.BackendMode.SERVER and ship.server_id > 0:
+		var pvp_contacts := GameState.get_pvp_contacts_for_ship(ship)
+		if not pvp_contacts.is_empty() and ship.is_armed():
+			_build_pvp_contacts_ui(ship, pvp_contacts)
+
+	# Show destination selector component
 	dispatch_content.add_child(_destination_selector)
 	_destination_selector.show_selection(ship, planning_mode, redirect_mode)
 	_on_selection_screen = true
@@ -942,6 +949,70 @@ func _show_confirmation_dialog(message: String, on_confirm: Callable) -> void:
 	])
 
 	_show_dispatch()
+
+func _build_pvp_contacts_ui(ship: Ship, contacts: Array) -> void:
+	var header := _lbl()
+	header.text = "HOSTILE CONTACTS IN RANGE"
+	header.add_theme_font_size_override("font_size", 23)
+	header.add_theme_color_override("font_color", Color(0.9, 0.3, 0.2))
+	dispatch_content.add_child(header)
+
+	for entry in contacts:
+		var target: Dictionary = entry["target"]
+		var dist: float = entry["distance_au"]
+		var target_server_id: int = target.get("server_id", 0)
+		var is_npc: bool = target.get("owner_is_npc", false)
+		var target_name: String
+		if is_npc:
+			target_name = "[NPC] %s — %s" % [target.get("owner_username", "?"), target.get("ship_name", "?")]
+		else:
+			target_name = "%s's %s" % [target.get("owner_username", "?"), target.get("ship_name", "?")]
+
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 12)
+
+		var info := _lbl()
+		info.text = "%s — %.3f AU" % [target_name, dist]
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info.add_theme_color_override("font_color", Color(0.9, 0.6, 0.4))
+		row.add_child(info)
+
+		if target_server_id > 0:
+			var attack_btn := Button.new()
+			attack_btn.text = "Attack"
+			attack_btn.custom_minimum_size = Vector2(0, 40)
+			attack_btn.add_theme_color_override("font_color", Color(0.9, 0.3, 0.2))
+			attack_btn.pressed.connect(func() -> void:
+				attack_btn.disabled = true
+				attack_btn.text = "Firing..."
+				var result = await BackendManager.attack_ship(ship.server_id, target_server_id)
+				if result:
+					var dmg_dealt: float = result.get("damage_dealt", 0.0)
+					var dmg_taken: float = result.get("damage_taken", 0.0)
+					var tgt_derelict: bool = result.get("target_derelict", false)
+					var atk_derelict: bool = result.get("attacker_derelict", false)
+					var msg: String
+					if tgt_derelict:
+						msg = "DESTROYED %s (%.0f damage dealt)" % [target_name, dmg_dealt]
+					else:
+						var tgt_eng: float = result.get("target_engine_condition", 0.0)
+						msg = "Hit %s for %.0f dmg (engine %.0f%%)" % [target_name, dmg_dealt, tgt_eng]
+					if dmg_taken > 0.0:
+						msg += " — return fire: %.0f dmg" % dmg_taken
+					if atk_derelict:
+						msg += " — YOUR SHIP DISABLED!"
+					info.text = msg
+					attack_btn.text = "Attack Again"
+					attack_btn.disabled = tgt_derelict or atk_derelict
+				else:
+					attack_btn.text = "Attack (failed)"
+					attack_btn.disabled = false
+			)
+			row.add_child(attack_btn)
+
+		dispatch_content.add_child(row)
+
+	dispatch_content.add_child(HSeparator.new())
 
 func _get_matching_contracts(ship: Ship, colony: Colony) -> Array[Contract]:
 	# Find active contracts that match ship's cargo and can be delivered at this colony

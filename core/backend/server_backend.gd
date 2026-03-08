@@ -532,6 +532,21 @@ func dispatch_trade(ship_id: int, colony_id: int):
 		return null
 
 
+func attack_ship(attacker_ship_id: int, target_ship_id: int):
+	var http := _get_http_request()
+	var headers := _auth_headers()
+
+	var url := base_url + "/game/attack?attacker_ship_id=%d&target_ship_id=%d" % [attacker_ship_id, target_ship_id]
+	var result := await _http_request_async(http, url, headers, HTTPClient.METHOD_POST)
+	_return_http_request(http)
+
+	if result["success"]:
+		return result["data"]
+	else:
+		push_warning("Attack failed: " + str(result.get("error", "Unknown error")))
+		return null
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # UTILITY
 # ══════════════════════════════════════════════════════════════════════════════
@@ -835,6 +850,9 @@ func _handle_server_event(event: Dictionary) -> void:
 
 		"market_update":
 			MarketManager.apply_market_update_event(event)
+
+		"pvp_combat":
+			GameState.apply_pvp_combat_event(event)
 
 		_:
 			pass  # Unhandled event type
