@@ -106,7 +106,7 @@ async def admin_dashboard_data(request: Request, db: AsyncSession = Depends(get_
     if not admin_key or not await validate_admin_key(admin_key, db):
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    thirty_days_ago = _dt.datetime.utcnow() - _dt.timedelta(days=30)
 
     result = await db.execute(
         select(func.count(Player.id)).where(Player.last_seen >= thirty_days_ago)
@@ -203,7 +203,7 @@ async def admin_dashboard(
             return RedirectResponse(url="/admin-ui/login", status_code=303)
 
         # Get server stats
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+        thirty_days_ago = _dt.datetime.utcnow() - _dt.timedelta(days=30)
 
         # Count active players (last 30 days)
         result = await db.execute(
