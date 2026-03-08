@@ -965,9 +965,14 @@ func _update_colony_targets() -> void:
 		var colony: Colony = marker.get_meta("colony")
 		if not colony:
 			continue
-		# Tiny moon — snap to parent planet
+		# Tiny moon — offset from planet edge rather than snapping onto it
 		if colony.parent_planet_index >= 0 and colony.orbit_au < 0.05:
-			marker.set_meta("target_pos", colony.get_position_au() * AU_PIXELS)
+			var planet_pos_px := CelestialData.get_planet_position_au(colony.parent_planet_index) * AU_PIXELS
+			var planet_radius_px: float = CelestialData.PLANETS[colony.parent_planet_index]["radius"]
+			var offset_dist := planet_radius_px + 16.0
+			var angle := colony.orbital_angle
+			var offset := Vector2(cos(angle), sin(angle)) * offset_dist
+			marker.set_meta("target_pos", planet_pos_px + offset)
 			continue
 		var period := colony.get_orbital_period()
 		var initial_angle: float = marker.get_meta("initial_angle", colony.orbital_angle)
