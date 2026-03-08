@@ -232,16 +232,16 @@ func _draw_starfield() -> void:
 		for ty in range(tile_min.y, tile_max.y + 1):
 			var tile_origin := Vector2(tx * STAR_TILE_SIZE, ty * STAR_TILE_SIZE)
 			for blob in _get_nebula_tile(Vector2i(tx, ty)):
-				var pos := tile_origin + blob["offset"]
+				var pos: Vector2 = tile_origin + blob["offset"]
 				var col: Color = NEBULA_COLORS[blob["color_idx"]]
-				draw_circle(pos, blob["radius"], col)
+				draw_circle(pos, blob["radius"] as float, col)
 
 	# Draw stars at their world-space positions — they scroll naturally with pan
 	for tx in range(tile_min.x, tile_max.x + 1):
 		for ty in range(tile_min.y, tile_max.y + 1):
 			var tile_origin := Vector2(tx * STAR_TILE_SIZE, ty * STAR_TILE_SIZE)
 			for star in _get_star_tile(Vector2i(tx, ty)):
-				var pos := tile_origin + star["offset"]
+				var pos: Vector2 = tile_origin + star["offset"]
 				var twinkle: float = sin(_starfield_time * STAR_TWINKLE_SPEED + star["twinkle_phase"]) * star["twinkle_amount"]
 				var brightness: float = clampf(star["brightness"] + twinkle, 0.1, 1.0)
 				var base_color: Color = STAR_COLORS[star["color_idx"]]
